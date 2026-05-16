@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +72,9 @@ import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.PinnedNoteCard
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -228,7 +231,6 @@ private fun LibraryArchiveScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 118.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 item {
                     if (onBackClick == null) {
@@ -273,24 +275,6 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
-                if (uiState.pinnedFiles.isNotEmpty()) {
-                    item {
-                        SectionLabel(label = "Pinned")
-                        Spacer(modifier = Modifier.height(3.dp))
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                        ) {
-                            items(uiState.pinnedFiles, key = { it.id }) { file ->
-                                LibraryPinnedFileCard(
-                                    file = file,
-                                    onClick = { onAttachmentClick(file.id) },
-                                )
-                            }
-                        }
-                    }
-                }
-
                 uiState.continueReading?.let { file ->
                     item {
                         ContinueReadingCard(
@@ -300,8 +284,30 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
+                if (uiState.pinnedFiles.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(5.dp))
+                        SectionLabel(label = "Pinned")
+                        Spacer(modifier = Modifier.height(3.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                        ) {
+                            items(uiState.pinnedFiles, key = { it.id }) { file ->
+                                PinnedNoteCard(
+                                    note = file.toPinnedCardData(),
+                                    previewLines = 1,
+                                    onClick = { onAttachmentClick(file.id) },
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item {
+                    Spacer(modifier = Modifier.height(10.dp))
                     SectionLabel(label = if (currentFolderId == null) "Collections" else "Subfolders")
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
 
                 if (uiState.folders.isEmpty()) {
@@ -591,47 +597,13 @@ private fun LibraryArchiveScreen(
     }
 }
 
-@Composable
-private fun LibraryPinnedFileCard(
-    file: LibraryFileItem,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(width = 104.dp, height = 64.dp),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            AttachmentThumbnail(
-                mimeType = file.mimeType,
-                localPath = file.localPath,
-                kind = file.kind,
-                size = 18.dp,
-            )
-            Text(
-                text = file.name,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = file.kind,
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
+private fun LibraryFileItem.toPinnedCardData(): VaultNoteCardData =
+    VaultNoteCardData(
+        id = id,
+        title = name,
+        meta = meta,
+        preview = kind,
+    )
 
 @Composable
 private fun ContinueReadingCard(
@@ -719,7 +691,6 @@ private fun LibraryFolderRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
     ) {
         LibraryHierarchyRow(
             depth = folder.depth,
@@ -745,7 +716,7 @@ private fun LibraryFolderRow(
             enter = expandVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)),
             exit = shrinkVertically(animationSpec = tween(150, easing = FastOutSlowInEasing)),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.padding(top = 1.dp)) {
+            Column {
                 folder.children.forEach { child ->
                     LibraryFolderRow(
                         folder = child,
@@ -825,10 +796,12 @@ private fun LibraryHierarchyRow(
     val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
     val background = if (topLevel && expanded) colors.surface else Color.Transparent
     val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
+    val chevronInteractionSource = remember { MutableInteractionSource() }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.xs)
             .padding(
                 start = if (topLevel) 12.dp else (10 + depth * 14).dp,
                 top = if (topLevel) 2.dp else 0.dp,
@@ -854,8 +827,12 @@ private fun LibraryHierarchyRow(
             if (onToggle != null) {
                 Box(
                     modifier = Modifier
-                        .size(if (topLevel) 28.dp else 24.dp)
-                        .clickable(onClick = onToggle),
+                        .size(if (topLevel) 14.dp else 12.dp)
+                        .clickable(
+                            interactionSource = chevronInteractionSource,
+                            indication = null,
+                            onClick = onToggle,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
