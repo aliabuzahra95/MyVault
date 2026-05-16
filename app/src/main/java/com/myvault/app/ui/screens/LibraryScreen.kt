@@ -643,24 +643,10 @@ private fun LibraryHierarchyRow(
 ) {
     val colors = VaultThemeTokens.colors
     Row(modifier = Modifier.fillMaxWidth()) {
-        if (depth > 0) {
-            Row(
-                modifier = Modifier.width((depth * 16).dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .width(1.dp)
-                        .height(58.dp)
-                        .background(colors.border.copy(alpha = 0.42f)),
-                )
-            }
-        }
         Surface(
             modifier = Modifier
-                .weight(1f)
                 .fillMaxWidth()
+                .height(58.dp)
                 .clip(VaultShapes.md),
             color = if (expanded) colors.surface else colors.elevated,
             shape = VaultShapes.md,
@@ -673,6 +659,15 @@ private fun LibraryHierarchyRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
+                if (depth > 0) {
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(34.dp)
+                            .background(colors.border.copy(alpha = 0.42f)),
+                    )
+                    Spacer(modifier = Modifier.width((depth * 16).dp))
+                }
                 if (onToggle != null) {
                     Surface(
                         onClick = onToggle,

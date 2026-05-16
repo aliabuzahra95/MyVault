@@ -26,8 +26,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -202,6 +204,7 @@ private fun PdfAttachmentViewer(
 ) {
     var pageCount by remember(attachment.localPath) { mutableIntStateOf(progress?.pageCount ?: 0) }
     var error by remember(attachment.localPath) { mutableStateOf<String?>(null) }
+    var zoom by remember(attachment.id) { mutableFloatStateOf(1f) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = progress?.pageIndex?.coerceAtLeast(0) ?: 0)
     var restoredProgressPage by remember(attachment.id) { mutableStateOf(false) }
     val visiblePage by remember {
@@ -253,12 +256,19 @@ private fun PdfAttachmentViewer(
                         PdfPageSurface(
                             path = attachment.localPath,
                             pageIndex = pageIndex,
+                            zoom = zoom,
                         )
                     }
                 }
                 PdfReadingProgressOverlay(
                     pageIndex = visiblePage.coerceIn(0, pageCount - 1),
                     pageCount = pageCount,
+                )
+                PdfZoomControls(
+                    zoom = zoom,
+                    onZoomIn = { zoom = (zoom + 0.25f).coerceAtMost(2.5f) },
+                    onZoomOut = { zoom = (zoom - 0.25f).coerceAtLeast(1f) },
+                    onReset = { zoom = 1f },
                 )
             }
         }
@@ -294,16 +304,49 @@ private fun BoxScope.PdfReadingProgressOverlay(
 }
 
 @Composable
+private fun BoxScope.PdfZoomControls(
+    zoom: Float,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onReset: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
+        color = colors.elevated.copy(alpha = 0.9f),
+        shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, colors.border),
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            IconBtn(Icons.Rounded.Remove, "Zoom out", onClick = onZoomOut)
+            Text(
+                text = "${(zoom * 100).toInt()}%",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                color = colors.textSecondary,
+            )
+            IconBtn(Icons.Rounded.Add, "Zoom in", onClick = onZoomIn)
+            TextButton(onClick = onReset) {
+                Text("Reset")
+            }
+        }
+    }
+}
+
+@Composable
 private fun PdfPageSurface(
     path: String,
     pageIndex: Int,
+    zoom: Float,
 ) {
     var bitmap by remember(path, pageIndex) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(path, pageIndex) { mutableStateOf<String?>(null) }
-    var scale by remember(path, pageIndex) { mutableFloatStateOf(1f) }
-    val transformableState = rememberTransformableState { _, zoomChange, _, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 3f)
-    }
 
     LaunchedEffect(path, pageIndex) {
         val result = renderPdfPage(path, pageIndex)
@@ -334,8 +377,7 @@ private fun PdfPageSurface(
                 loadedBitmap != null -> Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(5.dp))
-                        .transformable(transformableState),
+                        .clip(RoundedCornerShape(5.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(
@@ -344,8 +386,8 @@ private fun PdfPageSurface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
+                                scaleX = zoom
+                                scaleY = zoom
                             },
                         contentScale = ContentScale.FillWidth,
                     )
