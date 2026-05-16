@@ -21,6 +21,8 @@ class AttachmentViewerViewModel @Inject constructor(
     private val pdfReadingProgressRepository: PdfReadingProgressRepository,
 ) : ViewModel() {
     private val attachmentId: String = savedStateHandle["attachmentId"] ?: ""
+    private var lastSavedPdfPage: Int? = null
+    private var lastSavedPdfPageCount: Int? = null
 
     val attachment: StateFlow<AttachmentEntity?> =
         attachmentRepository.observeAttachment(attachmentId)
@@ -31,6 +33,9 @@ class AttachmentViewerViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun updatePdfProgress(pageIndex: Int, pageCount: Int) {
+        if (lastSavedPdfPage == pageIndex && lastSavedPdfPageCount == pageCount) return
+        lastSavedPdfPage = pageIndex
+        lastSavedPdfPageCount = pageCount
         viewModelScope.launch {
             pdfReadingProgressRepository.updateProgress(attachmentId, pageIndex, pageCount)
         }

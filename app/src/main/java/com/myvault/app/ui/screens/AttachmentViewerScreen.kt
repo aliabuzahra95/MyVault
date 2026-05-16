@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -205,13 +204,23 @@ private fun PdfAttachmentViewer(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = progress?.pageIndex?.coerceAtLeast(0) ?: 0)
     var scale by remember(attachment.localPath) { mutableFloatStateOf(1f) }
     var offset by remember(attachment.localPath) { mutableStateOf(Offset.Zero) }
+    var restoredProgressPage by remember(attachment.id) { mutableStateOf(false) }
     val visiblePage by remember {
         derivedStateOf { listState.firstVisibleItemIndex.coerceAtLeast(0) }
     }
     val transformableState = rememberTransformableState { _, zoomChange, panChange, _ ->
         val nextScale = (scale * zoomChange).coerceIn(1f, 4.5f)
         scale = nextScale
-        offset = if (nextScale <= 1.01f) Offset.Zero else offset + panChange
+        offset = if (nextScale <= 1.01f) {
+            Offset.Zero
+        } else {
+            (offset + panChange).let { nextOffset ->
+                Offset(
+                    x = nextOffset.x.coerceIn(-1800f, 1800f),
+                    y = nextOffset.y.coerceIn(-2400f, 2400f),
+                )
+            }
+        }
     }
 
     LaunchedEffect(attachment.localPath) {
@@ -231,9 +240,14 @@ private fun PdfAttachmentViewer(
             .collect { page -> onProgressChanged(page.coerceIn(0, pageCount - 1), pageCount) }
     }
 
-    LaunchedEffect(pageCount, attachment.id) {
-        if (pageCount > 0) {
-            onProgressChanged(visiblePage.coerceIn(0, pageCount - 1), pageCount)
+    LaunchedEffect(pageCount, progress?.pageIndex, attachment.id) {
+        if (pageCount > 0 && !restoredProgressPage) {
+            val targetPage = progress?.pageIndex?.coerceIn(0, pageCount - 1)
+            if (targetPage != null && targetPage != listState.firstVisibleItemIndex) {
+                listState.scrollToItem(targetPage)
+            }
+            restoredProgressPage = true
+            onProgressChanged((targetPage ?: visiblePage).coerceIn(0, pageCount - 1), pageCount)
         }
     }
 
@@ -250,9 +264,9 @@ private fun PdfAttachmentViewer(
                         .transformable(transformableState),
                     userScrollEnabled = scale <= 1.05f,
                     contentPadding = PaddingValues(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items((0 until pageCount).toList(), key = { it }) { pageIndex ->
+                    items(count = pageCount, key = { it }) { pageIndex ->
                         PdfPageSurface(
                             path = attachment.localPath,
                             pageIndex = pageIndex,
@@ -283,15 +297,15 @@ private fun BoxScope.PdfReadingProgressOverlay(
     ) {
         Surface(
             modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
-            color = colors.elevated.copy(alpha = 0.94f),
+            color = colors.elevated.copy(alpha = 0.84f),
             shape = VaultShapes.pill,
             border = BorderStroke(1.dp, colors.border),
-            shadowElevation = 3.dp,
+            shadowElevation = 1.dp,
         ) {
             Text(
                 text = "Page ${pageIndex + 1} of $pageCount · ${(percent * 100).toInt()}%",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
                 color = colors.textSecondary,
             )
         }
