@@ -8,6 +8,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +58,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -205,6 +207,7 @@ private fun PdfAttachmentViewer(
     var pageCount by remember(attachment.localPath) { mutableIntStateOf(progress?.pageCount ?: 0) }
     var error by remember(attachment.localPath) { mutableStateOf<String?>(null) }
     var zoom by remember(attachment.id) { mutableFloatStateOf(1f) }
+    var panOffset by remember(attachment.id) { mutableStateOf(Offset.Zero) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = progress?.pageIndex?.coerceAtLeast(0) ?: 0)
     var restoredProgressPage by remember(attachment.id) { mutableStateOf(false) }
     val visiblePage by remember {
@@ -257,6 +260,19 @@ private fun PdfAttachmentViewer(
                             path = attachment.localPath,
                             pageIndex = pageIndex,
                             zoom = zoom,
+                            panOffset = panOffset,
+                            onPanChange = { delta ->
+                                panOffset = if (zoom <= 1.01f) {
+                                    Offset.Zero
+                                } else {
+                                    val maxX = 420f * (zoom - 1f)
+                                    val maxY = 620f * (zoom - 1f)
+                                    Offset(
+                                        x = (panOffset.x + delta.x).coerceIn(-maxX, maxX),
+                                        y = (panOffset.y + delta.y).coerceIn(-maxY, maxY),
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -267,8 +283,14 @@ private fun PdfAttachmentViewer(
                 PdfZoomControls(
                     zoom = zoom,
                     onZoomIn = { zoom = (zoom + 0.25f).coerceAtMost(2.5f) },
-                    onZoomOut = { zoom = (zoom - 0.25f).coerceAtLeast(1f) },
-                    onReset = { zoom = 1f },
+                    onZoomOut = {
+                        zoom = (zoom - 0.25f).coerceAtLeast(1f)
+                        if (zoom <= 1.01f) panOffset = Offset.Zero
+                    },
+                    onReset = {
+                        zoom = 1f
+                        panOffset = Offset.Zero
+                    },
                 )
             }
         }
@@ -344,6 +366,8 @@ private fun PdfPageSurface(
     path: String,
     pageIndex: Int,
     zoom: Float,
+    panOffset: Offset,
+    onPanChange: (Offset) -> Unit,
 ) {
     var bitmap by remember(path, pageIndex) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(path, pageIndex) { mutableStateOf<String?>(null) }
@@ -377,7 +401,19 @@ private fun PdfPageSurface(
                 loadedBitmap != null -> Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(5.dp)),
+                        .clip(RoundedCornerShape(5.dp))
+                        .then(
+                            if (zoom > 1.01f) {
+                                Modifier.pointerInput(path, pageIndex, zoom) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        onPanChange(dragAmount)
+                                    }
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(
@@ -388,6 +424,8 @@ private fun PdfPageSurface(
                             .graphicsLayer {
                                 scaleX = zoom
                                 scaleY = zoom
+                                translationX = if (zoom > 1.01f) panOffset.x else 0f
+                                translationY = if (zoom > 1.01f) panOffset.y else 0f
                             },
                         contentScale = ContentScale.FillWidth,
                     )

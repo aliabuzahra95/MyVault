@@ -12,7 +12,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -551,11 +550,11 @@ private fun LibraryFolderRow(
             title = folder.name,
             subtitle = if (viewMode != LibraryViewMode.Compact && folder.count > 0) "${folder.count} items" else null,
             count = folder.count.takeIf { it > 0 }?.toString(),
-            leading = {
+            leading = { topLevel ->
                 Icon(
                     Icons.Rounded.Folder,
                     contentDescription = null,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(if (topLevel) 16.dp else 13.dp),
                     tint = colors.warning,
                 )
             },
@@ -615,12 +614,12 @@ private fun LibraryNestedFileRow(
         depth = depth,
         title = file.name,
         subtitle = if (showMetadata) "${file.kind} · ${file.size} · ${file.meta}$progress" else null,
-        leading = {
+        leading = { topLevel ->
             AttachmentThumbnail(
                 mimeType = file.mimeType,
                 localPath = file.localPath,
                 kind = file.kind,
-                size = 34.dp,
+                size = if (topLevel) 16.dp else 13.dp,
             )
         },
         onClick = onClick,
@@ -634,7 +633,7 @@ private fun LibraryHierarchyRow(
     title: String,
     subtitle: String? = null,
     count: String? = null,
-    leading: @Composable () -> Unit,
+    leading: @Composable (topLevel: Boolean) -> Unit,
     expanded: Boolean = false,
     chevronRotation: Float = 0f,
     onToggle: (() -> Unit)? = null,
@@ -642,76 +641,89 @@ private fun LibraryHierarchyRow(
     onLongClick: (() -> Unit)? = null,
 ) {
     val colors = VaultThemeTokens.colors
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Surface(
+    val topLevel = depth == 0
+    val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
+    val background = if (topLevel && expanded) colors.surface else Color.Transparent
+    val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (topLevel) 12.dp else (10 + depth * 14).dp,
+                top = if (topLevel) 2.dp else 0.dp,
+                end = if (topLevel) 12.dp else 8.dp,
+                bottom = if (topLevel) 4.dp else 0.dp,
+            )
+            .clip(rowShape)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        color = background,
+        shape = rowShape,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(58.dp)
-                .clip(VaultShapes.md),
-            color = if (expanded) colors.surface else colors.elevated,
-            shape = VaultShapes.md,
-            border = BorderStroke(1.dp, colors.border),
+                .padding(
+                    horizontal = if (topLevel) 12.dp else 10.dp,
+                    vertical = if (topLevel) 10.dp else 8.dp,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                    .padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-            ) {
-                if (depth > 0) {
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(34.dp)
-                            .background(colors.border.copy(alpha = 0.42f)),
-                    )
-                    Spacer(modifier = Modifier.width((depth * 16).dp))
-                }
-                if (onToggle != null) {
-                    Surface(
-                        onClick = onToggle,
-                        color = Color.Transparent,
-                        shape = VaultShapes.sm,
-                        modifier = Modifier.size(24.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                                contentDescription = "Expand folder",
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .graphicsLayer { rotationZ = chevronRotation },
-                                tint = colors.textMuted,
-                            )
-                        }
-                    }
-                } else {
-                    Spacer(modifier = Modifier.size(24.dp))
-                }
-                leading()
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (onToggle != null) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(if (topLevel) 14.dp else 12.dp)
+                        .graphicsLayer { rotationZ = chevronRotation },
+                    tint = colors.textMuted,
+                )
+            } else {
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            leading(topLevel)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = if (topLevel) {
+                        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                    } else {
+                        MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
+                    },
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!subtitle.isNullOrBlank()) {
                     Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
-                        color = colors.text,
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (!subtitle.isNullOrBlank()) {
+                }
+            }
+            if (!count.isNullOrBlank()) {
+                if (topLevel) {
+                    Surface(
+                        shape = VaultShapes.pill,
+                        color = colors.inset,
+                        border = BorderStroke(1.dp, colors.border),
+                    ) {
                         Text(
-                            text = subtitle,
+                            text = count,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                             style = MaterialTheme.typography.labelMedium,
                             color = colors.textMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-                if (!count.isNullOrBlank()) {
+                } else {
                     Text(
                         text = count,
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                        style = MaterialTheme.typography.labelMedium,
                         color = colors.textMuted,
                     )
                 }
