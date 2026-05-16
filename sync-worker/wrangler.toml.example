@@ -1,0 +1,10 @@
+name = "my-vault-sync"
+main = "src/index.ts"
+compatibility_date = "2026-04-27"
+
+# Copy this file to wrangler.toml, then fill these in with:
+# wrangler secret put SUPABASE_URL
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# wrangler secret put SYNC_SHARED_SECRET
+#
+# The Android app should call this Worker URL, never Supabase directly.

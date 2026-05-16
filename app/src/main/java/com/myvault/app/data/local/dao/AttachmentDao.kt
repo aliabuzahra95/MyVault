@@ -1,0 +1,41 @@
+package com.myvault.app.data.local.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import com.myvault.app.data.local.entity.AttachmentEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface AttachmentDao {
+    @Query("SELECT * FROM attachments WHERE deletedAt IS NULL ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<AttachmentEntity>>
+
+    @Query("SELECT * FROM attachments WHERE deletedAt IS NULL ORDER BY createdAt DESC")
+    suspend fun getAll(): List<AttachmentEntity>
+
+    @Query("SELECT * FROM attachments ORDER BY createdAt DESC")
+    suspend fun getAllIncludingDeleted(): List<AttachmentEntity>
+
+    @Query("SELECT * FROM attachments WHERE noteId = :noteId AND deletedAt IS NULL ORDER BY createdAt DESC")
+    fun observeForNote(noteId: String): Flow<List<AttachmentEntity>>
+
+    @Query("SELECT * FROM attachments WHERE id = :id AND deletedAt IS NULL")
+    fun observeById(id: String): Flow<AttachmentEntity?>
+
+    @Query("SELECT * FROM attachments WHERE noteId IN (:noteIds)")
+    suspend fun getForNotes(noteIds: List<String>): List<AttachmentEntity>
+
+    @Query("UPDATE attachments SET deletedAt = :deletedAt WHERE noteId IN (:noteIds)")
+    suspend fun updateDeletedAtForNotes(noteIds: List<String>, deletedAt: Long?)
+
+    @Query("UPDATE attachments SET deletedAt = :deletedAt WHERE id = :id")
+    suspend fun updateDeletedAt(id: String, deletedAt: Long?)
+
+    @Query("DELETE FROM attachments WHERE noteId IN (:noteIds)")
+    suspend fun deleteForNotes(noteIds: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(attachments: List<AttachmentEntity>)
+}

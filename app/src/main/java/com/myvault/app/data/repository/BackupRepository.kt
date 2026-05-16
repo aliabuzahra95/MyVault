@@ -1,0 +1,627 @@
+package com.myvault.app.data.repository
+
+import android.content.Context
+import android.net.Uri
+import com.myvault.app.data.local.dao.AttachmentDao
+import com.myvault.app.data.local.dao.AiConversationDao
+import com.myvault.app.data.local.dao.BlockDao
+import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.NoteDao
+import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.SearchDao
+import com.myvault.app.data.local.dao.TagDao
+import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.AiConversationEntity
+import com.myvault.app.data.local.entity.AiMessageEntity
+import com.myvault.app.data.local.entity.BlockEntity
+import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.NoteEntity
+import com.myvault.app.data.local.entity.NoteFtsEntity
+import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.local.entity.NoteTagCrossRef
+import com.myvault.app.data.local.entity.TagEntity
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class BackupRepository @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+    private val folderDao: FolderDao,
+    private val noteDao: NoteDao,
+    private val blockDao: BlockDao,
+    private val tagDao: TagDao,
+    private val attachmentDao: AttachmentDao,
+    private val searchDao: SearchDao,
+    private val noteTableDao: NoteTableDao,
+    private val aiConversationDao: AiConversationDao,
+) {
+    suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
+        val file = File(context.cacheDir, "vault-manual-export-${System.currentTimeMillis()}.vaultbackup")
+        try {
+            val result = exportBackupToFile(file)
+            context.contentResolver.openOutputStream(destination)?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
+            } ?: error("Unable to create backup file")
+            result
+        } finally {
+            file.delete()
+        }
+    }
+
+    suspend fun exportBackupToFile(destination: File): BackupResult = withContext(Dispatchers.IO) {
+        val temp = File(context.cacheDir, "vault-export-${System.currentTimeMillis()}.vaultbackup")
+        try {
+            val result = temp.outputStream().use { output -> writeBackup(output) }
+            val verification = verifyBackupFile(temp, result)
+            check(verification.valid) { verification.message }
+            destination.parentFile?.mkdirs()
+            temp.copyTo(destination, overwrite = true)
+            result
+        } finally {
+            temp.delete()
+        }
+    }
+
+    suspend fun restoreBackup(source: Uri): BackupResult = withContext(Dispatchers.IO) {
+        context.contentResolver.openInputStream(source)?.use { input ->
+            restoreBackup(input)
+        } ?: error("Unable to open backup file")
+    }
+
+    suspend fun restoreBackupFromFile(source: File): BackupResult = withContext(Dispatchers.IO) {
+        source.inputStream().use { input -> restoreBackup(input) }
+    }
+
+    suspend fun createSafetyBackup(reason: String): BackupResult = withContext(Dispatchers.IO) {
+        val safeReason = reason.replace(Regex("[^A-Za-z0-9_-]"), "-").ifBlank { "safety" }
+        val backupDir = File(context.filesDir, "emergency_backups").apply { mkdirs() }
+        val file = File(backupDir, "$safeReason-${System.currentTimeMillis()}.vaultbackup")
+        exportBackupToFile(file)
+    }
+
+    suspend fun verifyCurrentBackupIntegrity(): BackupVerificationResult = withContext(Dispatchers.IO) {
+        val file = File(context.cacheDir, "vault-backup-verification.vaultbackup")
+        runCatching {
+            val exported = exportBackupToFile(file)
+            verifyBackupFile(file, exported)
+        }.also {
+            file.delete()
+        }.getOrElse { error ->
+            BackupVerificationResult(
+                valid = false,
+                message = "Backup check failed: ${error.message ?: "Unknown error"}",
+            )
+        }
+    }
+
+    private suspend fun writeBackup(output: OutputStream): BackupResult {
+        val folders = folderDao.getAllIncludingDeleted()
+        val notes = noteDao.getAllIncludingDeleted()
+        val backupNoteIds = notes.map { it.id }.toSet()
+        val blocks = blockDao.getAll().filter { it.noteId in backupNoteIds }
+        val tags = tagDao.getAll()
+        val tagRefs = tagDao.getAllRefs().filter { it.noteId in backupNoteIds }
+        val tables = noteTableDao.getAll().filter { it.noteId in backupNoteIds }
+        val attachments = attachmentDao.getAllIncludingDeleted().filter { it.noteId in backupNoteIds }
+        val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
+        val aiConversationIds = aiConversations.map { it.id }.toSet()
+        val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
+
+        ZipOutputStream(output.buffered()).use { zip ->
+            zip.writeJson("manifest.json", manifestJson())
+            zip.writeJson("folders.json", folders.toJsonArray { it.toJson() })
+            zip.writeJson("notes.json", notes.toJsonArray { it.toJson() })
+            zip.writeJson("blocks.json", blocks.toJsonArray { it.toJson() })
+            zip.writeJson("tags.json", tags.toJsonArray { it.toJson() })
+            zip.writeJson("note_tags.json", tagRefs.toJsonArray { it.toJson() })
+            zip.writeJson("note_tables.json", tables.toJsonArray { it.toJson() })
+            zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
+            zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
+            zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
+
+            attachments.forEach { attachment ->
+                val file = File(attachment.localPath)
+                if (file.exists() && file.isFile) {
+                    zip.putNextEntry(ZipEntry(attachment.backupFileEntry()))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+        }
+
+        return BackupResult(
+            folderCount = folders.size,
+            noteCount = notes.size,
+            attachmentCount = attachments.size,
+        )
+    }
+
+    private fun verifyBackupFile(file: File, exported: BackupResult): BackupVerificationResult {
+        val entries = mutableMapOf<String, String>()
+        val fileEntries = mutableSetOf<String>()
+        ZipInputStream(file.inputStream().buffered()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    if (entry.name.startsWith("files/")) {
+                        validateAttachmentEntryName(entry.name.removePrefix("files/"))
+                        fileEntries += entry.name
+                        zip.readBytes()
+                    } else {
+                        entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
+                    }
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+
+        validateManifest(entries["manifest.json"])
+        val notes = entries.requireJsonArray("notes.json")
+        val blocks = entries.requireJsonArray("blocks.json")
+        val tables = entries.requireJsonArray("note_tables.json")
+        val aiConversations = entries.optionalJsonArray("ai_conversations.json")
+        val aiMessages = entries.optionalJsonArray("ai_messages.json")
+        val attachments = entries.requireJsonArray("attachments.json")
+        entries.requireJsonArray("folders.json")
+        entries.requireJsonArray("tags.json")
+        entries.requireJsonArray("note_tags.json")
+
+        check(notes.length() == exported.noteCount) {
+            "Backup note count changed while verifying."
+        }
+        check(attachments.length() == exported.attachmentCount) {
+            "Backup attachment count changed while verifying."
+        }
+
+        val noteIds = List(notes.length()) { index -> notes.getJSONObject(index).getString("id") }.toSet()
+        List(blocks.length()) { index -> blocks.getJSONObject(index) }.forEach { block ->
+            check(block.getString("noteId") in noteIds) { "Backup contains a block without a matching note." }
+            if (block.getString("type") == "rich_text") {
+                val content = JSONObject(block.getString("content"))
+                val text = content.optString("text")
+                val marks = content.optJSONArray("styleMarks") ?: JSONArray()
+                List(marks.length()) { index -> marks.getJSONObject(index) }.forEach { mark ->
+                    val start = mark.getInt("start")
+                    val end = mark.getInt("end")
+                    check(start in 0..text.length && end in 0..text.length && start < end) {
+                        "Backup contains an invalid rich text style range."
+                    }
+                    check(mark.getString("style").isNotBlank()) {
+                        "Backup contains an invalid rich text style."
+                    }
+                }
+                val links = content.optJSONArray("noteLinks") ?: JSONArray()
+                List(links.length()) { index -> links.getJSONObject(index) }.forEach { link ->
+                    val start = link.getInt("start")
+                    val end = link.getInt("end")
+                    check(start in 0..text.length && end in 0..text.length && start < end) {
+                        "Backup contains an invalid note link range."
+                    }
+                    check(link.getString("noteId") in noteIds) {
+                        "Backup contains a note link without a matching note."
+                    }
+                }
+            }
+        }
+        List(tables.length()) { index -> tables.getJSONObject(index) }.forEach { table ->
+            check(table.getString("noteId") in noteIds) { "Backup contains a table without a matching note." }
+            val rows = table.getInt("rowCount").coerceIn(1, 10)
+            val columns = table.getInt("columnCount").coerceIn(1, 10)
+            table.getString("cellsJson").toCellsArray(rows, columns)
+        }
+        val aiConversationIds = List(aiConversations.length()) { index ->
+            val conversation = aiConversations.getJSONObject(index)
+            check(conversation.getString("noteId") in noteIds) { "Backup contains an AI conversation without a matching note." }
+            conversation.getString("id")
+        }.toSet()
+        List(aiMessages.length()) { index -> aiMessages.getJSONObject(index) }.forEach { message ->
+            check(message.getString("noteId") in noteIds) { "Backup contains an AI message without a matching note." }
+            check(message.getString("conversationId") in aiConversationIds) { "Backup contains an AI message without a matching conversation." }
+            check(message.getString("role").isNotBlank()) { "Backup contains an AI message without a role." }
+            check(message.getString("content").isNotBlank()) { "Backup contains an empty AI message." }
+        }
+        List(attachments.length()) { index -> attachments.getJSONObject(index) }.forEach { attachment ->
+            check(attachment.getString("noteId") in noteIds) { "Backup contains an attachment without a matching note." }
+            val entry = attachment.optString("fileEntry")
+            if (entry.isNotBlank()) {
+                check(entry in fileEntries) { "Backup is missing an attachment file: ${attachment.getString("fileName")}" }
+            }
+        }
+
+        return BackupVerificationResult(
+            valid = true,
+            message = "Backup check passed: ${exported.noteCount} notes, ${exported.attachmentCount} attachments, ${tables.length()} tables.",
+        )
+    }
+
+    private suspend fun restoreBackup(input: InputStream): BackupResult {
+        val entries = mutableMapOf<String, String>()
+        val restoredFiles = mutableMapOf<String, File>()
+
+        ZipInputStream(input.buffered()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    if (entry.name.startsWith("files/")) {
+                        val attachmentId = entry.name.removePrefix("files/")
+                        validateAttachmentEntryName(attachmentId)
+                        val file = File(context.cacheDir, "restore-$attachmentId").apply {
+                            parentFile?.mkdirs()
+                        }
+                        file.outputStream().use { zip.copyTo(it) }
+                        restoredFiles[attachmentId] = file
+                    } else {
+                        entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
+                    }
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+
+        validateManifest(entries["manifest.json"])
+
+        val folders = entries.requireJsonArray("folders.json").mapJson { it.toFolderEntity() }
+        val notes = entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() }
+        val restoredNoteIds = notes.map { it.id }.toSet()
+        val blocks = entries.requireJsonArray("blocks.json")
+            .mapJson { it.toBlockEntity() }
+            .filter { it.noteId in restoredNoteIds }
+        val tags = entries.requireJsonArray("tags.json").mapJson { it.toTagEntity() }
+        val tagRefs = entries.requireJsonArray("note_tags.json")
+            .mapJson { it.toNoteTagCrossRef() }
+            .filter { it.noteId in restoredNoteIds }
+        val tables = entries.requireJsonArray("note_tables.json")
+            .mapJson { it.toNoteTableEntity() }
+            .filter { it.noteId in restoredNoteIds }
+        val aiConversations = entries.optionalJsonArray("ai_conversations.json")
+            .mapJson { it.toAiConversationEntity() }
+            .filter { it.noteId in restoredNoteIds }
+        val aiConversationIds = aiConversations.map { it.id }.toSet()
+        val aiMessages = entries.optionalJsonArray("ai_messages.json")
+            .mapJson { it.toAiMessageEntity() }
+            .filter { it.noteId in restoredNoteIds && it.conversationId in aiConversationIds }
+        val attachmentsJson = entries.requireJsonArray("attachments.json")
+        attachmentsJson.validateAttachmentFiles(restoredFiles.keys)
+        val attachments = attachmentsJson
+            .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")]) }
+            .filter { it.noteId in restoredNoteIds }
+
+        createEmergencyBackupBeforeRestore()
+
+        if (folders.isNotEmpty()) folderDao.upsertAll(folders)
+        if (notes.isNotEmpty()) {
+            noteDao.upsertAll(notes)
+            searchDao.upsertFts(notes.map { NoteFtsEntity(title = it.title, bodyPlainText = it.bodyPlainText) })
+        }
+        if (blocks.isNotEmpty()) blockDao.upsertAll(blocks)
+        if (tags.isNotEmpty()) tagDao.upsertAll(tags)
+        if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
+        if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
+        if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
+        if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
+        if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
+
+        restoredFiles.values.forEach { it.delete() }
+
+        return BackupResult(
+            folderCount = folders.size,
+            noteCount = notes.size,
+            attachmentCount = attachments.size,
+        )
+    }
+
+    private fun JSONObject.toAttachmentEntity(restoredFile: File?): AttachmentEntity {
+        val id = getString("id")
+        val noteId = getString("noteId")
+        validateBackupPathSegment(id)
+        validateBackupPathSegment(noteId)
+        val fileName = getString("fileName").sanitizeBackupFileName().ifBlank { "attachment-$id" }
+        val targetFile = File(context.filesDir, "attachments/$noteId/${id}_$fileName").apply {
+            parentFile?.mkdirs()
+            if (restoredFile != null) {
+                restoredFile.copyTo(this, overwrite = true)
+            }
+        }
+        return AttachmentEntity(
+            id = id,
+            noteId = noteId,
+            fileName = fileName,
+            mimeType = getString("mimeType"),
+            sizeBytes = getLong("sizeBytes"),
+            localPath = targetFile.absolutePath,
+            remoteUrl = optNullableString("remoteUrl"),
+            createdAt = getLong("createdAt"),
+            deletedAt = optNullableLong("deletedAt"),
+        )
+    }
+
+    private suspend fun createEmergencyBackupBeforeRestore() {
+        runCatching {
+            createSafetyBackup("before-restore")
+        }.getOrElse { error ->
+            throw IllegalStateException(
+                "Restore was stopped because My Vault could not create an emergency backup first: ${error.message ?: "Unknown error"}",
+            )
+        }
+    }
+}
+
+private fun validateManifest(manifestText: String?) {
+    val manifest = manifestText?.let { JSONObject(it) }
+        ?: error("Selected file is not a Vault backup")
+    val format = manifest.optString("format")
+    val version = manifest.optInt("version", -1)
+    if (format != "myvault-backup") {
+        error("Selected file is not a Vault backup")
+    }
+    if (version != 1) {
+        error("This backup version is not supported")
+    }
+}
+
+private fun validateAttachmentEntryName(attachmentId: String) {
+    if (attachmentId.isBlank() || attachmentId.contains("/") || attachmentId.contains("..")) {
+        error("Backup contains an invalid attachment file")
+    }
+}
+
+private fun validateBackupPathSegment(value: String) {
+    if (value.isBlank() || value.contains("/") || value.contains("\\") || value.contains("..")) {
+        error("Backup contains an invalid file path")
+    }
+}
+
+data class BackupResult(
+    val folderCount: Int,
+    val noteCount: Int,
+    val attachmentCount: Int,
+)
+
+data class BackupVerificationResult(
+    val valid: Boolean,
+    val message: String,
+)
+
+private fun manifestJson(): JSONObject =
+    JSONObject()
+        .put("format", "myvault-backup")
+        .put("version", 1)
+        .put("createdAt", System.currentTimeMillis())
+
+private fun ZipOutputStream.writeJson(name: String, json: Any) {
+    putNextEntry(ZipEntry(name))
+    write(json.toString().toByteArray(Charsets.UTF_8))
+    closeEntry()
+}
+
+private fun AttachmentEntity.backupFileEntry(): String = "files/$id"
+
+private fun AttachmentEntity.toBackupJson(): JSONObject =
+    toJson().put("fileEntry", backupFileEntry())
+
+private fun FolderEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("parentId", parentId)
+        .put("name", name)
+        .put("orderIndex", orderIndex)
+        .put("isFavourite", isFavourite)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+        .put("deletedAt", deletedAt)
+
+private fun NoteEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("folderId", folderId)
+        .put("title", title)
+        .put("bodyPlainText", bodyPlainText)
+        .put("isPinned", isPinned)
+        .put("isFavourite", isFavourite)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+        .put("deletedAt", deletedAt)
+
+private fun BlockEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("noteId", noteId)
+        .put("type", type)
+        .put("content", content)
+        .put("orderIndex", orderIndex)
+
+private fun NoteTableEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("noteId", noteId)
+        .put("rowCount", rowCount)
+        .put("columnCount", columnCount)
+        .put("cellsJson", cellsJson)
+        .put("orderIndex", orderIndex)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+private fun AiConversationEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("noteId", noteId)
+        .put("title", title)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+private fun AiMessageEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("conversationId", conversationId)
+        .put("noteId", noteId)
+        .put("role", role)
+        .put("content", content)
+        .put("action", action)
+        .put("provider", provider)
+        .put("model", model)
+        .put("selectedTextContext", selectedTextContext)
+        .put("createdAt", createdAt)
+
+private fun TagEntity.toJson(): JSONObject =
+    JSONObject().put("name", name)
+
+private fun NoteTagCrossRef.toJson(): JSONObject =
+    JSONObject()
+        .put("noteId", noteId)
+        .put("tagName", tagName)
+
+private fun AttachmentEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("noteId", noteId)
+        .put("fileName", fileName)
+        .put("mimeType", mimeType)
+        .put("sizeBytes", sizeBytes)
+        .put("localPath", localPath)
+        .put("remoteUrl", remoteUrl)
+        .put("createdAt", createdAt)
+        .put("deletedAt", deletedAt)
+
+private fun JSONObject.toFolderEntity(): FolderEntity =
+    FolderEntity(
+        id = getString("id"),
+        parentId = optNullableString("parentId"),
+        name = getString("name"),
+        orderIndex = getInt("orderIndex"),
+        isFavourite = getBoolean("isFavourite"),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+        deletedAt = optNullableLong("deletedAt"),
+    )
+
+private fun JSONObject.toNoteEntity(): NoteEntity =
+    NoteEntity(
+        id = getString("id"),
+        folderId = optNullableString("folderId"),
+        title = getString("title"),
+        bodyPlainText = getString("bodyPlainText"),
+        isPinned = getBoolean("isPinned"),
+        isFavourite = getBoolean("isFavourite"),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+        deletedAt = optNullableLong("deletedAt"),
+    )
+
+private fun JSONObject.toBlockEntity(): BlockEntity =
+    BlockEntity(
+        id = getString("id"),
+        noteId = getString("noteId"),
+        type = getString("type"),
+        content = getString("content"),
+        orderIndex = getInt("orderIndex"),
+    )
+
+private fun JSONObject.toNoteTableEntity(): NoteTableEntity =
+    NoteTableEntity(
+        id = getString("id"),
+        noteId = getString("noteId"),
+        rowCount = getInt("rowCount").coerceIn(1, 10),
+        columnCount = getInt("columnCount").coerceIn(1, 10),
+        cellsJson = getString("cellsJson")
+            .toCellsArray(getInt("rowCount").coerceIn(1, 10), getInt("columnCount").coerceIn(1, 10))
+            .toString(),
+        orderIndex = getInt("orderIndex"),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toAiConversationEntity(): AiConversationEntity =
+    AiConversationEntity(
+        id = getString("id"),
+        noteId = getString("noteId"),
+        title = optString("title").ifBlank { "Ask AI" },
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toAiMessageEntity(): AiMessageEntity =
+    AiMessageEntity(
+        id = getString("id"),
+        conversationId = getString("conversationId"),
+        noteId = getString("noteId"),
+        role = getString("role"),
+        content = getString("content"),
+        action = optNullableString("action"),
+        provider = optNullableString("provider"),
+        model = optNullableString("model"),
+        selectedTextContext = optNullableString("selectedTextContext"),
+        createdAt = getLong("createdAt"),
+    )
+
+private fun JSONObject.toTagEntity(): TagEntity =
+    TagEntity(name = getString("name"))
+
+private fun JSONObject.toNoteTagCrossRef(): NoteTagCrossRef =
+    NoteTagCrossRef(
+        noteId = getString("noteId"),
+        tagName = getString("tagName"),
+    )
+
+private fun String.toJsonArray(): JSONArray =
+    if (isBlank()) JSONArray() else JSONArray(this)
+
+private fun Map<String, String>.requireJsonArray(name: String): JSONArray =
+    get(name)?.toJsonArray() ?: error("Backup is missing $name")
+
+private fun Map<String, String>.optionalJsonArray(name: String): JSONArray =
+    get(name)?.toJsonArray() ?: JSONArray()
+
+private fun <T> List<T>.toJsonArray(transform: (T) -> JSONObject): JSONArray =
+    JSONArray().also { array -> forEach { array.put(transform(it)) } }
+
+private fun <T> JSONArray.mapJson(transform: (JSONObject) -> T): List<T> =
+    List(length()) { index -> transform(getJSONObject(index)) }
+
+private fun JSONObject.optNullableString(name: String): String? =
+    if (isNull(name)) null else optString(name)
+
+private fun JSONObject.optNullableLong(name: String): Long? =
+    if (!has(name) || isNull(name)) null else optLong(name)
+
+private fun JSONArray.validateAttachmentFiles(restoredFileIds: Set<String>) {
+    mapJson { it }.forEach { attachment ->
+        val entry = attachment.optString("fileEntry")
+        if (entry.isNotBlank()) {
+            val id = attachment.getString("id")
+            validateAttachmentEntryName(id)
+            check(id in restoredFileIds) {
+                "Backup is missing an attachment file: ${attachment.getString("fileName")}"
+            }
+        }
+    }
+}
+
+private fun String.sanitizeBackupFileName(): String =
+    replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+
+private fun String.toCellsArray(rows: Int, columns: Int): JSONArray {
+    val parsed = JSONArray(this)
+    return JSONArray().also { outer ->
+        repeat(rows) { row ->
+            val parsedRow = parsed.optJSONArray(row)
+            outer.put(JSONArray().also { inner ->
+                repeat(columns) { column ->
+                    inner.put(parsedRow?.optString(column).orEmpty())
+                }
+            })
+        }
+    }
+}
