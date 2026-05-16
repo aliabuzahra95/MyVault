@@ -55,6 +55,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -97,7 +98,8 @@ fun LibraryScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
-    onImportFile: (Uri) -> Unit,
+    onImportFiles: (List<Uri>) -> Unit,
+    onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
@@ -122,7 +124,8 @@ fun LibraryScreen(
         onMoveFolder = onMoveFolder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
-        onImportFile = onImportFile,
+        onImportFiles = onImportFiles,
+        onDismissImportMessage = onDismissImportMessage,
         onRenameFile = onRenameFile,
         onMoveFile = onMoveFile,
         onSetFilePinned = onSetFilePinned,
@@ -147,7 +150,8 @@ fun LibraryFolderScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
-    onImportFile: (Uri) -> Unit,
+    onImportFiles: (List<Uri>) -> Unit,
+    onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
@@ -169,7 +173,8 @@ fun LibraryFolderScreen(
         onMoveFolder = onMoveFolder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
-        onImportFile = onImportFile,
+        onImportFiles = onImportFiles,
+        onDismissImportMessage = onDismissImportMessage,
         onRenameFile = onRenameFile,
         onMoveFile = onMoveFile,
         onSetFilePinned = onSetFilePinned,
@@ -194,7 +199,8 @@ private fun LibraryArchiveScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
-    onImportFile: (Uri) -> Unit,
+    onImportFiles: (List<Uri>) -> Unit,
+    onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
@@ -219,8 +225,8 @@ private fun LibraryArchiveScreen(
     var fileRenameDialogOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     val hierarchyViewMode = LibraryViewMode.Compact
-    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(onImportFile)
+    val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) onImportFiles(uris)
     }
     val actions = remember {
         listOf(
@@ -414,7 +420,7 @@ private fun LibraryArchiveScreen(
                 onActionClick = { action ->
                     fabExpanded = false
                     when (action.label) {
-                        "Import File" -> importPicker.launch(arrayOf("*/*"))
+                        "Import File" -> multiImportPicker.launch(arrayOf("*/*"))
                         "New Library Folder" -> {
                             folderName = ""
                             folderDialog = LibraryFolderDialog.Create(parentId = currentFolderId)
@@ -450,6 +456,38 @@ private fun LibraryArchiveScreen(
             dismissButton = {
                 TextButton(onClick = { quickBackupConfirmOpen = false }) {
                     Text("Cancel")
+                }
+            },
+        )
+    }
+
+    if (uiState.importing || !uiState.importMessage.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!uiState.importing) onDismissImportMessage()
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+            title = { Text(if (uiState.importing) "Importing files" else "Library import") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                ) {
+                    if (uiState.importing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                    Text(
+                        text = uiState.importMessage ?: "Importing selected files...",
+                        color = colors.textSecondary,
+                    )
+                }
+            },
+            confirmButton = {
+                if (!uiState.importing) {
+                    TextButton(onClick = onDismissImportMessage) {
+                        Text("OK")
+                    }
                 }
             },
         )

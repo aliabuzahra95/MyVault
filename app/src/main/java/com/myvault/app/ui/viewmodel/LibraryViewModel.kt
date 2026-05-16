@@ -19,8 +19,10 @@ import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.toRelativeTime
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -80,6 +82,8 @@ data class LibraryUiState(
     val allFolders: List<LibraryFolderItem> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val viewMode: LibraryViewMode = LibraryViewMode.List,
+    val importing: Boolean = false,
+    val importMessage: String? = null,
 )
 
 @HiltViewModel
@@ -92,19 +96,25 @@ class LibraryViewModel @Inject constructor(
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
+    private val importState = MutableStateFlow(LibraryImportState())
     private val pdfLayer = combine(
         pdfReadingProgressRepository.observeAll(),
         pdfAnnotationRepository.observeAll(),
     ) { progress, annotations -> progress to annotations }
+    private val preferencesAndImportState = combine(
+        vaultPreferences.userPreferences,
+        importState,
+    ) { preferences, importing -> preferences to importing }
 
     val uiState: StateFlow<LibraryUiState> = combine(
         folderRepository.observeLibraryFolders(),
         attachmentRepository.observeLibraryFiles(),
         if (folderId == null) attachmentRepository.observeRootLibraryFiles() else attachmentRepository.observeForLibraryFolder(folderId),
         pdfLayer,
-        vaultPreferences.userPreferences,
-    ) { folders, allFiles, currentFiles, pdfLayer, preferences ->
+        preferencesAndImportState,
+    ) { folders, allFiles, currentFiles, pdfLayer, preferencesAndImporting ->
         val (progress, annotations) = pdfLayer
+        val (preferences, importing) = preferencesAndImporting
         val libraryFolders = folders.filter { it.mode == FOLDER_MODE_LIBRARY }
         val progressByAttachment = progress.associateBy { it.attachmentId }
         val filesByFolder = allFiles
@@ -158,6 +168,8 @@ class LibraryViewModel @Inject constructor(
                 .map { it.toLibraryFolderItem(libraryFolders, fileCounts, filesByFolder, depth = 0) },
             expandedFolderIds = preferences.expandedFolderIds,
             viewMode = LibraryViewMode.fromStoredValue(preferences.libraryViewMode),
+            importing = importing.active,
+            importMessage = importing.message,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
@@ -195,6 +207,25 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             onImported(attachmentRepository.importLibraryDocument(folderId, uri))
         }
+    }
+
+    fun importFiles(uris: List<Uri>, onImported: (String) -> Unit = {}) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            importState.value = LibraryImportState(active = true, message = "Importing ${uris.size} file${if (uris.size == 1) "" else "s"}...")
+            val result = attachmentRepository.importLibraryDocuments(folderId, uris)
+            result.importedIds.firstOrNull()?.let(onImported)
+            val message = when {
+                result.importedIds.isEmpty() && result.failedCount > 0 -> "Import failed for ${result.failedCount} file${if (result.failedCount == 1) "" else "s"}."
+                result.failedCount > 0 -> "Imported ${result.importedIds.size}; skipped ${result.failedCount}."
+                else -> "Imported ${result.importedIds.size} file${if (result.importedIds.size == 1) "" else "s"}."
+            }
+            importState.value = LibraryImportState(active = false, message = message)
+        }
+    }
+
+    fun clearImportMessage() {
+        importState.update { it.copy(message = null) }
     }
 
     fun renameFile(fileId: String, name: String) {
@@ -266,3 +297,8 @@ private fun PdfAnnotationEntity.toLibraryAnnotationItem(attachment: AttachmentEn
     )
 
 private fun Int?.orZero(): Int = this ?: 0
+
+private data class LibraryImportState(
+    val active: Boolean = false,
+    val message: String? = null,
+)

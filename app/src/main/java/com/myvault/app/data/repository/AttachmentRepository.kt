@@ -118,6 +118,21 @@ class AttachmentRepository @Inject constructor(
         id
     }
 
+    suspend fun importLibraryDocuments(folderId: String?, uris: List<Uri>): LibraryImportResult = withContext(Dispatchers.IO) {
+        var failedCount = 0
+        val importedIds = mutableListOf<String>()
+        uris.distinct().forEach { uri ->
+            runCatching {
+                importLibraryDocument(folderId, uri)
+            }.onSuccess { id ->
+                importedIds += id
+            }.onFailure {
+                failedCount += 1
+            }
+        }
+        LibraryImportResult(importedIds = importedIds, failedCount = failedCount)
+    }
+
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
         pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
@@ -139,6 +154,11 @@ class AttachmentRepository @Inject constructor(
         attachmentDao.updatePinned(attachmentId, pinned)
     }
 }
+
+data class LibraryImportResult(
+    val importedIds: List<String>,
+    val failedCount: Int,
+)
 
 private fun android.content.ContentResolver.displayName(uri: Uri): String =
     query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

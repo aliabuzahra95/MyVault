@@ -217,11 +217,10 @@ fun VaultNavHost(
                         onMoveFolder = libraryViewModel::moveFolder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
                         onFolderExpandedChange = libraryViewModel::setFolderExpanded,
-                        onImportFile = { uri ->
-                            libraryViewModel.importFile(uri) { attachmentId ->
-                                navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
-                            }
+                        onImportFiles = { uris ->
+                            libraryViewModel.importFiles(uris)
                         },
+                        onDismissImportMessage = libraryViewModel::clearImportMessage,
                         onRenameFile = libraryViewModel::renameFile,
                         onMoveFile = libraryViewModel::moveFile,
                         onSetFilePinned = libraryViewModel::setFilePinned,
@@ -342,11 +341,10 @@ fun VaultNavHost(
                 onMoveFolder = viewModel::moveFolder,
                 onDeleteFolder = viewModel::deleteFolder,
                 onFolderExpandedChange = viewModel::setFolderExpanded,
-                onImportFile = { uri ->
-                    viewModel.importFile(uri) { attachmentId ->
-                        navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
-                    }
+                onImportFiles = { uris ->
+                    viewModel.importFiles(uris)
                 },
+                onDismissImportMessage = viewModel::clearImportMessage,
                 onRenameFile = viewModel::renameFile,
                 onMoveFile = viewModel::moveFile,
                 onSetFilePinned = viewModel::setFilePinned,
