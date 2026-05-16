@@ -281,13 +281,13 @@ fun HomeScreen(
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
                     SectionLabel(
                         label = "Pinned",
                         actionLabel = if (uiState.pinnedNotes.isNotEmpty()) "View all" else null,
                         onActionClick = { pinnedOverflowOpen = true },
                     )
-                    Spacer(modifier = Modifier.height(5.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     if (uiState.pinnedNotes.isEmpty()) {
                         EmptyHomeState(
                             icon = Icons.Rounded.PushPin,
