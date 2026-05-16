@@ -7,8 +7,10 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,10 +33,12 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
@@ -63,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
@@ -80,9 +87,15 @@ import java.io.File
 fun AttachmentViewerScreen(
     attachment: AttachmentEntity?,
     pdfProgress: PdfReadingProgressEntity? = null,
+    pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
+    initialPageIndex: Int = -1,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
     onPdfProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit = { _, _ -> },
+    onAddPdfHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String) -> Unit = { _, _, _, _, _, _, _ -> },
+    onUpdatePdfHighlightColor: (annotationId: String, color: String) -> Unit = { _, _ -> },
+    onUpdatePdfAnnotationNote: (annotationId: String, noteText: String) -> Unit = { _, _ -> },
+    onDeletePdfAnnotation: (annotationId: String) -> Unit = {},
     onDeleteAttachment: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
@@ -117,7 +130,13 @@ fun AttachmentViewerScreen(
                     attachment.mimeType == "application/pdf" -> PdfAttachmentViewer(
                         attachment = attachment,
                         progress = pdfProgress,
+                        annotations = pdfAnnotations,
+                        initialPageIndex = initialPageIndex,
                         onProgressChanged = onPdfProgressChanged,
+                        onAddHighlight = onAddPdfHighlight,
+                        onUpdateHighlightColor = onUpdatePdfHighlightColor,
+                        onUpdateAnnotationNote = onUpdatePdfAnnotationNote,
+                        onDeleteAnnotation = onDeletePdfAnnotation,
                     )
                     attachment.mimeType.startsWith("image/") -> ImageAttachmentViewer(attachment)
                     else -> UnsupportedAttachmentViewer(attachment)
@@ -202,14 +221,27 @@ private fun ImageAttachmentViewer(attachment: AttachmentEntity) {
 private fun PdfAttachmentViewer(
     attachment: AttachmentEntity,
     progress: PdfReadingProgressEntity?,
+    annotations: List<PdfAnnotationEntity>,
+    initialPageIndex: Int,
     onProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit,
+    onAddHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String) -> Unit,
+    onUpdateHighlightColor: (annotationId: String, color: String) -> Unit,
+    onUpdateAnnotationNote: (annotationId: String, noteText: String) -> Unit,
+    onDeleteAnnotation: (annotationId: String) -> Unit,
 ) {
     var pageCount by remember(attachment.localPath) { mutableIntStateOf(progress?.pageCount ?: 0) }
     var error by remember(attachment.localPath) { mutableStateOf<String?>(null) }
     var zoom by remember(attachment.id) { mutableFloatStateOf(1f) }
     var panOffset by remember(attachment.id) { mutableStateOf(Offset.Zero) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = progress?.pageIndex?.coerceAtLeast(0) ?: 0)
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialPageIndex.takeIf { it >= 0 } ?: progress?.pageIndex?.coerceAtLeast(0) ?: 0,
+    )
     var restoredProgressPage by remember(attachment.id) { mutableStateOf(false) }
+    var highlighterMode by remember(attachment.id) { mutableStateOf(false) }
+    var highlightColor by remember(attachment.id) { mutableStateOf("yellow") }
+    var selectedAnnotation by remember { mutableStateOf<PdfAnnotationEntity?>(null) }
+    var noteDialogAnnotation by remember { mutableStateOf<PdfAnnotationEntity?>(null) }
+    var noteDraft by remember { mutableStateOf("") }
     val visiblePage by remember {
         derivedStateOf { listState.firstVisibleItemIndex.coerceAtLeast(0) }
     }
@@ -233,7 +265,8 @@ private fun PdfAttachmentViewer(
 
     LaunchedEffect(pageCount, progress?.pageIndex, attachment.id) {
         if (pageCount > 0 && !restoredProgressPage) {
-            val targetPage = progress?.pageIndex?.coerceIn(0, pageCount - 1)
+            val targetPage = initialPageIndex.takeIf { it >= 0 }?.coerceIn(0, pageCount - 1)
+                ?: progress?.pageIndex?.coerceIn(0, pageCount - 1)
             if (targetPage != null && targetPage != listState.firstVisibleItemIndex) {
                 listState.scrollToItem(targetPage)
             }
@@ -261,6 +294,9 @@ private fun PdfAttachmentViewer(
                             pageIndex = pageIndex,
                             zoom = zoom,
                             panOffset = panOffset,
+                            highlighterMode = highlighterMode,
+                            highlightColor = highlightColor,
+                            annotations = annotations.filter { it.pageIndex == pageIndex },
                             onPanChange = { delta ->
                                 panOffset = if (zoom <= 1.01f) {
                                     Offset.Zero
@@ -273,6 +309,18 @@ private fun PdfAttachmentViewer(
                                     )
                                 }
                             },
+                            onAddHighlight = { left, top, right, bottom ->
+                                onAddHighlight(
+                                    attachment.libraryFolderId,
+                                    pageIndex,
+                                    left,
+                                    top,
+                                    right,
+                                    bottom,
+                                    highlightColor,
+                                )
+                            },
+                            onAnnotationTap = { selectedAnnotation = it },
                         )
                     }
                 }
@@ -282,6 +330,10 @@ private fun PdfAttachmentViewer(
                 )
                 PdfZoomControls(
                     zoom = zoom,
+                    highlighterMode = highlighterMode,
+                    highlightColor = highlightColor,
+                    onHighlighterModeChange = { highlighterMode = it },
+                    onHighlightColorChange = { highlightColor = it },
                     onZoomIn = { zoom = (zoom + 0.25f).coerceAtMost(2.5f) },
                     onZoomOut = {
                         zoom = (zoom - 0.25f).coerceAtLeast(1f)
@@ -294,6 +346,56 @@ private fun PdfAttachmentViewer(
                 )
             }
         }
+    }
+
+    selectedAnnotation?.let { annotation ->
+        PdfAnnotationActionsDialog(
+            annotation = annotation,
+            onDismiss = { selectedAnnotation = null },
+            onColorSelected = { color ->
+                onUpdateHighlightColor(annotation.id, color)
+                selectedAnnotation = null
+            },
+            onAddNote = {
+                noteDraft = annotation.noteText.orEmpty()
+                noteDialogAnnotation = annotation
+                selectedAnnotation = null
+            },
+            onDelete = {
+                onDeleteAnnotation(annotation.id)
+                selectedAnnotation = null
+            },
+        )
+    }
+
+    noteDialogAnnotation?.let { annotation ->
+        AlertDialog(
+            onDismissRequest = { noteDialogAnnotation = null },
+            title = { Text("Annotation note") },
+            text = {
+                OutlinedTextField(
+                    value = noteDraft,
+                    onValueChange = { noteDraft = it },
+                    minLines = 4,
+                    label = { Text("Quick note") },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onUpdateAnnotationNote(annotation.id, noteDraft)
+                        noteDialogAnnotation = null
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { noteDialogAnnotation = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
@@ -328,6 +430,10 @@ private fun BoxScope.PdfReadingProgressOverlay(
 @Composable
 private fun BoxScope.PdfZoomControls(
     zoom: Float,
+    highlighterMode: Boolean,
+    highlightColor: String,
+    onHighlighterModeChange: (Boolean) -> Unit,
+    onHighlightColorChange: (String) -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onReset: () -> Unit,
@@ -342,20 +448,45 @@ private fun BoxScope.PdfZoomControls(
         border = BorderStroke(1.dp, colors.border),
         shadowElevation = 2.dp,
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.End,
         ) {
-            IconBtn(Icons.Rounded.Remove, "Zoom out", onClick = onZoomOut)
-            Text(
-                text = "${(zoom * 100).toInt()}%",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                color = colors.textSecondary,
-            )
-            IconBtn(Icons.Rounded.Add, "Zoom in", onClick = onZoomIn)
-            TextButton(onClick = onReset) {
-                Text("Reset")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                TextButton(onClick = { onHighlighterModeChange(!highlighterMode) }) {
+                    Icon(Icons.Rounded.Draw, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text(if (highlighterMode) "Done" else "Highlight")
+                }
+                IconBtn(Icons.Rounded.Remove, "Zoom out", onClick = onZoomOut)
+                Text(
+                    text = "${(zoom * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                    color = colors.textSecondary,
+                )
+                IconBtn(Icons.Rounded.Add, "Zoom in", onClick = onZoomIn)
+                TextButton(onClick = onReset) {
+                    Text("Reset")
+                }
+            }
+            AnimatedVisibility(visible = highlighterMode) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PdfHighlightColors.forEach { color ->
+                        Surface(
+                            onClick = { onHighlightColorChange(color) },
+                            modifier = Modifier.size(24.dp),
+                            shape = VaultShapes.pill,
+                            color = color.toPdfHighlightColor().copy(alpha = if (color == highlightColor) 0.9f else 0.42f),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (color == highlightColor) colors.textSecondary else colors.border,
+                            ),
+                        ) {}
+                    }
+                }
             }
         }
     }
@@ -367,18 +498,25 @@ private fun PdfPageSurface(
     pageIndex: Int,
     zoom: Float,
     panOffset: Offset,
+    highlighterMode: Boolean,
+    highlightColor: String,
+    annotations: List<PdfAnnotationEntity>,
     onPanChange: (Offset) -> Unit,
+    onAddHighlight: (left: Float, top: Float, right: Float, bottom: Float) -> Unit,
+    onAnnotationTap: (PdfAnnotationEntity) -> Unit,
 ) {
-    var bitmap by remember(path, pageIndex) { mutableStateOf<ImageBitmap?>(null) }
+    var renderedPage by remember(path, pageIndex) { mutableStateOf<RenderedPdfPage?>(null) }
     var error by remember(path, pageIndex) { mutableStateOf<String?>(null) }
+    var dragStart by remember(path, pageIndex) { mutableStateOf<Offset?>(null) }
+    var dragEnd by remember(path, pageIndex) { mutableStateOf<Offset?>(null) }
 
     LaunchedEffect(path, pageIndex) {
         val result = renderPdfPage(path, pageIndex)
         result.onSuccess { rendered ->
-            bitmap = rendered.bitmap
+            renderedPage = rendered
             error = null
         }.onFailure {
-            bitmap = null
+            renderedPage = null
             error = it.message ?: "Unable to load page"
         }
     }
@@ -396,14 +534,40 @@ private fun PdfPageSurface(
             shape = RoundedCornerShape(5.dp),
             shadowElevation = 2.dp,
         ) {
-            val loadedBitmap = bitmap
+            val loadedPage = renderedPage
             when {
-                loadedBitmap != null -> Box(
+                loadedPage != null -> Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .aspectRatio(loadedPage.aspectRatio)
                         .clip(RoundedCornerShape(5.dp))
                         .then(
-                            if (zoom > 1.01f) {
+                            if (highlighterMode) {
+                                Modifier.pointerInput(path, pageIndex, zoom, panOffset, highlightColor) {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            dragStart = offset.toPageSpace(size.width.toFloat(), size.height.toFloat(), zoom, panOffset)
+                                            dragEnd = dragStart
+                                        },
+                                        onDragEnd = {
+                                            val start = dragStart
+                                            val end = dragEnd
+                                            if (start != null && end != null) {
+                                                onAddHighlight(start.x, start.y, end.x, end.y)
+                                            }
+                                            dragStart = null
+                                            dragEnd = null
+                                        },
+                                        onDragCancel = {
+                                            dragStart = null
+                                            dragEnd = null
+                                        },
+                                    ) { change, _ ->
+                                        change.consume()
+                                        dragEnd = change.position.toPageSpace(size.width.toFloat(), size.height.toFloat(), zoom, panOffset)
+                                    }
+                                }
+                            } else if (zoom > 1.01f) {
                                 Modifier.pointerInput(path, pageIndex, zoom) {
                                     detectDragGestures { change, dragAmount ->
                                         change.consume()
@@ -413,22 +577,46 @@ private fun PdfPageSurface(
                             } else {
                                 Modifier
                             },
+                        )
+                        .then(
+                            if (!highlighterMode) {
+                                Modifier.pointerInput(path, pageIndex, annotations, zoom, panOffset) {
+                                    detectTapGestures { offset ->
+                                        val point = offset.toPageSpace(size.width.toFloat(), size.height.toFloat(), zoom, panOffset)
+                                        annotations
+                                            .lastOrNull { point.x in it.left..it.right && point.y in it.top..it.bottom }
+                                            ?.let(onAnnotationTap)
+                                    }
+                                }
+                            } else {
+                                Modifier
+                            },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Image(
-                        bitmap = loadedBitmap,
-                        contentDescription = "Page ${pageIndex + 1}",
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .fillMaxSize()
                             .graphicsLayer {
                                 scaleX = zoom
                                 scaleY = zoom
                                 translationX = if (zoom > 1.01f) panOffset.x else 0f
                                 translationY = if (zoom > 1.01f) panOffset.y else 0f
                             },
-                        contentScale = ContentScale.FillWidth,
-                    )
+                    ) {
+                        Image(
+                            bitmap = loadedPage.bitmap,
+                            contentDescription = "Page ${pageIndex + 1}",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds,
+                        )
+                        PdfHighlightOverlay(
+                            annotations = annotations,
+                            draftStart = dragStart,
+                            draftEnd = dragEnd,
+                            draftColor = highlightColor,
+                        )
+                    }
                 }
                 error != null -> AttachmentViewerEmpty(error ?: "Unable to load page")
                 else -> Box(
@@ -471,6 +659,108 @@ private fun UnsupportedAttachmentViewer(attachment: AttachmentEntity) {
             }
         }
     }
+}
+
+@Composable
+private fun PdfHighlightOverlay(
+    annotations: List<PdfAnnotationEntity>,
+    draftStart: Offset?,
+    draftEnd: Offset?,
+    draftColor: String,
+) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        annotations.forEach { annotation ->
+            val color = annotation.color.toPdfHighlightColor()
+            val left = annotation.left * size.width
+            val top = annotation.top * size.height
+            val width = (annotation.right - annotation.left) * size.width
+            val height = (annotation.bottom - annotation.top) * size.height
+            drawRoundRect(
+                color = color.copy(alpha = 0.34f),
+                topLeft = Offset(left, top),
+                size = androidx.compose.ui.geometry.Size(width, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx(), 5.dp.toPx()),
+            )
+            if (!annotation.noteText.isNullOrBlank()) {
+                drawCircle(
+                    color = color.copy(alpha = 0.88f),
+                    radius = 5.dp.toPx(),
+                    center = Offset(left + width - 8.dp.toPx(), top + 8.dp.toPx()),
+                )
+            }
+        }
+        if (draftStart != null && draftEnd != null) {
+            val left = minOf(draftStart.x, draftEnd.x) * size.width
+            val top = minOf(draftStart.y, draftEnd.y) * size.height
+            val width = kotlin.math.abs(draftEnd.x - draftStart.x) * size.width
+            val height = kotlin.math.abs(draftEnd.y - draftStart.y) * size.height
+            drawRoundRect(
+                color = draftColor.toPdfHighlightColor().copy(alpha = 0.28f),
+                topLeft = Offset(left, top),
+                size = androidx.compose.ui.geometry.Size(width, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx(), 5.dp.toPx()),
+            )
+            drawRoundRect(
+                color = draftColor.toPdfHighlightColor().copy(alpha = 0.72f),
+                topLeft = Offset(left, top),
+                size = androidx.compose.ui.geometry.Size(width, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx(), 5.dp.toPx()),
+                style = Stroke(width = 1.dp.toPx()),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PdfAnnotationActionsDialog(
+    annotation: PdfAnnotationEntity,
+    onDismiss: () -> Unit,
+    onColorSelected: (String) -> Unit,
+    onAddNote: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Highlight") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Page ${annotation.pageIndex + 1}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VaultThemeTokens.colors.textMuted,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PdfHighlightColors.forEach { color ->
+                        Surface(
+                            onClick = { onColorSelected(color) },
+                            modifier = Modifier.size(30.dp),
+                            shape = VaultShapes.pill,
+                            color = color.toPdfHighlightColor().copy(alpha = if (annotation.color == color) 0.9f else 0.45f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (annotation.color == color) VaultThemeTokens.colors.textSecondary else VaultThemeTokens.colors.border,
+                            ),
+                        ) {}
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onAddNote) {
+                Text(if (annotation.noteText.isNullOrBlank()) "Add note" else "Edit note")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onDelete) {
+                    Text("Delete")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -541,6 +831,7 @@ private fun AttachmentViewerEmpty(text: String) {
 
 private data class RenderedPdfPage(
     val bitmap: ImageBitmap,
+    val aspectRatio: Float,
 )
 
 private suspend fun loadImageBitmap(path: String): Result<ImageBitmap> = withContext(Dispatchers.IO) {
@@ -579,11 +870,35 @@ private suspend fun renderPdfPage(path: String, pageIndex: Int): Result<Rendered
                     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                     bitmap.eraseColor(android.graphics.Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    RenderedPdfPage(bitmap.asImageBitmap())
+                    RenderedPdfPage(bitmap.asImageBitmap(), width.toFloat() / height.toFloat())
                 }
             }
         }
     }
+}
+
+private val PdfHighlightColors = listOf("yellow", "blue", "green", "red")
+
+private fun String.toPdfHighlightColor(): Color =
+    when (lowercase()) {
+        "blue" -> Color(0xFF5EA2FF)
+        "green" -> Color(0xFF34C759)
+        "red" -> Color(0xFFFF5A5F)
+        else -> Color(0xFFFFD84D)
+    }
+
+private fun Offset.toPageSpace(width: Float, height: Float, zoom: Float, panOffset: Offset): Offset {
+    if (width <= 0f || height <= 0f) return Offset.Zero
+    val center = Offset(width / 2f, height / 2f)
+    val untransformed = if (zoom > 1.01f) {
+        ((this - center - panOffset) / zoom) + center
+    } else {
+        this
+    }
+    return Offset(
+        x = (untransformed.x / width).coerceIn(0f, 1f),
+        y = (untransformed.y / height).coerceIn(0f, 1f),
+    )
 }
 
 private suspend fun readPdfPageCount(path: String): Result<Int> = withContext(Dispatchers.IO) {

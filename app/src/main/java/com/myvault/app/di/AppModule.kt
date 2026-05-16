@@ -9,6 +9,7 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.TagDao
@@ -34,6 +35,7 @@ object AppModule {
                 VaultDatabase.MIGRATION_5_6,
                 VaultDatabase.MIGRATION_6_7,
                 VaultDatabase.MIGRATION_7_8,
+                VaultDatabase.MIGRATION_8_9,
             )
             .build()
 
@@ -63,4 +65,7 @@ object AppModule {
 
     @Provides
     fun providePdfReadingProgressDao(database: VaultDatabase): PdfReadingProgressDao = database.pdfReadingProgressDao()
+
+    @Provides
+    fun providePdfAnnotationDao(database: VaultDatabase): PdfAnnotationDao = database.pdfAnnotationDao()
 }

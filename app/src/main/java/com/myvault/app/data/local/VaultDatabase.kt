@@ -10,6 +10,7 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.TagDao
@@ -22,6 +23,7 @@ import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
+import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.TagEntity
 
@@ -38,8 +40,9 @@ import com.myvault.app.data.local.entity.TagEntity
         AiConversationEntity::class,
         AiMessageEntity::class,
         PdfReadingProgressEntity::class,
+        PdfAnnotationEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -52,6 +55,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun noteTableDao(): NoteTableDao
     abstract fun aiConversationDao(): AiConversationDao
     abstract fun pdfReadingProgressDao(): PdfReadingProgressDao
+    abstract fun pdfAnnotationDao(): PdfAnnotationDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -145,6 +149,29 @@ abstract class VaultDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE attachments ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdf_annotations (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        attachmentId TEXT NOT NULL,
+                        libraryFolderId TEXT,
+                        pageIndex INTEGER NOT NULL,
+                        left REAL NOT NULL,
+                        top REAL NOT NULL,
+                        right REAL NOT NULL,
+                        bottom REAL NOT NULL,
+                        color TEXT NOT NULL,
+                        noteText TEXT,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }

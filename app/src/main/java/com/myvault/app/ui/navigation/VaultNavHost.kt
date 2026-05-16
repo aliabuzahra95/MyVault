@@ -207,6 +207,9 @@ fun VaultNavHost(
                         onAttachmentClick = { attachmentId ->
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                         },
+                        onAnnotationClick = { attachmentId, pageIndex ->
+                            navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
+                        },
                         onCreateFolder = { parentId, name ->
                             libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
@@ -328,6 +331,9 @@ fun VaultNavHost(
                 },
                 onAttachmentClick = { attachmentId ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                },
+                onAnnotationClick = { attachmentId, pageIndex ->
+                    navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
                 },
                 onCreateFolder = { parentId, name ->
                     viewModel.createFolder(parentId = parentId, name = name)
@@ -538,17 +544,30 @@ fun VaultNavHost(
         }
         composable(
             route = VaultDestination.AttachmentViewer.route,
-            arguments = listOf(navArgument("attachmentId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("attachmentId") { type = NavType.StringType },
+                navArgument("page") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                },
+            ),
         ) {
             val context = LocalContext.current
             val viewModel: AttachmentViewerViewModel = hiltViewModel()
             val attachment by viewModel.attachment.collectAsState()
             val pdfProgress by viewModel.pdfProgress.collectAsState()
+            val pdfAnnotations by viewModel.pdfAnnotations.collectAsState()
             AttachmentViewerScreen(
                 attachment = attachment,
                 pdfProgress = pdfProgress,
+                pdfAnnotations = pdfAnnotations,
+                initialPageIndex = viewModel.initialPageIndex,
                 onBackClick = { navController.popBackStack() },
                 onPdfProgressChanged = viewModel::updatePdfProgress,
+                onAddPdfHighlight = viewModel::addPdfHighlight,
+                onUpdatePdfHighlightColor = viewModel::updatePdfHighlightColor,
+                onUpdatePdfAnnotationNote = viewModel::updatePdfAnnotationNote,
+                onDeletePdfAnnotation = viewModel::deletePdfAnnotation,
                 onDeleteAttachment = {
                     viewModel.deleteAttachment {
                         Toast.makeText(context, "Attachment deleted", Toast.LENGTH_SHORT).show()

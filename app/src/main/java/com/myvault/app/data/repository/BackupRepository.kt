@@ -8,6 +8,7 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.TagDao
@@ -20,6 +21,7 @@ import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
+import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.TagEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -48,6 +50,7 @@ class BackupRepository @Inject constructor(
     private val noteTableDao: NoteTableDao,
     private val aiConversationDao: AiConversationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
+    private val pdfAnnotationDao: PdfAnnotationDao,
 ) {
     suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "vault-manual-export-${System.currentTimeMillis()}.vaultbackup")
@@ -125,6 +128,7 @@ class BackupRepository @Inject constructor(
         val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
         val attachmentIds = attachments.map { it.id }.toSet()
         val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in attachmentIds }
+        val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in attachmentIds }
 
         ZipOutputStream(output.buffered()).use { zip ->
             zip.writeJson("manifest.json", manifestJson())
@@ -138,6 +142,7 @@ class BackupRepository @Inject constructor(
             zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
             zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
             zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
+            zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
 
             attachments.forEach { attachment ->
                 val file = File(attachment.localPath)
@@ -184,6 +189,7 @@ class BackupRepository @Inject constructor(
         val aiMessages = entries.optionalJsonArray("ai_messages.json")
         val attachments = entries.requireJsonArray("attachments.json")
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
+        val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
         entries.requireJsonArray("folders.json")
         entries.requireJsonArray("tags.json")
         entries.requireJsonArray("note_tags.json")
@@ -263,6 +269,18 @@ class BackupRepository @Inject constructor(
                 "Backup contains PDF progress without a matching attachment."
             }
         }
+        List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index) }.forEach { annotation ->
+            check(annotation.getString("attachmentId") in attachmentIds) {
+                "Backup contains a PDF annotation without a matching attachment."
+            }
+            val left = annotation.getDouble("left")
+            val top = annotation.getDouble("top")
+            val right = annotation.getDouble("right")
+            val bottom = annotation.getDouble("bottom")
+            check(left in 0.0..1.0 && top in 0.0..1.0 && right in 0.0..1.0 && bottom in 0.0..1.0 && left < right && top < bottom) {
+                "Backup contains an invalid PDF annotation rectangle."
+            }
+        }
 
         return BackupVerificationResult(
             valid = true,
@@ -329,6 +347,13 @@ class BackupRepository @Inject constructor(
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
             .mapJson { it.toPdfReadingProgressEntity() }
             .filter { it.attachmentId in restoredAttachmentIds }
+        val restoredLibraryFolderIds = folders.map { it.id }.toSet()
+        val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
+            .mapJson { it.toPdfAnnotationEntity() }
+            .filter {
+                it.attachmentId in restoredAttachmentIds &&
+                    (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds)
+            }
 
         createEmergencyBackupBeforeRestore()
 
@@ -345,6 +370,7 @@ class BackupRepository @Inject constructor(
         if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
         if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
         if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
+        if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)
 
         restoredFiles.values.forEach { it.delete() }
 
@@ -522,6 +548,21 @@ private fun PdfReadingProgressEntity.toJson(): JSONObject =
         .put("lastOpenedAt", lastOpenedAt)
         .put("updatedAt", updatedAt)
 
+private fun PdfAnnotationEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("attachmentId", attachmentId)
+        .put("libraryFolderId", libraryFolderId)
+        .put("pageIndex", pageIndex)
+        .put("left", left)
+        .put("top", top)
+        .put("right", right)
+        .put("bottom", bottom)
+        .put("color", color)
+        .put("noteText", noteText)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
 private fun TagEntity.toJson(): JSONObject =
     JSONObject().put("name", name)
 
@@ -577,6 +618,22 @@ private fun JSONObject.toPdfReadingProgressEntity(): PdfReadingProgressEntity =
         pageCount = getInt("pageCount"),
         progressPercent = optDouble("progressPercent", 0.0).toFloat(),
         lastOpenedAt = getLong("lastOpenedAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toPdfAnnotationEntity(): PdfAnnotationEntity =
+    PdfAnnotationEntity(
+        id = getString("id"),
+        attachmentId = getString("attachmentId"),
+        libraryFolderId = optNullableString("libraryFolderId"),
+        pageIndex = getInt("pageIndex").coerceAtLeast(0),
+        left = optDouble("left", 0.0).toFloat().coerceIn(0f, 1f),
+        top = optDouble("top", 0.0).toFloat().coerceIn(0f, 1f),
+        right = optDouble("right", 0.0).toFloat().coerceIn(0f, 1f),
+        bottom = optDouble("bottom", 0.0).toFloat().coerceIn(0f, 1f),
+        color = optString("color").ifBlank { "yellow" },
+        noteText = optNullableString("noteText"),
+        createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
     )
 

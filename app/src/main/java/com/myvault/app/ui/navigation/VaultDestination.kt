@@ -22,8 +22,9 @@ sealed class VaultDestination(val route: String, val label: String) {
             return "ask-ai/$noteId?selectedText=$encoded"
         }
     }
-    data object AttachmentViewer : VaultDestination("attachment/{attachmentId}", "Attachment Viewer") {
-        fun route(attachmentId: String) = "attachment/$attachmentId"
+    data object AttachmentViewer : VaultDestination("attachment/{attachmentId}?page={page}", "Attachment Viewer") {
+        fun route(attachmentId: String, pageIndex: Int? = null) =
+            "attachment/$attachmentId?page=${pageIndex ?: -1}"
     }
     data object Search : VaultDestination("search", "Search")
     data object Attachments : VaultDestination("attachments", "Attachments")

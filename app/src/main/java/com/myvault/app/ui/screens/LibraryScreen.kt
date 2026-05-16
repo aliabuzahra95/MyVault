@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.UploadFile
@@ -79,6 +80,7 @@ import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.ui.viewmodel.LibraryAnnotationItem
 import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.LibraryFolderItem
 import com.myvault.app.ui.viewmodel.LibraryUiState
@@ -89,6 +91,7 @@ fun LibraryScreen(
     uiState: LibraryUiState,
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
+    onAnnotationClick: (String, Int) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -113,6 +116,7 @@ fun LibraryScreen(
         currentFolderId = null,
         onFolderClick = onFolderClick,
         onAttachmentClick = onAttachmentClick,
+        onAnnotationClick = onAnnotationClick,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -137,6 +141,7 @@ fun LibraryFolderScreen(
     onBackClick: () -> Unit,
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
+    onAnnotationClick: (String, Int) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -158,6 +163,7 @@ fun LibraryFolderScreen(
         currentFolderId = folder?.id,
         onFolderClick = onFolderClick,
         onAttachmentClick = onAttachmentClick,
+        onAnnotationClick = onAnnotationClick,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -182,6 +188,7 @@ private fun LibraryArchiveScreen(
     currentFolderId: String?,
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
+    onAnnotationClick: (String, Int) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -367,6 +374,20 @@ private fun LibraryArchiveScreen(
                                 selectedFile = file
                                 fileActionDialogOpen = true
                             },
+                        )
+                    }
+                }
+
+                if (uiState.annotations.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        SectionLabel(label = "Annotations")
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                    items(uiState.annotations, key = { it.id }) { annotation ->
+                        LibraryAnnotationRow(
+                            annotation = annotation,
+                            onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
                         )
                     }
                 }
@@ -597,6 +618,27 @@ private fun LibraryArchiveScreen(
     }
 }
 
+@Composable
+private fun LibraryAnnotationRow(
+    annotation: LibraryAnnotationItem,
+    onClick: () -> Unit,
+) {
+    LibraryHierarchyRow(
+        depth = 0,
+        title = annotation.notePreview.ifBlank { "Annotation" },
+        subtitle = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
+        leading = {
+            Icon(
+                imageVector = Icons.Rounded.StickyNote2,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = annotation.color.toAnnotationColor(),
+            )
+        },
+        onClick = onClick,
+    )
+}
+
 private fun LibraryFileItem.toPinnedCardData(): VaultNoteCardData =
     VaultNoteCardData(
         id = id,
@@ -604,6 +646,14 @@ private fun LibraryFileItem.toPinnedCardData(): VaultNoteCardData =
         meta = meta,
         preview = kind,
     )
+
+private fun String.toAnnotationColor(): Color =
+    when (lowercase()) {
+        "blue" -> Color(0xFF5EA2FF)
+        "green" -> Color(0xFF34C759)
+        "red" -> Color(0xFFFF5A5F)
+        else -> Color(0xFFFFD84D)
+    }
 
 @Composable
 private fun ContinueReadingCard(

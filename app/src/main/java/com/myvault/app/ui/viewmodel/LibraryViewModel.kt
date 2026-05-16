@@ -7,10 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
+import com.myvault.app.data.repository.PdfAnnotationRepository
 import com.myvault.app.data.repository.PdfReadingProgressRepository
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
@@ -58,11 +60,22 @@ data class LibraryFileItem(
     val pinned: Boolean = false,
 )
 
+data class LibraryAnnotationItem(
+    val id: String,
+    val attachmentId: String,
+    val fileName: String,
+    val pageIndex: Int,
+    val color: String,
+    val notePreview: String,
+    val updatedAt: Long,
+)
+
 data class LibraryUiState(
     val currentFolder: FolderEntity? = null,
     val folders: List<LibraryFolderItem> = emptyList(),
     val files: List<LibraryFileItem> = emptyList(),
     val pinnedFiles: List<LibraryFileItem> = emptyList(),
+    val annotations: List<LibraryAnnotationItem> = emptyList(),
     val continueReading: LibraryFileItem? = null,
     val allFolders: List<LibraryFolderItem> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
@@ -75,17 +88,23 @@ class LibraryViewModel @Inject constructor(
     private val folderRepository: FolderRepository,
     private val attachmentRepository: AttachmentRepository,
     private val pdfReadingProgressRepository: PdfReadingProgressRepository,
+    private val pdfAnnotationRepository: PdfAnnotationRepository,
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
+    private val pdfLayer = combine(
+        pdfReadingProgressRepository.observeAll(),
+        pdfAnnotationRepository.observeAll(),
+    ) { progress, annotations -> progress to annotations }
 
     val uiState: StateFlow<LibraryUiState> = combine(
         folderRepository.observeLibraryFolders(),
         attachmentRepository.observeLibraryFiles(),
         if (folderId == null) attachmentRepository.observeRootLibraryFiles() else attachmentRepository.observeForLibraryFolder(folderId),
-        pdfReadingProgressRepository.observeAll(),
+        pdfLayer,
         vaultPreferences.userPreferences,
-    ) { folders, allFiles, currentFiles, progress, preferences ->
+    ) { folders, allFiles, currentFiles, pdfLayer, preferences ->
+        val (progress, annotations) = pdfLayer
         val libraryFolders = folders.filter { it.mode == FOLDER_MODE_LIBRARY }
         val progressByAttachment = progress.associateBy { it.attachmentId }
         val filesByFolder = allFiles
@@ -111,6 +130,8 @@ class LibraryViewModel @Inject constructor(
             .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta })
         val continueReadingItems = (if (folderId == null) allFiles else currentFiles)
             .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+        val currentFileIds = (if (folderId == null) allFiles else currentFiles).map { it.id }.toSet()
+        val attachmentsById = allFiles.associateBy { it.id }
 
         LibraryUiState(
             currentFolder = currentFolder,
@@ -120,6 +141,14 @@ class LibraryViewModel @Inject constructor(
                 .filter { it.isPinned }
                 .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
                 .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
+            annotations = annotations
+                .filter { it.attachmentId in currentFileIds && !it.noteText.isNullOrBlank() }
+                .mapNotNull { annotation ->
+                    attachmentsById[annotation.attachmentId]?.let { attachment ->
+                        annotation.toLibraryAnnotationItem(attachment)
+                    }
+                }
+                .sortedByDescending { it.updatedAt },
             continueReading = continueReadingItems
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
@@ -223,6 +252,17 @@ private fun AttachmentEntity.toLibraryFileItem(progress: PdfReadingProgressEntit
         progressPercent = progress?.progressPercent,
         lastOpenedAt = progress?.lastOpenedAt ?: 0L,
         pinned = isPinned,
+    )
+
+private fun PdfAnnotationEntity.toLibraryAnnotationItem(attachment: AttachmentEntity): LibraryAnnotationItem =
+    LibraryAnnotationItem(
+        id = id,
+        attachmentId = attachmentId,
+        fileName = attachment.fileName,
+        pageIndex = pageIndex,
+        color = color,
+        notePreview = noteText.orEmpty(),
+        updatedAt = updatedAt,
     )
 
 private fun Int?.orZero(): Int = this ?: 0
