@@ -4,12 +4,31 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -25,7 +44,10 @@ import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
+import com.myvault.app.ui.theme.VaultShapes
+import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
+import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.AttachmentsViewModel
 import com.myvault.app.ui.viewmodel.AttachmentViewerViewModel
 import com.myvault.app.ui.viewmodel.FolderViewModel
@@ -33,6 +55,7 @@ import com.myvault.app.ui.viewmodel.HomeViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun VaultNavHost(
@@ -90,74 +113,78 @@ fun VaultNavHost(
                     },
                 )
             }
-            HomeScreen(
-                uiState = homeState,
-                onSearchClick = {},
-                onSearchQueryChange = homeViewModel::setSearchQuery,
-                onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
-                onFolderClick = {},
-                onNoteClick = openNote,
-                onNewNoteClick = { folderId ->
-                    homeViewModel.createNote(folderId = folderId) { noteId ->
-                        navController.navigate(VaultDestination.Editor.route(noteId))
-                    }
-                },
-                onNewFolderClick = { parentId, name ->
-                    homeViewModel.createFolder(parentId = parentId, name = name) { }
-                },
-                onRenameFolderClick = { folderId, name ->
-                    homeViewModel.renameFolder(folderId, name)
-                },
-                onMoveFolderClick = { folderId, parentId ->
-                    homeViewModel.moveFolder(folderId, parentId)
-                },
-                onMoveFolderInOrderClick = { folderId, direction ->
-                    homeViewModel.moveFolderInOrder(folderId, direction)
-                },
-                onFolderExpandedChange = { folderId, expanded ->
-                    homeViewModel.setFolderExpanded(folderId, expanded)
-                },
-                onDeleteFolderClick = { folderId ->
-                    homeViewModel.deleteFolder(folderId)
-                },
-                onRenameNoteClick = { noteId, title ->
-                    homeViewModel.renameNote(noteId, title)
-                },
-                onMoveNoteClick = { noteId, folderId ->
-                    homeViewModel.moveNote(noteId, folderId)
-                },
-                onDeleteNoteClick = { noteId ->
-                    homeViewModel.deleteNote(noteId)
-                },
-                onSetNotePinnedClick = { noteId, pinned ->
-                    homeViewModel.setNotePinned(noteId, pinned)
-                },
-                onSetNoteFavouriteClick = { noteId, favourite ->
-                    homeViewModel.setNoteFavourite(noteId, favourite)
-                },
-                onImportFileClick = { uri ->
-                    homeViewModel.importDocument(uri) { noteId ->
-                        navController.navigate(VaultDestination.Editor.route(noteId))
-                    }
-                },
-                onAttachmentClick = { attachmentId ->
-                    navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
-                },
-                onOpenAttachmentsClick = {
-                    navController.navigate(VaultDestination.Attachments.route)
-                },
-                onThemeClick = {
-                    settingsViewModel.setTheme(
-                        if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+            StudyLibraryPersonalShell(
+                homeContent = {
+                    HomeScreen(
+                        uiState = homeState,
+                        onSearchClick = {},
+                        onSearchQueryChange = homeViewModel::setSearchQuery,
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        onFolderClick = {},
+                        onNoteClick = openNote,
+                        onNewNoteClick = { folderId ->
+                            homeViewModel.createNote(folderId = folderId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
+                        onNewFolderClick = { parentId, name ->
+                            homeViewModel.createFolder(parentId = parentId, name = name) { }
+                        },
+                        onRenameFolderClick = { folderId, name ->
+                            homeViewModel.renameFolder(folderId, name)
+                        },
+                        onMoveFolderClick = { folderId, parentId ->
+                            homeViewModel.moveFolder(folderId, parentId)
+                        },
+                        onMoveFolderInOrderClick = { folderId, direction ->
+                            homeViewModel.moveFolderInOrder(folderId, direction)
+                        },
+                        onFolderExpandedChange = { folderId, expanded ->
+                            homeViewModel.setFolderExpanded(folderId, expanded)
+                        },
+                        onDeleteFolderClick = { folderId ->
+                            homeViewModel.deleteFolder(folderId)
+                        },
+                        onRenameNoteClick = { noteId, title ->
+                            homeViewModel.renameNote(noteId, title)
+                        },
+                        onMoveNoteClick = { noteId, folderId ->
+                            homeViewModel.moveNote(noteId, folderId)
+                        },
+                        onDeleteNoteClick = { noteId ->
+                            homeViewModel.deleteNote(noteId)
+                        },
+                        onSetNotePinnedClick = { noteId, pinned ->
+                            homeViewModel.setNotePinned(noteId, pinned)
+                        },
+                        onSetNoteFavouriteClick = { noteId, favourite ->
+                            homeViewModel.setNoteFavourite(noteId, favourite)
+                        },
+                        onImportFileClick = { uri ->
+                            homeViewModel.importDocument(uri) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
+                        onAttachmentClick = { attachmentId ->
+                            navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                        },
+                        onOpenAttachmentsClick = {
+                            navController.navigate(VaultDestination.Attachments.route)
+                        },
+                        onThemeClick = {
+                            settingsViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            settingsViewModel.uploadCloudBackup {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
+                        dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                     )
                 },
-                onQuickBackupClick = {
-                    settingsViewModel.uploadCloudBackup {
-                        Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-                    }
-                },
-                quickBackupRecommended = preferences.quickBackupRecommended(),
-                dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
             )
         }
         composable(
@@ -416,6 +443,120 @@ fun VaultNavHost(
                 backupMessage = backupMessage,
                 onDismissBackupMessage = { backupMessage = null },
             )
+        }
+    }
+}
+
+private enum class VaultRootMode(val label: String) {
+    Study("Study"),
+    Library("Library"),
+    Personal("Personal"),
+}
+
+@Composable
+private fun StudyLibraryPersonalShell(
+    homeContent: @Composable () -> Unit,
+) {
+    val modes = VaultRootMode.entries
+    val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
+    val scope = rememberCoroutineScope()
+    val colors = VaultThemeTokens.colors
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.bg),
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            key = { page -> modes[page].name },
+        ) { page ->
+            when (modes[page]) {
+                VaultRootMode.Study -> homeContent()
+                VaultRootMode.Library -> LibraryComingSoonScreen()
+                VaultRootMode.Personal -> homeContent()
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = VaultSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            modes.forEachIndexed { index, mode ->
+                val selected = pagerState.currentPage == index
+                RootModePill(
+                    label = mode.label,
+                    selected = selected,
+                    onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RootModePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        color = if (selected) colors.accentSoft else colors.elevated,
+        contentColor = if (selected) colors.accent else colors.textSecondary,
+        shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
+        tonalElevation = if (selected) 2.dp else 0.dp,
+        shadowElevation = if (selected) 5.dp else 2.dp,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+        )
+    }
+}
+
+@Composable
+private fun LibraryComingSoonScreen() {
+    val colors = VaultThemeTokens.colors
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.bg)
+            .padding(VaultSpacing.screen),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            color = colors.surface,
+            shape = VaultShapes.xl,
+            border = BorderStroke(1.dp, colors.border),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = VaultSpacing.xl, vertical = VaultSpacing.xxl),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            ) {
+                Text(
+                    text = "Library coming soon",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                )
+                Text(
+                    text = "Books, PDFs, files, reading progress, and archives will appear here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary,
+                )
+            }
         }
     }
 }
