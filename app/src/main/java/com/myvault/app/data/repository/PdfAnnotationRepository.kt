@@ -44,6 +44,8 @@ class PdfAnnotationRepository @Inject constructor(
                 bottom = normalizedBottom,
                 color = color,
                 noteText = null,
+                displayTitle = null,
+                displayFolderId = libraryFolderId,
                 createdAt = now,
                 updatedAt = now,
             ),
@@ -58,6 +60,23 @@ class PdfAnnotationRepository @Inject constructor(
     suspend fun updateNote(id: String, noteText: String) {
         if (id.isBlank()) return
         annotationDao.updateNote(id, noteText.trim().ifBlank { null }, System.currentTimeMillis())
+    }
+
+    suspend fun updateDisplayTitle(id: String, displayTitle: String) {
+        if (id.isBlank()) return
+        annotationDao.updateDisplayTitle(id, displayTitle.trim().ifBlank { null }, System.currentTimeMillis())
+    }
+
+    suspend fun updateDisplayFolder(id: String, folderId: String?) {
+        if (id.isBlank()) return
+        annotationDao.updateDisplayFolder(id, folderId, System.currentTimeMillis())
+    }
+
+    suspend fun deleteNoteOnly(id: String) {
+        if (id.isBlank()) return
+        val now = System.currentTimeMillis()
+        annotationDao.updateNote(id, null, now)
+        annotationDao.updateDisplayTitle(id, null, now)
     }
 
     suspend fun delete(id: String) {

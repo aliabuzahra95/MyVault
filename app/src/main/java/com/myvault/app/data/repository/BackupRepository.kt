@@ -291,6 +291,14 @@ class BackupRepository @Inject constructor(
             check(annotation.getString("attachmentId") in activeAttachmentIds) {
                 "Backup contains a PDF annotation without a matching attachment."
             }
+            val sourceFolderId = annotation.optNullableString("libraryFolderId")
+            val displayFolderId = annotation.optNullableString("displayFolderId")
+            check(sourceFolderId == null || sourceFolderId in folderIds) {
+                "Backup contains a PDF annotation source folder without a matching folder."
+            }
+            check(displayFolderId == null || displayFolderId in folderIds) {
+                "Backup contains a PDF annotation display folder without a matching folder."
+            }
             val left = annotation.getDouble("left")
             val top = annotation.getDouble("top")
             val right = annotation.getDouble("right")
@@ -371,7 +379,8 @@ class BackupRepository @Inject constructor(
             .mapJson { it.toPdfAnnotationEntity() }
             .filter {
                 it.attachmentId in activeRestoredAttachmentIds &&
-                    (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds)
+                    (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds) &&
+                    (it.displayFolderId == null || it.displayFolderId in restoredLibraryFolderIds)
             }
 
         createEmergencyBackupBeforeRestore()
@@ -610,6 +619,8 @@ private fun PdfAnnotationEntity.toJson(): JSONObject =
         .put("bottom", bottom)
         .put("color", color)
         .put("noteText", noteText)
+        .put("displayTitle", displayTitle)
+        .put("displayFolderId", displayFolderId)
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
@@ -683,6 +694,8 @@ private fun JSONObject.toPdfAnnotationEntity(): PdfAnnotationEntity =
         bottom = optDouble("bottom", 0.0).toFloat().coerceIn(0f, 1f),
         color = optString("color").ifBlank { "yellow" },
         noteText = optNullableString("noteText"),
+        displayTitle = optNullableString("displayTitle"),
+        displayFolderId = optNullableString("displayFolderId") ?: optNullableString("libraryFolderId"),
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
     )

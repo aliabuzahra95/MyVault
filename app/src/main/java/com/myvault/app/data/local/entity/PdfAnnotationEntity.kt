@@ -15,6 +15,8 @@ data class PdfAnnotationEntity(
     val bottom: Float,
     val color: String,
     val noteText: String?,
+    val displayTitle: String? = null,
+    val displayFolderId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
 )

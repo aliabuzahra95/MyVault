@@ -68,6 +68,8 @@ data class LibraryAnnotationItem(
     val fileName: String,
     val pageIndex: Int,
     val color: String,
+    val displayTitle: String?,
+    val displayFolderId: String?,
     val notePreview: String,
     val updatedAt: Long,
 )
@@ -152,7 +154,15 @@ class LibraryViewModel @Inject constructor(
                 .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
                 .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
             annotations = annotations
-                .filter { it.attachmentId in currentFileIds && !it.noteText.isNullOrBlank() }
+                .filter {
+                    !it.noteText.isNullOrBlank() &&
+                        if (folderId == null) {
+                            it.displayFolderId == null || it.attachmentId in currentFileIds
+                        } else {
+                            it.displayFolderId == folderId ||
+                                (it.displayFolderId == null && it.attachmentId in currentFileIds)
+                        }
+                }
                 .mapNotNull { annotation ->
                     attachmentsById[annotation.attachmentId]?.let { attachment ->
                         annotation.toLibraryAnnotationItem(attachment)
@@ -240,6 +250,22 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { attachmentRepository.setPinned(fileId, pinned) }
     }
 
+    fun renameAnnotation(annotationId: String, title: String) {
+        viewModelScope.launch { pdfAnnotationRepository.updateDisplayTitle(annotationId, title) }
+    }
+
+    fun moveAnnotation(annotationId: String, folderId: String?) {
+        viewModelScope.launch { pdfAnnotationRepository.updateDisplayFolder(annotationId, folderId) }
+    }
+
+    fun deleteAnnotationNote(annotationId: String) {
+        viewModelScope.launch { pdfAnnotationRepository.deleteNoteOnly(annotationId) }
+    }
+
+    fun deleteAnnotation(annotationId: String) {
+        viewModelScope.launch { pdfAnnotationRepository.delete(annotationId) }
+    }
+
     fun deleteFile(fileId: String) {
         viewModelScope.launch { attachmentRepository.deleteAttachment(fileId) }
     }
@@ -292,6 +318,8 @@ private fun PdfAnnotationEntity.toLibraryAnnotationItem(attachment: AttachmentEn
         fileName = attachment.fileName,
         pageIndex = pageIndex,
         color = color,
+        displayTitle = displayTitle,
+        displayFolderId = displayFolderId,
         notePreview = noteText.orEmpty(),
         updatedAt = updatedAt,
     )

@@ -210,6 +210,10 @@ fun VaultNavHost(
                         onAnnotationClick = { attachmentId, pageIndex ->
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
                         },
+                        onRenameAnnotation = libraryViewModel::renameAnnotation,
+                        onMoveAnnotation = libraryViewModel::moveAnnotation,
+                        onDeleteAnnotationNote = libraryViewModel::deleteAnnotationNote,
+                        onDeleteAnnotation = libraryViewModel::deleteAnnotation,
                         onCreateFolder = { parentId, name ->
                             libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
@@ -334,6 +338,10 @@ fun VaultNavHost(
                 onAnnotationClick = { attachmentId, pageIndex ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
                 },
+                onRenameAnnotation = viewModel::renameAnnotation,
+                onMoveAnnotation = viewModel::moveAnnotation,
+                onDeleteAnnotationNote = viewModel::deleteAnnotationNote,
+                onDeleteAnnotation = viewModel::deleteAnnotation,
                 onCreateFolder = { parentId, name ->
                     viewModel.createFolder(parentId = parentId, name = name)
                 },

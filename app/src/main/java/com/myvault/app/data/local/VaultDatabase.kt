@@ -42,7 +42,7 @@ import com.myvault.app.data.local.entity.TagEntity
         PdfReadingProgressEntity::class,
         PdfAnnotationEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -172,6 +172,14 @@ abstract class VaultDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN displayTitle TEXT")
+                db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN displayFolderId TEXT")
+                db.execSQL("UPDATE pdf_annotations SET displayFolderId = libraryFolderId WHERE displayFolderId IS NULL")
             }
         }
     }

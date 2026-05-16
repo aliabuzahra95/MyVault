@@ -30,6 +30,12 @@ interface PdfAnnotationDao {
     @Query("UPDATE pdf_annotations SET noteText = :noteText, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateNote(id: String, noteText: String?, updatedAt: Long)
 
+    @Query("UPDATE pdf_annotations SET displayTitle = :displayTitle, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateDisplayTitle(id: String, displayTitle: String?, updatedAt: Long)
+
+    @Query("UPDATE pdf_annotations SET displayFolderId = :displayFolderId, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateDisplayFolder(id: String, displayFolderId: String?, updatedAt: Long)
+
     @Query("DELETE FROM pdf_annotations WHERE id = :id")
     suspend fun deleteById(id: String)
 

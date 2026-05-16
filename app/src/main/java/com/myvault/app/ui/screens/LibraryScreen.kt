@@ -93,6 +93,10 @@ fun LibraryScreen(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
+    onRenameAnnotation: (String, String) -> Unit,
+    onMoveAnnotation: (String, String?) -> Unit,
+    onDeleteAnnotationNote: (String) -> Unit,
+    onDeleteAnnotation: (String) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -119,6 +123,10 @@ fun LibraryScreen(
         onFolderClick = onFolderClick,
         onAttachmentClick = onAttachmentClick,
         onAnnotationClick = onAnnotationClick,
+        onRenameAnnotation = onRenameAnnotation,
+        onMoveAnnotation = onMoveAnnotation,
+        onDeleteAnnotationNote = onDeleteAnnotationNote,
+        onDeleteAnnotation = onDeleteAnnotation,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -145,6 +153,10 @@ fun LibraryFolderScreen(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
+    onRenameAnnotation: (String, String) -> Unit,
+    onMoveAnnotation: (String, String?) -> Unit,
+    onDeleteAnnotationNote: (String) -> Unit,
+    onDeleteAnnotation: (String) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -168,6 +180,10 @@ fun LibraryFolderScreen(
         onFolderClick = onFolderClick,
         onAttachmentClick = onAttachmentClick,
         onAnnotationClick = onAnnotationClick,
+        onRenameAnnotation = onRenameAnnotation,
+        onMoveAnnotation = onMoveAnnotation,
+        onDeleteAnnotationNote = onDeleteAnnotationNote,
+        onDeleteAnnotation = onDeleteAnnotation,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -194,6 +210,10 @@ private fun LibraryArchiveScreen(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
+    onRenameAnnotation: (String, String) -> Unit,
+    onMoveAnnotation: (String, String?) -> Unit,
+    onDeleteAnnotationNote: (String) -> Unit,
+    onDeleteAnnotation: (String) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -218,12 +238,18 @@ private fun LibraryArchiveScreen(
     var fileName by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<LibraryFolderItem?>(null) }
     var selectedFile by remember { mutableStateOf<LibraryFileItem?>(null) }
+    var selectedAnnotation by remember { mutableStateOf<LibraryAnnotationItem?>(null) }
     var actionDialogOpen by remember { mutableStateOf(false) }
     var fileActionDialogOpen by remember { mutableStateOf(false) }
+    var annotationActionDialogOpen by remember { mutableStateOf(false) }
     var moveDialogOpen by remember { mutableStateOf(false) }
     var fileMoveDialogOpen by remember { mutableStateOf(false) }
+    var annotationMoveDialogOpen by remember { mutableStateOf(false) }
+    var annotationRenameDialogOpen by remember { mutableStateOf(false) }
+    var annotationDeleteDialogOpen by remember { mutableStateOf(false) }
     var fileRenameDialogOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
+    var annotationTitle by remember { mutableStateOf("") }
     val hierarchyViewMode = LibraryViewMode.Compact
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportFiles(uris)
@@ -394,6 +420,10 @@ private fun LibraryArchiveScreen(
                         LibraryAnnotationRow(
                             annotation = annotation,
                             onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
+                            onLongPress = {
+                                selectedAnnotation = annotation
+                                annotationActionDialogOpen = true
+                            },
                         )
                     }
                 }
@@ -621,6 +651,122 @@ private fun LibraryArchiveScreen(
         )
     }
 
+    if (annotationActionDialogOpen && selectedAnnotation != null) {
+        val annotation = selectedAnnotation
+        LibraryActionDialog(
+            title = annotation?.displayTitle ?: annotation?.notePreview?.take(40).orEmpty().ifBlank { "Annotation note" },
+            actions = listOf(
+                LibraryAction("Open source PDF", Icons.Rounded.MenuBook) {
+                    annotation?.let { onAnnotationClick(it.attachmentId, it.pageIndex) }
+                    annotationActionDialogOpen = false
+                },
+                LibraryAction("Rename", Icons.Rounded.Edit) {
+                    annotationActionDialogOpen = false
+                    annotationTitle = annotation?.displayTitle ?: annotation?.notePreview?.take(60).orEmpty()
+                    annotationRenameDialogOpen = true
+                },
+                LibraryAction("Move display location", Icons.Rounded.DriveFileMove) {
+                    annotationActionDialogOpen = false
+                    annotationMoveDialogOpen = true
+                },
+                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    annotationActionDialogOpen = false
+                    annotationDeleteDialogOpen = true
+                },
+            ),
+            onDismiss = { annotationActionDialogOpen = false },
+        )
+    }
+
+    if (annotationMoveDialogOpen && selectedAnnotation != null) {
+        val annotation = selectedAnnotation
+        val targets = uiState.allFolders.flatMap { it.flatten() }
+        LibraryActionDialog(
+            title = "Move annotation note",
+            actions = listOf(
+                LibraryAction("Library root", Icons.Rounded.Folder) {
+                    annotation?.let { onMoveAnnotation(it.id, null) }
+                    annotationMoveDialogOpen = false
+                },
+            ) + targets.map { target ->
+                LibraryAction(target.name, Icons.Rounded.Folder) {
+                    annotation?.let { onMoveAnnotation(it.id, target.id) }
+                    annotationMoveDialogOpen = false
+                }
+            },
+            onDismiss = { annotationMoveDialogOpen = false },
+        )
+    }
+
+    if (annotationRenameDialogOpen && selectedAnnotation != null) {
+        AlertDialog(
+            onDismissRequest = { annotationRenameDialogOpen = false },
+            title = { Text("Rename annotation note") },
+            text = {
+                OutlinedTextField(
+                    value = annotationTitle,
+                    onValueChange = { annotationTitle = it },
+                    singleLine = true,
+                    label = { Text("Display title") },
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedAnnotation?.let { onRenameAnnotation(it.id, annotationTitle) }
+                        annotationRenameDialogOpen = false
+                        annotationTitle = ""
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { annotationRenameDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    if (annotationDeleteDialogOpen && selectedAnnotation != null) {
+        AlertDialog(
+            onDismissRequest = { annotationDeleteDialogOpen = false },
+            title = { Text("Delete annotation note?") },
+            text = {
+                Text(
+                    text = "You can remove only the note text and keep the PDF highlight, or delete the highlight and note together.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedAnnotation?.let { onDeleteAnnotation(it.id) }
+                        annotationDeleteDialogOpen = false
+                    },
+                ) {
+                    Text("Delete highlight + note", color = colors.warning)
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { annotationDeleteDialogOpen = false }) {
+                        Text("Cancel")
+                    }
+                    TextButton(
+                        onClick = {
+                            selectedAnnotation?.let { onDeleteAnnotationNote(it.id) }
+                            annotationDeleteDialogOpen = false
+                        },
+                    ) {
+                        Text("Delete note only")
+                    }
+                }
+            },
+        )
+    }
+
     folderDialog?.let { dialog ->
         AlertDialog(
             onDismissRequest = { folderDialog = null },
@@ -660,10 +806,11 @@ private fun LibraryArchiveScreen(
 private fun LibraryAnnotationRow(
     annotation: LibraryAnnotationItem,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     LibraryHierarchyRow(
         depth = 0,
-        title = annotation.notePreview.ifBlank { "Annotation" },
+        title = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
         subtitle = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
         leading = {
             Icon(
@@ -674,6 +821,7 @@ private fun LibraryAnnotationRow(
             )
         },
         onClick = onClick,
+        onLongClick = onLongPress,
     )
 }
 
