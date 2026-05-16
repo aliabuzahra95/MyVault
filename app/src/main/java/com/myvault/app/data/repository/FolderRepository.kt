@@ -6,6 +6,7 @@ import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.TagDao
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -31,6 +32,15 @@ class FolderRepository @Inject constructor(
         ::buildTree,
     )
 
+    fun observeWorkspaceTree(mode: String) = combine(
+        folderDao.observeAll(),
+        noteDao.observeAll(),
+        attachmentDao.observeAll(),
+        noteTableDao.observeAll(),
+    ) { folders, notes, attachments, tables ->
+        buildTree(folders, notes, attachments, tables, mode)
+    }
+
     fun observeFolder(id: String): Flow<FolderEntity?> = folderDao.observeById(id)
 
     fun observeSubfolders(id: String) = folderDao.observeChildren(id)
@@ -39,10 +49,12 @@ class FolderRepository @Inject constructor(
 
     fun observeAllFoldersIncludingDeleted() = folderDao.observeAllIncludingDeleted()
 
-    suspend fun createFolder(parentId: String?, name: String): String {
+    suspend fun createFolder(parentId: String?, name: String, mode: String = FOLDER_MODE_STUDY): String {
         val now = System.currentTimeMillis()
         val folderId = UUID.randomUUID().toString()
-        val orderIndex = folderDao.getAll()
+        val folders = folderDao.getAll()
+        val folderMode = parentId?.let { parent -> folders.firstOrNull { it.id == parent }?.mode } ?: mode
+        val orderIndex = folders
             .filter { it.parentId == parentId }
             .maxOfOrNull { it.orderIndex }
             ?.plus(1) ?: 0
@@ -55,6 +67,7 @@ class FolderRepository @Inject constructor(
                     name = name.ifBlank { "New Folder" },
                     orderIndex = orderIndex,
                     isFavourite = false,
+                    mode = folderMode,
                     createdAt = now,
                     updatedAt = now,
                 ),
@@ -99,6 +112,23 @@ class FolderRepository @Inject constructor(
         val moved = reordered.removeAt(currentIndex)
         reordered.add(targetIndex, moved)
         persistSiblingOrder(reordered)
+    }
+
+    suspend fun moveFolderToMode(folderId: String, mode: String) {
+        val folders = folderDao.getAll()
+        val folder = folders.firstOrNull { it.id == folderId } ?: return
+        val folderIds = descendantFolderIds(folderId, folders) + folderId
+        val now = System.currentTimeMillis()
+        if (folder.parentId != null && folder.parentId !in folderIds) {
+            val orderIndex = folders
+                .filter { it.parentId == null && it.id != folderId && it.mode == mode }
+                .maxOfOrNull { it.orderIndex }
+                ?.plus(1) ?: 0
+            folderDao.updateParentAndOrder(folderId, null, orderIndex, now)
+            normalizeOrderIndexes(folder.parentId)
+        }
+        folderDao.updateMode(folderIds, mode, now)
+        normalizeOrderIndexes(null)
     }
 
     suspend fun deleteFolderTree(folderId: String) {

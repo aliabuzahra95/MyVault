@@ -42,6 +42,9 @@ interface FolderDao {
     @Query("UPDATE folders SET orderIndex = :orderIndex, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateOrderIndex(id: String, orderIndex: Int, updatedAt: Long)
 
+    @Query("UPDATE folders SET mode = :mode, updatedAt = :updatedAt WHERE id IN (:ids)")
+    suspend fun updateMode(ids: List<String>, mode: String, updatedAt: Long)
+
     @Query("UPDATE folders SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id IN (:ids)")
     suspend fun updateDeletedAt(ids: List<String>, deletedAt: Long?, updatedAt: Long)
 

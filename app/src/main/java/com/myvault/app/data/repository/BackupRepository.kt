@@ -419,6 +419,7 @@ private fun FolderEntity.toJson(): JSONObject =
         .put("name", name)
         .put("orderIndex", orderIndex)
         .put("isFavourite", isFavourite)
+        .put("mode", mode)
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .put("deletedAt", deletedAt)
@@ -502,6 +503,7 @@ private fun JSONObject.toFolderEntity(): FolderEntity =
         name = getString("name"),
         orderIndex = getInt("orderIndex"),
         isFavourite = getBoolean("isFavourite"),
+        mode = optString("mode").ifBlank { "study" },
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
         deletedAt = optNullableLong("deletedAt"),

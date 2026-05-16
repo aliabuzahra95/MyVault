@@ -5,6 +5,7 @@ import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.ui.components.EditorBlock
 import com.myvault.app.ui.components.EditorBlockType
 import com.myvault.app.ui.components.VaultNoteCardData
@@ -22,9 +23,15 @@ fun buildTree(
     notes: List<NoteEntity>,
     attachments: List<AttachmentEntity>,
     tables: List<NoteTableEntity>,
+    mode: String = FOLDER_MODE_STUDY,
 ): List<VaultTreeItem> {
-    val foldersByParent = folders.groupBy { it.parentId }
-    val notesByFolder = notes.groupBy { it.folderId }
+    val visibleFolders = folders.filter { it.mode == mode }
+    val visibleFolderIds = visibleFolders.map { it.id }.toSet()
+    val visibleNotes = notes.filter { note ->
+        note.folderId in visibleFolderIds || (note.folderId == null && mode == FOLDER_MODE_STUDY)
+    }
+    val foldersByParent = visibleFolders.groupBy { it.parentId }
+    val notesByFolder = visibleNotes.groupBy { it.folderId }
     val attachmentsByNote = attachments.groupBy { it.noteId }
     val tablesByNote = tables.groupBy { it.noteId }
 

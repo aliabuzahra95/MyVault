@@ -76,6 +76,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.FloatingActionMenu
@@ -113,6 +115,7 @@ fun HomeScreen(
     onRenameFolderClick: (folderId: String, name: String) -> Unit = { _, _ -> },
     onMoveFolderClick: (folderId: String, parentId: String?) -> Unit = { _, _ -> },
     onMoveFolderInOrderClick: (folderId: String, direction: Int) -> Unit = { _, _ -> },
+    onMoveFolderToModeClick: (folderId: String, mode: String) -> Unit = { _, _ -> },
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit = { _, _ -> },
     onDeleteFolderClick: (folderId: String) -> Unit = {},
     onRenameNoteClick: (noteId: String, title: String) -> Unit = { _, _ -> },
@@ -127,6 +130,7 @@ fun HomeScreen(
     onQuickBackupClick: () -> Unit = {},
     quickBackupRecommended: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
+    currentFolderMode: String = FOLDER_MODE_STUDY,
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
@@ -456,6 +460,8 @@ fun HomeScreen(
 
     if (folderActionsOpen && selectedFolder != null) {
         val folder = selectedFolder
+        val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
+        val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal" else "Study"
         PremiumActionDialog(
             title = folder?.name.orEmpty(),
             onDismiss = { folderActionsOpen = false },
@@ -484,6 +490,10 @@ fun HomeScreen(
                 PremiumAction("Move", Icons.Rounded.Folder) {
                     folderActionsOpen = false
                     moveFolderDialogOpen = true
+                },
+                PremiumAction("Move to $oppositeModeLabel", Icons.Rounded.LocalOffer) {
+                    folderActionsOpen = false
+                    folder?.let { onMoveFolderToModeClick(it.id, oppositeMode) }
                 },
                 PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     folderActionsOpen = false

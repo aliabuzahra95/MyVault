@@ -25,7 +25,12 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VaultDatabase =
         Room.databaseBuilder(context, VaultDatabase::class.java, "my_vault.db")
-            .addMigrations(VaultDatabase.MIGRATION_1_2, VaultDatabase.MIGRATION_2_3, VaultDatabase.MIGRATION_3_4)
+            .addMigrations(
+                VaultDatabase.MIGRATION_1_2,
+                VaultDatabase.MIGRATION_2_3,
+                VaultDatabase.MIGRATION_3_4,
+                VaultDatabase.MIGRATION_4_5,
+            )
             .build()
 
     @Provides

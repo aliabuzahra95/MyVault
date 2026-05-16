@@ -35,6 +35,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
 import com.myvault.app.ui.screens.AskAiScreen
@@ -101,7 +103,8 @@ fun VaultNavHost(
         composable(VaultDestination.Home.route) {
             val homeViewModel: HomeViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val homeState by homeViewModel.uiState.collectAsState()
+            val studyState by homeViewModel.uiState.collectAsState()
+            val personalState by homeViewModel.personalUiState.collectAsState()
             val preferences by settingsViewModel.userPreferences.collectAsState()
             val context = LocalContext.current
             val openNote: (String) -> Unit = { noteId ->
@@ -114,9 +117,9 @@ fun VaultNavHost(
                 )
             }
             StudyLibraryPersonalShell(
-                homeContent = {
+                studyContent = {
                     HomeScreen(
-                        uiState = homeState,
+                        uiState = studyState,
                         onSearchClick = {},
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
@@ -128,7 +131,7 @@ fun VaultNavHost(
                             }
                         },
                         onNewFolderClick = { parentId, name ->
-                            homeViewModel.createFolder(parentId = parentId, name = name) { }
+                            homeViewModel.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_STUDY) { }
                         },
                         onRenameFolderClick = { folderId, name ->
                             homeViewModel.renameFolder(folderId, name)
@@ -138,6 +141,9 @@ fun VaultNavHost(
                         },
                         onMoveFolderInOrderClick = { folderId, direction ->
                             homeViewModel.moveFolderInOrder(folderId, direction)
+                        },
+                        onMoveFolderToModeClick = { folderId, mode ->
+                            homeViewModel.moveFolderToMode(folderId, mode)
                         },
                         onFolderExpandedChange = { folderId, expanded ->
                             homeViewModel.setFolderExpanded(folderId, expanded)
@@ -183,6 +189,82 @@ fun VaultNavHost(
                         },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
+                        currentFolderMode = FOLDER_MODE_STUDY,
+                    )
+                },
+                personalContent = {
+                    HomeScreen(
+                        uiState = personalState,
+                        onSearchClick = {},
+                        onSearchQueryChange = homeViewModel::setSearchQuery,
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        onFolderClick = {},
+                        onNoteClick = openNote,
+                        onNewNoteClick = { folderId ->
+                            homeViewModel.createNote(folderId = folderId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
+                        onNewFolderClick = { parentId, name ->
+                            homeViewModel.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_PERSONAL) { }
+                        },
+                        onRenameFolderClick = { folderId, name ->
+                            homeViewModel.renameFolder(folderId, name)
+                        },
+                        onMoveFolderClick = { folderId, parentId ->
+                            homeViewModel.moveFolder(folderId, parentId)
+                        },
+                        onMoveFolderInOrderClick = { folderId, direction ->
+                            homeViewModel.moveFolderInOrder(folderId, direction)
+                        },
+                        onMoveFolderToModeClick = { folderId, mode ->
+                            homeViewModel.moveFolderToMode(folderId, mode)
+                        },
+                        onFolderExpandedChange = { folderId, expanded ->
+                            homeViewModel.setFolderExpanded(folderId, expanded)
+                        },
+                        onDeleteFolderClick = { folderId ->
+                            homeViewModel.deleteFolder(folderId)
+                        },
+                        onRenameNoteClick = { noteId, title ->
+                            homeViewModel.renameNote(noteId, title)
+                        },
+                        onMoveNoteClick = { noteId, folderId ->
+                            homeViewModel.moveNote(noteId, folderId)
+                        },
+                        onDeleteNoteClick = { noteId ->
+                            homeViewModel.deleteNote(noteId)
+                        },
+                        onSetNotePinnedClick = { noteId, pinned ->
+                            homeViewModel.setNotePinned(noteId, pinned)
+                        },
+                        onSetNoteFavouriteClick = { noteId, favourite ->
+                            homeViewModel.setNoteFavourite(noteId, favourite)
+                        },
+                        onImportFileClick = { uri ->
+                            homeViewModel.importDocument(uri) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
+                        onAttachmentClick = { attachmentId ->
+                            navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                        },
+                        onOpenAttachmentsClick = {
+                            navController.navigate(VaultDestination.Attachments.route)
+                        },
+                        onThemeClick = {
+                            settingsViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            settingsViewModel.uploadCloudBackup {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
+                        dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
+                        currentFolderMode = FOLDER_MODE_PERSONAL,
                     )
                 },
             )
@@ -455,7 +537,8 @@ private enum class VaultRootMode(val label: String) {
 
 @Composable
 private fun StudyLibraryPersonalShell(
-    homeContent: @Composable () -> Unit,
+    studyContent: @Composable () -> Unit,
+    personalContent: @Composable () -> Unit,
 ) {
     val modes = VaultRootMode.entries
     val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
@@ -473,9 +556,9 @@ private fun StudyLibraryPersonalShell(
             key = { page -> modes[page].name },
         ) { page ->
             when (modes[page]) {
-                VaultRootMode.Study -> homeContent()
+                VaultRootMode.Study -> studyContent()
                 VaultRootMode.Library -> LibraryComingSoonScreen()
-                VaultRootMode.Personal -> homeContent()
+                VaultRootMode.Personal -> personalContent()
             }
         }
 
