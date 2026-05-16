@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -213,12 +214,23 @@ fun VaultNavHost(
                         onMoveFolder = libraryViewModel::moveFolder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
                         onFolderExpandedChange = libraryViewModel::setFolderExpanded,
-                        onViewModeChange = libraryViewModel::setViewMode,
                         onImportFile = { uri ->
                             libraryViewModel.importFile(uri) { attachmentId ->
                                 navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                             }
                         },
+                        onThemeClick = {
+                            settingsViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            settingsViewModel.uploadCloudBackup {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
                     )
                 },
                 personalContent = {
@@ -320,7 +332,6 @@ fun VaultNavHost(
                 onMoveFolder = viewModel::moveFolder,
                 onDeleteFolder = viewModel::deleteFolder,
                 onFolderExpandedChange = viewModel::setFolderExpanded,
-                onViewModeChange = viewModel::setViewMode,
                 onImportFile = { uri ->
                     viewModel.importFile(uri) { attachmentId ->
                         navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
@@ -617,6 +628,10 @@ private fun StudyLibraryPersonalShell(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { page -> modes[page].name },
+            flingBehavior = PagerDefaults.flingBehavior(
+                state = pagerState,
+                snapPositionalThreshold = 0.22f,
+            ),
         ) { page ->
             when (modes[page]) {
                 VaultRootMode.Study -> studyContent()

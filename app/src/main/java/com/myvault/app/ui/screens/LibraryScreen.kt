@@ -26,13 +26,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -41,7 +39,9 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -68,7 +68,9 @@ import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
+import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -87,8 +89,11 @@ fun LibraryScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
-    onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFile: (Uri) -> Unit,
+    onThemeClick: () -> Unit,
+    onQuickBackupClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    quickBackupRecommended: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     LibraryArchiveScreen(
@@ -104,8 +109,11 @@ fun LibraryScreen(
         onMoveFolder = onMoveFolder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
-        onViewModeChange = onViewModeChange,
         onImportFile = onImportFile,
+        onThemeClick = onThemeClick,
+        onQuickBackupClick = onQuickBackupClick,
+        onSettingsClick = onSettingsClick,
+        quickBackupRecommended = quickBackupRecommended,
         modifier = modifier,
     )
 }
@@ -121,7 +129,6 @@ fun LibraryFolderScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
-    onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFile: (Uri) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -139,7 +146,6 @@ fun LibraryFolderScreen(
         onMoveFolder = onMoveFolder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
-        onViewModeChange = onViewModeChange,
         onImportFile = onImportFile,
         modifier = modifier,
     )
@@ -160,8 +166,11 @@ private fun LibraryArchiveScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
-    onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFile: (Uri) -> Unit,
+    onThemeClick: () -> Unit = {},
+    onQuickBackupClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    quickBackupRecommended: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -171,6 +180,8 @@ private fun LibraryArchiveScreen(
     var selectedFolder by remember { mutableStateOf<LibraryFolderItem?>(null) }
     var actionDialogOpen by remember { mutableStateOf(false) }
     var moveDialogOpen by remember { mutableStateOf(false) }
+    var quickBackupConfirmOpen by remember { mutableStateOf(false) }
+    val hierarchyViewMode = LibraryViewMode.Compact
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onImportFile)
     }
@@ -190,18 +201,37 @@ private fun LibraryArchiveScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 118.dp),
-                verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 item {
                     if (onBackClick == null) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.md),
-                            verticalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            Text(title, style = MaterialTheme.typography.displayMedium, color = colors.text)
-                            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                        VaultTopBar(title = title) {
+                            IconBtn(
+                                icon = Icons.Rounded.WbSunny,
+                                contentDescription = "Toggle theme",
+                                active = true,
+                                onClick = onThemeClick,
+                            )
+                            IconBtn(
+                                icon = Icons.Rounded.Backup,
+                                contentDescription = "Quick cloud backup",
+                                active = quickBackupRecommended,
+                                onClick = { quickBackupConfirmOpen = true },
+                            )
+                            IconBtn(
+                                icon = Icons.Rounded.Settings,
+                                contentDescription = "Settings",
+                                onClick = onSettingsClick,
+                            )
+                        }
+                        Text(
+                            text = subtitle,
+                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                        )
+                        if (uiState.continueReading == null) {
+                            Spacer(modifier = Modifier.height(2.dp))
                         }
                     } else {
                         ScreenTopBar(onBackClick = onBackClick)
@@ -213,10 +243,6 @@ private fun LibraryArchiveScreen(
                             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                         }
                     }
-                }
-
-                item {
-                    LibraryViewModeRow(uiState.viewMode, onViewModeChange)
                 }
 
                 uiState.continueReading?.let { file ->
@@ -243,8 +269,8 @@ private fun LibraryArchiveScreen(
                     items(uiState.folders, key = { it.id }) { folder ->
                         LibraryFolderRow(
                             folder = folder,
-                            viewMode = uiState.viewMode,
-                expanded = folder.id in uiState.expandedFolderIds,
+                            viewMode = hierarchyViewMode,
+                            expanded = folder.id in uiState.expandedFolderIds,
                             isChildExpanded = { id -> id in uiState.expandedFolderIds },
                             onToggle = {
                                 onFolderExpandedChange(folder.id, folder.id !in uiState.expandedFolderIds)
@@ -274,27 +300,12 @@ private fun LibraryArchiveScreen(
                     item {
                         LibraryEmptyState(icon = Icons.Rounded.InsertDriveFile, text = "No files yet")
                     }
-                } else if (uiState.viewMode == LibraryViewMode.Grid) {
-                    item {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 136.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(((uiState.files.size + 1) / 2 * 146).coerceAtLeast(146).dp),
-                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                        ) {
-                            items(uiState.files, key = { it.id }) { file ->
-                                LibraryFileCard(file, grid = true, onClick = { onAttachmentClick(file.id) })
-                            }
-                        }
-                    }
                 } else {
                     items(uiState.files, key = { it.id }) { file ->
-                        LibraryFileCard(
+                        LibraryNestedFileRow(
                             file = file,
-                            compact = uiState.viewMode == LibraryViewMode.Compact,
+                            depth = 0,
+                            showMetadata = false,
                             onClick = { onAttachmentClick(file.id) },
                         )
                     }
@@ -331,6 +342,36 @@ private fun LibraryArchiveScreen(
                 },
             )
         }
+    }
+
+    if (quickBackupConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { quickBackupConfirmOpen = false },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+            title = { Text("Back up to cloud?") },
+            text = {
+                Text(
+                    "This will replace the current cloud backup with the vault on this device. Make sure this phone has your latest Library files and notes before continuing.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        quickBackupConfirmOpen = false
+                        onQuickBackupClick()
+                    },
+                ) {
+                    Text("Back up now")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { quickBackupConfirmOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     if (actionDialogOpen && selectedFolder != null) {
@@ -415,34 +456,6 @@ private fun LibraryArchiveScreen(
                 }
             },
         )
-    }
-}
-
-@Composable
-private fun LibraryViewModeRow(
-    selected: LibraryViewMode,
-    onViewModeChange: (LibraryViewMode) -> Unit,
-) {
-    Row(
-        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-    ) {
-        LibraryViewMode.entries.forEach { mode ->
-            val colors = VaultThemeTokens.colors
-            Surface(
-                onClick = { onViewModeChange(mode) },
-                color = if (selected == mode) colors.accentSoft else colors.surface,
-                contentColor = if (selected == mode) colors.accent else colors.textSecondary,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, if (selected == mode) colors.accentBorder else colors.border),
-            ) {
-                Text(
-                    text = mode.label,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
-                )
-            }
-        }
     }
 }
 
@@ -706,57 +719,6 @@ private fun LibraryHierarchyRow(
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
                         color = colors.textMuted,
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LibraryFileCard(
-    file: LibraryFileItem,
-    modifier: Modifier = Modifier,
-    compact: Boolean = false,
-    grid: Boolean = false,
-    horizontalPadding: androidx.compose.ui.unit.Dp = VaultSpacing.screen,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = if (grid) 0.dp else horizontalPadding),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        if (grid) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AttachmentThumbnail(mimeType = file.mimeType, localPath = file.localPath, kind = file.kind, size = 42.dp)
-                Text(file.name, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800), color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(file.size, style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-            }
-        } else {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = if (compact) 8.dp else 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                AttachmentThumbnail(mimeType = file.mimeType, localPath = file.localPath, kind = file.kind, size = if (compact) 30.dp else 38.dp)
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(file.name, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (!compact) {
-                        val progress = if (file.pageIndex != null && file.pageCount != null) {
-                            " · p. ${file.pageIndex + 1}/${file.pageCount}"
-                        } else {
-                            ""
-                        }
-                        Text("${file.kind} · ${file.size} · ${file.meta}$progress", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
                 }
             }
         }
