@@ -1,0 +1,291 @@
+package com.myvault.app.ui.viewmodel
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.myvault.app.data.repository.BackupRepository
+import com.myvault.app.data.repository.FolderRepository
+import com.myvault.app.data.repository.NoteRepository
+import com.myvault.app.data.repository.StorageRepository
+import com.myvault.app.data.preferences.VaultPreferences
+import com.myvault.app.data.preferences.VaultUserPreferences
+import com.myvault.app.data.supabase.CloudBackupResult
+import com.myvault.app.data.supabase.SupabaseCloudBackupRepository
+import com.myvault.app.data.supabase.SupabaseConfig
+import com.myvault.app.data.supabase.SupabaseSession
+import com.myvault.app.ui.theme.VaultThemeMode
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val preferences: VaultPreferences,
+    private val backupRepository: BackupRepository,
+    private val storageRepository: StorageRepository,
+    private val noteRepository: NoteRepository,
+    private val folderRepository: FolderRepository,
+    private val cloudBackupRepository: SupabaseCloudBackupRepository,
+) : ViewModel() {
+    val userPreferences: StateFlow<VaultUserPreferences> =
+        preferences.userPreferences.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            VaultUserPreferences(),
+        )
+    private val _storageLabel = MutableStateFlow("Calculating...")
+    val storageLabel: StateFlow<String> = _storageLabel
+    val cloudBackupState: StateFlow<CloudBackupUiState> =
+        cloudBackupRepository.session
+            .combineToCloudState()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CloudBackupUiState())
+    val recentlyDeleted: StateFlow<RecentlyDeletedUiState> =
+        combine(
+            noteRepository.observeDeletedNotes(),
+            folderRepository.observeDeletedFolders(),
+            folderRepository.observeAllFoldersIncludingDeleted(),
+        ) { notes, deletedFolders, allFolders ->
+            val allFoldersById = allFolders.associateBy { it.id }
+            RecentlyDeletedUiState(
+                notes = notes
+                    .filterNot { note -> note.folderId.hasDeletedFolderAncestor(allFoldersById) }
+                    .map { DeletedItemUiState(it.id, it.title, "Note", it.deletedAt ?: it.updatedAt) },
+                folders = deletedFolders
+                    .filterNot { folder -> folder.parentId.hasDeletedFolderAncestor(allFoldersById) }
+                    .map { DeletedItemUiState(it.id, it.name, "Folder", it.deletedAt ?: it.updatedAt) },
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecentlyDeletedUiState())
+
+    init {
+        refreshStorage()
+    }
+
+    fun setTheme(mode: VaultThemeMode) {
+        viewModelScope.launch { preferences.setTheme(mode) }
+    }
+
+    fun setAccentColor(accentColor: String) {
+        viewModelScope.launch { preferences.setAccentColor(accentColor) }
+    }
+
+    fun setFontSize(fontSize: String) {
+        viewModelScope.launch { preferences.setFontSize(fontSize) }
+    }
+
+    fun setDashboardFontSize(fontSize: String) {
+        viewModelScope.launch { preferences.setDashboardFontSize(fontSize) }
+    }
+
+    fun setNoteFontSize(fontSize: String) {
+        viewModelScope.launch { preferences.setNoteFontSize(fontSize) }
+    }
+
+    fun setNotePreview(notePreview: String) {
+        viewModelScope.launch { preferences.setNotePreview(notePreview) }
+    }
+
+    fun setDefaultNoteView(defaultNoteView: String) {
+        viewModelScope.launch { preferences.setDefaultNoteView(defaultNoteView) }
+    }
+
+    fun setSecurityLockEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setSecurityLockEnabled(enabled) }
+    }
+
+    fun setSecurityLockTimeout(timeoutMs: Long) {
+        viewModelScope.launch { preferences.setSecurityLockTimeout(timeoutMs) }
+    }
+
+    fun refreshStorage() {
+        viewModelScope.launch { _storageLabel.value = storageRepository.vaultStorageLabel() }
+    }
+
+    fun exportBackup(uri: Uri, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { backupRepository.exportBackup(uri) }
+                .onSuccess {
+                    preferences.markLocalBackupNow()
+                    onComplete("Backup saved: ${it.noteCount} notes, ${it.attachmentCount} attachments")
+                }
+                .onFailure {
+                    onComplete("Backup failed: ${it.message ?: "Unknown error"}")
+                }
+        }
+    }
+
+    fun restoreBackup(uri: Uri, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { backupRepository.restoreBackup(uri) }
+                .onSuccess {
+                    refreshStorage()
+                    onComplete("Restore complete: ${it.noteCount} notes, ${it.attachmentCount} attachments")
+                }
+                .onFailure {
+                    onComplete("Restore failed: ${it.message ?: "Unknown error"}")
+                }
+        }
+    }
+
+    fun verifyBackupIntegrity(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            val result = backupRepository.verifyCurrentBackupIntegrity()
+            onComplete(result.message)
+        }
+    }
+
+    fun signUpToCloud(email: String, password: String, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            when (val result = cloudBackupRepository.signUp(email, password)) {
+                is CloudBackupResult.Success -> onComplete(result.message)
+                is CloudBackupResult.Failure -> onComplete(result.message)
+            }
+        }
+    }
+
+    fun signInToCloud(email: String, password: String, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            when (val result = cloudBackupRepository.signIn(email, password)) {
+                is CloudBackupResult.Success -> onComplete(result.message)
+                is CloudBackupResult.Failure -> onComplete(result.message)
+            }
+        }
+    }
+
+    fun signOutOfCloud(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            cloudBackupRepository.signOut()
+            onComplete("Signed out of Supabase.")
+        }
+    }
+
+    fun uploadCloudBackup(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            when (val result = cloudBackupRepository.uploadLatestBackup()) {
+                is CloudBackupResult.Success -> {
+                    preferences.markCloudBackupNow()
+                    onComplete(result.message)
+                }
+                is CloudBackupResult.Failure -> onComplete(result.message)
+            }
+        }
+    }
+
+    fun restoreCloudBackup(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            when (val result = cloudBackupRepository.restoreLatestBackup()) {
+                is CloudBackupResult.Success -> {
+                    refreshStorage()
+                    onComplete(result.message)
+                }
+                is CloudBackupResult.Failure -> onComplete(result.message)
+            }
+        }
+    }
+
+    fun restoreNote(noteId: String) {
+        viewModelScope.launch { noteRepository.restoreNote(noteId) }
+    }
+
+    fun permanentlyDeleteNote(noteId: String, onComplete: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching {
+                backupRepository.createSafetyBackup("before-permanent-delete-note")
+                noteRepository.permanentlyDeleteNote(noteId)
+            }.onSuccess {
+                refreshStorage()
+                onComplete("Item permanently deleted. A safety backup was saved first.")
+            }.onFailure {
+                onComplete("Permanent delete stopped: ${it.message ?: "Unable to create safety backup first."}")
+            }
+        }
+    }
+
+    fun restoreFolder(folderId: String) {
+        viewModelScope.launch { folderRepository.restoreFolderTree(folderId) }
+    }
+
+    fun permanentlyDeleteFolder(folderId: String, onComplete: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching {
+                backupRepository.createSafetyBackup("before-permanent-delete-folder")
+                folderRepository.permanentlyDeleteFolderTree(folderId)
+            }.onSuccess {
+                refreshStorage()
+                onComplete("Folder permanently deleted. A safety backup was saved first.")
+            }.onFailure {
+                onComplete("Permanent delete stopped: ${it.message ?: "Unable to create safety backup first."}")
+            }
+        }
+    }
+
+    fun permanentlyDeleteAllRecentlyDeleted(onComplete: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching {
+                backupRepository.createSafetyBackup("before-empty-recently-deleted")
+                val current = recentlyDeleted.value
+                current.folders.forEach { folderRepository.permanentlyDeleteFolderTree(it.id) }
+                current.notes.forEach { noteRepository.permanentlyDeleteNote(it.id) }
+            }.onSuccess {
+                refreshStorage()
+                onComplete("Recently Deleted was emptied. A safety backup was saved first.")
+            }.onFailure {
+                onComplete("Delete all stopped: ${it.message ?: "Unable to create safety backup first."}")
+            }
+        }
+    }
+}
+
+data class RecentlyDeletedUiState(
+    val notes: List<DeletedItemUiState> = emptyList(),
+    val folders: List<DeletedItemUiState> = emptyList(),
+)
+
+data class DeletedItemUiState(
+    val id: String,
+    val title: String,
+    val kind: String,
+    val deletedAt: Long,
+)
+
+data class CloudBackupUiState(
+    val configured: Boolean = SupabaseConfig.isConfigured,
+    val signedIn: Boolean = false,
+    val email: String = "",
+) {
+    val statusLabel: String
+        get() = when {
+            !configured -> "Needs setup"
+            signedIn -> email.ifBlank { "Signed in" }
+            else -> "Not signed in"
+        }
+}
+
+private fun kotlinx.coroutines.flow.Flow<SupabaseSession>.combineToCloudState():
+    kotlinx.coroutines.flow.Flow<CloudBackupUiState> =
+    map { session ->
+        CloudBackupUiState(
+            configured = SupabaseConfig.isConfigured,
+            signedIn = session.isSignedIn,
+            email = session.email,
+        )
+    }
+
+private fun String?.hasDeletedFolderAncestor(
+    foldersById: Map<String, com.myvault.app.data.local.entity.FolderEntity>,
+): Boolean {
+    var currentId = this
+    val seen = mutableSetOf<String>()
+    while (currentId != null && currentId !in seen) {
+        seen += currentId
+        val folder = foldersById[currentId] ?: return false
+        if (folder.deletedAt != null) return true
+        currentId = folder.parentId
+    }
+    return false
+}

@@ -1,0 +1,493 @@
+package com.myvault.app.data.repository
+
+import com.myvault.app.data.local.dao.AttachmentDao
+import com.myvault.app.data.local.dao.BlockDao
+import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.NoteDao
+import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.TagDao
+import com.myvault.app.data.local.entity.BlockEntity
+import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.NoteEntity
+import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.ui.components.EditorBlockType
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class NoteRepository @Inject constructor(
+    private val noteDao: NoteDao,
+    private val folderDao: FolderDao,
+    private val blockDao: BlockDao,
+    private val attachmentDao: AttachmentDao,
+    private val tagDao: TagDao,
+    private val noteTableDao: NoteTableDao,
+) {
+    private val bodyBlockTypes = listOf(
+        "rich_text",
+        "rich_html",
+        "rich_body",
+        "paragraph",
+        "heading",
+        "quote",
+        "checklist",
+        "checklist_checked",
+        "bullet",
+        "numbered",
+        "link",
+        "divider",
+    )
+
+    fun observeRawBlocks(noteId: String) = blockDao.observeForNote(noteId)
+
+    fun observeAllNotes() = noteDao.observeAll()
+
+    fun observeBacklinks(noteId: String): Flow<List<NoteLinkRef>> =
+        combine(noteDao.observeAll(), blockDao.observeAll()) { notes, blocks ->
+            val notesById = notes.associateBy { it.id }
+            blocks
+                .filter { it.type == "rich_text" && it.noteId != noteId }
+                .filter { block -> block.content.containsNoteLink(noteId) }
+                .mapNotNull { block ->
+                    notesById[block.noteId]?.let { note ->
+                        NoteLinkRef(id = note.id, title = note.title, preview = note.bodyPlainText.previewLine())
+                    }
+                }
+                .distinctBy { it.id }
+        }
+
+    fun observeTables(noteId: String) = noteTableDao.observeForNote(noteId)
+
+    fun observePinnedCards() = combine(noteDao.observePinned(), folderDao.observeAll(), noteTableDao.observeAll()) { notes, folders, tables ->
+        val folderNames = folders.associate { it.id to it.name }
+        val tableCounts = tables.groupingBy { it.noteId }.eachCount()
+        notes.map { it.toNoteCard(folderNames[it.folderId], tableCounts[it.id] ?: 0) }
+    }
+
+    fun observeRecentCards(limit: Int = 8) = noteDao.observeRecent(limit).map { notes ->
+        notes.map { it.toRecentCard() }
+    }
+
+    fun observeDeletedNotes() = noteDao.observeDeleted()
+
+    fun observeForFolder(folderId: String) = noteDao.observeForFolder(folderId)
+
+    fun observeNote(noteId: String) = noteDao.observeById(noteId)
+
+    fun observeFolderPath(noteId: String) = combine(noteDao.observeById(noteId), folderDao.observeAll()) { note, folders ->
+        val folderById = folders.associateBy { it.id }
+        val path = mutableListOf<String>()
+        var currentId = note?.folderId
+        while (currentId != null) {
+            val folder = folderById[currentId] ?: break
+            path.add(folder.name)
+            currentId = folder.parentId
+        }
+        path.asReversed()
+    }
+
+    fun observeBlocks(noteId: String) = blockDao.observeForNote(noteId).map { blocks ->
+        blocks.map { it.toEditorBlock() }
+    }
+
+    fun observeTags(noteId: String) = tagDao.observeForNote(noteId).map { tags ->
+        tags.map { it.name }
+    }
+
+    suspend fun createNote(folderId: String?, title: String = "Untitled note"): String {
+        val now = System.currentTimeMillis()
+        val noteId = UUID.randomUUID().toString()
+        noteDao.upsertAll(
+            listOf(
+                NoteEntity(
+                    id = noteId,
+                    folderId = folderId,
+                    title = title,
+                    bodyPlainText = "",
+                    isPinned = false,
+                    isFavourite = false,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            ),
+        )
+        saveRichText(noteId = noteId, text = "", styleMarksJson = "[]")
+        return noteId
+    }
+
+    suspend fun createImportedRichTextNote(title: String, text: String, styleMarksJson: String): String {
+        val folderId = importFolderId()
+        val noteId = createNote(folderId = folderId, title = title.ifBlank { text.firstTitleLine() })
+        saveRichText(noteId = noteId, text = text, styleMarksJson = styleMarksJson)
+        return noteId
+    }
+
+    suspend fun updateTitle(noteId: String, title: String) {
+        noteDao.updateTitle(noteId, title.ifBlank { "Untitled note" }, System.currentTimeMillis())
+    }
+
+    private suspend fun importFolderId(): String {
+        val folders = folderDao.getAll()
+        folders.firstOrNull { it.name.equals("Inbox", ignoreCase = true) || it.name.equals("Unsorted", ignoreCase = true) }?.let {
+            return it.id
+        }
+        val now = System.currentTimeMillis()
+        val folderId = UUID.randomUUID().toString()
+        folderDao.upsertAll(
+            listOf(
+                FolderEntity(
+                    id = folderId,
+                    parentId = null,
+                    name = "Inbox",
+                    orderIndex = folders.filter { it.parentId == null }.maxOfOrNull { it.orderIndex }?.plus(1) ?: 0,
+                    isFavourite = false,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            ),
+        )
+        return folderId
+    }
+
+    suspend fun moveNote(noteId: String, folderId: String?) {
+        noteDao.updateFolder(noteId, folderId, System.currentTimeMillis())
+    }
+
+    suspend fun setPinned(noteId: String, pinned: Boolean) {
+        noteDao.updatePinned(noteId, pinned, System.currentTimeMillis())
+    }
+
+    suspend fun setFavourite(noteId: String, favourite: Boolean) {
+        noteDao.updateFavourite(noteId, favourite, System.currentTimeMillis())
+    }
+
+    suspend fun deleteNote(noteId: String) {
+        val now = System.currentTimeMillis()
+        noteDao.updateDeletedAt(listOf(noteId), now, now)
+        attachmentDao.updateDeletedAtForNotes(listOf(noteId), now)
+    }
+
+    suspend fun restoreNote(noteId: String) {
+        noteDao.updateDeletedAt(listOf(noteId), null, System.currentTimeMillis())
+        attachmentDao.updateDeletedAtForNotes(listOf(noteId), null)
+    }
+
+    suspend fun permanentlyDeleteNote(noteId: String) {
+        val attachments = attachmentDao.getForNotes(listOf(noteId))
+        blockDao.deleteForNotes(listOf(noteId))
+        tagDao.deleteRefsForNotes(listOf(noteId))
+        noteTableDao.deleteForNotes(listOf(noteId))
+        attachmentDao.deleteForNotes(listOf(noteId))
+        noteDao.deleteByIds(listOf(noteId))
+        attachments.deleteLocalFiles()
+    }
+
+    suspend fun createTable(noteId: String, rows: Int, columns: Int) {
+        val now = System.currentTimeMillis()
+        val safeRows = rows.coerceIn(1, 10)
+        val safeColumns = columns.coerceIn(1, 10)
+        val orderIndex = (noteTableDao.getForNote(noteId).maxOfOrNull { it.orderIndex } ?: -1) + 1
+        noteTableDao.upsertAll(
+            listOf(
+                NoteTableEntity(
+                    id = UUID.randomUUID().toString(),
+                    noteId = noteId,
+                    rowCount = safeRows,
+                    columnCount = safeColumns,
+                    cellsJson = emptyCellsJson(safeRows, safeColumns),
+                    orderIndex = orderIndex,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            ),
+        )
+        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), now)
+    }
+
+    suspend fun updateTableCell(noteId: String, tableId: String, row: Int, column: Int, text: String) {
+        val table = noteTableDao.getForNote(noteId).firstOrNull { it.id == tableId } ?: return
+        val now = System.currentTimeMillis()
+        noteTableDao.updateCells(
+            id = tableId,
+            cellsJson = table.cellsJson.updateCell(table.rowCount, table.columnCount, row, column, text),
+            updatedAt = now,
+        )
+        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), now)
+    }
+
+    suspend fun deleteTable(noteId: String, tableId: String) {
+        noteTableDao.deleteById(tableId)
+        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), System.currentTimeMillis())
+    }
+
+    suspend fun updateBody(noteId: String, body: String) {
+        noteDao.updateBodyPlainText(noteId, body, System.currentTimeMillis())
+        val blocks = blockDao.getForNote(noteId)
+        val mainTextBlock = blocks.firstOrNull { it.type in listOf("paragraph", "heading", "quote", "checklist", "bullet", "numbered", "link") }
+        if (mainTextBlock != null) {
+            blockDao.updateContent(mainTextBlock.id, body)
+        } else {
+            blockDao.upsertAll(
+                listOf(
+                    BlockEntity(
+                        id = UUID.randomUUID().toString(),
+                        noteId = noteId,
+                        type = "paragraph",
+                        content = body,
+                        orderIndex = 0,
+                    ),
+                ),
+            )
+        }
+    }
+
+    suspend fun saveRichHtml(noteId: String, html: String, plainText: String) {
+        val blockId = "$noteId-rich-html"
+        blockDao.upsertAll(
+            listOf(
+                BlockEntity(
+                    id = blockId,
+                    noteId = noteId,
+                    type = "rich_html",
+                    content = html,
+                    orderIndex = 0,
+                ),
+            ),
+        )
+        blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, plainText), System.currentTimeMillis())
+    }
+
+    suspend fun saveRichText(noteId: String, text: String, styleMarksJson: String, noteLinksJson: String = "[]") {
+        val safeStyleMarks = sanitizeStyleMarksJson(styleMarksJson, text.length)
+        val safeNoteLinks = sanitizeNoteLinksJson(noteLinksJson, text.length)
+        val blockId = "$noteId-rich-text"
+        blockDao.upsertAll(
+            listOf(
+                BlockEntity(
+                    id = blockId,
+                    noteId = noteId,
+                    type = "rich_text",
+                    content = JSONObject()
+                        .put("text", text)
+                        .put("styleMarks", safeStyleMarks)
+                        .put("noteLinks", safeNoteLinks)
+                        .toString(),
+                    orderIndex = 0,
+                ),
+            ),
+        )
+        blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, text), System.currentTimeMillis())
+    }
+
+    suspend fun updateBlockContent(noteId: String, blockId: String, content: String) {
+        blockDao.updateContent(blockId, content)
+        updateBodyPlainText(noteId)
+    }
+
+    suspend fun insertBlock(noteId: String, type: EditorBlockType) {
+        val blocks = blockDao.getForNote(noteId)
+        val orderIndex = (blocks.maxOfOrNull { it.orderIndex } ?: -1) + 1
+        blockDao.upsertAll(
+            listOf(
+                BlockEntity(
+                    id = UUID.randomUUID().toString(),
+                    noteId = noteId,
+                    type = type.toStorageType(),
+                    content = type.defaultContent(),
+                    orderIndex = orderIndex,
+                ),
+            ),
+        )
+        updateBodyPlainText(noteId)
+    }
+
+    private suspend fun updateBodyPlainText(noteId: String) {
+        val body = currentBodyPlainText(noteId)
+        noteDao.updateBodyPlainText(noteId, body, System.currentTimeMillis())
+    }
+
+    private suspend fun currentBodyPlainText(noteId: String, overrideBlockText: String? = null): String {
+        val blockText = (overrideBlockText ?: blockDao.getForNote(noteId)
+            .filterNot { it.type == "divider" }
+            .joinToString(separator = "\n") { block ->
+                when (block.type) {
+                    "rich_text" -> block.content.toVaultRichTextText()
+                    "rich_html" -> block.content.stripHtml()
+                    else -> block.content.substringBefore("|")
+                }
+            }).trim()
+        val tableText = noteTableDao.getForNote(noteId)
+            .joinToString(separator = "\n") { it.cellsJson.tableText() }
+            .trim()
+        return listOf(blockText, tableText)
+            .filter { it.isNotBlank() }
+            .joinToString(separator = "\n")
+    }
+
+    private fun EditorBlockType.toStorageType(): String = when (this) {
+        EditorBlockType.Heading -> "heading"
+        EditorBlockType.Quote -> "quote"
+        EditorBlockType.Checklist -> "checklist"
+        EditorBlockType.Divider -> "divider"
+        EditorBlockType.Attachment -> "attachment"
+        EditorBlockType.Image -> "image"
+        EditorBlockType.BulletList -> "bullet"
+        EditorBlockType.NumberedList -> "numbered"
+        EditorBlockType.Link -> "link"
+        EditorBlockType.Paragraph -> "paragraph"
+    }
+
+    private fun EditorBlockType.defaultContent(): String = when (this) {
+        EditorBlockType.Heading -> "New heading"
+        EditorBlockType.Quote -> "New quote"
+        EditorBlockType.Checklist -> "New checklist item"
+        EditorBlockType.Divider -> ""
+        EditorBlockType.Attachment -> "new-file.pdf|0 KB · PDF"
+        EditorBlockType.Image -> "Image block"
+        EditorBlockType.BulletList -> "New bullet item"
+        EditorBlockType.NumberedList -> "New numbered item"
+        EditorBlockType.Link -> "https://"
+        EditorBlockType.Paragraph -> "Start writing..."
+    }
+}
+
+data class NoteLinkRef(
+    val id: String,
+    val title: String,
+    val preview: String,
+)
+
+private fun String.toVaultRichTextText(): String =
+    runCatching { JSONObject(this).optString("text") }.getOrDefault("")
+
+private fun sanitizeStyleMarksJson(styleMarksJson: String, textLength: Int): JSONArray {
+    val safeLength = textLength.coerceAtLeast(0)
+    val source = runCatching { JSONArray(styleMarksJson) }.getOrDefault(JSONArray())
+    return JSONArray().also { output ->
+        repeat(source.length()) { index ->
+            val mark = source.optJSONObject(index) ?: return@repeat
+            val style = mark.optString("style").takeIf { it.isNotBlank() } ?: return@repeat
+            val start = mark.optInt("start").coerceIn(0, safeLength)
+            val end = mark.optInt("end").coerceIn(0, safeLength)
+            if (start < end) {
+                output.put(
+                    JSONObject()
+                        .put("start", start)
+                        .put("end", end)
+                        .put("style", style),
+                )
+            }
+        }
+    }
+}
+
+private fun sanitizeNoteLinksJson(noteLinksJson: String, textLength: Int): JSONArray {
+    val safeLength = textLength.coerceAtLeast(0)
+    val source = runCatching { JSONArray(noteLinksJson) }.getOrDefault(JSONArray())
+    return JSONArray().also { output ->
+        repeat(source.length()) { index ->
+            val link = source.optJSONObject(index) ?: return@repeat
+            val noteId = link.optString("noteId").takeIf { it.isNotBlank() } ?: return@repeat
+            val start = link.optInt("start").coerceIn(0, safeLength)
+            val end = link.optInt("end").coerceIn(0, safeLength)
+            if (start < end) {
+                output.put(
+                    JSONObject()
+                        .put("start", start)
+                        .put("end", end)
+                        .put("noteId", noteId),
+                )
+            }
+        }
+    }
+}
+
+private fun String.containsNoteLink(noteId: String): Boolean =
+    runCatching {
+        val links = JSONObject(this).optJSONArray("noteLinks") ?: JSONArray()
+        List(links.length()) { index -> links.optJSONObject(index) }
+            .any { it?.optString("noteId") == noteId }
+    }.getOrDefault(false)
+
+private fun String.previewLine(): String =
+    lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+
+private fun String.firstTitleLine(): String =
+    lines().firstOrNull { it.isNotBlank() }?.trim()?.take(80).orEmpty().ifBlank { "Imported note" }
+
+private fun emptyCellsJson(rows: Int, columns: Int): String =
+    JSONArray().also { outer ->
+        repeat(rows) {
+            outer.put(JSONArray().also { inner ->
+                repeat(columns) { inner.put("") }
+            })
+        }
+    }.toString()
+
+private fun String.updateCell(rows: Int, columns: Int, row: Int, column: Int, text: String): String {
+    val safeRows = rows.coerceAtLeast(1)
+    val safeColumns = columns.coerceAtLeast(1)
+    val outer = toCellsArray(safeRows, safeColumns)
+    if (row in 0 until safeRows && column in 0 until safeColumns) {
+        outer.getJSONArray(row).put(column, text)
+    }
+    return outer.toString()
+}
+
+private fun String.tableText(): String {
+    val outer = runCatching { JSONArray(this) }.getOrNull() ?: return ""
+    return List(outer.length()) { row ->
+        val inner = outer.optJSONArray(row)
+        List(inner?.length() ?: 0) { column -> inner?.optString(column).orEmpty() }
+            .filter { it.isNotBlank() }
+            .joinToString(separator = " ")
+    }.filter { it.isNotBlank() }.joinToString(separator = "\n")
+}
+
+private fun String.stripHtml(): String =
+    replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("</p>|</h[1-6]>|</li>|</tr>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n")
+
+private fun String.toCellsArray(rows: Int, columns: Int): JSONArray {
+    val parsed = runCatching { JSONArray(this) }.getOrNull()
+    return JSONArray().also { outer ->
+        repeat(rows) { row ->
+            outer.put(JSONArray().also { inner ->
+                val parsedRow = parsed?.optJSONArray(row)
+                repeat(columns) { column ->
+                    inner.put(parsedRow?.optString(column).orEmpty())
+                }
+            })
+        }
+    }
+}
+
+private fun List<com.myvault.app.data.local.entity.AttachmentEntity>.deleteLocalFiles() {
+    forEach { attachment ->
+        runCatching {
+            val file = File(attachment.localPath)
+            if (file.exists() && file.isFile) file.delete()
+        }
+    }
+}
