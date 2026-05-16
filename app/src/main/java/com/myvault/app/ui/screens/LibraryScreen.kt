@@ -270,7 +270,7 @@ private fun LibraryArchiveScreen(
                     SectionLabel(label = "Files")
                 }
 
-                if (uiState.files.isEmpty()) {
+                if (uiState.files.isEmpty() && currentFolderId != null) {
                     item {
                         LibraryEmptyState(icon = Icons.Rounded.InsertDriveFile, text = "No files yet")
                     }
@@ -533,86 +533,25 @@ private fun LibraryFolderRow(
             .fillMaxWidth()
             .padding(horizontal = VaultSpacing.screen),
     ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            if (folder.depth > 0) {
-                Row(
-                    modifier = Modifier.width((folder.depth * 16).dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .width(1.dp)
-                            .height(58.dp)
-                            .background(colors.border.copy(alpha = 0.55f)),
-                    )
-                }
-            }
-        Surface(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .clip(VaultShapes.md),
-            color = if (expanded) colors.surface else colors.elevated,
-            shape = VaultShapes.md,
-            border = BorderStroke(1.dp, colors.border),
-        ) {
-            Row(
-                modifier = Modifier
-                    .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
-                    .padding(horizontal = 12.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-            ) {
-                Surface(
-                    onClick = onToggle,
-                    color = Color.Transparent,
-                    shape = VaultShapes.sm,
-                    modifier = Modifier.size(24.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = "Expand folder",
-                            modifier = Modifier
-                                .size(16.dp)
-                                .graphicsLayer { rotationZ = rotation },
-                            tint = colors.textMuted,
-                        )
-                    }
-                }
+        LibraryHierarchyRow(
+            depth = folder.depth,
+            title = folder.name,
+            subtitle = if (viewMode != LibraryViewMode.Compact && folder.count > 0) "${folder.count} items" else null,
+            count = folder.count.takeIf { it > 0 }?.toString(),
+            leading = {
                 Icon(
                     Icons.Rounded.Folder,
                     contentDescription = null,
-                    modifier = Modifier.size(if (folder.depth > 0) 18.dp else 20.dp),
+                    modifier = Modifier.size(20.dp),
                     tint = colors.warning,
                 )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = folder.name,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
-                        color = colors.text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (viewMode != LibraryViewMode.Compact && folder.count > 0) {
-                        Text(
-                            text = "${folder.count} items",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textMuted,
-                        )
-                    }
-                }
-                if (folder.count > 0) {
-                    Text(
-                        text = folder.count.toString(),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                        color = colors.textMuted,
-                    )
-                }
-            }
-        }
-        }
+            },
+            expanded = expanded,
+            chevronRotation = rotation,
+            onToggle = onToggle,
+            onClick = onOpen,
+            onLongClick = onLongPress,
+        )
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)),
@@ -638,7 +577,7 @@ private fun LibraryFolderRow(
                     LibraryNestedFileRow(
                         file = file,
                         depth = folder.depth + 1,
-                        compact = viewMode == LibraryViewMode.Compact,
+                        showMetadata = viewMode != LibraryViewMode.Compact,
                         onClick = { onAttachmentClick(file.id) },
                     )
                 }
@@ -651,34 +590,125 @@ private fun LibraryFolderRow(
 private fun LibraryNestedFileRow(
     file: LibraryFileItem,
     depth: Int,
-    compact: Boolean,
+    showMetadata: Boolean,
     onClick: () -> Unit,
 ) {
-    val colors = VaultThemeTokens.colors
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
-    ) {
-        Row(
-            modifier = Modifier.width((depth * 16).dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(end = 8.dp)
-                    .width(1.dp)
-                    .height(if (compact) 42.dp else 54.dp)
-                    .background(colors.border.copy(alpha = 0.45f)),
+    val progress = if (file.pageIndex != null && file.pageCount != null) {
+        " · p. ${file.pageIndex + 1}/${file.pageCount}"
+    } else {
+        ""
+    }
+    LibraryHierarchyRow(
+        depth = depth,
+        title = file.name,
+        subtitle = if (showMetadata) "${file.kind} · ${file.size} · ${file.meta}$progress" else null,
+        leading = {
+            AttachmentThumbnail(
+                mimeType = file.mimeType,
+                localPath = file.localPath,
+                kind = file.kind,
+                size = 34.dp,
             )
+        },
+        onClick = onClick,
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryHierarchyRow(
+    depth: Int,
+    title: String,
+    subtitle: String? = null,
+    count: String? = null,
+    leading: @Composable () -> Unit,
+    expanded: Boolean = false,
+    chevronRotation: Float = 0f,
+    onToggle: (() -> Unit)? = null,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(modifier = Modifier.fillMaxWidth()) {
+        if (depth > 0) {
+            Row(
+                modifier = Modifier.width((depth * 16).dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .width(1.dp)
+                        .height(58.dp)
+                        .background(colors.border.copy(alpha = 0.42f)),
+                )
+            }
         }
-        LibraryFileCard(
-            file = file,
-            compact = compact,
-            modifier = Modifier.weight(1f),
-            horizontalPadding = 0.dp,
-            onClick = onClick,
-        )
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(VaultShapes.md),
+            color = if (expanded) colors.surface else colors.elevated,
+            shape = VaultShapes.md,
+            border = BorderStroke(1.dp, colors.border),
+        ) {
+            Row(
+                modifier = Modifier
+                    .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    .padding(horizontal = 12.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                if (onToggle != null) {
+                    Surface(
+                        onClick = onToggle,
+                        color = Color.Transparent,
+                        shape = VaultShapes.sm,
+                        modifier = Modifier.size(24.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                contentDescription = "Expand folder",
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .graphicsLayer { rotationZ = chevronRotation },
+                                tint = colors.textMuted,
+                            )
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.size(24.dp))
+                }
+                leading()
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
+                        color = colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (!count.isNullOrBlank()) {
+                    Text(
+                        text = count,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                        color = colors.textMuted,
+                    )
+                }
+            }
+        }
     }
 }
 
