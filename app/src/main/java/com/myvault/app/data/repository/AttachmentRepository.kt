@@ -147,7 +147,11 @@ class AttachmentRepository @Inject constructor(
     }
 
     suspend fun moveLibraryAttachment(attachmentId: String, folderId: String?) = withContext(Dispatchers.IO) {
+        val oldFolderId = attachmentDao.getByIdIncludingDeleted(attachmentId)?.libraryFolderId
         attachmentDao.updateLibraryFolder(attachmentId, folderId)
+        val now = System.currentTimeMillis()
+        pdfAnnotationDao.updateSourceFolderForAttachment(attachmentId, folderId, now)
+        pdfAnnotationDao.updateDisplayFolderForAttachmentIfMatching(attachmentId, oldFolderId, folderId, now)
     }
 
     suspend fun setPinned(attachmentId: String, pinned: Boolean) = withContext(Dispatchers.IO) {

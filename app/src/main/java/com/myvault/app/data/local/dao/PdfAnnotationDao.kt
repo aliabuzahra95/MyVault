@@ -36,6 +36,27 @@ interface PdfAnnotationDao {
     @Query("UPDATE pdf_annotations SET displayFolderId = :displayFolderId, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateDisplayFolder(id: String, displayFolderId: String?, updatedAt: Long)
 
+    @Query("UPDATE pdf_annotations SET libraryFolderId = :folderId, updatedAt = :updatedAt WHERE attachmentId = :attachmentId")
+    suspend fun updateSourceFolderForAttachment(attachmentId: String, folderId: String?, updatedAt: Long)
+
+    @Query(
+        """
+        UPDATE pdf_annotations
+        SET displayFolderId = :newFolderId, updatedAt = :updatedAt
+        WHERE attachmentId = :attachmentId
+          AND (
+            (:oldFolderId IS NULL AND displayFolderId IS NULL)
+            OR displayFolderId = :oldFolderId
+          )
+        """,
+    )
+    suspend fun updateDisplayFolderForAttachmentIfMatching(
+        attachmentId: String,
+        oldFolderId: String?,
+        newFolderId: String?,
+        updatedAt: Long,
+    )
+
     @Query("DELETE FROM pdf_annotations WHERE id = :id")
     suspend fun deleteById(id: String)
 

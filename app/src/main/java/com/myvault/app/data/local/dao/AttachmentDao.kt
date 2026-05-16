@@ -33,6 +33,9 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE id = :id AND deletedAt IS NULL")
     fun observeById(id: String): Flow<AttachmentEntity?>
 
+    @Query("SELECT * FROM attachments WHERE id = :id")
+    suspend fun getByIdIncludingDeleted(id: String): AttachmentEntity?
+
     @Query("SELECT * FROM attachments WHERE noteId IN (:noteIds)")
     suspend fun getForNotes(noteIds: List<String>): List<AttachmentEntity>
 
