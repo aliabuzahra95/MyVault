@@ -117,6 +117,21 @@ class AttachmentRepository @Inject constructor(
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
     }
+
+    suspend fun renameAttachment(attachmentId: String, fileName: String) = withContext(Dispatchers.IO) {
+        val cleanName = fileName.sanitizeFileName()
+        if (cleanName.isNotBlank()) {
+            attachmentDao.updateFileName(attachmentId, cleanName)
+        }
+    }
+
+    suspend fun moveLibraryAttachment(attachmentId: String, folderId: String?) = withContext(Dispatchers.IO) {
+        attachmentDao.updateLibraryFolder(attachmentId, folderId)
+    }
+
+    suspend fun setPinned(attachmentId: String, pinned: Boolean) = withContext(Dispatchers.IO) {
+        attachmentDao.updatePinned(attachmentId, pinned)
+    }
 }
 
 private fun android.content.ContentResolver.displayName(uri: Uri): String =

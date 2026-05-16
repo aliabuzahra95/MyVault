@@ -13,6 +13,7 @@ data class AttachmentEntity(
     val sizeBytes: Long,
     val localPath: String,
     val remoteUrl: String?,
+    val isPinned: Boolean = false,
     val createdAt: Long,
     val deletedAt: Long? = null,
 )

@@ -55,12 +55,14 @@ data class LibraryFileItem(
     val pageCount: Int? = null,
     val progressPercent: Float? = null,
     val lastOpenedAt: Long = 0L,
+    val pinned: Boolean = false,
 )
 
 data class LibraryUiState(
     val currentFolder: FolderEntity? = null,
     val folders: List<LibraryFolderItem> = emptyList(),
     val files: List<LibraryFileItem> = emptyList(),
+    val pinnedFiles: List<LibraryFileItem> = emptyList(),
     val continueReading: LibraryFileItem? = null,
     val allFolders: List<LibraryFolderItem> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
@@ -114,6 +116,10 @@ class LibraryViewModel @Inject constructor(
             currentFolder = currentFolder,
             folders = visibleFolders,
             files = currentFileItems,
+            pinnedFiles = allFiles
+                .filter { it.isPinned }
+                .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+                .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
             continueReading = continueReadingItems
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
@@ -161,6 +167,22 @@ class LibraryViewModel @Inject constructor(
             onImported(attachmentRepository.importLibraryDocument(folderId, uri))
         }
     }
+
+    fun renameFile(fileId: String, name: String) {
+        viewModelScope.launch { attachmentRepository.renameAttachment(fileId, name) }
+    }
+
+    fun moveFile(fileId: String, folderId: String?) {
+        viewModelScope.launch { attachmentRepository.moveLibraryAttachment(fileId, folderId) }
+    }
+
+    fun setFilePinned(fileId: String, pinned: Boolean) {
+        viewModelScope.launch { attachmentRepository.setPinned(fileId, pinned) }
+    }
+
+    fun deleteFile(fileId: String) {
+        viewModelScope.launch { attachmentRepository.deleteAttachment(fileId) }
+    }
 }
 
 private fun FolderEntity.toLibraryFolderItem(
@@ -200,6 +222,7 @@ private fun AttachmentEntity.toLibraryFileItem(progress: PdfReadingProgressEntit
         pageCount = progress?.pageCount,
         progressPercent = progress?.progressPercent,
         lastOpenedAt = progress?.lastOpenedAt ?: 0L,
+        pinned = isPinned,
     )
 
 private fun Int?.orZero(): Int = this ?: 0

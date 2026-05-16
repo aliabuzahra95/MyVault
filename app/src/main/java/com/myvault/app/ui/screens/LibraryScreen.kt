@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.WbSunny
@@ -90,6 +92,10 @@ fun LibraryScreen(
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onImportFile: (Uri) -> Unit,
+    onRenameFile: (fileId: String, name: String) -> Unit,
+    onMoveFile: (fileId: String, folderId: String?) -> Unit,
+    onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
+    onDeleteFile: (fileId: String) -> Unit,
     onThemeClick: () -> Unit,
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -98,7 +104,7 @@ fun LibraryScreen(
 ) {
     LibraryArchiveScreen(
         title = "Library",
-        subtitle = "Books, PDFs, files, and archives",
+        subtitle = null,
         uiState = uiState,
         onBackClick = null,
         currentFolderId = null,
@@ -110,6 +116,10 @@ fun LibraryScreen(
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
         onImportFile = onImportFile,
+        onRenameFile = onRenameFile,
+        onMoveFile = onMoveFile,
+        onSetFilePinned = onSetFilePinned,
+        onDeleteFile = onDeleteFile,
         onThemeClick = onThemeClick,
         onQuickBackupClick = onQuickBackupClick,
         onSettingsClick = onSettingsClick,
@@ -130,6 +140,10 @@ fun LibraryFolderScreen(
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onImportFile: (Uri) -> Unit,
+    onRenameFile: (fileId: String, name: String) -> Unit,
+    onMoveFile: (fileId: String, folderId: String?) -> Unit,
+    onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
+    onDeleteFile: (fileId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val folder = uiState.currentFolder
@@ -147,6 +161,10 @@ fun LibraryFolderScreen(
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
         onImportFile = onImportFile,
+        onRenameFile = onRenameFile,
+        onMoveFile = onMoveFile,
+        onSetFilePinned = onSetFilePinned,
+        onDeleteFile = onDeleteFile,
         modifier = modifier,
     )
 }
@@ -155,7 +173,7 @@ fun LibraryFolderScreen(
 @Composable
 private fun LibraryArchiveScreen(
     title: String,
-    subtitle: String,
+    subtitle: String?,
     uiState: LibraryUiState,
     onBackClick: (() -> Unit)?,
     currentFolderId: String?,
@@ -167,6 +185,10 @@ private fun LibraryArchiveScreen(
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onImportFile: (Uri) -> Unit,
+    onRenameFile: (fileId: String, name: String) -> Unit,
+    onMoveFile: (fileId: String, folderId: String?) -> Unit,
+    onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
+    onDeleteFile: (fileId: String) -> Unit,
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
@@ -177,9 +199,14 @@ private fun LibraryArchiveScreen(
     var fabExpanded by remember { mutableStateOf(false) }
     var folderDialog by remember { mutableStateOf<LibraryFolderDialog?>(null) }
     var folderName by remember { mutableStateOf("") }
+    var fileName by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<LibraryFolderItem?>(null) }
+    var selectedFile by remember { mutableStateOf<LibraryFileItem?>(null) }
     var actionDialogOpen by remember { mutableStateOf(false) }
+    var fileActionDialogOpen by remember { mutableStateOf(false) }
     var moveDialogOpen by remember { mutableStateOf(false) }
+    var fileMoveDialogOpen by remember { mutableStateOf(false) }
+    var fileRenameDialogOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     val hierarchyViewMode = LibraryViewMode.Compact
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -201,7 +228,7 @@ private fun LibraryArchiveScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 118.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 item {
                     if (onBackClick == null) {
@@ -224,14 +251,13 @@ private fun LibraryArchiveScreen(
                                 onClick = onSettingsClick,
                             )
                         }
-                        Text(
-                            text = subtitle,
-                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textSecondary,
-                        )
-                        if (uiState.continueReading == null) {
-                            Spacer(modifier = Modifier.height(2.dp))
+                        if (!subtitle.isNullOrBlank()) {
+                            Text(
+                                text = subtitle,
+                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                            )
                         }
                     } else {
                         ScreenTopBar(onBackClick = onBackClick)
@@ -240,7 +266,27 @@ private fun LibraryArchiveScreen(
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
                             Text(title, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W800), color = colors.text)
-                            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                            if (!subtitle.isNullOrBlank()) {
+                                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                            }
+                        }
+                    }
+                }
+
+                if (uiState.pinnedFiles.isNotEmpty()) {
+                    item {
+                        SectionLabel(label = "Pinned")
+                        Spacer(modifier = Modifier.height(3.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                        ) {
+                            items(uiState.pinnedFiles, key = { it.id }) { file ->
+                                LibraryPinnedFileCard(
+                                    file = file,
+                                    onClick = { onAttachmentClick(file.id) },
+                                )
+                            }
                         }
                     }
                 }
@@ -287,6 +333,10 @@ private fun LibraryArchiveScreen(
                                 selectedFolder = it
                                 actionDialogOpen = true
                             },
+                            onFileLongPress = {
+                                selectedFile = it
+                                fileActionDialogOpen = true
+                            },
                         )
                     }
                 }
@@ -307,6 +357,10 @@ private fun LibraryArchiveScreen(
                             depth = 0,
                             showMetadata = false,
                             onClick = { onAttachmentClick(file.id) },
+                            onLongPress = {
+                                selectedFile = file
+                                fileActionDialogOpen = true
+                            },
                         )
                     }
                 }
@@ -424,6 +478,84 @@ private fun LibraryArchiveScreen(
         )
     }
 
+    if (fileActionDialogOpen && selectedFile != null) {
+        val file = selectedFile
+        LibraryActionDialog(
+            title = file?.name.orEmpty(),
+            actions = listOf(
+                LibraryAction("Rename", Icons.Rounded.Edit) {
+                    fileActionDialogOpen = false
+                    fileName = file?.name.orEmpty()
+                    fileRenameDialogOpen = true
+                },
+                LibraryAction("Move", Icons.Rounded.DriveFileMove) {
+                    fileActionDialogOpen = false
+                    fileMoveDialogOpen = true
+                },
+                LibraryAction(if (file?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
+                    file?.let { onSetFilePinned(it.id, !it.pinned) }
+                    fileActionDialogOpen = false
+                },
+                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    file?.let { onDeleteFile(it.id) }
+                    fileActionDialogOpen = false
+                },
+            ),
+            onDismiss = { fileActionDialogOpen = false },
+        )
+    }
+
+    if (fileMoveDialogOpen && selectedFile != null) {
+        val file = selectedFile
+        val targets = uiState.allFolders.flatMap { it.flatten() }
+        LibraryActionDialog(
+            title = "Move ${file?.name.orEmpty()}",
+            actions = listOf(
+                LibraryAction("Library root", Icons.Rounded.Folder) {
+                    file?.let { onMoveFile(it.id, null) }
+                    fileMoveDialogOpen = false
+                },
+            ) + targets.map { target ->
+                LibraryAction(target.name, Icons.Rounded.Folder) {
+                    file?.let { onMoveFile(it.id, target.id) }
+                    fileMoveDialogOpen = false
+                }
+            },
+            onDismiss = { fileMoveDialogOpen = false },
+        )
+    }
+
+    if (fileRenameDialogOpen && selectedFile != null) {
+        AlertDialog(
+            onDismissRequest = { fileRenameDialogOpen = false },
+            title = { Text("Rename file") },
+            text = {
+                OutlinedTextField(
+                    value = fileName,
+                    onValueChange = { fileName = it },
+                    singleLine = true,
+                    label = { Text("File name") },
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedFile?.let { onRenameFile(it.id, fileName) }
+                        fileRenameDialogOpen = false
+                        fileName = ""
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileRenameDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     folderDialog?.let { dialog ->
         AlertDialog(
             onDismissRequest = { folderDialog = null },
@@ -456,6 +588,48 @@ private fun LibraryArchiveScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun LibraryPinnedFileCard(
+    file: LibraryFileItem,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(width = 104.dp, height = 64.dp),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            AttachmentThumbnail(
+                mimeType = file.mimeType,
+                localPath = file.localPath,
+                kind = file.kind,
+                size = 18.dp,
+            )
+            Text(
+                text = file.name,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = file.kind,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -534,6 +708,7 @@ private fun LibraryFolderRow(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onFolderLongPress: (LibraryFolderItem) -> Unit,
+    onFileLongPress: (LibraryFileItem) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val rotation by animateFloatAsState(
@@ -570,7 +745,7 @@ private fun LibraryFolderRow(
             enter = expandVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)),
             exit = shrinkVertically(animationSpec = tween(150, easing = FastOutSlowInEasing)),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp), modifier = Modifier.padding(top = 1.dp)) {
                 folder.children.forEach { child ->
                     LibraryFolderRow(
                         folder = child,
@@ -584,6 +759,7 @@ private fun LibraryFolderRow(
                         onFolderClick = onFolderClick,
                         onAttachmentClick = onAttachmentClick,
                         onFolderLongPress = onFolderLongPress,
+                        onFileLongPress = onFileLongPress,
                     )
                 }
                 folder.files.forEach { file ->
@@ -592,6 +768,7 @@ private fun LibraryFolderRow(
                         depth = folder.depth + 1,
                         showMetadata = viewMode != LibraryViewMode.Compact,
                         onClick = { onAttachmentClick(file.id) },
+                        onLongPress = { onFileLongPress(file) },
                     )
                 }
             }
@@ -605,6 +782,7 @@ private fun LibraryNestedFileRow(
     depth: Int,
     showMetadata: Boolean,
     onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val progress = if (file.pageIndex != null && file.pageCount != null) {
         " · p. ${file.pageIndex + 1}/${file.pageCount}"
@@ -624,6 +802,7 @@ private fun LibraryNestedFileRow(
             )
         },
         onClick = onClick,
+        onLongClick = onLongPress,
     )
 }
 

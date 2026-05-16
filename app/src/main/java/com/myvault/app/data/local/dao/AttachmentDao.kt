@@ -27,7 +27,7 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE noteId = '' AND libraryFolderId IS NULL AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeRootLibraryFiles(): Flow<List<AttachmentEntity>>
 
-    @Query("SELECT * FROM attachments WHERE libraryFolderId IS NOT NULL AND deletedAt IS NULL ORDER BY createdAt DESC")
+    @Query("SELECT * FROM attachments WHERE (noteId = '' OR libraryFolderId IS NOT NULL) AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeLibraryFiles(): Flow<List<AttachmentEntity>>
 
     @Query("SELECT * FROM attachments WHERE id = :id AND deletedAt IS NULL")
@@ -44,6 +44,15 @@ interface AttachmentDao {
 
     @Query("UPDATE attachments SET deletedAt = :deletedAt WHERE id = :id")
     suspend fun updateDeletedAt(id: String, deletedAt: Long?)
+
+    @Query("UPDATE attachments SET fileName = :fileName WHERE id = :id")
+    suspend fun updateFileName(id: String, fileName: String)
+
+    @Query("UPDATE attachments SET libraryFolderId = :folderId WHERE id = :id")
+    suspend fun updateLibraryFolder(id: String, folderId: String?)
+
+    @Query("UPDATE attachments SET isPinned = :pinned WHERE id = :id")
+    suspend fun updatePinned(id: String, pinned: Boolean)
 
     @Query("DELETE FROM attachments WHERE noteId IN (:noteIds)")
     suspend fun deleteForNotes(noteIds: List<String>)

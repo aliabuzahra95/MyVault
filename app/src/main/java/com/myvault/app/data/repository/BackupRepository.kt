@@ -379,6 +379,7 @@ class BackupRepository @Inject constructor(
             sizeBytes = getLong("sizeBytes"),
             localPath = targetFile.absolutePath,
             remoteUrl = optNullableString("remoteUrl"),
+            isPinned = optBoolean("isPinned", false),
             createdAt = getLong("createdAt"),
             deletedAt = optNullableLong("deletedAt"),
         )
@@ -539,6 +540,7 @@ private fun AttachmentEntity.toJson(): JSONObject =
         .put("sizeBytes", sizeBytes)
         .put("localPath", localPath)
         .put("remoteUrl", remoteUrl)
+        .put("isPinned", isPinned)
         .put("createdAt", createdAt)
         .put("deletedAt", deletedAt)
 

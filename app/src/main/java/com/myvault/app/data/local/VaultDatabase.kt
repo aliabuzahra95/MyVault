@@ -39,7 +39,7 @@ import com.myvault.app.data.local.entity.TagEntity
         AiMessageEntity::class,
         PdfReadingProgressEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -139,6 +139,12 @@ abstract class VaultDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attachments ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

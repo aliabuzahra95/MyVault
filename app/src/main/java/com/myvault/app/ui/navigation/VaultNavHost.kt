@@ -219,6 +219,10 @@ fun VaultNavHost(
                                 navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                             }
                         },
+                        onRenameFile = libraryViewModel::renameFile,
+                        onMoveFile = libraryViewModel::moveFile,
+                        onSetFilePinned = libraryViewModel::setFilePinned,
+                        onDeleteFile = libraryViewModel::deleteFile,
                         onThemeClick = {
                             settingsViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -337,6 +341,10 @@ fun VaultNavHost(
                         navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                     }
                 },
+                onRenameFile = viewModel::renameFile,
+                onMoveFile = viewModel::moveFile,
+                onSetFilePinned = viewModel::setFilePinned,
+                onDeleteFile = viewModel::deleteFile,
             )
         }
         composable(
