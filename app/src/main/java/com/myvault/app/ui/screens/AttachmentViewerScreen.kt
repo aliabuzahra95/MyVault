@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -57,6 +58,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.repository.kindLabel
@@ -202,25 +204,10 @@ private fun PdfAttachmentViewer(
     var pageCount by remember(attachment.localPath) { mutableIntStateOf(progress?.pageCount ?: 0) }
     var error by remember(attachment.localPath) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = progress?.pageIndex?.coerceAtLeast(0) ?: 0)
-    var scale by remember(attachment.localPath) { mutableFloatStateOf(1f) }
-    var offset by remember(attachment.localPath) { mutableStateOf(Offset.Zero) }
     var restoredProgressPage by remember(attachment.id) { mutableStateOf(false) }
+    var zoomedPageIndex by remember(attachment.id) { mutableStateOf<Int?>(null) }
     val visiblePage by remember {
         derivedStateOf { listState.firstVisibleItemIndex.coerceAtLeast(0) }
-    }
-    val transformableState = rememberTransformableState { _, zoomChange, panChange, _ ->
-        val nextScale = (scale * zoomChange).coerceIn(1f, 4.5f)
-        scale = nextScale
-        offset = if (nextScale <= 1.01f) {
-            Offset.Zero
-        } else {
-            (offset + panChange).let { nextOffset ->
-                Offset(
-                    x = nextOffset.x.coerceIn(-1800f, 1800f),
-                    y = nextOffset.y.coerceIn(-2400f, 2400f),
-                )
-            }
-        }
     }
 
     LaunchedEffect(attachment.localPath) {
@@ -260,9 +247,8 @@ private fun PdfAttachmentViewer(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(VaultThemeTokens.colors.inset)
-                        .transformable(transformableState),
-                    userScrollEnabled = scale <= 1.05f,
+                        .background(VaultThemeTokens.colors.inset),
+                    userScrollEnabled = zoomedPageIndex == null,
                     contentPadding = PaddingValues(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -270,8 +256,16 @@ private fun PdfAttachmentViewer(
                         PdfPageSurface(
                             path = attachment.localPath,
                             pageIndex = pageIndex,
-                            scale = scale,
-                            offset = offset,
+                            zoomActive = zoomedPageIndex == pageIndex,
+                            onZoomActiveChange = { active ->
+                                zoomedPageIndex = if (active) {
+                                    pageIndex
+                                } else if (zoomedPageIndex == pageIndex) {
+                                    null
+                                } else {
+                                    zoomedPageIndex
+                                }
+                            },
                         )
                     }
                 }
@@ -316,11 +310,34 @@ private fun BoxScope.PdfReadingProgressOverlay(
 private fun PdfPageSurface(
     path: String,
     pageIndex: Int,
-    scale: Float,
-    offset: Offset,
+    zoomActive: Boolean,
+    onZoomActiveChange: (Boolean) -> Unit,
 ) {
     var bitmap by remember(path, pageIndex) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(path, pageIndex) { mutableStateOf<String?>(null) }
+    var scale by remember(path, pageIndex) { mutableFloatStateOf(1f) }
+    var offset by remember(path, pageIndex) { mutableStateOf(Offset.Zero) }
+    val transformableState = rememberTransformableState { _, zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 4.5f)
+        scale = nextScale
+        offset = if (nextScale <= 1.01f) {
+            Offset.Zero
+        } else {
+            (offset + panChange).let { nextOffset ->
+                Offset(
+                    x = nextOffset.x.coerceIn(-1800f, 1800f),
+                    y = nextOffset.y.coerceIn(-2400f, 2400f),
+                )
+            }
+        }
+        onZoomActiveChange(nextScale > 1.05f)
+    }
+
+    LaunchedEffect(scale, zoomActive) {
+        if (scale <= 1.01f && zoomActive) {
+            onZoomActiveChange(false)
+        }
+    }
 
     LaunchedEffect(path, pageIndex) {
         val result = renderPdfPage(path, pageIndex)
@@ -336,27 +353,40 @@ private fun PdfPageSurface(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                translationX = if (scale > 1.05f) offset.x else 0f
-                translationY = if (scale > 1.05f) offset.y else 0f
-            },
+            .zIndex(if (zoomActive) 1f else 0f),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(5.dp)),
             color = Color.White,
             shape = RoundedCornerShape(5.dp),
             shadowElevation = 2.dp,
         ) {
             val loadedBitmap = bitmap
             when {
-                loadedBitmap != null -> Image(
-                    bitmap = loadedBitmap,
-                    contentDescription = "Page ${pageIndex + 1}",
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.FillWidth,
-                )
+                loadedBitmap != null -> Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(5.dp))
+                        .transformable(transformableState),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        bitmap = loadedBitmap,
+                        contentDescription = "Page ${pageIndex + 1}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = if (scale > 1.05f) offset.x else 0f
+                                translationY = if (scale > 1.05f) offset.y else 0f
+                            },
+                        contentScale = ContentScale.FillWidth,
+                    )
+                }
                 error != null -> AttachmentViewerEmpty(error ?: "Unable to load page")
                 else -> Box(
                     modifier = Modifier

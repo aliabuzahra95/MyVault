@@ -12,6 +12,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -242,7 +244,7 @@ private fun LibraryArchiveScreen(
                         LibraryFolderRow(
                             folder = folder,
                             viewMode = uiState.viewMode,
-                            expanded = folder.id in uiState.expandedFolderIds,
+                expanded = folder.id in uiState.expandedFolderIds,
                             isChildExpanded = { id -> id in uiState.expandedFolderIds },
                             onToggle = {
                                 onFolderExpandedChange(folder.id, folder.id !in uiState.expandedFolderIds)
@@ -254,6 +256,7 @@ private fun LibraryArchiveScreen(
                             },
                             onFolderExpandedChange = onFolderExpandedChange,
                             onFolderClick = onFolderClick,
+                            onAttachmentClick = onAttachmentClick,
                             onFolderLongPress = {
                                 selectedFolder = it
                                 actionDialogOpen = true
@@ -309,10 +312,12 @@ private fun LibraryArchiveScreen(
             FloatingActionMenu(
                 expanded = fabExpanded,
                 actions = actions,
+                mainButtonSize = 48.dp,
+                actionButtonSize = 38.dp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = VaultSpacing.screen)
-                    .size(width = 230.dp, height = 250.dp),
+                    .padding(end = VaultSpacing.screen, bottom = VaultSpacing.xl)
+                    .size(width = 220.dp, height = 230.dp),
                 onToggle = { fabExpanded = !fabExpanded },
                 onActionClick = { action ->
                     fabExpanded = false
@@ -514,6 +519,7 @@ private fun LibraryFolderRow(
     onLongPress: () -> Unit,
     onFolderExpandedChange: (String, Boolean) -> Unit,
     onFolderClick: (String) -> Unit,
+    onAttachmentClick: (String) -> Unit,
     onFolderLongPress: (LibraryFolderItem) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -525,42 +531,62 @@ private fun LibraryFolderRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = if (folder.depth == 0) VaultSpacing.screen else VaultSpacing.screen + (folder.depth * 14).dp),
+            .padding(horizontal = VaultSpacing.screen),
     ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            if (folder.depth > 0) {
+                Row(
+                    modifier = Modifier.width((folder.depth * 16).dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .width(1.dp)
+                            .height(58.dp)
+                            .background(colors.border.copy(alpha = 0.55f)),
+                    )
+                }
+            }
         Surface(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
                 .clip(VaultShapes.md),
             color = if (expanded) colors.surface else colors.elevated,
             shape = VaultShapes.md,
-            border = BorderStroke(1.dp, if (expanded) colors.warning.copy(alpha = 0.42f) else colors.border),
+            border = BorderStroke(1.dp, colors.border),
         ) {
             Row(
                 modifier = Modifier
                     .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
-                    .padding(horizontal = 12.dp, vertical = if (viewMode == LibraryViewMode.Compact) 8.dp else 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 Surface(
                     onClick = onToggle,
-                    color = colors.inset,
+                    color = Color.Transparent,
                     shape = VaultShapes.sm,
-                    border = BorderStroke(1.dp, colors.border),
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(24.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                             contentDescription = "Expand folder",
                             modifier = Modifier
-                                .size(17.dp)
+                                .size(16.dp)
                                 .graphicsLayer { rotationZ = rotation },
                             tint = colors.textMuted,
                         )
                     }
                 }
-                Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(20.dp), tint = colors.warning)
+                Icon(
+                    Icons.Rounded.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (folder.depth > 0) 18.dp else 20.dp),
+                    tint = colors.warning,
+                )
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = folder.name,
@@ -569,7 +595,7 @@ private fun LibraryFolderRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (viewMode != LibraryViewMode.Compact) {
+                    if (viewMode != LibraryViewMode.Compact && folder.count > 0) {
                         Text(
                             text = "${folder.count} items",
                             style = MaterialTheme.typography.labelMedium,
@@ -577,19 +603,22 @@ private fun LibraryFolderRow(
                         )
                     }
                 }
-                Text(
-                    text = folder.count.toString(),
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                    color = colors.textMuted,
-                )
+                if (folder.count > 0) {
+                    Text(
+                        text = folder.count.toString(),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                        color = colors.textMuted,
+                    )
+                }
             }
+        }
         }
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)),
             exit = shrinkVertically(animationSpec = tween(150, easing = FastOutSlowInEasing)),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 7.dp)) {
                 folder.children.forEach { child ->
                     LibraryFolderRow(
                         folder = child,
@@ -601,11 +630,55 @@ private fun LibraryFolderRow(
                         onLongPress = { onFolderLongPress(child) },
                         onFolderExpandedChange = onFolderExpandedChange,
                         onFolderClick = onFolderClick,
+                        onAttachmentClick = onAttachmentClick,
                         onFolderLongPress = onFolderLongPress,
+                    )
+                }
+                folder.files.forEach { file ->
+                    LibraryNestedFileRow(
+                        file = file,
+                        depth = folder.depth + 1,
+                        compact = viewMode == LibraryViewMode.Compact,
+                        onClick = { onAttachmentClick(file.id) },
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LibraryNestedFileRow(
+    file: LibraryFileItem,
+    depth: Int,
+    compact: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen),
+    ) {
+        Row(
+            modifier = Modifier.width((depth * 16).dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .width(1.dp)
+                    .height(if (compact) 42.dp else 54.dp)
+                    .background(colors.border.copy(alpha = 0.45f)),
+            )
+        }
+        LibraryFileCard(
+            file = file,
+            compact = compact,
+            modifier = Modifier.weight(1f),
+            horizontalPadding = 0.dp,
+            onClick = onClick,
+        )
     }
 }
 
@@ -615,6 +688,7 @@ private fun LibraryFileCard(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     grid: Boolean = false,
+    horizontalPadding: androidx.compose.ui.unit.Dp = VaultSpacing.screen,
     onClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -622,7 +696,7 @@ private fun LibraryFileCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = if (grid) 0.dp else VaultSpacing.screen),
+            .padding(horizontal = if (grid) 0.dp else horizontalPadding),
         color = colors.surface,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, colors.border),

@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -46,6 +47,8 @@ fun FloatingActionMenu(
     expanded: Boolean,
     modifier: Modifier = Modifier,
     actions: List<FloatingAction> = defaultFloatingActions,
+    mainButtonSize: Dp = 56.dp,
+    actionButtonSize: Dp = 44.dp,
     onToggle: () -> Unit = {},
     onActionClick: (FloatingAction) -> Unit = {},
 ) {
@@ -106,12 +109,12 @@ fun FloatingActionMenu(
                         }
                         SmallFloatingActionButton(
                             onClick = { onActionClick(action) },
-                            modifier = Modifier.size(44.dp),
+                            modifier = Modifier.size(actionButtonSize),
                             shape = VaultShapes.md,
                             containerColor = colors.elevated,
                             contentColor = colors.accent,
                         ) {
-                            Icon(action.icon, contentDescription = action.label, modifier = Modifier.size(15.dp))
+                            Icon(action.icon, contentDescription = action.label, modifier = Modifier.size(if (actionButtonSize < 42.dp) 14.dp else 15.dp))
                         }
                     }
                 }
@@ -119,12 +122,12 @@ fun FloatingActionMenu(
         }
         SmallFloatingActionButton(
             onClick = onToggle,
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(mainButtonSize),
             shape = VaultShapes.lg,
             containerColor = colors.accent,
             contentColor = Color.White,
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = "Create", modifier = Modifier.size(24.dp).rotate(rotation))
+            Icon(Icons.Rounded.Add, contentDescription = "Create", modifier = Modifier.size(if (mainButtonSize < 52.dp) 21.dp else 24.dp).rotate(rotation))
         }
     }
 }

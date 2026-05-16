@@ -39,6 +39,7 @@ data class LibraryFolderItem(
     val name: String,
     val count: Int,
     val depth: Int = 0,
+    val files: List<LibraryFileItem> = emptyList(),
     val children: List<LibraryFolderItem> = emptyList(),
 )
 
@@ -85,6 +86,13 @@ class LibraryViewModel @Inject constructor(
     ) { folders, allFiles, currentFiles, progress, preferences ->
         val libraryFolders = folders.filter { it.mode == FOLDER_MODE_LIBRARY }
         val progressByAttachment = progress.associateBy { it.attachmentId }
+        val filesByFolder = allFiles
+            .filter { it.deletedAt == null }
+            .groupBy { it.libraryFolderId }
+            .mapValues { (_, files) ->
+                files.map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+                    .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenBy { it.name.lowercase() })
+            }
         val fileCounts = allFiles
             .filter { it.deletedAt == null }
             .mapNotNull { it.libraryFolderId }
@@ -94,7 +102,7 @@ class LibraryViewModel @Inject constructor(
         val visibleFolders = libraryFolders
             .filter { it.parentId == folderId }
             .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
-            .map { it.toLibraryFolderItem(libraryFolders, fileCounts, depth = 0) }
+            .map { it.toLibraryFolderItem(libraryFolders, fileCounts, filesByFolder, depth = 0) }
 
         val currentFileItems = currentFiles
             .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
@@ -112,7 +120,7 @@ class LibraryViewModel @Inject constructor(
             allFolders = libraryFolders
                 .filter { it.parentId == null }
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
-                .map { it.toLibraryFolderItem(libraryFolders, fileCounts, depth = 0) },
+                .map { it.toLibraryFolderItem(libraryFolders, fileCounts, filesByFolder, depth = 0) },
             expandedFolderIds = preferences.expandedFolderIds,
             viewMode = LibraryViewMode.fromStoredValue(preferences.libraryViewMode),
         )
@@ -158,17 +166,19 @@ class LibraryViewModel @Inject constructor(
 private fun FolderEntity.toLibraryFolderItem(
     allFolders: List<FolderEntity>,
     fileCounts: Map<String, Int>,
+    filesByFolder: Map<String?, List<LibraryFileItem>>,
     depth: Int,
 ): LibraryFolderItem {
     val children = allFolders
         .filter { it.parentId == id }
         .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
-        .map { it.toLibraryFolderItem(allFolders, fileCounts, depth + 1) }
+        .map { it.toLibraryFolderItem(allFolders, fileCounts, filesByFolder, depth + 1) }
     return LibraryFolderItem(
         id = id,
         name = name,
         count = fileCounts[id].orZero() + children.sumOf { it.count },
         depth = depth,
+        files = filesByFolder[id].orEmpty(),
         children = children,
     )
 }

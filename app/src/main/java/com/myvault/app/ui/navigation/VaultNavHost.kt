@@ -657,12 +657,12 @@ private fun RootModePill(
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        color = if (selected) colors.accentSoft else colors.elevated,
-        contentColor = if (selected) colors.accent else colors.textSecondary,
+        color = if (selected) colors.accentSoft else colors.elevated.copy(alpha = 0.74f),
+        contentColor = if (selected) colors.accent else colors.textSecondary.copy(alpha = 0.78f),
         shape = VaultShapes.pill,
-        border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
+        border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border.copy(alpha = 0.7f)),
         tonalElevation = if (selected) 2.dp else 0.dp,
-        shadowElevation = if (selected) 5.dp else 2.dp,
+        shadowElevation = if (selected) 5.dp else 1.dp,
     ) {
         Text(
             text = label,
