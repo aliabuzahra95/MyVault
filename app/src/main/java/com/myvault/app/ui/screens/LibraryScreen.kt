@@ -11,6 +11,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -200,7 +201,7 @@ private fun LibraryArchiveScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 118.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 item {
                     if (onBackClick == null) {
@@ -569,7 +570,7 @@ private fun LibraryFolderRow(
             enter = expandVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)),
             exit = shrinkVertically(animationSpec = tween(150, easing = FastOutSlowInEasing)),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 7.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
                 folder.children.forEach { child ->
                     LibraryFolderRow(
                         folder = child,
@@ -672,14 +673,21 @@ private fun LibraryHierarchyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (onToggle != null) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
+                Box(
                     modifier = Modifier
-                        .size(if (topLevel) 14.dp else 12.dp)
-                        .graphicsLayer { rotationZ = chevronRotation },
-                    tint = colors.textMuted,
-                )
+                        .size(if (topLevel) 28.dp else 24.dp)
+                        .clickable(onClick = onToggle),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = "Expand folder",
+                        modifier = Modifier
+                            .size(if (topLevel) 14.dp else 12.dp)
+                            .graphicsLayer { rotationZ = chevronRotation },
+                        tint = colors.textMuted,
+                    )
+                }
             } else {
                 Spacer(modifier = Modifier.width(12.dp))
             }
