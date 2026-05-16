@@ -5,6 +5,8 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.NoteDao
+import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.ui.screens.AttachmentSample
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -21,6 +23,8 @@ class AttachmentRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val attachmentDao: AttachmentDao,
     private val noteDao: NoteDao,
+    private val pdfAnnotationDao: PdfAnnotationDao,
+    private val pdfReadingProgressDao: PdfReadingProgressDao,
 ) {
     fun observeAllCards() = combine(attachmentDao.observeAll(), noteDao.observeAll()) { attachments, notes ->
         val noteTitles = notes.associate { it.id to it.title }
@@ -116,6 +120,8 @@ class AttachmentRepository @Inject constructor(
 
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
+        pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
+        pdfReadingProgressDao.deleteForAttachments(listOf(attachmentId))
     }
 
     suspend fun renameAttachment(attachmentId: String, fileName: String) = withContext(Dispatchers.IO) {

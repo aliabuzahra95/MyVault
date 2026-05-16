@@ -126,9 +126,9 @@ class BackupRepository @Inject constructor(
         val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
         val aiConversationIds = aiConversations.map { it.id }.toSet()
         val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
-        val attachmentIds = attachments.map { it.id }.toSet()
-        val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in attachmentIds }
-        val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in attachmentIds }
+        val activeAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
+        val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in activeAttachmentIds }
+        val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in activeAttachmentIds }
 
         ZipOutputStream(output.buffered()).use { zip ->
             zip.writeJson("manifest.json", manifestJson())
@@ -201,7 +201,21 @@ class BackupRepository @Inject constructor(
             "Backup attachment count changed while verifying."
         }
 
+        val folderJson = entries.requireJsonArray("folders.json")
+        val folderIds = List(folderJson.length()) { index ->
+            folderJson.getJSONObject(index).getString("id")
+        }.toSet()
+        check(folderIds.size == folderJson.length()) { "Backup contains duplicate folder IDs." }
+        validateFolderHierarchy(folderJson, folderIds)
+
         val noteIds = List(notes.length()) { index -> notes.getJSONObject(index).getString("id") }.toSet()
+        check(noteIds.size == notes.length()) { "Backup contains duplicate note IDs." }
+        List(notes.length()) { index -> notes.getJSONObject(index) }.forEach { note ->
+            val folderId = note.optNullableString("folderId")
+            check(folderId == null || folderId in folderIds) {
+                "Backup contains a note without a matching folder."
+            }
+        }
         List(blocks.length()) { index -> blocks.getJSONObject(index) }.forEach { block ->
             check(block.getString("noteId") in noteIds) { "Backup contains a block without a matching note." }
             if (block.getString("type") == "rich_text") {
@@ -248,10 +262,6 @@ class BackupRepository @Inject constructor(
             check(message.getString("role").isNotBlank()) { "Backup contains an AI message without a role." }
             check(message.getString("content").isNotBlank()) { "Backup contains an empty AI message." }
         }
-        val folderJson = entries.requireJsonArray("folders.json")
-        val folderIds = List(folderJson.length()) { index ->
-            folderJson.getJSONObject(index).getString("id")
-        }.toSet()
         List(attachments.length()) { index -> attachments.getJSONObject(index) }.forEach { attachment ->
             val noteId = attachment.optString("noteId")
             val libraryFolderId = attachment.optNullableString("libraryFolderId")
@@ -263,14 +273,22 @@ class BackupRepository @Inject constructor(
                 check(entry in fileEntries) { "Backup is missing an attachment file: ${attachment.getString("fileName")}" }
             }
         }
-        val attachmentIds = List(attachments.length()) { index -> attachments.getJSONObject(index).getString("id") }.toSet()
+        check(
+            List(attachments.length()) { index -> attachments.getJSONObject(index).getString("id") }.toSet().size == attachments.length(),
+        ) {
+            "Backup contains duplicate attachment IDs."
+        }
+        val activeAttachmentIds = List(attachments.length()) { index -> attachments.getJSONObject(index) }
+            .filter { it.optNullableLong("deletedAt") == null }
+            .map { it.getString("id") }
+            .toSet()
         List(pdfReadingProgress.length()) { index -> pdfReadingProgress.getJSONObject(index) }.forEach { progress ->
-            check(progress.getString("attachmentId") in attachmentIds) {
+            check(progress.getString("attachmentId") in activeAttachmentIds) {
                 "Backup contains PDF progress without a matching attachment."
             }
         }
         List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index) }.forEach { annotation ->
-            check(annotation.getString("attachmentId") in attachmentIds) {
+            check(annotation.getString("attachmentId") in activeAttachmentIds) {
                 "Backup contains a PDF annotation without a matching attachment."
             }
             val left = annotation.getDouble("left")
@@ -344,14 +362,15 @@ class BackupRepository @Inject constructor(
                 it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredFolderIds
             }
         val restoredAttachmentIds = attachments.map { it.id }.toSet()
+        val activeRestoredAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
             .mapJson { it.toPdfReadingProgressEntity() }
-            .filter { it.attachmentId in restoredAttachmentIds }
+            .filter { it.attachmentId in activeRestoredAttachmentIds }
         val restoredLibraryFolderIds = folders.map { it.id }.toSet()
         val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
             .mapJson { it.toPdfAnnotationEntity() }
             .filter {
-                it.attachmentId in restoredAttachmentIds &&
+                it.attachmentId in activeRestoredAttachmentIds &&
                     (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds)
             }
 
@@ -369,6 +388,10 @@ class BackupRepository @Inject constructor(
         if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
         if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
         if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
+        if (restoredAttachmentIds.isNotEmpty()) {
+            pdfReadingProgressDao.deleteForAttachments(restoredAttachmentIds.toList())
+            pdfAnnotationDao.deleteForAttachments(restoredAttachmentIds.toList())
+        }
         if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
         if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)
 
@@ -441,6 +464,29 @@ private fun validateAttachmentEntryName(attachmentId: String) {
     }
 }
 
+private fun validateFolderHierarchy(folders: JSONArray, folderIds: Set<String>) {
+    val parentById = List(folders.length()) { index -> folders.getJSONObject(index) }
+        .associate { folder ->
+            val id = folder.getString("id")
+            val parentId = folder.optNullableString("parentId")
+            check(id.isNotBlank()) { "Backup contains a folder without an ID." }
+            check(parentId == null || parentId in folderIds) {
+                "Backup contains a folder without a matching parent."
+            }
+            check(parentId != id) { "Backup contains a folder that points to itself." }
+            id to parentId
+        }
+
+    parentById.keys.forEach { folderId ->
+        val seen = mutableSetOf<String>()
+        var current: String? = folderId
+        while (current != null) {
+            check(seen.add(current)) { "Backup contains a circular folder hierarchy." }
+            current = parentById[current]
+        }
+    }
+}
+
 private fun validateBackupPathSegment(value: String) {
     if (value.isBlank() || value.contains("/") || value.contains("\\") || value.contains("..")) {
         error("Backup contains an invalid file path")
@@ -473,7 +519,11 @@ private fun ZipOutputStream.writeJson(name: String, json: Any) {
 private fun AttachmentEntity.backupFileEntry(): String = "files/$id"
 
 private fun AttachmentEntity.toBackupJson(): JSONObject =
-    toJson().put("fileEntry", backupFileEntry())
+    toJson().also { json ->
+        if (deletedAt == null) {
+            json.put("fileEntry", backupFileEntry())
+        }
+    }
 
 private fun FolderEntity.toJson(): JSONObject =
     JSONObject()

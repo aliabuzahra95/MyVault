@@ -5,6 +5,8 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
@@ -30,6 +32,8 @@ class NoteRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val tagDao: TagDao,
     private val noteTableDao: NoteTableDao,
+    private val pdfAnnotationDao: PdfAnnotationDao,
+    private val pdfReadingProgressDao: PdfReadingProgressDao,
 ) {
     private val bodyBlockTypes = listOf(
         "rich_text",
@@ -182,6 +186,11 @@ class NoteRepository @Inject constructor(
 
     suspend fun permanentlyDeleteNote(noteId: String) {
         val attachments = attachmentDao.getForNotes(listOf(noteId))
+        val attachmentIds = attachments.map { it.id }
+        if (attachmentIds.isNotEmpty()) {
+            pdfAnnotationDao.deleteForAttachments(attachmentIds)
+            pdfReadingProgressDao.deleteForAttachments(attachmentIds)
+        }
         blockDao.deleteForNotes(listOf(noteId))
         tagDao.deleteRefsForNotes(listOf(noteId))
         noteTableDao.deleteForNotes(listOf(noteId))

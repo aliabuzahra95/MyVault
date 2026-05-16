@@ -32,4 +32,7 @@ interface PdfAnnotationDao {
 
     @Query("DELETE FROM pdf_annotations WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM pdf_annotations WHERE attachmentId IN (:attachmentIds)")
+    suspend fun deleteForAttachments(attachmentIds: List<String>)
 }

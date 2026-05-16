@@ -6,6 +6,8 @@ import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
+import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.TagEntity
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,6 +20,8 @@ data class SyncSnapshot(
     val noteTags: List<NoteTagCrossRef>,
     val tables: List<NoteTableEntity>,
     val attachments: List<AttachmentEntity>,
+    val pdfReadingProgress: List<PdfReadingProgressEntity> = emptyList(),
+    val pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
 )
 
 sealed interface SyncResult {
@@ -34,6 +38,8 @@ fun SyncSnapshot.toJson(): JSONObject = JSONObject()
     .put("note_tags", noteTags.toJsonArray { it.toJson() })
     .put("note_tables", tables.toJsonArray { it.toJson() })
     .put("attachments", attachments.toJsonArray { it.toJson() })
+    .put("pdf_reading_progress", pdfReadingProgress.toJsonArray { it.toJson() })
+    .put("pdf_annotations", pdfAnnotations.toJsonArray { it.toJson() })
 
 private fun <T> List<T>.toJsonArray(toJson: (T) -> JSONObject): JSONArray =
     JSONArray().also { array -> forEach { array.put(toJson(it)) } }
@@ -95,3 +101,25 @@ private fun AttachmentEntity.toJson() = JSONObject()
     .put("is_pinned", isPinned)
     .put("created_at", createdAt)
     .put("deleted_at", deletedAt)
+
+private fun PdfReadingProgressEntity.toJson() = JSONObject()
+    .put("attachment_id", attachmentId)
+    .put("page_index", pageIndex)
+    .put("page_count", pageCount)
+    .put("progress_percent", progressPercent)
+    .put("last_opened_at", lastOpenedAt)
+    .put("updated_at", updatedAt)
+
+private fun PdfAnnotationEntity.toJson() = JSONObject()
+    .put("id", id)
+    .put("attachment_id", attachmentId)
+    .put("library_folder_id", libraryFolderId)
+    .put("page_index", pageIndex)
+    .put("left", left)
+    .put("top", top)
+    .put("right", right)
+    .put("bottom", bottom)
+    .put("color", color)
+    .put("note_text", noteText)
+    .put("created_at", createdAt)
+    .put("updated_at", updatedAt)

@@ -23,4 +23,7 @@ interface PdfReadingProgressDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(progress: List<PdfReadingProgressEntity>)
+
+    @Query("DELETE FROM pdf_reading_progress WHERE attachmentId IN (:attachmentIds)")
+    suspend fun deleteForAttachments(attachmentIds: List<String>)
 }

@@ -5,6 +5,8 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -24,6 +26,8 @@ class FolderRepository @Inject constructor(
     private val blockDao: BlockDao,
     private val tagDao: TagDao,
     private val noteTableDao: NoteTableDao,
+    private val pdfAnnotationDao: PdfAnnotationDao,
+    private val pdfReadingProgressDao: PdfReadingProgressDao,
 ) {
     fun observeWorkspaceTree() = combine(
         folderDao.observeAll(),
@@ -179,6 +183,11 @@ class FolderRepository @Inject constructor(
 
         if (noteIds.isNotEmpty()) {
             val attachments = attachmentDao.getForNotes(noteIds)
+            val attachmentIds = attachments.map { it.id }
+            if (attachmentIds.isNotEmpty()) {
+                pdfAnnotationDao.deleteForAttachments(attachmentIds)
+                pdfReadingProgressDao.deleteForAttachments(attachmentIds)
+            }
             blockDao.deleteForNotes(noteIds)
             tagDao.deleteRefsForNotes(noteIds)
             noteTableDao.deleteForNotes(noteIds)
@@ -192,6 +201,9 @@ class FolderRepository @Inject constructor(
             emptyList()
         }
         if (libraryAttachments.isNotEmpty()) {
+            val libraryAttachmentIds = libraryAttachments.map { it.id }
+            pdfAnnotationDao.deleteForAttachments(libraryAttachmentIds)
+            pdfReadingProgressDao.deleteForAttachments(libraryAttachmentIds)
             attachmentDao.upsertAll(libraryAttachments.map { it.copy(deletedAt = System.currentTimeMillis()) })
             libraryAttachments.deleteLocalFiles()
         }
