@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class AttachmentEntity(
     @PrimaryKey val id: String,
     val noteId: String,
+    val libraryFolderId: String? = null,
     val fileName: String,
     val mimeType: String,
     val sizeBytes: Long,

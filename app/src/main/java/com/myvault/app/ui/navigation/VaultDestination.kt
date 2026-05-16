@@ -7,6 +7,9 @@ sealed class VaultDestination(val route: String, val label: String) {
     data object FolderView : VaultDestination("folder/{folderId}", "Folder View") {
         fun route(folderId: String) = "folder/$folderId"
     }
+    data object LibraryFolder : VaultDestination("library-folder/{libraryFolderId}", "Library Folder") {
+        fun route(folderId: String) = "library-folder/$folderId"
+    }
     data object Editor : VaultDestination("editor/{noteId}", "Editor") {
         fun route(noteId: String) = "editor/$noteId"
     }

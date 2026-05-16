@@ -31,6 +31,7 @@ data class VaultUserPreferences(
     val lastLocalBackupAt: Long = 0L,
     val lastCloudBackupAt: Long = 0L,
     val expandedFolderIds: Set<String> = emptySet(),
+    val libraryViewMode: String = "list",
 )
 
 @Singleton
@@ -51,6 +52,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 lastLocalBackupAt = preferences[Keys.LastLocalBackupAt] ?: 0L,
                 lastCloudBackupAt = preferences[Keys.LastCloudBackupAt] ?: 0L,
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
+                libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
             )
         }
 
@@ -126,6 +128,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setLibraryViewMode(mode: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.LibraryViewMode] = mode
+        }
+    }
+
     private object Keys {
         val Theme: Preferences.Key<String> = stringPreferencesKey("theme")
         val AccentColor: Preferences.Key<String> = stringPreferencesKey("accent_color")
@@ -140,5 +148,6 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val LastLocalBackupAt: Preferences.Key<Long> = longPreferencesKey("last_local_backup_at")
         val LastCloudBackupAt: Preferences.Key<Long> = longPreferencesKey("last_cloud_backup_at")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
+        val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
     }
 }

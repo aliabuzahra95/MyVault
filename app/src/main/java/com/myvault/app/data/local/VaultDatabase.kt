@@ -36,7 +36,7 @@ import com.myvault.app.data.local.entity.TagEntity
         AiConversationEntity::class,
         AiMessageEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -112,6 +112,12 @@ abstract class VaultDatabase : RoomDatabase() {
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE folders ADD COLUMN mode TEXT NOT NULL DEFAULT 'study'")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attachments ADD COLUMN libraryFolderId TEXT")
             }
         }
     }

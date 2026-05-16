@@ -27,7 +27,7 @@ class AttachmentRepository @Inject constructor(
         attachments.map {
             AttachmentSample(
                 name = it.fileName,
-                note = noteTitles[it.noteId] ?: "Untitled note",
+                note = if (it.libraryFolderId != null) "Library" else noteTitles[it.noteId] ?: "Untitled note",
                 size = it.sizeLabel(),
                 date = it.createdAt.toRelativeTime(),
                 kind = it.kindLabel(),
@@ -42,6 +42,12 @@ class AttachmentRepository @Inject constructor(
     fun observeAttachment(id: String) = attachmentDao.observeById(id)
 
     fun observeForNote(noteId: String) = attachmentDao.observeForNote(noteId)
+
+    fun observeLibraryFiles() = attachmentDao.observeLibraryFiles()
+
+    fun observeForLibraryFolder(folderId: String) = attachmentDao.observeForLibraryFolder(folderId)
+
+    fun observeRootLibraryFiles() = attachmentDao.observeRootLibraryFiles()
 
     suspend fun displayName(uri: Uri): String = withContext(Dispatchers.IO) {
         context.contentResolver.displayName(uri)
@@ -65,6 +71,37 @@ class AttachmentRepository @Inject constructor(
                 AttachmentEntity(
                     id = id,
                     noteId = noteId,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    sizeBytes = sizeBytes,
+                    localPath = localFile.absolutePath,
+                    remoteUrl = null,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            ),
+        )
+        id
+    }
+
+    suspend fun importLibraryDocument(folderId: String?, uri: Uri): String = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val id = UUID.randomUUID().toString()
+        val fileName = resolver.displayName(uri).sanitizeFileName().ifBlank { "library-file-$id" }
+        val mimeType = resolver.getType(uri) ?: "application/octet-stream"
+        val attachmentsDir = File(context.filesDir, "library/${folderId ?: "root"}").apply { mkdirs() }
+        val localFile = File(attachmentsDir, "${id}_$fileName")
+
+        resolver.openInputStream(uri)?.use { input ->
+            localFile.outputStream().use { output -> input.copyTo(output) }
+        } ?: error("Unable to open selected file")
+
+        val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
+        attachmentDao.upsertAll(
+            listOf(
+                AttachmentEntity(
+                    id = id,
+                    noteId = "",
+                    libraryFolderId = folderId,
                     fileName = fileName,
                     mimeType = mimeType,
                     sizeBytes = sizeBytes,

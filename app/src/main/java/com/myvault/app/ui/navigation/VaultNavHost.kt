@@ -43,6 +43,8 @@ import com.myvault.app.ui.screens.AskAiScreen
 import com.myvault.app.ui.screens.EditorScreen
 import com.myvault.app.ui.screens.FolderViewScreen
 import com.myvault.app.ui.screens.HomeScreen
+import com.myvault.app.ui.screens.LibraryFolderScreen
+import com.myvault.app.ui.screens.LibraryScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
@@ -54,6 +56,7 @@ import com.myvault.app.ui.viewmodel.AttachmentsViewModel
 import com.myvault.app.ui.viewmodel.AttachmentViewerViewModel
 import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
+import com.myvault.app.ui.viewmodel.LibraryViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
@@ -192,6 +195,32 @@ fun VaultNavHost(
                         currentFolderMode = FOLDER_MODE_STUDY,
                     )
                 },
+                libraryContent = {
+                    val libraryViewModel: LibraryViewModel = hiltViewModel()
+                    val libraryState by libraryViewModel.uiState.collectAsState()
+                    LibraryScreen(
+                        uiState = libraryState,
+                        onFolderClick = { folderId ->
+                            navController.navigate(VaultDestination.LibraryFolder.route(folderId))
+                        },
+                        onAttachmentClick = { attachmentId ->
+                            navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                        },
+                        onCreateFolder = { parentId, name ->
+                            libraryViewModel.createFolder(parentId = parentId, name = name)
+                        },
+                        onRenameFolder = libraryViewModel::renameFolder,
+                        onMoveFolder = libraryViewModel::moveFolder,
+                        onDeleteFolder = libraryViewModel::deleteFolder,
+                        onFolderExpandedChange = libraryViewModel::setFolderExpanded,
+                        onViewModeChange = libraryViewModel::setViewMode,
+                        onImportFile = { uri ->
+                            libraryViewModel.importFile(uri) { attachmentId ->
+                                navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                            }
+                        },
+                    )
+                },
                 personalContent = {
                     HomeScreen(
                         uiState = personalState,
@@ -266,6 +295,36 @@ fun VaultNavHost(
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         currentFolderMode = FOLDER_MODE_PERSONAL,
                     )
+                },
+            )
+        }
+        composable(
+            route = VaultDestination.LibraryFolder.route,
+            arguments = listOf(navArgument("libraryFolderId") { type = NavType.StringType }),
+        ) {
+            val viewModel: LibraryViewModel = hiltViewModel()
+            val uiState by viewModel.uiState.collectAsState()
+            LibraryFolderScreen(
+                uiState = uiState,
+                onBackClick = { navController.popBackStack() },
+                onFolderClick = { folderId ->
+                    navController.navigate(VaultDestination.LibraryFolder.route(folderId))
+                },
+                onAttachmentClick = { attachmentId ->
+                    navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                },
+                onCreateFolder = { parentId, name ->
+                    viewModel.createFolder(parentId = parentId, name = name)
+                },
+                onRenameFolder = viewModel::renameFolder,
+                onMoveFolder = viewModel::moveFolder,
+                onDeleteFolder = viewModel::deleteFolder,
+                onFolderExpandedChange = viewModel::setFolderExpanded,
+                onViewModeChange = viewModel::setViewMode,
+                onImportFile = { uri ->
+                    viewModel.importFile(uri) { attachmentId ->
+                        navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                    }
                 },
             )
         }
@@ -538,6 +597,7 @@ private enum class VaultRootMode(val label: String) {
 @Composable
 private fun StudyLibraryPersonalShell(
     studyContent: @Composable () -> Unit,
+    libraryContent: @Composable () -> Unit,
     personalContent: @Composable () -> Unit,
 ) {
     val modes = VaultRootMode.entries
@@ -557,7 +617,7 @@ private fun StudyLibraryPersonalShell(
         ) { page ->
             when (modes[page]) {
                 VaultRootMode.Study -> studyContent()
-                VaultRootMode.Library -> LibraryComingSoonScreen()
+                VaultRootMode.Library -> libraryContent()
                 VaultRootMode.Personal -> personalContent()
             }
         }
@@ -606,41 +666,6 @@ private fun RootModePill(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
         )
-    }
-}
-
-@Composable
-private fun LibraryComingSoonScreen() {
-    val colors = VaultThemeTokens.colors
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.bg)
-            .padding(VaultSpacing.screen),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            color = colors.surface,
-            shape = VaultShapes.xl,
-            border = BorderStroke(1.dp, colors.border),
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = VaultSpacing.xl, vertical = VaultSpacing.xxl),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-            ) {
-                Text(
-                    text = "Library coming soon",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W800),
-                    color = colors.text,
-                )
-                Text(
-                    text = "Books, PDFs, files, reading progress, and archives will appear here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary,
-                )
-            }
-        }
     }
 }
 

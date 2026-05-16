@@ -113,7 +113,10 @@ class BackupRepository @Inject constructor(
         val tags = tagDao.getAll()
         val tagRefs = tagDao.getAllRefs().filter { it.noteId in backupNoteIds }
         val tables = noteTableDao.getAll().filter { it.noteId in backupNoteIds }
-        val attachments = attachmentDao.getAllIncludingDeleted().filter { it.noteId in backupNoteIds }
+        val folderIds = folders.map { it.id }.toSet()
+        val attachments = attachmentDao.getAllIncludingDeleted().filter {
+            it.noteId in backupNoteIds || it.noteId.isBlank() || it.libraryFolderId in folderIds
+        }
         val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
         val aiConversationIds = aiConversations.map { it.id }.toSet()
         val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
@@ -232,8 +235,16 @@ class BackupRepository @Inject constructor(
             check(message.getString("role").isNotBlank()) { "Backup contains an AI message without a role." }
             check(message.getString("content").isNotBlank()) { "Backup contains an empty AI message." }
         }
+        val folderJson = entries.requireJsonArray("folders.json")
+        val folderIds = List(folderJson.length()) { index ->
+            folderJson.getJSONObject(index).getString("id")
+        }.toSet()
         List(attachments.length()) { index -> attachments.getJSONObject(index) }.forEach { attachment ->
-            check(attachment.getString("noteId") in noteIds) { "Backup contains an attachment without a matching note." }
+            val noteId = attachment.optString("noteId")
+            val libraryFolderId = attachment.optNullableString("libraryFolderId")
+            check(noteId in noteIds || noteId.isBlank() || (libraryFolderId != null && libraryFolderId in folderIds)) {
+                "Backup contains an attachment without a matching note or library folder."
+            }
             val entry = attachment.optString("fileEntry")
             if (entry.isNotBlank()) {
                 check(entry in fileEntries) { "Backup is missing an attachment file: ${attachment.getString("fileName")}" }
@@ -297,7 +308,10 @@ class BackupRepository @Inject constructor(
         attachmentsJson.validateAttachmentFiles(restoredFiles.keys)
         val attachments = attachmentsJson
             .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")]) }
-            .filter { it.noteId in restoredNoteIds }
+            .filter {
+                val restoredFolderIds = folders.map { folder -> folder.id }.toSet()
+                it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredFolderIds
+            }
 
         createEmergencyBackupBeforeRestore()
 
@@ -325,11 +339,14 @@ class BackupRepository @Inject constructor(
 
     private fun JSONObject.toAttachmentEntity(restoredFile: File?): AttachmentEntity {
         val id = getString("id")
-        val noteId = getString("noteId")
+        val noteId = optString("noteId")
+        val libraryFolderId = optNullableString("libraryFolderId")
         validateBackupPathSegment(id)
-        validateBackupPathSegment(noteId)
+        if (noteId.isNotBlank()) validateBackupPathSegment(noteId)
+        if (!libraryFolderId.isNullOrBlank()) validateBackupPathSegment(libraryFolderId)
         val fileName = getString("fileName").sanitizeBackupFileName().ifBlank { "attachment-$id" }
-        val targetFile = File(context.filesDir, "attachments/$noteId/${id}_$fileName").apply {
+        val storageRoot = if (!libraryFolderId.isNullOrBlank()) "library/$libraryFolderId" else "attachments/$noteId"
+        val targetFile = File(context.filesDir, "$storageRoot/${id}_$fileName").apply {
             parentFile?.mkdirs()
             if (restoredFile != null) {
                 restoredFile.copyTo(this, overwrite = true)
@@ -338,6 +355,7 @@ class BackupRepository @Inject constructor(
         return AttachmentEntity(
             id = id,
             noteId = noteId,
+            libraryFolderId = libraryFolderId,
             fileName = fileName,
             mimeType = getString("mimeType"),
             sizeBytes = getLong("sizeBytes"),
@@ -488,6 +506,7 @@ private fun AttachmentEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("noteId", noteId)
+        .put("libraryFolderId", libraryFolderId)
         .put("fileName", fileName)
         .put("mimeType", mimeType)
         .put("sizeBytes", sizeBytes)

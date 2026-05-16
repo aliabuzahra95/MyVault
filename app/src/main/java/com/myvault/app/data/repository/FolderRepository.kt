@@ -6,6 +6,7 @@ import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.TagDao
+import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +45,8 @@ class FolderRepository @Inject constructor(
     fun observeFolder(id: String): Flow<FolderEntity?> = folderDao.observeById(id)
 
     fun observeSubfolders(id: String) = folderDao.observeChildren(id)
+
+    fun observeLibraryFolders() = folderDao.observeAll()
 
     fun observeDeletedFolders() = folderDao.observeDeleted()
 
@@ -143,6 +146,9 @@ class FolderRepository @Inject constructor(
             noteDao.updateDeletedAt(noteIds, now, now)
             attachmentDao.updateDeletedAtForNotes(noteIds, now)
         }
+        if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+            attachmentDao.updateDeletedAtForLibraryFolders(folderIds, now)
+        }
         folderDao.updateDeletedAt(folderIds, now, now)
     }
 
@@ -157,6 +163,9 @@ class FolderRepository @Inject constructor(
         if (noteIds.isNotEmpty()) {
             noteDao.updateDeletedAt(noteIds, null, now)
             attachmentDao.updateDeletedAtForNotes(noteIds, null)
+        }
+        if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+            attachmentDao.updateDeletedAtForLibraryFolders(folderIds, null)
         }
         folderDao.updateDeletedAt(folderIds, null, now)
     }
@@ -176,6 +185,15 @@ class FolderRepository @Inject constructor(
             attachmentDao.deleteForNotes(noteIds)
             noteDao.deleteByIds(noteIds)
             attachments.deleteLocalFiles()
+        }
+        val libraryAttachments = if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+            attachmentDao.getAllIncludingDeleted().filter { it.libraryFolderId in folderIds }
+        } else {
+            emptyList()
+        }
+        if (libraryAttachments.isNotEmpty()) {
+            attachmentDao.upsertAll(libraryAttachments.map { it.copy(deletedAt = System.currentTimeMillis()) })
+            libraryAttachments.deleteLocalFiles()
         }
         folderDao.deleteByIds(folderIds)
     }
