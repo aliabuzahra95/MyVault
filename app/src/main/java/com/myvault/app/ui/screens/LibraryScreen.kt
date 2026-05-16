@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -214,6 +215,15 @@ private fun LibraryArchiveScreen(
 
                 item {
                     LibraryViewModeRow(uiState.viewMode, onViewModeChange)
+                }
+
+                uiState.continueReading?.let { file ->
+                    item {
+                        ContinueReadingCard(
+                            file = file,
+                            onClick = { onAttachmentClick(file.id) },
+                        )
+                    }
                 }
 
                 item {
@@ -431,6 +441,67 @@ private fun LibraryViewModeRow(
     }
 }
 
+@Composable
+private fun ContinueReadingCard(
+    file: LibraryFileItem,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val pageLabel = if (file.pageIndex != null && file.pageCount != null) {
+        "Page ${file.pageIndex + 1} of ${file.pageCount}"
+    } else {
+        "Resume reading"
+    }
+    val percent = file.progressPercent?.let { "${(it.coerceIn(0f, 1f) * 100).toInt()}%" } ?: ""
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen),
+        color = colors.surface,
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.accentBorder),
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                color = colors.accentSoft,
+                contentColor = colors.accent,
+                shape = VaultShapes.md,
+                border = BorderStroke(1.dp, colors.accentBorder),
+                modifier = Modifier.size(42.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.MenuBook, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = "Continue reading",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+                    color = colors.accent,
+                )
+                Text(
+                    text = file.name,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = listOf(pageLabel, percent).filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryFolderRow(
@@ -575,7 +646,12 @@ private fun LibraryFileCard(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(file.name, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (!compact) {
-                        Text("${file.kind} · ${file.size} · ${file.meta}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val progress = if (file.pageIndex != null && file.pageCount != null) {
+                            " · p. ${file.pageIndex + 1}/${file.pageCount}"
+                        } else {
+                            ""
+                        }
+                        Text("${file.kind} · ${file.size} · ${file.meta}$progress", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -11,18 +12,20 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Delete
@@ -33,8 +36,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.ui.components.IconBtn
@@ -62,14 +68,17 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.util.openAttachment
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
 fun AttachmentViewerScreen(
     attachment: AttachmentEntity?,
+    pdfProgress: PdfReadingProgressEntity? = null,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onPdfProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit = { _, _ -> },
     onDeleteAttachment: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
@@ -101,7 +110,11 @@ fun AttachmentViewerScreen(
             } else {
                 AttachmentViewerHeader(attachment)
                 when {
-                    attachment.mimeType == "application/pdf" -> PdfAttachmentViewer(attachment)
+                    attachment.mimeType == "application/pdf" -> PdfAttachmentViewer(
+                        attachment = attachment,
+                        progress = pdfProgress,
+                        onProgressChanged = onPdfProgressChanged,
+                    )
                     attachment.mimeType.startsWith("image/") -> ImageAttachmentViewer(attachment)
                     else -> UnsupportedAttachmentViewer(attachment)
                 }
@@ -182,56 +195,167 @@ private fun ImageAttachmentViewer(attachment: AttachmentEntity) {
 }
 
 @Composable
-private fun PdfAttachmentViewer(attachment: AttachmentEntity) {
-    var pageIndex by remember(attachment.localPath) { mutableIntStateOf(0) }
-    var pageCount by remember(attachment.localPath) { mutableIntStateOf(0) }
-    var bitmap by remember(attachment.localPath, pageIndex) { mutableStateOf<ImageBitmap?>(null) }
+private fun PdfAttachmentViewer(
+    attachment: AttachmentEntity,
+    progress: PdfReadingProgressEntity?,
+    onProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit,
+) {
+    var pageCount by remember(attachment.localPath) { mutableIntStateOf(progress?.pageCount ?: 0) }
     var error by remember(attachment.localPath) { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = progress?.pageIndex?.coerceAtLeast(0) ?: 0)
+    var scale by remember(attachment.localPath) { mutableFloatStateOf(1f) }
+    var offset by remember(attachment.localPath) { mutableStateOf(Offset.Zero) }
+    val visiblePage by remember {
+        derivedStateOf { listState.firstVisibleItemIndex.coerceAtLeast(0) }
+    }
+    val transformableState = rememberTransformableState { _, zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 4.5f)
+        scale = nextScale
+        offset = if (nextScale <= 1.01f) Offset.Zero else offset + panChange
+    }
 
-    LaunchedEffect(attachment.localPath, pageIndex) {
-        val result = renderPdfPage(attachment.localPath, pageIndex)
-        result.onSuccess { rendered ->
-            bitmap = rendered.bitmap
-            pageCount = rendered.pageCount
+    LaunchedEffect(attachment.localPath) {
+        val result = readPdfPageCount(attachment.localPath)
+        result.onSuccess { count ->
+            pageCount = count
             error = null
         }.onFailure {
-            bitmap = null
             error = it.message ?: "Unable to load PDF"
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Previous page", active = pageIndex > 0) {
-                if (pageIndex > 0) pageIndex -= 1
-            }
-            Text(
-                text = if (pageCount > 0) "Page ${pageIndex + 1} of $pageCount" else "PDF",
-                style = MaterialTheme.typography.labelLarge,
-                color = VaultThemeTokens.colors.textSecondary,
-            )
-            IconBtn(Icons.AutoMirrored.Rounded.ArrowForward, "Next page", active = pageIndex < pageCount - 1) {
-                if (pageIndex < pageCount - 1) pageIndex += 1
+    LaunchedEffect(pageCount, attachment.id) {
+        if (pageCount <= 0) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { page -> onProgressChanged(page.coerceIn(0, pageCount - 1), pageCount) }
+    }
+
+    LaunchedEffect(pageCount, attachment.id) {
+        if (pageCount > 0) {
+            onProgressChanged(visiblePage.coerceIn(0, pageCount - 1), pageCount)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            error != null -> AttachmentViewerEmpty(error ?: "Unable to load PDF")
+            pageCount <= 0 -> AttachmentViewerEmpty("Loading PDF...")
+            else -> {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(VaultThemeTokens.colors.inset)
+                        .transformable(transformableState),
+                    userScrollEnabled = scale <= 1.05f,
+                    contentPadding = PaddingValues(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items((0 until pageCount).toList(), key = { it }) { pageIndex ->
+                        PdfPageSurface(
+                            path = attachment.localPath,
+                            pageIndex = pageIndex,
+                            scale = scale,
+                            offset = offset,
+                        )
+                    }
+                }
+                PdfReadingProgressOverlay(
+                    pageIndex = visiblePage.coerceIn(0, pageCount - 1),
+                    pageCount = pageCount,
+                )
             }
         }
+    }
+}
 
-        ZoomableAttachmentCanvas(resetKey = pageIndex) {
+@Composable
+private fun BoxScope.PdfReadingProgressOverlay(
+    pageIndex: Int,
+    pageCount: Int,
+) {
+    val colors = VaultThemeTokens.colors
+    val percent = ((pageIndex + 1).toFloat() / pageCount.toFloat()).coerceIn(0f, 1f)
+    AnimatedVisibility(
+        visible = pageCount > 0,
+        modifier = Modifier.align(Alignment.TopCenter),
+    ) {
+        Surface(
+            modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
+            color = colors.elevated.copy(alpha = 0.94f),
+            shape = VaultShapes.pill,
+            border = BorderStroke(1.dp, colors.border),
+            shadowElevation = 3.dp,
+        ) {
+            Text(
+                text = "Page ${pageIndex + 1} of $pageCount · ${(percent * 100).toInt()}%",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                color = colors.textSecondary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PdfPageSurface(
+    path: String,
+    pageIndex: Int,
+    scale: Float,
+    offset: Offset,
+) {
+    var bitmap by remember(path, pageIndex) { mutableStateOf<ImageBitmap?>(null) }
+    var error by remember(path, pageIndex) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(path, pageIndex) {
+        val result = renderPdfPage(path, pageIndex)
+        result.onSuccess { rendered ->
+            bitmap = rendered.bitmap
+            error = null
+        }.onFailure {
+            bitmap = null
+            error = it.message ?: "Unable to load page"
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = if (scale > 1.05f) offset.x else 0f
+                translationY = if (scale > 1.05f) offset.y else 0f
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(5.dp),
+            shadowElevation = 2.dp,
+        ) {
             val loadedBitmap = bitmap
             when {
                 loadedBitmap != null -> Image(
                     bitmap = loadedBitmap,
-                    contentDescription = attachment.fileName,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
+                    contentDescription = "Page ${pageIndex + 1}",
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.FillWidth,
                 )
-                error != null -> AttachmentViewerEmpty(error ?: "Unable to load PDF")
-                else -> AttachmentViewerEmpty("Loading PDF...")
+                error != null -> AttachmentViewerEmpty(error ?: "Unable to load page")
+                else -> Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(520.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Loading page ${pageIndex + 1}...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VaultThemeTokens.colors.textMuted,
+                    )
+                }
             }
         }
     }
@@ -309,7 +433,6 @@ private fun AttachmentCanvas(content: @Composable () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(VaultThemeTokens.colors.inset)
-            .verticalScroll(rememberScrollState())
             .padding(PaddingValues(horizontal = VaultSpacing.screen, vertical = VaultSpacing.md)),
         contentAlignment = Alignment.TopCenter,
     ) {
@@ -331,7 +454,6 @@ private fun AttachmentViewerEmpty(text: String) {
 
 private data class RenderedPdfPage(
     val bitmap: ImageBitmap,
-    val pageCount: Int,
 )
 
 private suspend fun loadImageBitmap(path: String): Result<ImageBitmap> = withContext(Dispatchers.IO) {
@@ -370,9 +492,19 @@ private suspend fun renderPdfPage(path: String, pageIndex: Int): Result<Rendered
                     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                     bitmap.eraseColor(android.graphics.Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    RenderedPdfPage(bitmap.asImageBitmap(), renderer.pageCount)
+                    RenderedPdfPage(bitmap.asImageBitmap())
                 }
             }
+        }
+    }
+}
+
+private suspend fun readPdfPageCount(path: String): Result<Int> = withContext(Dispatchers.IO) {
+    runCatching {
+        val file = File(path)
+        require(file.exists() && file.isFile) { "PDF file is missing" }
+        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+            PdfRenderer(descriptor).use { renderer -> renderer.pageCount }
         }
     }
 }

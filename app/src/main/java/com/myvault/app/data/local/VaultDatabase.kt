@@ -10,6 +10,7 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.AttachmentEntity
@@ -21,6 +22,7 @@ import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
+import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.TagEntity
 
 @Database(
@@ -35,8 +37,9 @@ import com.myvault.app.data.local.entity.TagEntity
         NoteTableEntity::class,
         AiConversationEntity::class,
         AiMessageEntity::class,
+        PdfReadingProgressEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -48,6 +51,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun searchDao(): SearchDao
     abstract fun noteTableDao(): NoteTableDao
     abstract fun aiConversationDao(): AiConversationDao
+    abstract fun pdfReadingProgressDao(): PdfReadingProgressDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -118,6 +122,23 @@ abstract class VaultDatabase : RoomDatabase() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE attachments ADD COLUMN libraryFolderId TEXT")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdf_reading_progress (
+                        attachmentId TEXT NOT NULL PRIMARY KEY,
+                        pageIndex INTEGER NOT NULL,
+                        pageCount INTEGER NOT NULL,
+                        progressPercent REAL NOT NULL,
+                        lastOpenedAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }

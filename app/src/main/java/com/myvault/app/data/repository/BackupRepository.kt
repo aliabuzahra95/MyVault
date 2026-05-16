@@ -8,6 +8,7 @@ import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.AttachmentEntity
@@ -19,6 +20,7 @@ import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
+import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.TagEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +47,7 @@ class BackupRepository @Inject constructor(
     private val searchDao: SearchDao,
     private val noteTableDao: NoteTableDao,
     private val aiConversationDao: AiConversationDao,
+    private val pdfReadingProgressDao: PdfReadingProgressDao,
 ) {
     suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "vault-manual-export-${System.currentTimeMillis()}.vaultbackup")
@@ -120,6 +123,8 @@ class BackupRepository @Inject constructor(
         val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
         val aiConversationIds = aiConversations.map { it.id }.toSet()
         val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
+        val attachmentIds = attachments.map { it.id }.toSet()
+        val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in attachmentIds }
 
         ZipOutputStream(output.buffered()).use { zip ->
             zip.writeJson("manifest.json", manifestJson())
@@ -132,6 +137,7 @@ class BackupRepository @Inject constructor(
             zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
             zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
             zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
+            zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
 
             attachments.forEach { attachment ->
                 val file = File(attachment.localPath)
@@ -177,6 +183,7 @@ class BackupRepository @Inject constructor(
         val aiConversations = entries.optionalJsonArray("ai_conversations.json")
         val aiMessages = entries.optionalJsonArray("ai_messages.json")
         val attachments = entries.requireJsonArray("attachments.json")
+        val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
         entries.requireJsonArray("folders.json")
         entries.requireJsonArray("tags.json")
         entries.requireJsonArray("note_tags.json")
@@ -250,6 +257,12 @@ class BackupRepository @Inject constructor(
                 check(entry in fileEntries) { "Backup is missing an attachment file: ${attachment.getString("fileName")}" }
             }
         }
+        val attachmentIds = List(attachments.length()) { index -> attachments.getJSONObject(index).getString("id") }.toSet()
+        List(pdfReadingProgress.length()) { index -> pdfReadingProgress.getJSONObject(index) }.forEach { progress ->
+            check(progress.getString("attachmentId") in attachmentIds) {
+                "Backup contains PDF progress without a matching attachment."
+            }
+        }
 
         return BackupVerificationResult(
             valid = true,
@@ -312,6 +325,10 @@ class BackupRepository @Inject constructor(
                 val restoredFolderIds = folders.map { folder -> folder.id }.toSet()
                 it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredFolderIds
             }
+        val restoredAttachmentIds = attachments.map { it.id }.toSet()
+        val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
+            .mapJson { it.toPdfReadingProgressEntity() }
+            .filter { it.attachmentId in restoredAttachmentIds }
 
         createEmergencyBackupBeforeRestore()
 
@@ -327,6 +344,7 @@ class BackupRepository @Inject constructor(
         if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
         if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
         if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
+        if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
 
         restoredFiles.values.forEach { it.delete() }
 
@@ -494,6 +512,15 @@ private fun AiMessageEntity.toJson(): JSONObject =
         .put("selectedTextContext", selectedTextContext)
         .put("createdAt", createdAt)
 
+private fun PdfReadingProgressEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("attachmentId", attachmentId)
+        .put("pageIndex", pageIndex)
+        .put("pageCount", pageCount)
+        .put("progressPercent", progressPercent)
+        .put("lastOpenedAt", lastOpenedAt)
+        .put("updatedAt", updatedAt)
+
 private fun TagEntity.toJson(): JSONObject =
     JSONObject().put("name", name)
 
@@ -539,6 +566,16 @@ private fun JSONObject.toNoteEntity(): NoteEntity =
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
         deletedAt = optNullableLong("deletedAt"),
+    )
+
+private fun JSONObject.toPdfReadingProgressEntity(): PdfReadingProgressEntity =
+    PdfReadingProgressEntity(
+        attachmentId = getString("attachmentId"),
+        pageIndex = getInt("pageIndex"),
+        pageCount = getInt("pageCount"),
+        progressPercent = optDouble("progressPercent", 0.0).toFloat(),
+        lastOpenedAt = getLong("lastOpenedAt"),
+        updatedAt = getLong("updatedAt"),
     )
 
 private fun JSONObject.toBlockEntity(): BlockEntity =

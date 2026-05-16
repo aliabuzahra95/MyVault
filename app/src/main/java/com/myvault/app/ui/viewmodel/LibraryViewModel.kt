@@ -7,9 +7,11 @@ import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
+import com.myvault.app.data.repository.PdfReadingProgressRepository
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.toRelativeTime
@@ -48,12 +50,17 @@ data class LibraryFileItem(
     val meta: String,
     val mimeType: String,
     val localPath: String,
+    val pageIndex: Int? = null,
+    val pageCount: Int? = null,
+    val progressPercent: Float? = null,
+    val lastOpenedAt: Long = 0L,
 )
 
 data class LibraryUiState(
     val currentFolder: FolderEntity? = null,
     val folders: List<LibraryFolderItem> = emptyList(),
     val files: List<LibraryFileItem> = emptyList(),
+    val continueReading: LibraryFileItem? = null,
     val allFolders: List<LibraryFolderItem> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val viewMode: LibraryViewMode = LibraryViewMode.List,
@@ -64,6 +71,7 @@ class LibraryViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val folderRepository: FolderRepository,
     private val attachmentRepository: AttachmentRepository,
+    private val pdfReadingProgressRepository: PdfReadingProgressRepository,
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
@@ -72,9 +80,11 @@ class LibraryViewModel @Inject constructor(
         folderRepository.observeLibraryFolders(),
         attachmentRepository.observeLibraryFiles(),
         if (folderId == null) attachmentRepository.observeRootLibraryFiles() else attachmentRepository.observeForLibraryFolder(folderId),
+        pdfReadingProgressRepository.observeAll(),
         vaultPreferences.userPreferences,
-    ) { folders, allFiles, currentFiles, preferences ->
+    ) { folders, allFiles, currentFiles, progress, preferences ->
         val libraryFolders = folders.filter { it.mode == FOLDER_MODE_LIBRARY }
+        val progressByAttachment = progress.associateBy { it.attachmentId }
         val fileCounts = allFiles
             .filter { it.deletedAt == null }
             .mapNotNull { it.libraryFolderId }
@@ -86,10 +96,19 @@ class LibraryViewModel @Inject constructor(
             .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
             .map { it.toLibraryFolderItem(libraryFolders, fileCounts, depth = 0) }
 
+        val currentFileItems = currentFiles
+            .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+            .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta })
+        val continueReadingItems = (if (folderId == null) allFiles else currentFiles)
+            .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+
         LibraryUiState(
             currentFolder = currentFolder,
             folders = visibleFolders,
-            files = currentFiles.map { it.toLibraryFileItem() },
+            files = currentFileItems,
+            continueReading = continueReadingItems
+                .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
+                .maxByOrNull { it.lastOpenedAt },
             allFolders = libraryFolders
                 .filter { it.parentId == null }
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
@@ -154,15 +173,23 @@ private fun FolderEntity.toLibraryFolderItem(
     )
 }
 
-private fun AttachmentEntity.toLibraryFileItem(): LibraryFileItem =
+private fun AttachmentEntity.toLibraryFileItem(progress: PdfReadingProgressEntity?): LibraryFileItem =
     LibraryFileItem(
         id = id,
         name = fileName,
         kind = kindLabel(),
         size = sizeLabel(),
-        meta = "Added ${createdAt.toRelativeTime()}",
+        meta = if (progress != null) {
+            "Opened ${progress.lastOpenedAt.toRelativeTime()}"
+        } else {
+            "Added ${createdAt.toRelativeTime()}"
+        },
         mimeType = mimeType,
         localPath = localPath,
+        pageIndex = progress?.pageIndex,
+        pageCount = progress?.pageCount,
+        progressPercent = progress?.progressPercent,
+        lastOpenedAt = progress?.lastOpenedAt ?: 0L,
     )
 
 private fun Int?.orZero(): Int = this ?: 0

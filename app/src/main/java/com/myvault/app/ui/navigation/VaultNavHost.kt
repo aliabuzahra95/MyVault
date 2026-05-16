@@ -524,9 +524,12 @@ fun VaultNavHost(
             val context = LocalContext.current
             val viewModel: AttachmentViewerViewModel = hiltViewModel()
             val attachment by viewModel.attachment.collectAsState()
+            val pdfProgress by viewModel.pdfProgress.collectAsState()
             AttachmentViewerScreen(
                 attachment = attachment,
+                pdfProgress = pdfProgress,
                 onBackClick = { navController.popBackStack() },
+                onPdfProgressChanged = viewModel::updatePdfProgress,
                 onDeleteAttachment = {
                     viewModel.deleteAttachment {
                         Toast.makeText(context, "Attachment deleted", Toast.LENGTH_SHORT).show()
