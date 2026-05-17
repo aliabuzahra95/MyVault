@@ -1332,7 +1332,7 @@ private fun LibraryHierarchyRow(
                 Text(
                     text = title,
                     style = if (fileRow) {
-                        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                        MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W600)
                     } else if (topLevel) {
                         MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
                     } else {
