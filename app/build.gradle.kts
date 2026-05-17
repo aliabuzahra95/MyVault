@@ -61,6 +61,8 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
+    implementation("io.github.ahmerafzal1:ahmer-pdfviewer:2.0.1")
+    implementation("io.github.ahmerafzal1:ahmer-pdfium:1.9.1")
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.ai)
     implementation(libs.hilt.android)
