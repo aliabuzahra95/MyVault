@@ -221,6 +221,7 @@ fun VaultNavHost(
                         onMoveFolder = libraryViewModel::moveFolder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
                         onFolderExpandedChange = libraryViewModel::setFolderExpanded,
+                        onViewModeChange = libraryViewModel::setViewMode,
                         onImportFiles = { uris ->
                             libraryViewModel.importFiles(uris)
                         },
@@ -349,6 +350,7 @@ fun VaultNavHost(
                 onMoveFolder = viewModel::moveFolder,
                 onDeleteFolder = viewModel::deleteFolder,
                 onFolderExpandedChange = viewModel::setFolderExpanded,
+                onViewModeChange = viewModel::setViewMode,
                 onImportFiles = { uris ->
                     viewModel.importFiles(uris)
                 },

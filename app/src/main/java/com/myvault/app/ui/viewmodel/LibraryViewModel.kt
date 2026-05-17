@@ -30,11 +30,11 @@ import javax.inject.Inject
 enum class LibraryViewMode(val storedValue: String, val label: String) {
     List("list", "List"),
     Grid("grid", "Grid"),
-    Compact("compact", "Compact");
+    Icons("icons", "Icons");
 
     companion object {
         fun fromStoredValue(value: String): LibraryViewMode =
-            entries.firstOrNull { it.storedValue == value } ?: List
+            entries.firstOrNull { it.storedValue == value } ?: if (value == "compact") Icons else List
     }
 }
 
@@ -98,6 +98,7 @@ class LibraryViewModel @Inject constructor(
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
+    private val viewModeLocationKey = folderId ?: LIBRARY_ROOT_VIEW_MODE_KEY
     private val importState = MutableStateFlow(LibraryImportState())
     private val pdfLayer = combine(
         pdfReadingProgressRepository.observeAll(),
@@ -177,7 +178,9 @@ class LibraryViewModel @Inject constructor(
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
                 .map { it.toLibraryFolderItem(libraryFolders, fileCounts, filesByFolder, depth = 0) },
             expandedFolderIds = preferences.expandedFolderIds,
-            viewMode = LibraryViewMode.fromStoredValue(preferences.libraryViewMode),
+            viewMode = LibraryViewMode.fromStoredValue(
+                preferences.libraryViewModesByLocation[viewModeLocationKey] ?: preferences.libraryViewMode,
+            ),
             importing = importing.active,
             importMessage = importing.message,
         )
@@ -210,7 +213,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun setViewMode(mode: LibraryViewMode) {
-        viewModelScope.launch { vaultPreferences.setLibraryViewMode(mode.storedValue) }
+        viewModelScope.launch { vaultPreferences.setLibraryViewMode(viewModeLocationKey, mode.storedValue) }
     }
 
     fun importFile(uri: Uri, onImported: (String) -> Unit = {}) {
@@ -330,3 +333,5 @@ private data class LibraryImportState(
     val active: Boolean = false,
     val message: String? = null,
 )
+
+private const val LIBRARY_ROOT_VIEW_MODE_KEY = "root"

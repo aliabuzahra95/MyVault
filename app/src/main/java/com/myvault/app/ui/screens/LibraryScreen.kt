@@ -39,12 +39,15 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -102,6 +105,7 @@ fun LibraryScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
+    onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
     onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
@@ -132,6 +136,7 @@ fun LibraryScreen(
         onMoveFolder = onMoveFolder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
+        onViewModeChange = onViewModeChange,
         onImportFiles = onImportFiles,
         onDismissImportMessage = onDismissImportMessage,
         onRenameFile = onRenameFile,
@@ -162,6 +167,7 @@ fun LibraryFolderScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
+    onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
     onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
@@ -189,6 +195,7 @@ fun LibraryFolderScreen(
         onMoveFolder = onMoveFolder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
+        onViewModeChange = onViewModeChange,
         onImportFiles = onImportFiles,
         onDismissImportMessage = onDismissImportMessage,
         onRenameFile = onRenameFile,
@@ -219,6 +226,7 @@ private fun LibraryArchiveScreen(
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
+    onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
     onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
@@ -249,8 +257,8 @@ private fun LibraryArchiveScreen(
     var annotationDeleteDialogOpen by remember { mutableStateOf(false) }
     var fileRenameDialogOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
+    var displayModeDialogOpen by remember { mutableStateOf(false) }
     var annotationTitle by remember { mutableStateOf("") }
-    val hierarchyViewMode = LibraryViewMode.Compact
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportFiles(uris)
     }
@@ -274,6 +282,12 @@ private fun LibraryArchiveScreen(
                 item {
                     if (onBackClick == null) {
                         VaultTopBar(title = title) {
+                            IconBtn(
+                                icon = Icons.Rounded.ViewList,
+                                contentDescription = "Display mode",
+                                active = uiState.viewMode != LibraryViewMode.List,
+                                onClick = { displayModeDialogOpen = true },
+                            )
                             IconBtn(
                                 icon = Icons.Rounded.WbSunny,
                                 contentDescription = "Toggle theme",
@@ -301,7 +315,17 @@ private fun LibraryArchiveScreen(
                             )
                         }
                     } else {
-                        ScreenTopBar(onBackClick = onBackClick)
+                        ScreenTopBar(
+                            onBackClick = onBackClick,
+                            actions = {
+                                IconBtn(
+                                    icon = Icons.Rounded.ViewList,
+                                    contentDescription = "Display mode",
+                                    active = uiState.viewMode != LibraryViewMode.List,
+                                    onClick = { displayModeDialogOpen = true },
+                                )
+                            },
+                        )
                         Column(
                             modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                             verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -356,11 +380,27 @@ private fun LibraryArchiveScreen(
                             text = if (currentFolderId == null) "Create a Library folder to begin your archive" else "No subfolders yet",
                         )
                     }
+                } else if (uiState.viewMode == LibraryViewMode.Grid) {
+                    items(uiState.folders.chunked(2), key = { row -> row.joinToString(":") { it.id } }) { row ->
+                        LibraryGridRow(
+                            items = row,
+                            content = { folder ->
+                                LibraryGridFolderCard(
+                                    folder = folder,
+                                    onClick = { onFolderClick(folder.id) },
+                                    onLongPress = {
+                                        selectedFolder = folder
+                                        actionDialogOpen = true
+                                    },
+                                )
+                            },
+                        )
+                    }
                 } else {
                     items(uiState.folders, key = { it.id }) { folder ->
                         LibraryFolderRow(
                             folder = folder,
-                            viewMode = hierarchyViewMode,
+                            viewMode = uiState.viewMode,
                             expanded = folder.id in uiState.expandedFolderIds,
                             isChildExpanded = { id -> id in uiState.expandedFolderIds },
                             onToggle = {
@@ -395,12 +435,29 @@ private fun LibraryArchiveScreen(
                     item {
                         LibraryEmptyState(icon = Icons.Rounded.InsertDriveFile, text = "No files yet")
                     }
+                } else if (uiState.viewMode == LibraryViewMode.Grid) {
+                    items(uiState.files.chunked(2), key = { row -> row.joinToString(":") { it.id } }) { row ->
+                        LibraryGridRow(
+                            items = row,
+                            content = { file ->
+                                LibraryGridFileCard(
+                                    file = file,
+                                    onClick = { onAttachmentClick(file.id) },
+                                    onLongPress = {
+                                        selectedFile = file
+                                        fileActionDialogOpen = true
+                                    },
+                                )
+                            },
+                        )
+                    }
                 } else {
                     items(uiState.files, key = { it.id }) { file ->
                         LibraryNestedFileRow(
                             file = file,
                             depth = 0,
-                            showMetadata = false,
+                            showMetadata = uiState.viewMode == LibraryViewMode.Icons,
+                            dense = uiState.viewMode == LibraryViewMode.Icons,
                             onClick = { onAttachmentClick(file.id) },
                             onLongPress = {
                                 selectedFile = file
@@ -488,6 +545,27 @@ private fun LibraryArchiveScreen(
                     Text("Cancel")
                 }
             },
+        )
+    }
+
+    if (displayModeDialogOpen) {
+        LibraryActionDialog(
+            title = "Display",
+            actions = LibraryViewMode.entries.map { mode ->
+                LibraryAction(
+                    label = mode.label,
+                    icon = when (mode) {
+                        LibraryViewMode.List -> Icons.Rounded.ViewList
+                        LibraryViewMode.Grid -> Icons.Rounded.GridView
+                        LibraryViewMode.Icons -> Icons.Rounded.Apps
+                    },
+                    selected = mode == uiState.viewMode,
+                ) {
+                    onViewModeChange(mode)
+                    displayModeDialogOpen = false
+                }
+            },
+            onDismiss = { displayModeDialogOpen = false },
         )
     }
 
@@ -827,6 +905,112 @@ private fun LibraryAnnotationRow(
     )
 }
 
+@Composable
+private fun <T> LibraryGridRow(
+    items: List<T>,
+    content: @Composable (T) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+    ) {
+        items.forEach { item ->
+            Box(modifier = Modifier.weight(1f)) {
+                content(item)
+            }
+        }
+        if (items.size == 1) {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryGridFolderCard(
+    folder: LibraryFolderItem,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(106.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(22.dp), tint = colors.warning)
+            Text(
+                text = folder.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${folder.count} item${if (folder.count == 1) "" else "s"}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryGridFileCard(
+    file: LibraryFileItem,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(122.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AttachmentThumbnail(
+                mimeType = file.mimeType,
+                localPath = file.localPath,
+                kind = file.kind,
+                size = 34.dp,
+            )
+            Text(
+                text = file.name,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W700),
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${file.kind} · ${file.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 private fun LibraryFileItem.toPinnedCardData(): VaultNoteCardData =
     VaultNoteCardData(
         id = id,
@@ -933,7 +1117,7 @@ private fun LibraryFolderRow(
         LibraryHierarchyRow(
             depth = folder.depth,
             title = folder.name,
-            subtitle = if (viewMode != LibraryViewMode.Compact && folder.count > 0) "${folder.count} items" else null,
+            subtitle = null,
             count = folder.count.takeIf { it > 0 }?.toString(),
             leading = { topLevel ->
                 Icon(
@@ -948,6 +1132,7 @@ private fun LibraryFolderRow(
             onToggle = onToggle,
             onClick = onOpen,
             onLongClick = onLongPress,
+            dense = viewMode == LibraryViewMode.Icons,
         )
         AnimatedVisibility(
             visible = expanded,
@@ -975,7 +1160,8 @@ private fun LibraryFolderRow(
                     LibraryNestedFileRow(
                         file = file,
                         depth = folder.depth + 1,
-                        showMetadata = viewMode != LibraryViewMode.Compact,
+                        showMetadata = false,
+                        dense = viewMode == LibraryViewMode.Icons,
                         onClick = { onAttachmentClick(file.id) },
                         onLongPress = { onFileLongPress(file) },
                     )
@@ -990,6 +1176,7 @@ private fun LibraryNestedFileRow(
     file: LibraryFileItem,
     depth: Int,
     showMetadata: Boolean,
+    dense: Boolean = false,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
 ) {
@@ -1012,6 +1199,7 @@ private fun LibraryNestedFileRow(
         },
         onClick = onClick,
         onLongClick = onLongPress,
+        dense = dense,
     )
 }
 
@@ -1028,6 +1216,7 @@ private fun LibraryHierarchyRow(
     onToggle: (() -> Unit)? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    dense: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
     val topLevel = depth == 0
@@ -1057,7 +1246,11 @@ private fun LibraryHierarchyRow(
                 .fillMaxWidth()
                 .padding(
                     horizontal = if (topLevel) 12.dp else 10.dp,
-                    vertical = if (topLevel) 10.dp else 8.dp,
+                    vertical = when {
+                        dense -> 6.dp
+                        topLevel -> 10.dp
+                        else -> 8.dp
+                    },
                 ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1171,9 +1364,9 @@ private fun LibraryActionDialog(
                 actions.forEach { action ->
                     Surface(
                         onClick = action.onClick,
-                        color = colors.surface,
+                        color = if (action.selected) colors.accentSoft else colors.surface,
                         shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, colors.border),
+                        border = BorderStroke(1.dp, if (action.selected) colors.accentBorder else colors.border),
                     ) {
                         Row(
                             modifier = Modifier
@@ -1202,6 +1395,7 @@ private data class LibraryAction(
     val label: String,
     val icon: ImageVector,
     val destructive: Boolean = false,
+    val selected: Boolean = false,
     val onClick: () -> Unit,
 )
 

@@ -32,6 +32,7 @@ data class VaultUserPreferences(
     val lastCloudBackupAt: Long = 0L,
     val expandedFolderIds: Set<String> = emptySet(),
     val libraryViewMode: String = "list",
+    val libraryViewModesByLocation: Map<String, String> = emptyMap(),
 )
 
 @Singleton
@@ -53,6 +54,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 lastCloudBackupAt = preferences[Keys.LastCloudBackupAt] ?: 0L,
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
+                libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
+                    .mapNotNull { entry ->
+                        val separator = entry.indexOf('=')
+                        if (separator <= 0) null else entry.substring(0, separator) to entry.substring(separator + 1)
+                    }
+                    .toMap(),
             )
         }
 
@@ -134,6 +141,20 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setLibraryViewMode(locationKey: String, mode: String) {
+        context.vaultDataStore.edit { preferences ->
+            val updated = preferences[Keys.LibraryViewModesByLocation].orEmpty()
+                .mapNotNull { entry ->
+                    val separator = entry.indexOf('=')
+                    if (separator <= 0) null else entry.substring(0, separator) to entry.substring(separator + 1)
+                }
+                .toMap()
+                .toMutableMap()
+                .apply { this[locationKey] = mode }
+            preferences[Keys.LibraryViewModesByLocation] = updated.map { (key, value) -> "$key=$value" }.toSet()
+        }
+    }
+
     private object Keys {
         val Theme: Preferences.Key<String> = stringPreferencesKey("theme")
         val AccentColor: Preferences.Key<String> = stringPreferencesKey("accent_color")
@@ -149,5 +170,6 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val LastCloudBackupAt: Preferences.Key<Long> = longPreferencesKey("last_cloud_backup_at")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
+        val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
     }
 }
