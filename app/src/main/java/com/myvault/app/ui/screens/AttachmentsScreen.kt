@@ -87,7 +87,7 @@ fun AttachmentsScreen(
             }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = VaultSpacing.screen), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    items(AttachmentKind.entries) { kind ->
+                    items(AttachmentKind.entries, key = { it.name }) { kind ->
                         AttachmentTypeChip(
                             kind = kind,
                             selected = kind == selectedKind,
@@ -106,7 +106,7 @@ fun AttachmentsScreen(
                     )
                 }
             } else {
-                items(visibleAttachments) { attachment ->
+                items(visibleAttachments, key = { item -> item.id.ifBlank { item.name } }) { attachment ->
                     AttachmentCard(
                         attachment = attachment,
                         onClick = {

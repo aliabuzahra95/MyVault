@@ -79,6 +79,8 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.util.openAttachment
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -245,6 +247,9 @@ private fun PdfAttachmentViewer(
     val visiblePage by remember {
         derivedStateOf { listState.firstVisibleItemIndex.coerceAtLeast(0) }
     }
+    val annotationsByPage = remember(annotations) {
+        annotations.groupBy { it.pageIndex }
+    }
 
     LaunchedEffect(attachment.localPath) {
         val result = readPdfPageCount(attachment.localPath)
@@ -260,7 +265,10 @@ private fun PdfAttachmentViewer(
         if (pageCount <= 0) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
-            .collect { page -> onProgressChanged(page.coerceIn(0, pageCount - 1), pageCount) }
+            .collectLatest { page ->
+                delay(500)
+                onProgressChanged(page.coerceIn(0, pageCount - 1), pageCount)
+            }
     }
 
     LaunchedEffect(pageCount, progress?.pageIndex, attachment.id) {
@@ -296,7 +304,7 @@ private fun PdfAttachmentViewer(
                             panOffset = panOffset,
                             highlighterMode = highlighterMode,
                             highlightColor = highlightColor,
-                            annotations = annotations.filter { it.pageIndex == pageIndex },
+                            annotations = annotationsByPage[pageIndex].orEmpty(),
                             onPanChange = { delta ->
                                 panOffset = if (zoom <= 1.01f) {
                                     Offset.Zero

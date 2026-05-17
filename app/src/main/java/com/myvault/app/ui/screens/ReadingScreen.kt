@@ -202,19 +202,19 @@ fun ReadingScreen(
             }
             if (uiState.tables.isNotEmpty()) {
                 item { SectionLabel(label = "Tables") }
-                items(uiState.tables) { table ->
+                items(uiState.tables, key = { it.id }) { table ->
                     ReadOnlyNoteTable(table = table)
                 }
             }
             if (uiState.attachments.isNotEmpty()) {
                 item { SectionLabel(label = "Attachments") }
-                items(uiState.attachments) { attachment ->
+                items(uiState.attachments, key = { it.id }) { attachment ->
                     AttachmentReadingPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
                 }
             }
             if (uiState.backlinks.isNotEmpty()) {
                 item { SectionLabel(label = "Linked from:") }
-                items(uiState.backlinks) { backlink ->
+                items(uiState.backlinks, key = { it.id }) { backlink ->
                     BacklinkCard(title = backlink.title, preview = backlink.preview, onClick = { onNoteLinkClick(backlink.id) })
                 }
             }

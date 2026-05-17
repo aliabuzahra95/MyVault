@@ -553,9 +553,11 @@ private fun LibraryArchiveScreen(
 
     if (moveDialogOpen && selectedFolder != null) {
         val selectedId = selectedFolder?.id.orEmpty()
-        val targets = uiState.allFolders
-            .flatMap { it.flatten() }
-            .filterNot { it.id == selectedId || it.containsFolder(selectedId) }
+        val targets = remember(uiState.allFolders, selectedId) {
+            uiState.allFolders
+                .flatMap { it.flatten() }
+                .filterNot { it.id == selectedId || it.containsFolder(selectedId) }
+        }
         LibraryActionDialog(
             title = "Move ${selectedFolder?.name.orEmpty()}",
             actions = listOf(
@@ -602,7 +604,7 @@ private fun LibraryArchiveScreen(
 
     if (fileMoveDialogOpen && selectedFile != null) {
         val file = selectedFile
-        val targets = uiState.allFolders.flatMap { it.flatten() }
+        val targets = remember(uiState.allFolders) { uiState.allFolders.flatMap { it.flatten() } }
         LibraryActionDialog(
             title = "Move ${file?.name.orEmpty()}",
             actions = listOf(
@@ -680,7 +682,7 @@ private fun LibraryArchiveScreen(
 
     if (annotationMoveDialogOpen && selectedAnnotation != null) {
         val annotation = selectedAnnotation
-        val targets = uiState.allFolders.flatMap { it.flatten() }
+        val targets = remember(uiState.allFolders) { uiState.allFolders.flatMap { it.flatten() } }
         LibraryActionDialog(
             title = "Move annotation note",
             actions = listOf(

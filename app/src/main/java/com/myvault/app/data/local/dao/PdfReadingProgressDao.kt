@@ -18,6 +18,9 @@ interface PdfReadingProgressDao {
     @Query("SELECT * FROM pdf_reading_progress ORDER BY lastOpenedAt DESC")
     suspend fun getAll(): List<PdfReadingProgressEntity>
 
+    @Query("SELECT * FROM pdf_reading_progress WHERE attachmentId = :attachmentId")
+    suspend fun getByAttachmentId(attachmentId: String): PdfReadingProgressEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(progress: PdfReadingProgressEntity)
 

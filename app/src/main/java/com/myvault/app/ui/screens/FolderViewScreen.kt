@@ -137,7 +137,7 @@ fun FolderViewScreen(
                         EmptyFolderState()
                     }
                 } else {
-                    items(uiState.subfolders) { folder ->
+                    items(uiState.subfolders, key = { it.id }) { folder ->
                         SubfolderCard(folder, onClick = { onFolderClick(folder.id) })
                     }
                 }
@@ -150,7 +150,7 @@ fun FolderViewScreen(
                         EmptyFolderState(text = if (uiState.notes.isEmpty()) "No notes in this folder yet" else "No notes match this filter")
                     }
                 } else {
-                    items(visibleNotes) { note ->
+                    items(visibleNotes, key = { it.id }) { note ->
                         NoteListRow(note = note, notePreviewLines = notePreviewLines, onClick = { onNoteClick(note.id) })
                     }
                 }

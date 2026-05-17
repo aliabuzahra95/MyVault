@@ -72,7 +72,7 @@ fun SearchScreen(
                 } else if (uiState.notes.isEmpty()) {
                     item { EmptySearchMessage("No matching notes") }
                 } else {
-                    items(uiState.notes) { result ->
+                    items(uiState.notes, key = { it.id }) { result ->
                         SearchResultCard(
                             result = result,
                             query = query,
@@ -89,7 +89,7 @@ fun SearchScreen(
                 } else if (uiState.folders.isEmpty()) {
                     item { EmptySearchMessage("No matching folders") }
                 } else {
-                    items(uiState.folders) { folder -> FolderResultRow(name = folder.name, parent = folder.parentId ?: "Workspace") }
+                    items(uiState.folders, key = { it.id }) { folder -> FolderResultRow(name = folder.name, parent = folder.parentId ?: "Workspace") }
                 }
             }
         }
@@ -141,7 +141,7 @@ private fun SearchFilters(selected: SearchFilter, onSelected: (SearchFilter) -> 
         contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
         horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
     ) {
-        items(SearchFilter.entries) { filter ->
+        items(SearchFilter.entries, key = { it.name }) { filter ->
             SearchFilterChip(filter.label, selected = filter == selected, onClick = { onSelected(filter) })
         }
     }

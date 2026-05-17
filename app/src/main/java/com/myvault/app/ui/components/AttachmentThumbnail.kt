@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import android.util.LruCache
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.foundation.layout.Box
@@ -74,12 +75,18 @@ private fun loadAttachmentThumbnail(mimeType: String, localPath: String): Bitmap
     runCatching {
         val file = File(localPath)
         if (!file.exists()) return@runCatching null
+        val key = "$mimeType:$localPath:${file.lastModified()}"
+        thumbnailCache.get(key)?.let { return@runCatching it }
         when {
             mimeType.startsWith("image/") -> decodeScaledBitmap(file, maxSize = 240)
             mimeType == "application/pdf" -> renderPdfFirstPage(file)
             else -> null
-        }
+        }?.also { thumbnailCache.put(key, it) }
     }.getOrNull()
+
+private val thumbnailCache = object : LruCache<String, Bitmap>(8 * 1024) {
+    override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+}
 
 private fun renderPdfFirstPage(file: File): Bitmap? {
     val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)

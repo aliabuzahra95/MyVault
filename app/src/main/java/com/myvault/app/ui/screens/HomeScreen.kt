@@ -299,7 +299,7 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
                             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
                         ) {
-                            items(uiState.pinnedNotes) { note ->
+                            items(uiState.pinnedNotes, key = { it.id }) { note ->
                                 PinnedNoteCard(note = note, previewLines = uiState.notePreviewLines, onClick = { onNoteClick(note.id) })
                             }
                         }
@@ -407,7 +407,7 @@ fun HomeScreen(
                                 EmptyAttachmentPreviewCard()
                             }
                         } else {
-                            items(uiState.attachments) { attachment ->
+                            items(uiState.attachments, key = { item -> item.id.ifBlank { item.name } }) { attachment ->
                                 HomeAttachmentCard(
                                     attachment = attachment,
                                     onClick = {
@@ -1479,7 +1479,7 @@ private fun PinnedNotesSheet(
                 verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
                 contentPadding = PaddingValues(bottom = VaultSpacing.sm),
             ) {
-                items(notes) { note ->
+                items(notes, key = { it.id }) { note ->
                     Surface(
                         onClick = { onNoteClick(note.id) },
                         modifier = Modifier.fillMaxWidth(),

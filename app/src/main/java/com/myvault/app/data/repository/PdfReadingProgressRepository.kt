@@ -16,6 +16,8 @@ class PdfReadingProgressRepository @Inject constructor(
     suspend fun updateProgress(attachmentId: String, pageIndex: Int, pageCount: Int) {
         if (attachmentId.isBlank() || pageCount <= 0) return
         val safePage = pageIndex.coerceIn(0, pageCount - 1)
+        val existing = progressDao.getByAttachmentId(attachmentId)
+        if (existing?.pageIndex == safePage && existing.pageCount == pageCount) return
         val now = System.currentTimeMillis()
         progressDao.upsert(
             PdfReadingProgressEntity(
