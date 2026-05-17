@@ -8,23 +8,28 @@ import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.AiConversationEntity
 import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.KnowledgeTagEntity
+import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
+import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
 
 @Database(
@@ -41,8 +46,11 @@ import com.myvault.app.data.local.entity.TagEntity
         AiMessageEntity::class,
         PdfReadingProgressEntity::class,
         PdfAnnotationEntity::class,
+        SourceBacklinkEntity::class,
+        KnowledgeTagEntity::class,
+        KnowledgeTagLinkEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -56,6 +64,8 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun aiConversationDao(): AiConversationDao
     abstract fun pdfReadingProgressDao(): PdfReadingProgressDao
     abstract fun pdfAnnotationDao(): PdfAnnotationDao
+    abstract fun sourceBacklinkDao(): SourceBacklinkDao
+    abstract fun knowledgeTagDao(): KnowledgeTagDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -180,6 +190,53 @@ abstract class VaultDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN displayTitle TEXT")
                 db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN displayFolderId TEXT")
                 db.execSQL("UPDATE pdf_annotations SET displayFolderId = libraryFolderId WHERE displayFolderId IS NULL")
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS source_backlinks (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        noteId TEXT NOT NULL,
+                        attachmentId TEXT NOT NULL,
+                        annotationId TEXT,
+                        pageIndex INTEGER NOT NULL,
+                        left REAL,
+                        top REAL,
+                        right REAL,
+                        bottom REAL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_source_backlinks_noteId ON source_backlinks(noteId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_source_backlinks_attachmentId ON source_backlinks(attachmentId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_source_backlinks_annotationId ON source_backlinks(annotationId)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS knowledge_tags (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_knowledge_tags_name ON knowledge_tags(name)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS knowledge_tag_links (
+                        tagId TEXT NOT NULL,
+                        targetType TEXT NOT NULL,
+                        targetId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        PRIMARY KEY(tagId, targetType, targetId)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_tag_links_tagId ON knowledge_tag_links(tagId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_tag_links_targetType_targetId ON knowledge_tag_links(targetType, targetId)")
             }
         }
     }

@@ -7,11 +7,13 @@ import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import dagger.Module
 import dagger.Provides
@@ -37,6 +39,7 @@ object AppModule {
                 VaultDatabase.MIGRATION_7_8,
                 VaultDatabase.MIGRATION_8_9,
                 VaultDatabase.MIGRATION_9_10,
+                VaultDatabase.MIGRATION_10_11,
             )
             .build()
 
@@ -69,4 +72,10 @@ object AppModule {
 
     @Provides
     fun providePdfAnnotationDao(database: VaultDatabase): PdfAnnotationDao = database.pdfAnnotationDao()
+
+    @Provides
+    fun provideSourceBacklinkDao(database: VaultDatabase): SourceBacklinkDao = database.sourceBacklinkDao()
+
+    @Provides
+    fun provideKnowledgeTagDao(database: VaultDatabase): KnowledgeTagDao = database.knowledgeTagDao()
 }

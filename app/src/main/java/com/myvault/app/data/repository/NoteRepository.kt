@@ -3,10 +3,12 @@ package com.myvault.app.data.repository
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
@@ -34,6 +36,8 @@ class NoteRepository @Inject constructor(
     private val noteTableDao: NoteTableDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
+    private val sourceBacklinkDao: SourceBacklinkDao,
+    private val knowledgeTagDao: KnowledgeTagDao,
 ) {
     private val bodyBlockTypes = listOf(
         "rich_text",
@@ -193,6 +197,8 @@ class NoteRepository @Inject constructor(
         }
         blockDao.deleteForNotes(listOf(noteId))
         tagDao.deleteRefsForNotes(listOf(noteId))
+        sourceBacklinkDao.deleteForNotes(listOf(noteId))
+        knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, listOf(noteId))
         noteTableDao.deleteForNotes(listOf(noteId))
         attachmentDao.deleteForNotes(listOf(noteId))
         noteDao.deleteByIds(listOf(noteId))

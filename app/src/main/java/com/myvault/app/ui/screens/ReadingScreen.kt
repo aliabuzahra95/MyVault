@@ -33,6 +33,8 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
@@ -45,6 +47,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +73,8 @@ import com.myvault.app.data.repository.toRelativeTime
 import com.myvault.app.data.repository.NoteAiAction
 import com.myvault.app.data.repository.NoteAiModel
 import com.myvault.app.data.repository.NoteAiProvider
+import com.myvault.app.data.repository.KnowledgeTagChip
+import com.myvault.app.data.repository.SourceReferenceCard
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -100,6 +105,9 @@ fun ReadingScreen(
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
     onNoteLinkClick: (String) -> Unit = {},
+    onSourceReferenceClick: (String, Int) -> Unit = { _, _ -> },
+    onAddKnowledgeTag: (String) -> Unit = {},
+    onRemoveKnowledgeTag: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
 ) {
     val colors = VaultThemeTokens.colors
@@ -109,6 +117,8 @@ fun ReadingScreen(
     val isFavourite = note?.isFavourite == true
     var moreMenuOpen by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
+    var tagDialogOpen by remember { mutableStateOf(false) }
+    var tagDraft by remember { mutableStateOf("") }
     val exportTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let(onExportText)
     }
@@ -188,6 +198,12 @@ fun ReadingScreen(
                             color = colors.textMuted,
                         )
                     }
+                    if (uiState.knowledgeTags.isNotEmpty()) {
+                        KnowledgeTagRow(
+                            tags = uiState.knowledgeTags,
+                            onRemove = onRemoveKnowledgeTag,
+                        )
+                    }
                 }
             }
             item {
@@ -210,6 +226,25 @@ fun ReadingScreen(
                 item { SectionLabel(label = "Attachments") }
                 items(uiState.attachments, key = { it.id }) { attachment ->
                     AttachmentReadingPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
+                }
+            }
+            if (uiState.sourceReferences.isNotEmpty()) {
+                item { SectionLabel(label = "Sources used") }
+                items(uiState.sourceReferences.take(3), key = { it.id }) { source ->
+                    SourceReferenceCardRow(
+                        source = source,
+                        onClick = { onSourceReferenceClick(source.attachmentId, source.pageIndex) },
+                    )
+                }
+                if (uiState.sourceReferences.size > 3) {
+                    item {
+                        Text(
+                            text = "+${uiState.sourceReferences.size - 3} more sources",
+                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textMuted,
+                        )
+                    }
                 }
             }
             if (uiState.backlinks.isNotEmpty()) {
@@ -254,6 +289,11 @@ fun ReadingScreen(
                         moreMenuOpen = false
                         exportPdfLauncher.launch("${note?.title?.toSafeFileName() ?: "note"}.pdf")
                     }
+                    ReadingActionRow("Add/Edit Tags", Icons.Rounded.LocalOffer) {
+                        moreMenuOpen = false
+                        tagDraft = ""
+                        tagDialogOpen = true
+                    }
                     ReadingActionRow("Delete note", Icons.Rounded.Delete, destructive = true) {
                         moreMenuOpen = false
                         deleteDialogOpen = true
@@ -287,10 +327,141 @@ fun ReadingScreen(
             },
         )
     }
+
+    if (tagDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { tagDialogOpen = false },
+            title = { Text("Add tag") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                    if (uiState.knowledgeTags.isNotEmpty()) {
+                        KnowledgeTagRow(tags = uiState.knowledgeTags, onRemove = onRemoveKnowledgeTag)
+                    }
+                    OutlinedTextField(
+                        value = tagDraft,
+                        onValueChange = { tagDraft = it },
+                        singleLine = true,
+                        label = { Text("Tag") },
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onAddKnowledgeTag(tagDraft)
+                        tagDraft = ""
+                        tagDialogOpen = false
+                    },
+                    enabled = tagDraft.isNotBlank(),
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { tagDialogOpen = false }) {
+                    Text("Close")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
 }
 
 private fun String.toSafeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "note" }
+
+@Composable
+private fun KnowledgeTagRow(
+    tags: List<KnowledgeTagChip>,
+    onRemove: (String) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tags.take(4).forEach { tag ->
+            Surface(
+                onClick = { onRemove(tag.id) },
+                color = colors.inset,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, colors.border),
+            ) {
+                Text(
+                    text = tag.name,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (tags.size > 4) {
+            Text(
+                text = "+${tags.size - 4}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceReferenceCardRow(
+    source: SourceReferenceCard,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(30.dp),
+                color = colors.accentSoft,
+                shape = VaultShapes.sm,
+                border = BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.MenuBook, contentDescription = null, modifier = Modifier.size(15.dp), tint = colors.accent)
+                }
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = source.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                    color = if (source.unavailable) colors.textMuted else colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = when {
+                        source.unavailable -> "Source unavailable"
+                        source.annotationDeleted -> "Page ${source.pageIndex + 1} · annotation deleted"
+                        else -> "Page ${source.pageIndex + 1}"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(Icons.Rounded.ArrowOutward, contentDescription = null, modifier = Modifier.size(15.dp), tint = colors.textMuted)
+        }
+    }
+}
 
 @Composable
 private fun ReadingActionRow(

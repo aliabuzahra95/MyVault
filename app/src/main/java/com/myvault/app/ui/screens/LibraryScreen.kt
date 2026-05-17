@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.PushPin
@@ -81,6 +82,7 @@ import com.myvault.app.ui.components.PinnedNoteCard
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTopBar
+import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -96,10 +98,12 @@ fun LibraryScreen(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
+    onReferenceNoteClick: (String) -> Unit,
     onRenameAnnotation: (String, String) -> Unit,
     onMoveAnnotation: (String, String?) -> Unit,
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
+    onLinkAnnotationToStudyNote: (String, String) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -112,6 +116,8 @@ fun LibraryScreen(
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
+    onAddAttachmentTag: (String, String) -> Unit,
+    onAddAnnotationTag: (String, String) -> Unit,
     onThemeClick: () -> Unit,
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -127,10 +133,12 @@ fun LibraryScreen(
         onFolderClick = onFolderClick,
         onAttachmentClick = onAttachmentClick,
         onAnnotationClick = onAnnotationClick,
+        onReferenceNoteClick = onReferenceNoteClick,
         onRenameAnnotation = onRenameAnnotation,
         onMoveAnnotation = onMoveAnnotation,
         onDeleteAnnotationNote = onDeleteAnnotationNote,
         onDeleteAnnotation = onDeleteAnnotation,
+        onLinkAnnotationToStudyNote = onLinkAnnotationToStudyNote,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -143,6 +151,8 @@ fun LibraryScreen(
         onMoveFile = onMoveFile,
         onSetFilePinned = onSetFilePinned,
         onDeleteFile = onDeleteFile,
+        onAddAttachmentTag = onAddAttachmentTag,
+        onAddAnnotationTag = onAddAnnotationTag,
         onThemeClick = onThemeClick,
         onQuickBackupClick = onQuickBackupClick,
         onSettingsClick = onSettingsClick,
@@ -158,10 +168,12 @@ fun LibraryFolderScreen(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
+    onReferenceNoteClick: (String) -> Unit,
     onRenameAnnotation: (String, String) -> Unit,
     onMoveAnnotation: (String, String?) -> Unit,
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
+    onLinkAnnotationToStudyNote: (String, String) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -174,6 +186,8 @@ fun LibraryFolderScreen(
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
+    onAddAttachmentTag: (String, String) -> Unit,
+    onAddAnnotationTag: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val folder = uiState.currentFolder
@@ -186,10 +200,12 @@ fun LibraryFolderScreen(
         onFolderClick = onFolderClick,
         onAttachmentClick = onAttachmentClick,
         onAnnotationClick = onAnnotationClick,
+        onReferenceNoteClick = onReferenceNoteClick,
         onRenameAnnotation = onRenameAnnotation,
         onMoveAnnotation = onMoveAnnotation,
         onDeleteAnnotationNote = onDeleteAnnotationNote,
         onDeleteAnnotation = onDeleteAnnotation,
+        onLinkAnnotationToStudyNote = onLinkAnnotationToStudyNote,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -202,6 +218,8 @@ fun LibraryFolderScreen(
         onMoveFile = onMoveFile,
         onSetFilePinned = onSetFilePinned,
         onDeleteFile = onDeleteFile,
+        onAddAttachmentTag = onAddAttachmentTag,
+        onAddAnnotationTag = onAddAnnotationTag,
         modifier = modifier,
     )
 }
@@ -217,10 +235,12 @@ private fun LibraryArchiveScreen(
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
+    onReferenceNoteClick: (String) -> Unit,
     onRenameAnnotation: (String, String) -> Unit,
     onMoveAnnotation: (String, String?) -> Unit,
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
+    onLinkAnnotationToStudyNote: (String, String) -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -233,6 +253,8 @@ private fun LibraryArchiveScreen(
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
+    onAddAttachmentTag: (String, String) -> Unit,
+    onAddAnnotationTag: (String, String) -> Unit,
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
@@ -255,10 +277,14 @@ private fun LibraryArchiveScreen(
     var annotationMoveDialogOpen by remember { mutableStateOf(false) }
     var annotationRenameDialogOpen by remember { mutableStateOf(false) }
     var annotationDeleteDialogOpen by remember { mutableStateOf(false) }
+    var annotationLinkDialogOpen by remember { mutableStateOf(false) }
+    var fileTagDialogOpen by remember { mutableStateOf(false) }
+    var annotationTagDialogOpen by remember { mutableStateOf(false) }
     var fileRenameDialogOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var displayModeDialogOpen by remember { mutableStateOf(false) }
     var annotationTitle by remember { mutableStateOf("") }
+    var tagDraft by remember { mutableStateOf("") }
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportFiles(uris)
     }
@@ -427,6 +453,8 @@ private fun LibraryArchiveScreen(
                                 selectedAnnotation = it
                                 annotationActionDialogOpen = true
                             },
+                            attachmentTags = uiState.attachmentTags,
+                            annotationTags = uiState.annotationTags,
                         )
                     }
                 }
@@ -463,6 +491,7 @@ private fun LibraryArchiveScreen(
                             depth = 0,
                             showMetadata = uiState.viewMode == LibraryViewMode.Icons,
                             dense = uiState.viewMode == LibraryViewMode.Icons,
+                            tags = uiState.attachmentTags[file.id].orEmpty(),
                             onClick = { onAttachmentClick(file.id) },
                             onLongPress = {
                                 selectedFile = file
@@ -487,6 +516,30 @@ private fun LibraryArchiveScreen(
                                 annotationActionDialogOpen = true
                             },
                         )
+                    }
+                }
+                if (uiState.references.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        SectionLabel(label = "Referenced in")
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                    items(uiState.references.take(3), key = { it.id }) { reference ->
+                        LibraryReferenceRow(
+                            title = reference.noteTitle,
+                            subtitle = "Page ${reference.pageIndex + 1}",
+                            onClick = { onReferenceNoteClick(reference.noteId) },
+                        )
+                    }
+                    if (uiState.references.size > 3) {
+                        item {
+                            Text(
+                                text = "+${uiState.references.size - 3} more references",
+                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textMuted,
+                            )
+                        }
                     }
                 }
             }
@@ -676,6 +729,11 @@ private fun LibraryArchiveScreen(
                     file?.let { onSetFilePinned(it.id, !it.pinned) }
                     fileActionDialogOpen = false
                 },
+                LibraryAction("Add tag", Icons.Rounded.LocalOffer) {
+                    fileActionDialogOpen = false
+                    tagDraft = ""
+                    fileTagDialogOpen = true
+                },
                 LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     file?.let { onDeleteFile(it.id) }
                     fileActionDialogOpen = false
@@ -736,6 +794,40 @@ private fun LibraryArchiveScreen(
         )
     }
 
+    if (fileTagDialogOpen && selectedFile != null) {
+        AlertDialog(
+            onDismissRequest = { fileTagDialogOpen = false },
+            title = { Text("Add file tag") },
+            text = {
+                OutlinedTextField(
+                    value = tagDraft,
+                    onValueChange = { tagDraft = it },
+                    singleLine = true,
+                    label = { Text("Tag") },
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedFile?.let { onAddAttachmentTag(it.id, tagDraft) }
+                        tagDraft = ""
+                        fileTagDialogOpen = false
+                    },
+                    enabled = tagDraft.isNotBlank(),
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileTagDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
     if (annotationActionDialogOpen && selectedAnnotation != null) {
         val annotation = selectedAnnotation
         LibraryActionDialog(
@@ -754,12 +846,75 @@ private fun LibraryArchiveScreen(
                     annotationActionDialogOpen = false
                     annotationMoveDialogOpen = true
                 },
+                LibraryAction("Link to Study note", Icons.Rounded.LocalOffer) {
+                    annotationActionDialogOpen = false
+                    annotationLinkDialogOpen = true
+                },
+                LibraryAction("Add tag", Icons.Rounded.LocalOffer) {
+                    annotationActionDialogOpen = false
+                    tagDraft = ""
+                    annotationTagDialogOpen = true
+                },
                 LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     annotationActionDialogOpen = false
                     annotationDeleteDialogOpen = true
                 },
             ),
             onDismiss = { annotationActionDialogOpen = false },
+        )
+    }
+
+    if (annotationTagDialogOpen && selectedAnnotation != null) {
+        AlertDialog(
+            onDismissRequest = { annotationTagDialogOpen = false },
+            title = { Text("Add annotation tag") },
+            text = {
+                OutlinedTextField(
+                    value = tagDraft,
+                    onValueChange = { tagDraft = it },
+                    singleLine = true,
+                    label = { Text("Tag") },
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedAnnotation?.let { onAddAnnotationTag(it.id, tagDraft) }
+                        tagDraft = ""
+                        annotationTagDialogOpen = false
+                    },
+                    enabled = tagDraft.isNotBlank(),
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { annotationTagDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
+    if (annotationLinkDialogOpen && selectedAnnotation != null) {
+        val annotation = selectedAnnotation
+        LibraryActionDialog(
+            title = "Link to Study note",
+            actions = uiState.studyNotes.take(30).map { note ->
+                LibraryAction(note.title.ifBlank { "Untitled note" }, Icons.Rounded.Description) {
+                    annotation?.let { onLinkAnnotationToStudyNote(it.id, note.id) }
+                    annotationLinkDialogOpen = false
+                }
+            }.ifEmpty {
+                listOf(
+                    LibraryAction("No Study notes found", Icons.Rounded.Description) {
+                        annotationLinkDialogOpen = false
+                    },
+                )
+            },
+            onDismiss = { annotationLinkDialogOpen = false },
         )
     }
 
@@ -907,6 +1062,28 @@ private fun LibraryAnnotationRow(
         },
         onClick = onClick,
         onLongClick = onLongPress,
+    )
+}
+
+@Composable
+private fun LibraryReferenceRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    LibraryHierarchyRow(
+        depth = 0,
+        title = title,
+        subtitle = subtitle,
+        leading = {
+            Icon(
+                imageVector = Icons.Rounded.MenuBook,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = VaultThemeTokens.colors.accent,
+            )
+        },
+        onClick = onClick,
     )
 }
 
@@ -1110,6 +1287,8 @@ private fun LibraryFolderRow(
     onFolderLongPress: (LibraryFolderItem) -> Unit,
     onFileLongPress: (LibraryFileItem) -> Unit,
     onAnnotationLongPress: (LibraryAnnotationItem) -> Unit,
+    attachmentTags: Map<String, List<KnowledgeTagChip>>,
+    annotationTags: Map<String, List<KnowledgeTagChip>>,
 ) {
     val colors = VaultThemeTokens.colors
     val rotation by animateFloatAsState(
@@ -1163,6 +1342,8 @@ private fun LibraryFolderRow(
                         onFolderLongPress = onFolderLongPress,
                         onFileLongPress = onFileLongPress,
                         onAnnotationLongPress = onAnnotationLongPress,
+                        attachmentTags = attachmentTags,
+                        annotationTags = annotationTags,
                     )
                 }
                 folder.files.forEach { file ->
@@ -1171,6 +1352,7 @@ private fun LibraryFolderRow(
                         depth = folder.depth + 1,
                         showMetadata = false,
                         dense = viewMode == LibraryViewMode.Icons,
+                        tags = attachmentTags[file.id].orEmpty(),
                         onClick = { onAttachmentClick(file.id) },
                         onLongPress = { onFileLongPress(file) },
                     )
@@ -1180,6 +1362,7 @@ private fun LibraryFolderRow(
                         annotation = annotation,
                         depth = folder.depth + 1,
                         dense = viewMode == LibraryViewMode.Icons,
+                        tags = annotationTags[annotation.id].orEmpty(),
                         onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
                         onLongPress = { onAnnotationLongPress(annotation) },
                     )
@@ -1195,6 +1378,7 @@ private fun LibraryNestedFileRow(
     depth: Int,
     showMetadata: Boolean,
     dense: Boolean = false,
+    tags: List<KnowledgeTagChip> = emptyList(),
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
 ) {
@@ -1206,7 +1390,11 @@ private fun LibraryNestedFileRow(
     LibraryHierarchyRow(
         depth = depth,
         title = file.name,
-        subtitle = if (showMetadata) "${file.kind} · ${file.size} · ${file.meta}$progress" else null,
+        subtitle = when {
+            tags.isNotEmpty() -> tags.take(2).joinToString(" • ") { it.name } + if (tags.size > 2) " • +${tags.size - 2}" else ""
+            showMetadata -> "${file.kind} · ${file.size} · ${file.meta}$progress"
+            else -> null
+        },
         leading = { topLevel ->
             AttachmentThumbnail(
                 mimeType = file.mimeType,
@@ -1227,13 +1415,18 @@ private fun LibraryNestedAnnotationRow(
     annotation: LibraryAnnotationItem,
     depth: Int,
     dense: Boolean = false,
+    tags: List<KnowledgeTagChip> = emptyList(),
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
     LibraryHierarchyRow(
         depth = depth,
         title = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
-        subtitle = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
+        subtitle = if (tags.isEmpty()) {
+            "${annotation.fileName} · p. ${annotation.pageIndex + 1}"
+        } else {
+            tags.take(2).joinToString(" • ") { it.name } + if (tags.size > 2) " • +${tags.size - 2}" else ""
+        },
         leading = {
             Icon(
                 imageVector = Icons.Rounded.StickyNote2,

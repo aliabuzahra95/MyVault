@@ -210,10 +210,14 @@ fun VaultNavHost(
                         onAnnotationClick = { attachmentId, pageIndex ->
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
                         },
+                        onReferenceNoteClick = { noteId ->
+                            navController.navigate(VaultDestination.Reading.route(noteId))
+                        },
                         onRenameAnnotation = libraryViewModel::renameAnnotation,
                         onMoveAnnotation = libraryViewModel::moveAnnotation,
                         onDeleteAnnotationNote = libraryViewModel::deleteAnnotationNote,
                         onDeleteAnnotation = libraryViewModel::deleteAnnotation,
+                        onLinkAnnotationToStudyNote = libraryViewModel::linkAnnotationToStudyNote,
                         onCreateFolder = { parentId, name ->
                             libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
@@ -230,6 +234,8 @@ fun VaultNavHost(
                         onMoveFile = libraryViewModel::moveFile,
                         onSetFilePinned = libraryViewModel::setFilePinned,
                         onDeleteFile = libraryViewModel::deleteFile,
+                        onAddAttachmentTag = libraryViewModel::addAttachmentTag,
+                        onAddAnnotationTag = libraryViewModel::addAnnotationTag,
                         onThemeClick = {
                             settingsViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -339,10 +345,14 @@ fun VaultNavHost(
                 onAnnotationClick = { attachmentId, pageIndex ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
                 },
+                onReferenceNoteClick = { noteId ->
+                    navController.navigate(VaultDestination.Reading.route(noteId))
+                },
                 onRenameAnnotation = viewModel::renameAnnotation,
                 onMoveAnnotation = viewModel::moveAnnotation,
                 onDeleteAnnotationNote = viewModel::deleteAnnotationNote,
                 onDeleteAnnotation = viewModel::deleteAnnotation,
+                onLinkAnnotationToStudyNote = viewModel::linkAnnotationToStudyNote,
                 onCreateFolder = { parentId, name ->
                     viewModel.createFolder(parentId = parentId, name = name)
                 },
@@ -359,6 +369,8 @@ fun VaultNavHost(
                 onMoveFile = viewModel::moveFile,
                 onSetFilePinned = viewModel::setFilePinned,
                 onDeleteFile = viewModel::deleteFile,
+                onAddAttachmentTag = viewModel::addAttachmentTag,
+                onAddAnnotationTag = viewModel::addAnnotationTag,
             )
         }
         composable(
@@ -498,6 +510,11 @@ fun VaultNavHost(
                         },
                     )
                 },
+                onSourceReferenceClick = { attachmentId, pageIndex ->
+                    navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
+                },
+                onAddKnowledgeTag = viewModel::addKnowledgeTag,
+                onRemoveKnowledgeTag = viewModel::removeKnowledgeTag,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
             )
         }

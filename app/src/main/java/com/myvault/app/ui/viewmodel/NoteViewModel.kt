@@ -12,6 +12,8 @@ import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.repository.AiConversationRepository
 import com.myvault.app.data.repository.AiConversationSummary
 import com.myvault.app.data.repository.AttachmentRepository
+import com.myvault.app.data.repository.KnowledgeRepository
+import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.data.repository.NoteAiAction
 import com.myvault.app.data.repository.NoteAiChatRole
 import com.myvault.app.data.repository.NoteAiConversationTurn
@@ -22,6 +24,7 @@ import com.myvault.app.data.repository.NoteExportRepository
 import com.myvault.app.data.repository.NoteLinkRef
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SelectedTextAiAction
+import com.myvault.app.data.repository.SourceReferenceCard
 import com.myvault.app.data.repository.displayName
 import com.myvault.app.ui.components.EditorBlock
 import com.myvault.app.ui.components.EditorBlockType
@@ -54,6 +57,8 @@ data class NoteUiState(
     val tables: List<NoteTableUiState> = emptyList(),
     val allNotes: List<NoteLinkSuggestion> = emptyList(),
     val backlinks: List<NoteLinkRef> = emptyList(),
+    val sourceReferences: List<SourceReferenceCard> = emptyList(),
+    val knowledgeTags: List<KnowledgeTagChip> = emptyList(),
     val richHtml: String = "",
     val richText: VaultRichTextDocument = VaultRichTextDocument("", emptyList(), emptyList()),
 )
@@ -127,6 +132,7 @@ class NoteViewModel @Inject constructor(
     private val noteExportRepository: NoteExportRepository,
     private val noteAiRepository: NoteAiRepository,
     private val aiConversationRepository: AiConversationRepository,
+    private val knowledgeRepository: KnowledgeRepository,
     aiSessionStore: NoteAiSessionStore,
 ) : ViewModel() {
     private val noteId: String = savedStateHandle.get<String>("noteId").orEmpty()
@@ -173,8 +179,14 @@ class NoteViewModel @Inject constructor(
     val uiState: StateFlow<NoteUiState> = combine(
         coreUiState,
         noteRepository.observeTables(noteId),
-    ) { state, tables ->
-        state.copy(tables = tables.map { it.toUiState() })
+        knowledgeRepository.observeSourceReferencesForNote(noteId),
+        knowledgeRepository.observeTagsFor(KnowledgeRepository.TargetNote, noteId),
+    ) { state, tables, sourceReferences, knowledgeTags ->
+        state.copy(
+            tables = tables.map { it.toUiState() },
+            sourceReferences = sourceReferences,
+            knowledgeTags = knowledgeTags,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NoteUiState())
     private val _aiState = aiSessionStore.stateFor(noteId)
     val aiState: StateFlow<NoteAiUiState> = _aiState
@@ -246,6 +258,14 @@ class NoteViewModel @Inject constructor(
 
     fun setFavourite(favourite: Boolean) {
         viewModelScope.launch { noteRepository.setFavourite(noteId, favourite) }
+    }
+
+    fun addKnowledgeTag(name: String) {
+        viewModelScope.launch { knowledgeRepository.addTag(KnowledgeRepository.TargetNote, noteId, name) }
+    }
+
+    fun removeKnowledgeTag(tagId: String) {
+        viewModelScope.launch { knowledgeRepository.removeTag(KnowledgeRepository.TargetNote, noteId, tagId) }
     }
 
     fun deleteNote(onDeleted: () -> Unit) {

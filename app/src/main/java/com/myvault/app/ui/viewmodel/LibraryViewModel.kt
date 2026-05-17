@@ -12,6 +12,10 @@ import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
+import com.myvault.app.data.repository.KnowledgeRepository
+import com.myvault.app.data.repository.KnowledgeTagChip
+import com.myvault.app.data.repository.LibraryReferencedNote
+import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.PdfAnnotationRepository
 import com.myvault.app.data.repository.PdfReadingProgressRepository
 import com.myvault.app.data.repository.kindLabel
@@ -75,12 +79,21 @@ data class LibraryAnnotationItem(
     val updatedAt: Long,
 )
 
+data class LibraryStudyNoteItem(
+    val id: String,
+    val title: String,
+)
+
 data class LibraryUiState(
     val currentFolder: FolderEntity? = null,
     val folders: List<LibraryFolderItem> = emptyList(),
     val files: List<LibraryFileItem> = emptyList(),
     val pinnedFiles: List<LibraryFileItem> = emptyList(),
     val annotations: List<LibraryAnnotationItem> = emptyList(),
+    val references: List<LibraryReferencedNote> = emptyList(),
+    val attachmentTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
+    val annotationTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
+    val studyNotes: List<LibraryStudyNoteItem> = emptyList(),
     val continueReading: LibraryFileItem? = null,
     val allFolders: List<LibraryFolderItem> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
@@ -94,8 +107,10 @@ class LibraryViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val folderRepository: FolderRepository,
     private val attachmentRepository: AttachmentRepository,
+    private val noteRepository: NoteRepository,
     private val pdfReadingProgressRepository: PdfReadingProgressRepository,
     private val pdfAnnotationRepository: PdfAnnotationRepository,
+    private val knowledgeRepository: KnowledgeRepository,
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
@@ -105,18 +120,33 @@ class LibraryViewModel @Inject constructor(
         pdfReadingProgressRepository.observeAll(),
         pdfAnnotationRepository.observeAll(),
     ) { progress, annotations -> progress to annotations }
+    private val libraryDataLayer = combine(
+        folderRepository.observeLibraryFolders(),
+        attachmentRepository.observeLibraryFiles(),
+        if (folderId == null) attachmentRepository.observeRootLibraryFiles() else attachmentRepository.observeForLibraryFolder(folderId),
+    ) { folders, allFiles, currentFiles ->
+        LibraryDataLayer(folders, allFiles, currentFiles)
+    }
     private val preferencesAndImportState = combine(
         vaultPreferences.userPreferences,
         importState,
     ) { preferences, importing -> preferences to importing }
+    private val knowledgeLayer = combine(
+        knowledgeRepository.observeLibraryReferences(),
+        knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAttachment),
+        knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAnnotation),
+        noteRepository.observeAllNotes(),
+    ) { references, attachmentTags, annotationTags, studyNotes ->
+        LibraryKnowledgeLayer(references, attachmentTags, annotationTags, studyNotes.map { LibraryStudyNoteItem(id = it.id, title = it.title) })
+    }
 
     val uiState: StateFlow<LibraryUiState> = combine(
-        folderRepository.observeLibraryFolders(),
-        attachmentRepository.observeLibraryFiles(),
-        if (folderId == null) attachmentRepository.observeRootLibraryFiles() else attachmentRepository.observeForLibraryFolder(folderId),
+        libraryDataLayer,
         pdfLayer,
         preferencesAndImportState,
-    ) { folders, allFiles, currentFiles, pdfLayer, preferencesAndImporting ->
+        knowledgeLayer,
+    ) { libraryData, pdfLayer, preferencesAndImporting, knowledge ->
+        val (folders, allFiles, currentFiles) = libraryData
         val (progress, annotations) = pdfLayer
         val (preferences, importing) = preferencesAndImporting
         val libraryFolders = folders.filter { it.mode == FOLDER_MODE_LIBRARY }
@@ -158,6 +188,7 @@ class LibraryViewModel @Inject constructor(
         val continueReadingItems = (if (folderId == null) allFiles else currentFiles)
             .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
         val currentFileIds = (if (folderId == null) allFiles else currentFiles).map { it.id }.toSet()
+        val currentAnnotationIds = annotationItemsByFolder[folderId].orEmpty().map { it.id }.toSet()
 
         LibraryUiState(
             currentFolder = currentFolder,
@@ -183,6 +214,12 @@ class LibraryViewModel @Inject constructor(
                     }
                 }
                 .sortedByDescending { it.updatedAt },
+            references = knowledge.references
+                .filter { it.attachmentId in currentFileIds }
+                .sortedBy { it.noteTitle.lowercase() },
+            attachmentTags = knowledge.attachmentTags,
+            annotationTags = knowledge.annotationTags.filterKeys { it in currentAnnotationIds },
+            studyNotes = knowledge.studyNotes,
             continueReading = continueReadingItems
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
@@ -282,6 +319,26 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { pdfAnnotationRepository.delete(annotationId) }
     }
 
+    fun linkAnnotationToStudyNote(annotationId: String, noteId: String) {
+        viewModelScope.launch { knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotationId) }
+    }
+
+    fun addAttachmentTag(fileId: String, name: String) {
+        viewModelScope.launch { knowledgeRepository.addTag(KnowledgeRepository.TargetAttachment, fileId, name) }
+    }
+
+    fun removeAttachmentTag(fileId: String, tagId: String) {
+        viewModelScope.launch { knowledgeRepository.removeTag(KnowledgeRepository.TargetAttachment, fileId, tagId) }
+    }
+
+    fun addAnnotationTag(annotationId: String, name: String) {
+        viewModelScope.launch { knowledgeRepository.addTag(KnowledgeRepository.TargetAnnotation, annotationId, name) }
+    }
+
+    fun removeAnnotationTag(annotationId: String, tagId: String) {
+        viewModelScope.launch { knowledgeRepository.removeTag(KnowledgeRepository.TargetAnnotation, annotationId, tagId) }
+    }
+
     fun deleteFile(fileId: String) {
         viewModelScope.launch { attachmentRepository.deleteAttachment(fileId) }
     }
@@ -348,6 +405,19 @@ private fun Int?.orZero(): Int = this ?: 0
 private data class LibraryImportState(
     val active: Boolean = false,
     val message: String? = null,
+)
+
+private data class LibraryDataLayer(
+    val folders: List<FolderEntity>,
+    val allFiles: List<AttachmentEntity>,
+    val currentFiles: List<AttachmentEntity>,
+)
+
+private data class LibraryKnowledgeLayer(
+    val references: List<LibraryReferencedNote>,
+    val attachmentTags: Map<String, List<KnowledgeTagChip>>,
+    val annotationTags: Map<String, List<KnowledgeTagChip>>,
+    val studyNotes: List<LibraryStudyNoteItem>,
 )
 
 private const val LIBRARY_ROOT_VIEW_MODE_KEY = "root"

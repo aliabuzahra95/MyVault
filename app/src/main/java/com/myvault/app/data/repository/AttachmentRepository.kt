@@ -4,9 +4,11 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.myvault.app.data.local.dao.AttachmentDao
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.ui.screens.AttachmentSample
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,6 +27,8 @@ class AttachmentRepository @Inject constructor(
     private val noteDao: NoteDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
+    private val sourceBacklinkDao: SourceBacklinkDao,
+    private val knowledgeTagDao: KnowledgeTagDao,
 ) {
     fun observeAllCards() = combine(attachmentDao.observeAll(), noteDao.observeAll()) { attachments, notes ->
         val noteTitles = notes.associate { it.id to it.title }
@@ -137,6 +141,8 @@ class AttachmentRepository @Inject constructor(
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
         pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
         pdfReadingProgressDao.deleteForAttachments(listOf(attachmentId))
+        sourceBacklinkDao.deleteForAttachments(listOf(attachmentId))
+        knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, listOf(attachmentId))
     }
 
     suspend fun renameAttachment(attachmentId: String, fileName: String) = withContext(Dispatchers.IO) {

@@ -6,23 +6,28 @@ import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.AiConversationEntity
 import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.KnowledgeTagEntity
+import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
+import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +56,8 @@ class BackupRepository @Inject constructor(
     private val aiConversationDao: AiConversationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
+    private val sourceBacklinkDao: SourceBacklinkDao,
+    private val knowledgeTagDao: KnowledgeTagDao,
 ) {
     suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "vault-manual-export-${System.currentTimeMillis()}.vaultbackup")
@@ -129,6 +136,19 @@ class BackupRepository @Inject constructor(
         val activeAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
         val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in activeAttachmentIds }
         val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in activeAttachmentIds }
+        val activeAnnotationIds = pdfAnnotations.map { it.id }.toSet()
+        val sourceBacklinks = sourceBacklinkDao.getAll().filter { it.noteId in backupNoteIds && it.attachmentId in activeAttachmentIds }
+        val knowledgeTags = knowledgeTagDao.getAllTags()
+        val knowledgeTagIds = knowledgeTags.map { it.id }.toSet()
+        val knowledgeTagLinks = knowledgeTagDao.getAllLinks().filter { link ->
+            link.tagId in knowledgeTagIds &&
+                when (link.targetType) {
+                    KnowledgeRepository.TargetNote -> link.targetId in backupNoteIds
+                    KnowledgeRepository.TargetAttachment -> link.targetId in activeAttachmentIds
+                    KnowledgeRepository.TargetAnnotation -> link.targetId in activeAnnotationIds
+                    else -> false
+                }
+        }
 
         ZipOutputStream(output.buffered()).use { zip ->
             zip.writeJson("manifest.json", manifestJson())
@@ -143,6 +163,9 @@ class BackupRepository @Inject constructor(
             zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
             zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
             zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
+            zip.writeJson("source_backlinks.json", sourceBacklinks.toJsonArray { it.toJson() })
+            zip.writeJson("knowledge_tags.json", knowledgeTags.toJsonArray { it.toJson() })
+            zip.writeJson("knowledge_tag_links.json", knowledgeTagLinks.toJsonArray { it.toJson() })
 
             attachments.forEach { attachment ->
                 val file = File(attachment.localPath)
@@ -190,6 +213,9 @@ class BackupRepository @Inject constructor(
         val attachments = entries.requireJsonArray("attachments.json")
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
         val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
+        val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
+        val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json")
+        val knowledgeTagLinks = entries.optionalJsonArray("knowledge_tag_links.json")
         entries.requireJsonArray("folders.json")
         entries.requireJsonArray("tags.json")
         entries.requireJsonArray("note_tags.json")
@@ -307,6 +333,26 @@ class BackupRepository @Inject constructor(
                 "Backup contains an invalid PDF annotation rectangle."
             }
         }
+        val activeAnnotationIds = List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index).getString("id") }.toSet()
+        List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index) }.forEach { link ->
+            check(link.getString("noteId") in noteIds) { "Backup contains a source link without a matching note." }
+            check(link.getString("attachmentId") in activeAttachmentIds) { "Backup contains a source link without a matching attachment." }
+            val annotationId = link.optNullableString("annotationId")
+            check(annotationId == null || annotationId in activeAnnotationIds) {
+                "Backup contains a source link without a matching annotation."
+            }
+        }
+        val knowledgeTagIds = List(knowledgeTags.length()) { index -> knowledgeTags.getJSONObject(index).getString("id") }.toSet()
+        check(knowledgeTagIds.size == knowledgeTags.length()) { "Backup contains duplicate knowledge tag IDs." }
+        List(knowledgeTagLinks.length()) { index -> knowledgeTagLinks.getJSONObject(index) }.forEach { link ->
+            check(link.getString("tagId") in knowledgeTagIds) { "Backup contains a tag link without a matching tag." }
+            when (link.getString("targetType")) {
+                KnowledgeRepository.TargetNote -> check(link.getString("targetId") in noteIds) { "Backup contains a tag link without a matching note." }
+                KnowledgeRepository.TargetAttachment -> check(link.getString("targetId") in activeAttachmentIds) { "Backup contains a tag link without a matching attachment." }
+                KnowledgeRepository.TargetAnnotation -> check(link.getString("targetId") in activeAnnotationIds) { "Backup contains a tag link without a matching annotation." }
+                else -> error("Backup contains an invalid tag link target.")
+            }
+        }
 
         return BackupVerificationResult(
             valid = true,
@@ -382,6 +428,27 @@ class BackupRepository @Inject constructor(
                     (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds) &&
                     (it.displayFolderId == null || it.displayFolderId in restoredLibraryFolderIds)
             }
+        val restoredAnnotationIds = pdfAnnotations.map { it.id }.toSet()
+        val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
+            .mapJson { it.toSourceBacklinkEntity() }
+            .filter {
+                it.noteId in restoredNoteIds &&
+                    it.attachmentId in activeRestoredAttachmentIds &&
+                    (it.annotationId == null || it.annotationId in restoredAnnotationIds)
+            }
+        val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json").mapJson { it.toKnowledgeTagEntity() }
+        val knowledgeTagIds = knowledgeTags.map { it.id }.toSet()
+        val knowledgeTagLinks = entries.optionalJsonArray("knowledge_tag_links.json")
+            .mapJson { it.toKnowledgeTagLinkEntity() }
+            .filter {
+                it.tagId in knowledgeTagIds &&
+                    when (it.targetType) {
+                        KnowledgeRepository.TargetNote -> it.targetId in restoredNoteIds
+                        KnowledgeRepository.TargetAttachment -> it.targetId in activeRestoredAttachmentIds
+                        KnowledgeRepository.TargetAnnotation -> it.targetId in restoredAnnotationIds
+                        else -> false
+                    }
+            }
 
         createEmergencyBackupBeforeRestore()
 
@@ -400,9 +467,21 @@ class BackupRepository @Inject constructor(
         if (restoredAttachmentIds.isNotEmpty()) {
             pdfReadingProgressDao.deleteForAttachments(restoredAttachmentIds.toList())
             pdfAnnotationDao.deleteForAttachments(restoredAttachmentIds.toList())
+            sourceBacklinkDao.deleteForAttachments(restoredAttachmentIds.toList())
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, restoredAttachmentIds.toList())
+        }
+        if (restoredNoteIds.isNotEmpty()) {
+            sourceBacklinkDao.deleteForNotes(restoredNoteIds.toList())
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, restoredNoteIds.toList())
+        }
+        if (restoredAnnotationIds.isNotEmpty()) {
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, restoredAnnotationIds.toList())
         }
         if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
         if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)
+        if (sourceBacklinks.isNotEmpty()) sourceBacklinkDao.upsertAll(sourceBacklinks)
+        if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
+        if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
 
         restoredFiles.values.forEach { it.delete() }
 
@@ -632,6 +711,32 @@ private fun NoteTagCrossRef.toJson(): JSONObject =
         .put("noteId", noteId)
         .put("tagName", tagName)
 
+private fun SourceBacklinkEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("noteId", noteId)
+        .put("attachmentId", attachmentId)
+        .put("annotationId", annotationId)
+        .put("pageIndex", pageIndex)
+        .put("left", left)
+        .put("top", top)
+        .put("right", right)
+        .put("bottom", bottom)
+        .put("createdAt", createdAt)
+
+private fun KnowledgeTagEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("name", name)
+        .put("createdAt", createdAt)
+
+private fun KnowledgeTagLinkEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("tagId", tagId)
+        .put("targetType", targetType)
+        .put("targetId", targetId)
+        .put("createdAt", createdAt)
+
 private fun AttachmentEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
@@ -698,6 +803,35 @@ private fun JSONObject.toPdfAnnotationEntity(): PdfAnnotationEntity =
         displayFolderId = optNullableString("displayFolderId") ?: optNullableString("libraryFolderId"),
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toSourceBacklinkEntity(): SourceBacklinkEntity =
+    SourceBacklinkEntity(
+        id = getString("id"),
+        noteId = getString("noteId"),
+        attachmentId = getString("attachmentId"),
+        annotationId = optNullableString("annotationId"),
+        pageIndex = getInt("pageIndex").coerceAtLeast(0),
+        left = optNullableFloat("left")?.coerceIn(0f, 1f),
+        top = optNullableFloat("top")?.coerceIn(0f, 1f),
+        right = optNullableFloat("right")?.coerceIn(0f, 1f),
+        bottom = optNullableFloat("bottom")?.coerceIn(0f, 1f),
+        createdAt = getLong("createdAt"),
+    )
+
+private fun JSONObject.toKnowledgeTagEntity(): KnowledgeTagEntity =
+    KnowledgeTagEntity(
+        id = getString("id"),
+        name = getString("name").trim(),
+        createdAt = getLong("createdAt"),
+    )
+
+private fun JSONObject.toKnowledgeTagLinkEntity(): KnowledgeTagLinkEntity =
+    KnowledgeTagLinkEntity(
+        tagId = getString("tagId"),
+        targetType = getString("targetType"),
+        targetId = getString("targetId"),
+        createdAt = getLong("createdAt"),
     )
 
 private fun JSONObject.toBlockEntity(): BlockEntity =
@@ -775,6 +909,9 @@ private fun JSONObject.optNullableString(name: String): String? =
 
 private fun JSONObject.optNullableLong(name: String): Long? =
     if (!has(name) || isNull(name)) null else optLong(name)
+
+private fun JSONObject.optNullableFloat(name: String): Float? =
+    if (!has(name) || isNull(name)) null else optDouble(name).toFloat()
 
 private fun JSONArray.validateAttachmentFiles(restoredFileIds: Set<String>) {
     mapJson { it }.forEach { attachment ->
