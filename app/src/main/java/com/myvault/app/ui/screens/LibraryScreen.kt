@@ -414,6 +414,7 @@ private fun LibraryArchiveScreen(
                             onFolderExpandedChange = onFolderExpandedChange,
                             onFolderClick = onFolderClick,
                             onAttachmentClick = onAttachmentClick,
+                            onAnnotationClick = onAnnotationClick,
                             onFolderLongPress = {
                                 selectedFolder = it
                                 actionDialogOpen = true
@@ -421,6 +422,10 @@ private fun LibraryArchiveScreen(
                             onFileLongPress = {
                                 selectedFile = it
                                 fileActionDialogOpen = true
+                            },
+                            onAnnotationLongPress = {
+                                selectedAnnotation = it
+                                annotationActionDialogOpen = true
                             },
                         )
                     }
@@ -1101,13 +1106,15 @@ private fun LibraryFolderRow(
     onFolderExpandedChange: (String, Boolean) -> Unit,
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
+    onAnnotationClick: (String, Int) -> Unit,
     onFolderLongPress: (LibraryFolderItem) -> Unit,
     onFileLongPress: (LibraryFileItem) -> Unit,
+    onAnnotationLongPress: (LibraryAnnotationItem) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = LIBRARY_EXPAND_ROTATION_MS, easing = FastOutSlowInEasing),
         label = "library-folder-chevron",
     )
     Column(
@@ -1136,8 +1143,8 @@ private fun LibraryFolderRow(
         )
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(animationSpec = tween(140, easing = FastOutSlowInEasing)),
-            exit = shrinkVertically(animationSpec = tween(115, easing = FastOutSlowInEasing)),
+            enter = expandVertically(animationSpec = tween(LIBRARY_EXPAND_ENTER_MS, easing = FastOutSlowInEasing)),
+            exit = shrinkVertically(animationSpec = tween(LIBRARY_EXPAND_EXIT_MS, easing = FastOutSlowInEasing)),
         ) {
             Column {
                 folder.children.forEach { child ->
@@ -1152,8 +1159,10 @@ private fun LibraryFolderRow(
                         onFolderExpandedChange = onFolderExpandedChange,
                         onFolderClick = onFolderClick,
                         onAttachmentClick = onAttachmentClick,
+                        onAnnotationClick = onAnnotationClick,
                         onFolderLongPress = onFolderLongPress,
                         onFileLongPress = onFileLongPress,
+                        onAnnotationLongPress = onAnnotationLongPress,
                     )
                 }
                 folder.files.forEach { file ->
@@ -1164,6 +1173,15 @@ private fun LibraryFolderRow(
                         dense = viewMode == LibraryViewMode.Icons,
                         onClick = { onAttachmentClick(file.id) },
                         onLongPress = { onFileLongPress(file) },
+                    )
+                }
+                folder.annotations.forEach { annotation ->
+                    LibraryNestedAnnotationRow(
+                        annotation = annotation,
+                        depth = folder.depth + 1,
+                        dense = viewMode == LibraryViewMode.Icons,
+                        onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
+                        onLongPress = { onAnnotationLongPress(annotation) },
                     )
                 }
             }
@@ -1194,12 +1212,40 @@ private fun LibraryNestedFileRow(
                 mimeType = file.mimeType,
                 localPath = file.localPath,
                 kind = file.kind,
-                size = if (topLevel) 16.dp else 13.dp,
+                size = if (topLevel) 18.dp else 16.dp,
             )
         },
         onClick = onClick,
         onLongClick = onLongPress,
         dense = dense,
+        fileRow = true,
+    )
+}
+
+@Composable
+private fun LibraryNestedAnnotationRow(
+    annotation: LibraryAnnotationItem,
+    depth: Int,
+    dense: Boolean = false,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    LibraryHierarchyRow(
+        depth = depth,
+        title = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
+        subtitle = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
+        leading = {
+            Icon(
+                imageVector = Icons.Rounded.StickyNote2,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = annotation.color.toAnnotationColor(),
+            )
+        },
+        onClick = onClick,
+        onLongClick = onLongPress,
+        dense = dense,
+        fileRow = true,
     )
 }
 
@@ -1217,6 +1263,7 @@ private fun LibraryHierarchyRow(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     dense: Boolean = false,
+    fileRow: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
     val topLevel = depth == 0
@@ -1247,7 +1294,9 @@ private fun LibraryHierarchyRow(
                 .padding(
                     horizontal = if (topLevel) 12.dp else 10.dp,
                     vertical = when {
+                        dense && fileRow -> 8.dp
                         dense -> 6.dp
+                        fileRow -> 10.dp
                         topLevel -> 10.dp
                         else -> 8.dp
                     },
@@ -1282,7 +1331,9 @@ private fun LibraryHierarchyRow(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
-                    style = if (topLevel) {
+                    style = if (fileRow) {
+                        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                    } else if (topLevel) {
                         MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
                     } else {
                         MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
@@ -1404,3 +1455,7 @@ private fun LibraryFolderItem.flatten(): List<LibraryFolderItem> =
 
 private fun LibraryFolderItem.containsFolder(folderId: String): Boolean =
     id == folderId || children.any { it.containsFolder(folderId) }
+
+private const val LIBRARY_EXPAND_ROTATION_MS = 230
+private const val LIBRARY_EXPAND_ENTER_MS = 240
+private const val LIBRARY_EXPAND_EXIT_MS = 200
