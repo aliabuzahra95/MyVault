@@ -255,17 +255,17 @@ fun HomeScreen(
                     AnimatedVisibility(
                         visible = isSearching,
                         enter = slideInVertically(
-                            animationSpec = tween(durationMillis = 230, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 165, easing = FastOutSlowInEasing),
                             initialOffsetY = { -it / 8 },
                         ) + expandVertically(
-                            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 175, easing = FastOutSlowInEasing),
                             expandFrom = Alignment.Top,
                         ),
                         exit = slideOutVertically(
-                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
                             targetOffsetY = { -it / 10 },
                         ) + shrinkVertically(
-                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 135, easing = FastOutSlowInEasing),
                             shrinkTowards = Alignment.Top,
                         ),
                     ) {

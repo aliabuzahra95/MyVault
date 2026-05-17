@@ -923,7 +923,7 @@ private fun LibraryFolderRow(
     val colors = VaultThemeTokens.colors
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
         label = "library-folder-chevron",
     )
     Column(
@@ -951,8 +951,8 @@ private fun LibraryFolderRow(
         )
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)),
-            exit = shrinkVertically(animationSpec = tween(150, easing = FastOutSlowInEasing)),
+            enter = expandVertically(animationSpec = tween(140, easing = FastOutSlowInEasing)),
+            exit = shrinkVertically(animationSpec = tween(115, easing = FastOutSlowInEasing)),
         ) {
             Column {
                 folder.children.forEach { child ->

@@ -86,6 +86,7 @@ fun FolderTreeRow(
     onMoveFolder: (VaultTreeItem, Int) -> Unit = { _, _ -> },
 ) {
     val isFolder = item.type == VaultTreeItemType.Folder
+    val folderChildren = remember(item.children) { item.children.filter { it.type == VaultTreeItemType.Folder } }
 
     Column(modifier = modifier.fillMaxWidth()) {
         FolderTreeSingleRow(
@@ -118,16 +119,15 @@ fun FolderTreeRow(
         AnimatedVisibility(
             visible = isFolder && expanded,
             enter = expandVertically(
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
                 expandFrom = Alignment.Top,
             ),
             exit = shrinkVertically(
-                animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 115, easing = FastOutSlowInEasing),
                 shrinkTowards = Alignment.Top,
             ),
         ) {
             Column {
-                val folderChildren = item.children.filter { it.type == VaultTreeItemType.Folder }
                 item.children.forEach { child ->
                     val childFolderIndex = folderChildren.indexOfFirst { it.id == child.id }
                     FolderTreeRow(
@@ -180,7 +180,7 @@ private fun FolderTreeSingleRow(
     val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
         label = "folder-chevron-rotation",
     )
 

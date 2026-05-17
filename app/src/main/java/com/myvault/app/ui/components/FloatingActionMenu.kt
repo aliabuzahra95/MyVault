@@ -3,11 +3,9 @@ package com.myvault.app.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
@@ -63,26 +61,20 @@ fun FloatingActionMenu(
         AnimatedVisibility(
             visible = expanded,
             enter = scaleIn(
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
                 initialScale = 0.94f,
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f),
             ) + slideInVertically(
-                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
                 initialOffsetY = { it / 5 },
-            ) + expandVertically(
-                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-                expandFrom = Alignment.Bottom,
             ),
             exit = scaleOut(
-                animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
                 targetScale = 0.96f,
                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f),
             ) + slideOutVertically(
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing),
                 targetOffsetY = { it / 5 },
-            ) + shrinkVertically(
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                shrinkTowards = Alignment.Bottom,
             ),
         ) {
             Column(
