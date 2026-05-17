@@ -24,6 +24,9 @@ interface SourceBacklinkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(links: List<SourceBacklinkEntity>)
 
+    @Query("DELETE FROM source_backlinks WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM source_backlinks WHERE noteId IN (:noteIds)")
     suspend fun deleteForNotes(noteIds: List<String>)
 

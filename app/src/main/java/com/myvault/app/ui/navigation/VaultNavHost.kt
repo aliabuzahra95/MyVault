@@ -235,7 +235,9 @@ fun VaultNavHost(
                         onSetFilePinned = libraryViewModel::setFilePinned,
                         onDeleteFile = libraryViewModel::deleteFile,
                         onAddAttachmentTag = libraryViewModel::addAttachmentTag,
+                        onRemoveAttachmentTag = libraryViewModel::removeAttachmentTag,
                         onAddAnnotationTag = libraryViewModel::addAnnotationTag,
+                        onRemoveAnnotationTag = libraryViewModel::removeAnnotationTag,
                         onThemeClick = {
                             settingsViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -370,7 +372,9 @@ fun VaultNavHost(
                 onSetFilePinned = viewModel::setFilePinned,
                 onDeleteFile = viewModel::deleteFile,
                 onAddAttachmentTag = viewModel::addAttachmentTag,
+                onRemoveAttachmentTag = viewModel::removeAttachmentTag,
                 onAddAnnotationTag = viewModel::addAnnotationTag,
+                onRemoveAnnotationTag = viewModel::removeAnnotationTag,
             )
         }
         composable(
@@ -513,6 +517,7 @@ fun VaultNavHost(
                 onSourceReferenceClick = { attachmentId, pageIndex ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
                 },
+                onRemoveSourceReference = viewModel::removeSourceReference,
                 onAddKnowledgeTag = viewModel::addKnowledgeTag,
                 onRemoveKnowledgeTag = viewModel::removeKnowledgeTag,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
@@ -732,8 +737,8 @@ private fun RootModePill(
         contentColor = if (selected) colors.accent else colors.textSecondary.copy(alpha = 0.78f),
         shape = VaultShapes.pill,
         border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border.copy(alpha = 0.7f)),
-        tonalElevation = if (selected) 2.dp else 0.dp,
-        shadowElevation = if (selected) 5.dp else 1.dp,
+        tonalElevation = 0.dp,
+        shadowElevation = if (selected) 1.dp else 0.dp,
     ) {
         Text(
             text = label,

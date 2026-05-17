@@ -56,6 +56,8 @@ fun SearchResultCard(
                 text = highlightedText(result.snippet, query),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.textSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxs)) {
                 Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(13.dp), tint = colors.textMuted)

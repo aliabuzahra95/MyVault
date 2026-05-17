@@ -268,6 +268,10 @@ class NoteViewModel @Inject constructor(
         viewModelScope.launch { knowledgeRepository.removeTag(KnowledgeRepository.TargetNote, noteId, tagId) }
     }
 
+    fun removeSourceReference(referenceId: String) {
+        viewModelScope.launch { knowledgeRepository.removeSourceReference(referenceId) }
+    }
+
     fun deleteNote(onDeleted: () -> Unit) {
         viewModelScope.launch {
             noteRepository.deleteNote(noteId)

@@ -161,6 +161,10 @@ class KnowledgeRepository @Inject constructor(
         knowledgeTagDao.deleteLink(tagId, targetType, targetId)
     }
 
+    suspend fun removeSourceReference(referenceId: String) {
+        sourceBacklinkDao.deleteById(referenceId)
+    }
+
     companion object {
         const val TargetNote = KNOWLEDGE_TAG_TARGET_NOTE
         const val TargetAttachment = KNOWLEDGE_TAG_TARGET_ATTACHMENT

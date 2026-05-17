@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -242,6 +243,7 @@ private fun PdfAttachmentViewer(
     var highlighterMode by remember(attachment.id) { mutableStateOf(false) }
     var highlightColor by remember(attachment.id) { mutableStateOf("yellow") }
     var selectedAnnotation by remember { mutableStateOf<PdfAnnotationEntity?>(null) }
+    var annotationDeleteRequest by remember { mutableStateOf<PdfAnnotationEntity?>(null) }
     var noteDialogAnnotation by remember { mutableStateOf<PdfAnnotationEntity?>(null) }
     var noteDraft by remember { mutableStateOf("") }
     val visiblePage by remember {
@@ -370,9 +372,39 @@ private fun PdfAttachmentViewer(
                 selectedAnnotation = null
             },
             onDelete = {
-                onDeleteAnnotation(annotation.id)
                 selectedAnnotation = null
+                annotationDeleteRequest = annotation
             },
+        )
+    }
+
+    annotationDeleteRequest?.let { annotation ->
+        AlertDialog(
+            onDismissRequest = { annotationDeleteRequest = null },
+            title = { Text("Delete highlight?") },
+            text = {
+                Text(
+                    "This removes the highlight and any quick note attached to it. The PDF file will not be changed.",
+                    color = VaultThemeTokens.colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteAnnotation(annotation.id)
+                        annotationDeleteRequest = null
+                    },
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { annotationDeleteRequest = null }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = VaultThemeTokens.colors.elevated,
+            tonalElevation = 0.dp,
         )
     }
 

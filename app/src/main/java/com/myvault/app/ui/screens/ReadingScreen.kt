@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
@@ -106,6 +108,7 @@ fun ReadingScreen(
     onExportPdf: (Uri) -> Unit = {},
     onNoteLinkClick: (String) -> Unit = {},
     onSourceReferenceClick: (String, Int) -> Unit = { _, _ -> },
+    onRemoveSourceReference: (String) -> Unit = {},
     onAddKnowledgeTag: (String) -> Unit = {},
     onRemoveKnowledgeTag: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
@@ -118,6 +121,8 @@ fun ReadingScreen(
     var moreMenuOpen by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
+    var removeTagDialogOpen by remember { mutableStateOf(false) }
+    var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
     var tagDraft by remember { mutableStateOf("") }
     val exportTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let(onExportText)
@@ -201,7 +206,6 @@ fun ReadingScreen(
                     if (uiState.knowledgeTags.isNotEmpty()) {
                         KnowledgeTagRow(
                             tags = uiState.knowledgeTags,
-                            onRemove = onRemoveKnowledgeTag,
                         )
                     }
                 }
@@ -234,6 +238,7 @@ fun ReadingScreen(
                     SourceReferenceCardRow(
                         source = source,
                         onClick = { onSourceReferenceClick(source.attachmentId, source.pageIndex) },
+                        onLongPress = { sourceReferenceToRemove = source },
                     )
                 }
                 if (uiState.sourceReferences.size > 3) {
@@ -294,6 +299,12 @@ fun ReadingScreen(
                         tagDraft = ""
                         tagDialogOpen = true
                     }
+                    if (uiState.knowledgeTags.isNotEmpty()) {
+                        ReadingActionRow("Remove Tag", Icons.Rounded.LocalOffer) {
+                            moreMenuOpen = false
+                            removeTagDialogOpen = true
+                        }
+                    }
                     ReadingActionRow("Delete note", Icons.Rounded.Delete, destructive = true) {
                         moreMenuOpen = false
                         deleteDialogOpen = true
@@ -335,7 +346,7 @@ fun ReadingScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
                     if (uiState.knowledgeTags.isNotEmpty()) {
-                        KnowledgeTagRow(tags = uiState.knowledgeTags, onRemove = onRemoveKnowledgeTag)
+                        KnowledgeTagRow(tags = uiState.knowledgeTags)
                     }
                     OutlinedTextField(
                         value = tagDraft,
@@ -366,6 +377,61 @@ fun ReadingScreen(
             tonalElevation = 0.dp,
         )
     }
+
+    if (removeTagDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { removeTagDialogOpen = false },
+            title = { Text("Remove tag") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    uiState.knowledgeTags.forEach { tag ->
+                        ReadingActionRow(tag.name, Icons.Rounded.LocalOffer, destructive = true) {
+                            onRemoveKnowledgeTag(tag.id)
+                            removeTagDialogOpen = false
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { removeTagDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
+    sourceReferenceToRemove?.let { source ->
+        AlertDialog(
+            onDismissRequest = { sourceReferenceToRemove = null },
+            title = { Text("Remove source reference?") },
+            text = {
+                Text(
+                    "This only unlinks the reference from this note. It will not delete the note, PDF, or annotation.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRemoveSourceReference(source.id)
+                        sourceReferenceToRemove = null
+                    },
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sourceReferenceToRemove = null }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
 }
 
 private fun String.toSafeFileName(): String =
@@ -374,7 +440,6 @@ private fun String.toSafeFileName(): String =
 @Composable
 private fun KnowledgeTagRow(
     tags: List<KnowledgeTagChip>,
-    onRemove: (String) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
@@ -384,7 +449,6 @@ private fun KnowledgeTagRow(
     ) {
         tags.take(4).forEach { tag ->
             Surface(
-                onClick = { onRemove(tag.id) },
                 color = colors.inset,
                 shape = VaultShapes.pill,
                 border = BorderStroke(1.dp, colors.border),
@@ -408,17 +472,19 @@ private fun KnowledgeTagRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SourceReferenceCardRow(
     source: SourceReferenceCard,
     onClick: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
-        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
+            .padding(horizontal = VaultSpacing.screen)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         color = colors.surface,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, colors.border),

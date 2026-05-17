@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Folder
@@ -54,6 +55,9 @@ fun SearchScreen(
     var filter by remember { mutableStateOf(SearchFilter.All) }
     val showNotes = filter == SearchFilter.All || filter == SearchFilter.Notes
     val showFolders = filter == SearchFilter.All || filter == SearchFilter.Folders
+    BackHandler(enabled = query.isNotBlank()) {
+        onQueryChange("")
+    }
 
     Scaffold(modifier = modifier.fillMaxSize(), containerColor = colors.bg) { innerPadding ->
         LazyColumn(

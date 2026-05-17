@@ -1,6 +1,7 @@
 package com.myvault.app.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -46,6 +49,7 @@ import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.ViewList
@@ -117,7 +121,9 @@ fun LibraryScreen(
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
     onAddAttachmentTag: (String, String) -> Unit,
+    onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
+    onRemoveAnnotationTag: (String, String) -> Unit,
     onThemeClick: () -> Unit,
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -152,7 +158,9 @@ fun LibraryScreen(
         onSetFilePinned = onSetFilePinned,
         onDeleteFile = onDeleteFile,
         onAddAttachmentTag = onAddAttachmentTag,
+        onRemoveAttachmentTag = onRemoveAttachmentTag,
         onAddAnnotationTag = onAddAnnotationTag,
+        onRemoveAnnotationTag = onRemoveAnnotationTag,
         onThemeClick = onThemeClick,
         onQuickBackupClick = onQuickBackupClick,
         onSettingsClick = onSettingsClick,
@@ -187,7 +195,9 @@ fun LibraryFolderScreen(
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
     onAddAttachmentTag: (String, String) -> Unit,
+    onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
+    onRemoveAnnotationTag: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val folder = uiState.currentFolder
@@ -219,7 +229,9 @@ fun LibraryFolderScreen(
         onSetFilePinned = onSetFilePinned,
         onDeleteFile = onDeleteFile,
         onAddAttachmentTag = onAddAttachmentTag,
+        onRemoveAttachmentTag = onRemoveAttachmentTag,
         onAddAnnotationTag = onAddAnnotationTag,
+        onRemoveAnnotationTag = onRemoveAnnotationTag,
         modifier = modifier,
     )
 }
@@ -254,7 +266,9 @@ private fun LibraryArchiveScreen(
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
     onAddAttachmentTag: (String, String) -> Unit,
+    onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
+    onRemoveAnnotationTag: (String, String) -> Unit,
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
@@ -280,11 +294,21 @@ private fun LibraryArchiveScreen(
     var annotationLinkDialogOpen by remember { mutableStateOf(false) }
     var fileTagDialogOpen by remember { mutableStateOf(false) }
     var annotationTagDialogOpen by remember { mutableStateOf(false) }
+    var fileRemoveTagDialogOpen by remember { mutableStateOf(false) }
+    var annotationRemoveTagDialogOpen by remember { mutableStateOf(false) }
     var fileRenameDialogOpen by remember { mutableStateOf(false) }
+    var folderDeleteDialogOpen by remember { mutableStateOf(false) }
+    var fileDeleteDialogOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var displayModeDialogOpen by remember { mutableStateOf(false) }
+    var librarySearchOpen by remember { mutableStateOf(false) }
+    var librarySearchQuery by remember { mutableStateOf("") }
     var annotationTitle by remember { mutableStateOf("") }
     var tagDraft by remember { mutableStateOf("") }
+    BackHandler(enabled = librarySearchOpen) {
+        librarySearchOpen = false
+        librarySearchQuery = ""
+    }
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportFiles(uris)
     }
@@ -308,6 +332,12 @@ private fun LibraryArchiveScreen(
                 item {
                     if (onBackClick == null) {
                         VaultTopBar(title = title) {
+                            IconBtn(
+                                icon = Icons.Rounded.Search,
+                                contentDescription = "Search Library",
+                                active = librarySearchOpen,
+                                onClick = { librarySearchOpen = true },
+                            )
                             IconBtn(
                                 icon = Icons.Rounded.ViewList,
                                 contentDescription = "Display mode",
@@ -345,6 +375,12 @@ private fun LibraryArchiveScreen(
                             onBackClick = onBackClick,
                             actions = {
                                 IconBtn(
+                                    icon = Icons.Rounded.Search,
+                                    contentDescription = "Search folder",
+                                    active = librarySearchOpen,
+                                    onClick = { librarySearchOpen = true },
+                                )
+                                IconBtn(
                                     icon = Icons.Rounded.ViewList,
                                     contentDescription = "Display mode",
                                     active = uiState.viewMode != LibraryViewMode.List,
@@ -360,6 +396,30 @@ private fun LibraryArchiveScreen(
                             if (!subtitle.isNullOrBlank()) {
                                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                             }
+                        }
+                    }
+                }
+
+                if (librarySearchOpen) {
+                    item {
+                        LibrarySearchOverlay(
+                            query = librarySearchQuery,
+                            onQueryChange = { librarySearchQuery = it },
+                            onClose = {
+                                librarySearchOpen = false
+                                librarySearchQuery = ""
+                            },
+                        )
+                    }
+                    if (librarySearchQuery.isNotBlank()) {
+                        item {
+                            LibrarySearchResults(
+                                query = librarySearchQuery,
+                                uiState = uiState,
+                                onFolderClick = onFolderClick,
+                                onAttachmentClick = onAttachmentClick,
+                                onAnnotationClick = onAnnotationClick,
+                            )
                         }
                     }
                 }
@@ -679,8 +739,8 @@ private fun LibraryArchiveScreen(
                     moveDialogOpen = true
                 },
                 LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
-                    selectedFolder?.let { onDeleteFolder(it.id) }
                     actionDialogOpen = false
+                    folderDeleteDialogOpen = true
                 },
             ),
             onDismiss = { actionDialogOpen = false },
@@ -734,11 +794,15 @@ private fun LibraryArchiveScreen(
                     tagDraft = ""
                     fileTagDialogOpen = true
                 },
-                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
-                    file?.let { onDeleteFile(it.id) }
+                LibraryAction("Remove tag", Icons.Rounded.LocalOffer) {
                     fileActionDialogOpen = false
+                    fileRemoveTagDialogOpen = true
+                }.takeIf { file?.id?.let { id -> uiState.attachmentTags[id].orEmpty().isNotEmpty() } == true },
+                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    fileActionDialogOpen = false
+                    fileDeleteDialogOpen = true
                 },
-            ),
+            ).filterNotNull(),
             onDismiss = { fileActionDialogOpen = false },
         )
     }
@@ -828,6 +892,87 @@ private fun LibraryArchiveScreen(
         )
     }
 
+    if (fileRemoveTagDialogOpen && selectedFile != null) {
+        val file = selectedFile
+        val tags = uiState.attachmentTags[file?.id].orEmpty()
+        LibraryActionDialog(
+            title = "Remove file tag",
+            actions = tags.map { tag ->
+                LibraryAction(tag.name, Icons.Rounded.LocalOffer, destructive = true) {
+                    file?.let { onRemoveAttachmentTag(it.id, tag.id) }
+                    fileRemoveTagDialogOpen = false
+                }
+            }.ifEmpty {
+                listOf(
+                    LibraryAction("No tags to remove", Icons.Rounded.LocalOffer) {
+                        fileRemoveTagDialogOpen = false
+                    },
+                )
+            },
+            onDismiss = { fileRemoveTagDialogOpen = false },
+        )
+    }
+
+    if (folderDeleteDialogOpen && selectedFolder != null) {
+        AlertDialog(
+            onDismissRequest = { folderDeleteDialogOpen = false },
+            title = { Text("Move folder to Recently Deleted?") },
+            text = {
+                Text(
+                    "${selectedFolder?.name.orEmpty()} and its contents will move to Recently Deleted.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedFolder?.let { onDeleteFolder(it.id) }
+                        folderDeleteDialogOpen = false
+                    },
+                ) {
+                    Text("Move")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderDeleteDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
+    if (fileDeleteDialogOpen && selectedFile != null) {
+        AlertDialog(
+            onDismissRequest = { fileDeleteDialogOpen = false },
+            title = { Text("Delete file?") },
+            text = {
+                Text(
+                    "${selectedFile?.name.orEmpty()} will be removed from Library. The original note text is not changed.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedFile?.let { onDeleteFile(it.id) }
+                        fileDeleteDialogOpen = false
+                    },
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileDeleteDialogOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
     if (annotationActionDialogOpen && selectedAnnotation != null) {
         val annotation = selectedAnnotation
         LibraryActionDialog(
@@ -855,11 +1000,15 @@ private fun LibraryArchiveScreen(
                     tagDraft = ""
                     annotationTagDialogOpen = true
                 },
+                LibraryAction("Remove tag", Icons.Rounded.LocalOffer) {
+                    annotationActionDialogOpen = false
+                    annotationRemoveTagDialogOpen = true
+                }.takeIf { annotation?.id?.let { id -> uiState.annotationTags[id].orEmpty().isNotEmpty() } == true },
                 LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     annotationActionDialogOpen = false
                     annotationDeleteDialogOpen = true
                 },
-            ),
+            ).filterNotNull(),
             onDismiss = { annotationActionDialogOpen = false },
         )
     }
@@ -895,6 +1044,27 @@ private fun LibraryArchiveScreen(
             },
             containerColor = colors.elevated,
             tonalElevation = 0.dp,
+        )
+    }
+
+    if (annotationRemoveTagDialogOpen && selectedAnnotation != null) {
+        val annotation = selectedAnnotation
+        val tags = uiState.annotationTags[annotation?.id].orEmpty()
+        LibraryActionDialog(
+            title = "Remove annotation tag",
+            actions = tags.map { tag ->
+                LibraryAction(tag.name, Icons.Rounded.LocalOffer, destructive = true) {
+                    annotation?.let { onRemoveAnnotationTag(it.id, tag.id) }
+                    annotationRemoveTagDialogOpen = false
+                }
+            }.ifEmpty {
+                listOf(
+                    LibraryAction("No tags to remove", Icons.Rounded.LocalOffer) {
+                        annotationRemoveTagDialogOpen = false
+                    },
+                )
+            },
+            onDismiss = { annotationRemoveTagDialogOpen = false },
         )
     }
 
@@ -1039,6 +1209,138 @@ private fun LibraryArchiveScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun LibrarySearchOverlay(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = 4.dp),
+        color = colors.elevated,
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.accentBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(17.dp), tint = colors.accent)
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                placeholder = { Text("Search Library") },
+            )
+            IconBtn(
+                icon = Icons.Rounded.Close,
+                contentDescription = "Close search",
+                onClick = onClose,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibrarySearchResults(
+    query: String,
+    uiState: LibraryUiState,
+    onFolderClick: (String) -> Unit,
+    onAttachmentClick: (String) -> Unit,
+    onAnnotationClick: (String, Int) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val normalized = query.trim().lowercase()
+    val folders = remember(uiState.allFolders, normalized) {
+        uiState.allFolders.flatMap { it.flatten() }
+            .filter { it.name.lowercase().contains(normalized) }
+            .take(8)
+    }
+    val files = remember(uiState.allFolders, uiState.files, uiState.attachmentTags, normalized) {
+        (uiState.files + uiState.allFolders.flatMap { it.flatten() }.flatMap { it.files })
+            .distinctBy { it.id }
+            .filter { file ->
+                file.name.lowercase().contains(normalized) ||
+                    file.kind.lowercase().contains(normalized) ||
+                    uiState.attachmentTags[file.id].orEmpty().any { it.name.lowercase().contains(normalized) }
+            }
+            .take(8)
+    }
+    val annotations = remember(uiState.allFolders, uiState.annotations, uiState.annotationTags, normalized) {
+        (uiState.annotations + uiState.allFolders.flatMap { it.flatten() }.flatMap { it.annotations })
+            .distinctBy { it.id }
+            .filter { annotation ->
+                annotation.notePreview.lowercase().contains(normalized) ||
+                    annotation.displayTitle.orEmpty().lowercase().contains(normalized) ||
+                    annotation.fileName.lowercase().contains(normalized) ||
+                    uiState.annotationTags[annotation.id].orEmpty().any { it.name.lowercase().contains(normalized) }
+            }
+            .take(8)
+    }
+    val hasResults = folders.isNotEmpty() || files.isNotEmpty() || annotations.isNotEmpty()
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = 4.dp),
+        color = colors.elevated,
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Library results",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+                color = colors.text,
+            )
+            if (!hasResults) {
+                Text(
+                    text = "No matching folders, files, annotations, or tags.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
+            }
+            folders.forEach { folder ->
+                LibraryHierarchyRow(
+                    depth = 0,
+                    title = folder.name,
+                    subtitle = "Folder",
+                    leading = {
+                        Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(16.dp), tint = colors.warning)
+                    },
+                    onClick = { onFolderClick(folder.id) },
+                )
+            }
+            files.forEach { file ->
+                LibraryNestedFileRow(
+                    file = file,
+                    depth = 0,
+                    showMetadata = true,
+                    tags = uiState.attachmentTags[file.id].orEmpty(),
+                    onClick = { onAttachmentClick(file.id) },
+                )
+            }
+            annotations.forEach { annotation ->
+                LibraryNestedAnnotationRow(
+                    annotation = annotation,
+                    depth = 0,
+                    tags = uiState.annotationTags[annotation.id].orEmpty(),
+                    onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
+                    onLongPress = {},
+                )
+            }
+        }
     }
 }
 
@@ -1604,8 +1906,11 @@ private fun LibraryActionDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, color = colors.text) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                actions.forEach { action ->
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(actions) { action ->
                     Surface(
                         onClick = action.onClick,
                         color = if (action.selected) colors.accentSoft else colors.surface,

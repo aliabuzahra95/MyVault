@@ -1,6 +1,7 @@
 package com.myvault.app.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -133,6 +135,9 @@ fun HomeScreen(
     currentFolderMode: String = FOLDER_MODE_STUDY,
 ) {
     val colors = VaultThemeTokens.colors
+    BackHandler(enabled = uiState.searchQuery.isNotBlank()) {
+        onSearchQueryChange("")
+    }
     val context = LocalContext.current
     val isSearching = uiState.searchQuery.isNotBlank()
     var fabExpanded by remember { mutableStateOf(false) }
@@ -1341,8 +1346,11 @@ private fun PremiumActionDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                actions.forEach { action ->
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            ) {
+                items(actions) { action ->
                     Surface(
                         onClick = action.onClick,
                         modifier = Modifier.fillMaxWidth(),
