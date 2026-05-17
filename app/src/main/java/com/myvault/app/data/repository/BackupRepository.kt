@@ -137,7 +137,11 @@ class BackupRepository @Inject constructor(
         val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in activeAttachmentIds }
         val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in activeAttachmentIds }
         val activeAnnotationIds = pdfAnnotations.map { it.id }.toSet()
-        val sourceBacklinks = sourceBacklinkDao.getAll().filter { it.noteId in backupNoteIds && it.attachmentId in activeAttachmentIds }
+        val sourceBacklinks = sourceBacklinkDao.getAll().filter {
+            it.noteId in backupNoteIds &&
+                it.attachmentId in activeAttachmentIds &&
+                (it.annotationId == null || it.annotationId in activeAnnotationIds)
+        }
         val knowledgeTags = knowledgeTagDao.getAllTags()
         val knowledgeTagIds = knowledgeTags.map { it.id }.toSet()
         val knowledgeTagLinks = knowledgeTagDao.getAllLinks().filter { link ->
@@ -464,6 +468,13 @@ class BackupRepository @Inject constructor(
         if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
         if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
         if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
+        val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
+            emptyList()
+        } else {
+            pdfAnnotationDao.getAll()
+                .filter { it.attachmentId in restoredAttachmentIds }
+                .map { it.id }
+        }
         if (restoredAttachmentIds.isNotEmpty()) {
             pdfReadingProgressDao.deleteForAttachments(restoredAttachmentIds.toList())
             pdfAnnotationDao.deleteForAttachments(restoredAttachmentIds.toList())
@@ -474,8 +485,9 @@ class BackupRepository @Inject constructor(
             sourceBacklinkDao.deleteForNotes(restoredNoteIds.toList())
             knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, restoredNoteIds.toList())
         }
-        if (restoredAnnotationIds.isNotEmpty()) {
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, restoredAnnotationIds.toList())
+        val annotationIdsToClear = (existingAnnotationIdsForRestoredAttachments + restoredAnnotationIds).distinct()
+        if (annotationIdsToClear.isNotEmpty()) {
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIdsToClear)
         }
         if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
         if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)

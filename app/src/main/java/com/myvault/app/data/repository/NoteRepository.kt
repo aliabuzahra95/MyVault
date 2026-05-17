@@ -191,9 +191,21 @@ class NoteRepository @Inject constructor(
     suspend fun permanentlyDeleteNote(noteId: String) {
         val attachments = attachmentDao.getForNotes(listOf(noteId))
         val attachmentIds = attachments.map { it.id }
+        val annotationIds = if (attachmentIds.isEmpty()) {
+            emptyList()
+        } else {
+            pdfAnnotationDao.getAll()
+                .filter { it.attachmentId in attachmentIds }
+                .map { it.id }
+        }
         if (attachmentIds.isNotEmpty()) {
             pdfAnnotationDao.deleteForAttachments(attachmentIds)
             pdfReadingProgressDao.deleteForAttachments(attachmentIds)
+            sourceBacklinkDao.deleteForAttachments(attachmentIds)
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, attachmentIds)
+        }
+        if (annotationIds.isNotEmpty()) {
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
         }
         blockDao.deleteForNotes(listOf(noteId))
         tagDao.deleteRefsForNotes(listOf(noteId))

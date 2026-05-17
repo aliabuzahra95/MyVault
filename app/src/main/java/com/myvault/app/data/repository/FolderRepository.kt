@@ -3,10 +3,12 @@ package com.myvault.app.data.repository
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -28,6 +30,8 @@ class FolderRepository @Inject constructor(
     private val noteTableDao: NoteTableDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
+    private val sourceBacklinkDao: SourceBacklinkDao,
+    private val knowledgeTagDao: KnowledgeTagDao,
 ) {
     fun observeWorkspaceTree() = combine(
         folderDao.observeAll(),
@@ -184,12 +188,26 @@ class FolderRepository @Inject constructor(
         if (noteIds.isNotEmpty()) {
             val attachments = attachmentDao.getForNotes(noteIds)
             val attachmentIds = attachments.map { it.id }
+            val annotationIds = if (attachmentIds.isEmpty()) {
+                emptyList()
+            } else {
+                pdfAnnotationDao.getAll()
+                    .filter { it.attachmentId in attachmentIds }
+                    .map { it.id }
+            }
             if (attachmentIds.isNotEmpty()) {
                 pdfAnnotationDao.deleteForAttachments(attachmentIds)
                 pdfReadingProgressDao.deleteForAttachments(attachmentIds)
+                sourceBacklinkDao.deleteForAttachments(attachmentIds)
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, attachmentIds)
+            }
+            if (annotationIds.isNotEmpty()) {
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
             }
             blockDao.deleteForNotes(noteIds)
             tagDao.deleteRefsForNotes(noteIds)
+            sourceBacklinkDao.deleteForNotes(noteIds)
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, noteIds)
             noteTableDao.deleteForNotes(noteIds)
             attachmentDao.deleteForNotes(noteIds)
             noteDao.deleteByIds(noteIds)
@@ -202,8 +220,16 @@ class FolderRepository @Inject constructor(
         }
         if (libraryAttachments.isNotEmpty()) {
             val libraryAttachmentIds = libraryAttachments.map { it.id }
+            val libraryAnnotationIds = pdfAnnotationDao.getAll()
+                .filter { it.attachmentId in libraryAttachmentIds }
+                .map { it.id }
             pdfAnnotationDao.deleteForAttachments(libraryAttachmentIds)
             pdfReadingProgressDao.deleteForAttachments(libraryAttachmentIds)
+            sourceBacklinkDao.deleteForAttachments(libraryAttachmentIds)
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, libraryAttachmentIds)
+            if (libraryAnnotationIds.isNotEmpty()) {
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, libraryAnnotationIds)
+            }
             attachmentDao.upsertAll(libraryAttachments.map { it.copy(deletedAt = System.currentTimeMillis()) })
             libraryAttachments.deleteLocalFiles()
         }

@@ -138,11 +138,17 @@ class AttachmentRepository @Inject constructor(
     }
 
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
+        val annotationIds = pdfAnnotationDao.getAll()
+            .filter { it.attachmentId == attachmentId }
+            .map { it.id }
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
         pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
         pdfReadingProgressDao.deleteForAttachments(listOf(attachmentId))
         sourceBacklinkDao.deleteForAttachments(listOf(attachmentId))
         knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, listOf(attachmentId))
+        if (annotationIds.isNotEmpty()) {
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
+        }
     }
 
     suspend fun renameAttachment(attachmentId: String, fileName: String) = withContext(Dispatchers.IO) {
