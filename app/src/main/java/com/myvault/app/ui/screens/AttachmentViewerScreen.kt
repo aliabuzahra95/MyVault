@@ -3,14 +3,14 @@ package com.myvault.app.ui.screens
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
+import android.content.Context
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,8 +56,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,6 +82,60 @@ import com.myvault.app.ui.util.openAttachment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+
+private class HighlightablePdfContainer(context: Context) : FrameLayout(context) {
+    val pdfView: PDFView = PDFView(context, null)
+    var highlighterModeEnabled: Boolean = false
+    var pdfSurfaceColor: Int = android.graphics.Color.WHITE
+        set(value) {
+            if (field != value) {
+                field = value
+                setBackgroundColor(value)
+                pdfView.setBackgroundColor(value)
+            }
+        }
+    var onHighlightDragStart: (x: Float, y: Float) -> Unit = { _, _ -> }
+    var onHighlightDragMove: (x: Float, y: Float) -> Unit = { _, _ -> }
+    var onHighlightDragEnd: () -> Unit = {}
+
+    init {
+        addView(
+            pdfView,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (!highlighterModeEnabled) {
+            return super.dispatchTouchEvent(event)
+        }
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                onHighlightDragStart(event.x, event.y)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                onHighlightDragMove(event.x, event.y)
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                onHighlightDragMove(event.x, event.y)
+                onHighlightDragEnd()
+                parent?.requestDisallowInterceptTouchEvent(false)
+                performClick()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                onHighlightDragEnd()
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+        }
+        return true
+    }
+}
 
 @Composable
 fun AttachmentViewerScreen(
@@ -255,7 +307,33 @@ private fun PdfAttachmentViewer(
         annotations.groupBy { it.pageIndex }
     }
     val currentAnnotationsByPage by rememberUpdatedState(annotationsByPage)
-    val pdfSurfaceColor = VaultThemeTokens.colors.inset.toArgb()
+    val surfaceColorArgb = VaultThemeTokens.colors.inset.toArgb()
+
+    fun finishHighlightDrag() {
+        val view = pdfView
+        val start = dragStartPagePoint
+        val endOffset = dragEnd
+        if (view != null && start != null && endOffset != null) {
+            val end = view.toNormalizedPagePoint(
+                x = endOffset.x,
+                y = endOffset.y,
+                preferredPage = start.pageIndex,
+                clampToPage = true,
+            )
+            if (end != null && end.pageIndex == start.pageIndex) {
+                val left = minOf(start.offset.x, end.offset.x)
+                val top = minOf(start.offset.y, end.offset.y)
+                val right = maxOf(start.offset.x, end.offset.x)
+                val bottom = maxOf(start.offset.y, end.offset.y)
+                if ((right - left) > 0.01f && (bottom - top) > 0.01f) {
+                    onAddHighlight(attachment.libraryFolderId, start.pageIndex, left, top, right, bottom, highlightColor)
+                }
+            }
+        }
+        dragStart = null
+        dragEnd = null
+        dragStartPagePoint = null
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -270,17 +348,31 @@ private fun PdfAttachmentViewer(
                             .fillMaxSize()
                             .background(VaultThemeTokens.colors.inset),
                         factory = { context ->
-                            PDFView(context, null).apply {
-                                pdfView = this
+                            HighlightablePdfContainer(context).apply {
+                                val pdf = this.pdfView
+                                pdfView = pdf
+                                pdfSurfaceColor = surfaceColorArgb
+                                setBackgroundColor(surfaceColorArgb)
+                                onHighlightDragStart = { x, y ->
+                                    val offset = Offset(x, y)
+                                    dragStart = offset
+                                    dragEnd = offset
+                                    dragStartPagePoint = pdf.toNormalizedPagePoint(x, y, clampToPage = false)
+                                }
+                                onHighlightDragMove = { x, y ->
+                                    dragEnd = Offset(x, y)
+                                }
+                                onHighlightDragEnd = {
+                                    finishHighlightDrag()
+                                }
                                 layoutParams = ViewGroup.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                 )
-                                setBackgroundColor(pdfSurfaceColor)
-                                setMinZoom(1f)
-                                setMidZoom(2.25f)
-                                setMaxZoom(5f)
-                                fromFile(file)
+                                pdf.setMinZoom(1f)
+                                pdf.setMidZoom(2.25f)
+                                pdf.setMaxZoom(5f)
+                                pdf.fromFile(file)
                                     .enableSwipe(true)
                                     .swipeHorizontal(false)
                                     .enableDoubleTap(true)
@@ -299,7 +391,7 @@ private fun PdfAttachmentViewer(
                                             error = null
                                             val targetPage = pageIndex.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
                                             pageIndex = targetPage
-                                            jumpTo(targetPage, false)
+                                            pdf.jumpTo(targetPage, false)
                                             onProgressChanged(targetPage, totalPages)
                                         }
                                     })
@@ -320,6 +412,8 @@ private fun PdfAttachmentViewer(
                                             if (canvas == null) return
                                             drawPdfHighlights(
                                                 canvas = canvas,
+                                                pdfView = pdf,
+                                                pageIndex = currentPage,
                                                 pageWidth = pageWidth,
                                                 pageHeight = pageHeight,
                                                 annotations = currentAnnotationsByPage[currentPage].orEmpty(),
@@ -330,7 +424,7 @@ private fun PdfAttachmentViewer(
                                         override fun onTap(e: MotionEvent?): Boolean {
                                             if (e == null) return false
                                             if (highlighterMode) return true
-                                            val point = toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
+                                            val point = pdf.toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
                                             val annotation = currentAnnotationsByPage[point.pageIndex]
                                                 .orEmpty()
                                                 .lastOrNull { point.offset.x in it.left..it.right && point.offset.y in it.top..it.bottom }
@@ -356,59 +450,39 @@ private fun PdfAttachmentViewer(
                             }
                         },
                         update = { view ->
-                            if (pdfView !== view) {
-                                pdfView = view
+                            if (pdfView !== view.pdfView) {
+                                pdfView = view.pdfView
                             }
-                            view.setBackgroundColor(pdfSurfaceColor)
+                            view.highlighterModeEnabled = highlighterMode
+                            view.pdfSurfaceColor = surfaceColorArgb
+                            view.onHighlightDragStart = { x, y ->
+                                val offset = Offset(x, y)
+                                dragStart = offset
+                                dragEnd = offset
+                                dragStartPagePoint = view.pdfView.toNormalizedPagePoint(x, y, clampToPage = false)
+                            }
+                            view.onHighlightDragMove = { x, y ->
+                                dragEnd = Offset(x, y)
+                            }
+                            view.onHighlightDragEnd = {
+                                finishHighlightDrag()
+                            }
                         },
                         onRelease = { view ->
-                            if (pdfView === view) pdfView = null
-                            view.recycle()
+                            if (pdfView === view.pdfView) pdfView = null
+                            view.pdfView.recycle()
                         },
                     )
                 }
 
                 if (highlighterMode) {
-                    PdfHighlightDragLayer(
+                    PdfHighlightDraftLayer(
                         modifier = Modifier
                             .fillMaxSize()
                             .zIndex(2f),
                         draftStart = dragStart,
                         draftEnd = dragEnd,
                         draftColor = highlightColor,
-                        onDragStart = { offset ->
-                            dragStart = offset
-                            dragEnd = offset
-                            dragStartPagePoint = pdfView?.toNormalizedPagePoint(offset.x, offset.y, clampToPage = false)
-                        },
-                        onDrag = { offset ->
-                            dragEnd = offset
-                        },
-                        onDragEnd = {
-                            val view = pdfView
-                            val start = dragStartPagePoint
-                            val endOffset = dragEnd
-                            if (view != null && start != null && endOffset != null) {
-                                val end = view.toNormalizedPagePoint(
-                                    x = endOffset.x,
-                                    y = endOffset.y,
-                                    preferredPage = start.pageIndex,
-                                    clampToPage = true,
-                                )
-                                if (end != null && end.pageIndex == start.pageIndex) {
-                                    val left = minOf(start.offset.x, end.offset.x)
-                                    val top = minOf(start.offset.y, end.offset.y)
-                                    val right = maxOf(start.offset.x, end.offset.x)
-                                    val bottom = maxOf(start.offset.y, end.offset.y)
-                                    if ((right - left) > 0.01f && (bottom - top) > 0.01f) {
-                                        onAddHighlight(attachment.libraryFolderId, start.pageIndex, left, top, right, bottom, highlightColor)
-                                    }
-                                }
-                            }
-                            dragStart = null
-                            dragEnd = null
-                            dragStartPagePoint = null
-                        },
                     )
                 }
 
@@ -524,40 +598,13 @@ private fun PdfAttachmentViewer(
 }
 
 @Composable
-private fun PdfHighlightDragLayer(
+private fun PdfHighlightDraftLayer(
     modifier: Modifier,
     draftStart: Offset?,
     draftEnd: Offset?,
     draftColor: String,
-    onDragStart: (Offset) -> Unit,
-    onDrag: (Offset) -> Unit,
-    onDragEnd: () -> Unit,
 ) {
-    Canvas(
-        modifier = modifier.pointerInput(draftColor) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                down.consume()
-                onDragStart(down.position)
-                val pointerId = down.id
-
-                while (true) {
-                    val event = awaitPointerEvent(PointerEventPass.Main)
-                    val change = event.changes.firstOrNull { it.id == pointerId }
-                        ?: event.changes.firstOrNull()
-                        ?: break
-
-                    onDrag(change.position)
-                    change.consume()
-
-                    if (!change.pressed) {
-                        onDragEnd()
-                        break
-                    }
-                }
-            }
-        },
-    ) {
+    Canvas(modifier = modifier) {
         if (draftStart != null && draftEnd != null) {
             val left = minOf(draftStart.x, draftEnd.x)
             val top = minOf(draftStart.y, draftEnd.y)
@@ -955,12 +1002,21 @@ private fun PDFView.toNormalizedPointOnPage(
 
 private fun drawPdfHighlights(
     canvas: android.graphics.Canvas,
+    pdfView: PDFView,
+    pageIndex: Int,
     pageWidth: Float,
     pageHeight: Float,
     annotations: List<PdfAnnotationEntity>,
 ) {
     if (pageWidth <= 0f || pageHeight <= 0f || annotations.isEmpty()) return
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val pageInset = pdfView.pdfFile?.getSecondaryPageOffset(pageIndex, pdfView.zoom) ?: 0f
+    canvas.save()
+    if (pdfView.isSwipeVertical) {
+        canvas.translate(pageInset, 0f)
+    } else {
+        canvas.translate(0f, pageInset)
+    }
     annotations.forEach { annotation ->
         val left = annotation.left * pageWidth
         val top = annotation.top * pageHeight
@@ -985,6 +1041,7 @@ private fun drawPdfHighlights(
             canvas.drawCircle(markerLeft + 11f, markerTop + 14f, 1.7f, paint)
         }
     }
+    canvas.restore()
 }
 
 private fun String.toPdfHighlightArgb(alpha: Int): Int {
