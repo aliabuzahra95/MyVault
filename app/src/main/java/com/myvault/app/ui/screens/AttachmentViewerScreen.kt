@@ -302,7 +302,6 @@ private fun PdfAttachmentViewer(
     var pdfView by remember(attachment.id) { mutableStateOf<PDFView?>(null) }
     var dragStart by remember(attachment.id) { mutableStateOf<Offset?>(null) }
     var dragEnd by remember(attachment.id) { mutableStateOf<Offset?>(null) }
-    var dragStartPagePoint by remember(attachment.id) { mutableStateOf<PagePoint?>(null) }
     val annotationsByPage = remember(annotations) {
         annotations.groupBy { it.pageIndex }
     }
@@ -311,28 +310,50 @@ private fun PdfAttachmentViewer(
 
     fun finishHighlightDrag() {
         val view = pdfView
-        val start = dragStartPagePoint
+        val startOffset = dragStart
         val endOffset = dragEnd
-        if (view != null && start != null && endOffset != null) {
-            val end = view.toNormalizedPagePoint(
-                x = endOffset.x,
-                y = endOffset.y,
-                preferredPage = start.pageIndex,
-                clampToPage = true,
+        if (view != null && startOffset != null && endOffset != null) {
+            val start = view.toNormalizedPagePoint(startOffset.x, startOffset.y, clampToPage = false)
+            val end = view.toNormalizedPagePoint(endOffset.x, endOffset.y, clampToPage = false)
+            val pageIndex = start?.pageIndex ?: end?.pageIndex ?: view.findFocusPage(
+                view.currentXOffset,
+                view.currentYOffset,
             )
-            if (end != null && end.pageIndex == start.pageIndex) {
-                val left = minOf(start.offset.x, end.offset.x)
-                val top = minOf(start.offset.y, end.offset.y)
-                val right = maxOf(start.offset.x, end.offset.x)
-                val bottom = maxOf(start.offset.y, end.offset.y)
+            if (pageIndex >= 0) {
+                val normalizedStart = start?.takeIf { it.pageIndex == pageIndex }
+                    ?: view.toNormalizedPagePoint(
+                        x = startOffset.x,
+                        y = startOffset.y,
+                        preferredPage = pageIndex,
+                        clampToPage = true,
+                    )
+                val normalizedEnd = end?.takeIf { it.pageIndex == pageIndex }
+                    ?: view.toNormalizedPagePoint(
+                        x = endOffset.x,
+                        y = endOffset.y,
+                        preferredPage = pageIndex,
+                        clampToPage = true,
+                    )
+
+                if (normalizedStart == null || normalizedEnd == null) {
+                    dragStart = null
+                    dragEnd = null
+                    return
+                }
+
+                val startPoint = normalizedStart.offset
+                val endPoint = normalizedEnd.offset
+                val left = minOf(startPoint.x, endPoint.x)
+                val top = minOf(startPoint.y, endPoint.y)
+                val right = maxOf(startPoint.x, endPoint.x)
+                val bottom = maxOf(startPoint.y, endPoint.y)
                 if ((right - left) > 0.01f && (bottom - top) > 0.01f) {
-                    onAddHighlight(attachment.libraryFolderId, start.pageIndex, left, top, right, bottom, highlightColor)
+                    onAddHighlight(attachment.libraryFolderId, pageIndex, left, top, right, bottom, highlightColor)
                 }
             }
         }
         dragStart = null
         dragEnd = null
-        dragStartPagePoint = null
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -357,7 +378,6 @@ private fun PdfAttachmentViewer(
                                     val offset = Offset(x, y)
                                     dragStart = offset
                                     dragEnd = offset
-                                    dragStartPagePoint = pdf.toNormalizedPagePoint(x, y, clampToPage = false)
                                 }
                                 onHighlightDragMove = { x, y ->
                                     dragEnd = Offset(x, y)
@@ -459,7 +479,6 @@ private fun PdfAttachmentViewer(
                                 val offset = Offset(x, y)
                                 dragStart = offset
                                 dragEnd = offset
-                                dragStartPagePoint = view.pdfView.toNormalizedPagePoint(x, y, clampToPage = false)
                             }
                             view.onHighlightDragMove = { x, y ->
                                 dragEnd = Offset(x, y)
@@ -504,7 +523,6 @@ private fun PdfAttachmentViewer(
                         highlighterMode = enabled
                         dragStart = null
                         dragEnd = null
-                        dragStartPagePoint = null
                     },
                     onHighlightColorChange = { highlightColor = it },
                 )
