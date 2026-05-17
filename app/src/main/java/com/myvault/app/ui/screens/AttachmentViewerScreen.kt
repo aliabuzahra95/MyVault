@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -127,9 +126,12 @@ fun AttachmentViewerScreen(
             if (attachment == null) {
                 AttachmentViewerEmpty("Attachment not found")
             } else {
-                AttachmentViewerHeader(attachment)
+                val isPdf = attachment.mimeType == "application/pdf"
+                if (!isPdf) {
+                    AttachmentViewerHeader(attachment)
+                }
                 when {
-                    attachment.mimeType == "application/pdf" -> PdfAttachmentViewer(
+                    isPdf -> PdfAttachmentViewer(
                         attachment = attachment,
                         progress = pdfProgress,
                         annotations = pdfAnnotations,
@@ -309,14 +311,14 @@ private fun PdfAttachmentViewer(
                                             canvas: android.graphics.Canvas?,
                                             pageWidth: Float,
                                             pageHeight: Float,
-                                            displayedPage: Int,
+                                            currentPage: Int,
                                         ) {
                                             if (canvas == null) return
                                             drawPdfHighlights(
                                                 canvas = canvas,
                                                 pageWidth = pageWidth,
                                                 pageHeight = pageHeight,
-                                                annotations = currentAnnotationsByPage[displayedPage].orEmpty(),
+                                                annotations = currentAnnotationsByPage[currentPage].orEmpty(),
                                             )
                                         }
                                     })
@@ -324,7 +326,7 @@ private fun PdfAttachmentViewer(
                                         override fun onTap(e: MotionEvent?): Boolean {
                                             if (e == null) return false
                                             if (highlighterMode) return true
-                                            val point = toNormalizedPagePoint(e.x, e.y) ?: return false
+                                            val point = toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
                                             val annotation = currentAnnotationsByPage[point.pageIndex]
                                                 .orEmpty()
                                                 .lastOrNull { point.offset.x in it.left..it.right && point.offset.y in it.top..it.bottom }
@@ -369,7 +371,7 @@ private fun PdfAttachmentViewer(
                         onDragStart = { offset ->
                             dragStart = offset
                             dragEnd = offset
-                            dragStartPagePoint = pdfView?.toNormalizedPagePoint(offset.x, offset.y)
+                            dragStartPagePoint = pdfView?.toNormalizedPagePoint(offset.x, offset.y, clampToPage = false)
                         },
                         onDrag = { offset ->
                             dragEnd = offset
@@ -379,7 +381,12 @@ private fun PdfAttachmentViewer(
                             val start = dragStartPagePoint
                             val endOffset = dragEnd
                             if (view != null && start != null && endOffset != null) {
-                                val end = view.toNormalizedPagePoint(endOffset.x, endOffset.y)
+                                val end = view.toNormalizedPagePoint(
+                                    x = endOffset.x,
+                                    y = endOffset.y,
+                                    preferredPage = start.pageIndex,
+                                    clampToPage = true,
+                                )
                                 if (end != null && end.pageIndex == start.pageIndex) {
                                     val left = minOf(start.offset.x, end.offset.x)
                                     val top = minOf(start.offset.y, end.offset.y)
@@ -400,6 +407,7 @@ private fun PdfAttachmentViewer(
                 if (pageCount <= 0) {
                     AttachmentViewerEmpty("Loading PDF...")
                 } else {
+                    PdfDocumentTitleOverlay(attachment = attachment)
                     PdfReadingProgressOverlay(
                         pageIndex = pageIndex.coerceIn(0, pageCount - 1),
                         pageCount = pageCount,
@@ -569,6 +577,40 @@ private fun UnsupportedAttachmentViewer(attachment: AttachmentEntity) {
 }
 
 @Composable
+private fun BoxScope.PdfDocumentTitleOverlay(attachment: AttachmentEntity) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .align(Alignment.TopStart)
+            .padding(start = VaultSpacing.screen, top = VaultSpacing.xs, end = 128.dp),
+        color = colors.elevated.copy(alpha = 0.9f),
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+        shadowElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = attachment.fileName,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${attachment.kindLabel()} · ${attachment.sizeLabel()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun BoxScope.PdfReadingProgressOverlay(
     pageIndex: Int,
     pageCount: Int,
@@ -577,7 +619,7 @@ private fun BoxScope.PdfReadingProgressOverlay(
     val percent = ((pageIndex + 1).toFloat() / pageCount.toFloat()).coerceIn(0f, 1f)
     AnimatedVisibility(
         visible = pageCount > 0,
-        modifier = Modifier.align(Alignment.TopCenter),
+        modifier = Modifier.align(Alignment.TopEnd),
     ) {
         Surface(
             modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
@@ -606,36 +648,55 @@ private fun BoxScope.PdfReaderControls(
     val colors = VaultThemeTokens.colors
     Surface(
         modifier = Modifier
-            .align(Alignment.BottomEnd)
+            .align(Alignment.BottomCenter)
             .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
-        color = colors.elevated.copy(alpha = 0.9f),
-        shape = VaultShapes.pill,
-        border = BorderStroke(1.dp, colors.border),
+        color = colors.elevated.copy(alpha = 0.94f),
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, if (highlighterMode) colors.accent.copy(alpha = 0.55f) else colors.border),
         shadowElevation = 2.dp,
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            horizontalAlignment = Alignment.End,
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TextButton(onClick = { onHighlighterModeChange(!highlighterMode) }) {
-                Icon(Icons.Rounded.Draw, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(if (highlighterMode) "Done" else "Highlight")
+            Surface(
+                onClick = { onHighlighterModeChange(!highlighterMode) },
+                shape = VaultShapes.pill,
+                color = if (highlighterMode) colors.accent.copy(alpha = 0.16f) else colors.surface,
+                border = BorderStroke(1.dp, if (highlighterMode) colors.accent.copy(alpha = 0.5f) else colors.border),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Rounded.Draw, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text(
+                        text = if (highlighterMode) "Done" else "Highlight",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                        color = if (highlighterMode) colors.accent else colors.textSecondary,
+                    )
+                }
             }
-            AnimatedVisibility(visible = highlighterMode) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PdfHighlightColors.forEach { color ->
-                        Surface(
-                            onClick = { onHighlightColorChange(color) },
-                            modifier = Modifier.size(24.dp),
-                            shape = VaultShapes.pill,
-                            color = color.toPdfHighlightColor().copy(alpha = if (color == highlightColor) 0.9f else 0.42f),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (color == highlightColor) colors.textSecondary else colors.border,
-                            ),
-                        ) {}
-                    }
+            PdfHighlightColors.forEach { color ->
+                Surface(
+                    onClick = { onHighlightColorChange(color) },
+                    modifier = Modifier.size(30.dp),
+                    shape = VaultShapes.pill,
+                    color = color.toPdfHighlightColor().copy(
+                        alpha = when {
+                            !highlighterMode -> 0.22f
+                            color == highlightColor -> 0.92f
+                            else -> 0.46f
+                        },
+                    ),
+                    border = BorderStroke(
+                        width = if (highlighterMode && color == highlightColor) 2.dp else 1.dp,
+                        color = if (highlighterMode && color == highlightColor) colors.text else colors.border,
+                    ),
+                ) {
+                    Box(modifier = Modifier.fillMaxSize())
                 }
             }
         }
@@ -652,7 +713,7 @@ private fun PdfAnnotationActionsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Highlight") },
+        title = { Text(if (annotation.noteText.isNullOrBlank()) "Highlight" else "Annotation") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -660,6 +721,20 @@ private fun PdfAnnotationActionsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = VaultThemeTokens.colors.textMuted,
                 )
+                if (!annotation.noteText.isNullOrBlank()) {
+                    Surface(
+                        color = VaultThemeTokens.colors.surface,
+                        shape = VaultShapes.md,
+                        border = BorderStroke(1.dp, VaultThemeTokens.colors.border),
+                    ) {
+                        Text(
+                            text = annotation.noteText.orEmpty(),
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = VaultThemeTokens.colors.text,
+                        )
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PdfHighlightColors.forEach { color ->
                         Surface(
@@ -798,15 +873,54 @@ private data class PagePoint(
     val offset: Offset,
 )
 
-private fun PDFView.toNormalizedPagePoint(x: Float, y: Float): PagePoint? {
+private fun PDFView.toNormalizedPagePoint(
+    x: Float,
+    y: Float,
+    preferredPage: Int? = null,
+    clampToPage: Boolean,
+): PagePoint? {
     val file = pdfFile ?: return null
-    val page = findFocusPage(x, y).takeIf { it >= 0 } ?: return null
     val zoom = zoom
+    val pageCount = file.pagesCount
+    if (pageCount <= 0) return null
+
+    val candidatePages = if (preferredPage != null) {
+        listOf(preferredPage.coerceIn(0, pageCount - 1))
+    } else {
+        (0 until pageCount).toList()
+    }
+
+    candidatePages.forEach { page ->
+        val point = toNormalizedPointOnPage(
+            page = page,
+            x = x,
+            y = y,
+            zoom = zoom,
+            clampToPage = clampToPage,
+        )
+        if (point != null) return point
+    }
+    return null
+}
+
+private fun PDFView.toNormalizedPointOnPage(
+    page: Int,
+    x: Float,
+    y: Float,
+    zoom: Float,
+    clampToPage: Boolean,
+): PagePoint? {
+    val file = pdfFile ?: return null
     val pageSize = file.getScaledPageSize(page, zoom)
     if (pageSize.width <= 0f || pageSize.height <= 0f) return null
 
     val pageLeft = currentXOffset + file.getSecondaryPageOffset(page, zoom)
     val pageTop = currentYOffset + file.getPageOffset(page, zoom)
+    val pageRight = pageLeft + pageSize.width
+    val pageBottom = pageTop + pageSize.height
+    val withinPage = x in pageLeft..pageRight && y in pageTop..pageBottom
+    if (!withinPage && !clampToPage) return null
+
     return PagePoint(
         pageIndex = page,
         offset = Offset(
@@ -833,8 +947,19 @@ private fun drawPdfHighlights(
         paint.color = annotation.color.toPdfHighlightArgb(alpha = 86)
         canvas.drawRoundRect(left, top, right, bottom, 8f, 8f, paint)
         if (!annotation.noteText.isNullOrBlank()) {
+            val markerSize = 22f
+            val markerLeft = (right - markerSize - 4f).coerceAtLeast(left + 4f)
+            val markerTop = (top + 4f).coerceAtMost((bottom - markerSize - 4f).coerceAtLeast(top + 4f))
+            paint.color = android.graphics.Color.argb(222, 255, 255, 255)
+            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, 8f, 8f, paint)
             paint.color = annotation.color.toPdfHighlightArgb(alpha = 224)
-            canvas.drawCircle(right - 10f, top + 10f, 6f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.2f
+            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, 8f, 8f, paint)
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(markerLeft + 7f, markerTop + 7f, 1.7f, paint)
+            canvas.drawCircle(markerLeft + 15f, markerTop + 7f, 1.7f, paint)
+            canvas.drawCircle(markerLeft + 11f, markerTop + 14f, 1.7f, paint)
         }
     }
 }
