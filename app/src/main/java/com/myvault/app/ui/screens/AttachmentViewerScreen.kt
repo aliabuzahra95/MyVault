@@ -5,12 +5,12 @@ import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.view.MotionEvent
 import android.view.ViewGroup
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,13 +53,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import com.ahmer.pdfviewer.PDFView
 import com.ahmer.pdfviewer.listener.OnDrawListener
 import com.ahmer.pdfviewer.listener.OnErrorListener
@@ -252,6 +255,7 @@ private fun PdfAttachmentViewer(
         annotations.groupBy { it.pageIndex }
     }
     val currentAnnotationsByPage by rememberUpdatedState(annotationsByPage)
+    val pdfSurfaceColor = VaultThemeTokens.colors.inset.toArgb()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
@@ -272,7 +276,7 @@ private fun PdfAttachmentViewer(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                 )
-                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                setBackgroundColor(pdfSurfaceColor)
                                 setMinZoom(1f)
                                 setMidZoom(2.25f)
                                 setMaxZoom(5f)
@@ -352,8 +356,10 @@ private fun PdfAttachmentViewer(
                             }
                         },
                         update = { view ->
-                            pdfView = view
-                            view.invalidate()
+                            if (pdfView !== view) {
+                                pdfView = view
+                            }
+                            view.setBackgroundColor(pdfSurfaceColor)
                         },
                         onRelease = { view ->
                             if (pdfView === view) pdfView = null
@@ -364,7 +370,9 @@ private fun PdfAttachmentViewer(
 
                 if (highlighterMode) {
                     PdfHighlightDragLayer(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(2f),
                         draftStart = dragStart,
                         draftEnd = dragEnd,
                         draftColor = highlightColor,
@@ -415,6 +423,7 @@ private fun PdfAttachmentViewer(
                 }
 
                 PdfReaderControls(
+                    modifier = Modifier.zIndex(3f),
                     highlighterMode = highlighterMode,
                     highlightColor = highlightColor,
                     onHighlighterModeChange = { enabled ->
@@ -526,13 +535,26 @@ private fun PdfHighlightDragLayer(
 ) {
     Canvas(
         modifier = modifier.pointerInput(draftColor) {
-            detectDragGestures(
-                onDragStart = onDragStart,
-                onDragEnd = onDragEnd,
-                onDragCancel = onDragEnd,
-            ) { change, _ ->
-                change.consume()
-                onDrag(change.position)
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                down.consume()
+                onDragStart(down.position)
+                val pointerId = down.id
+
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Main)
+                    val change = event.changes.firstOrNull { it.id == pointerId }
+                        ?: event.changes.firstOrNull()
+                        ?: break
+
+                    onDrag(change.position)
+                    change.consume()
+
+                    if (!change.pressed) {
+                        onDragEnd()
+                        break
+                    }
+                }
             }
         },
     ) {
@@ -582,6 +604,7 @@ private fun BoxScope.PdfDocumentTitleOverlay(attachment: AttachmentEntity) {
     Surface(
         modifier = Modifier
             .align(Alignment.TopStart)
+            .zIndex(1f)
             .padding(start = VaultSpacing.screen, top = VaultSpacing.xs, end = 128.dp),
         color = colors.elevated.copy(alpha = 0.9f),
         shape = VaultShapes.md,
@@ -617,29 +640,29 @@ private fun BoxScope.PdfReadingProgressOverlay(
 ) {
     val colors = VaultThemeTokens.colors
     val percent = ((pageIndex + 1).toFloat() / pageCount.toFloat()).coerceIn(0f, 1f)
-    AnimatedVisibility(
-        visible = pageCount > 0,
-        modifier = Modifier.align(Alignment.TopEnd),
+    if (pageCount <= 0) return
+    Surface(
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .zIndex(1f)
+            .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
+        color = colors.elevated.copy(alpha = 0.84f),
+        shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, colors.border),
+        shadowElevation = 1.dp,
     ) {
-        Surface(
-            modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
-            color = colors.elevated.copy(alpha = 0.84f),
-            shape = VaultShapes.pill,
-            border = BorderStroke(1.dp, colors.border),
-            shadowElevation = 1.dp,
-        ) {
-            Text(
-                text = "Page ${pageIndex + 1} of $pageCount · ${(percent * 100).toInt()}%",
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
-                color = colors.textSecondary,
-            )
-        }
+        Text(
+            text = "Page ${pageIndex + 1} of $pageCount · ${(percent * 100).toInt()}%",
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+            color = colors.textSecondary,
+        )
     }
 }
 
 @Composable
 private fun BoxScope.PdfReaderControls(
+    modifier: Modifier = Modifier,
     highlighterMode: Boolean,
     highlightColor: String,
     onHighlighterModeChange: (Boolean) -> Unit,
@@ -647,7 +670,7 @@ private fun BoxScope.PdfReaderControls(
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .align(Alignment.BottomCenter)
             .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
         color = colors.elevated.copy(alpha = 0.94f),
