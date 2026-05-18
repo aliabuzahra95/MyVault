@@ -2,8 +2,13 @@ package com.myvault.app.data.sync
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import com.google.android.gms.auth.GoogleAuthUtil
+import com.google.android.gms.auth.UserRecoverableAuthException
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.BackupRepository
@@ -13,8 +18,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -29,24 +39,27 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val preferences: VaultPreferences,
 ) {
-    suspend fun setSyncFolder(uri: Uri): DriveSyncResult = withContext(Dispatchers.IO) {
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
+    fun signInIntent(): Intent =
+        GoogleSignIn.getClient(context, signInOptions()).signInIntent
+
+    suspend fun handleSignInResult(data: Intent?): DriveSyncResult = withContext(Dispatchers.IO) {
+        val account = runCatching {
+            GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
+        }.getOrElse { error ->
+            return@withContext DriveSyncResult.Failure(error.message ?: "Google Drive sign in was cancelled.")
         }
-        val root = uri.openDocumentTreeRoot()
-            ?: return@withContext DriveSyncResult.Failure("Unable to open the selected Drive folder.")
-        root.ensureMyVaultLayout()
-        preferences.setGoogleDriveSyncFolderUri(uri.toString())
-        DriveSyncResult.Success("Google Drive sync folder is ready.")
+        if (!GoogleSignIn.hasPermissions(account, DriveScope)) {
+            return@withContext DriveSyncResult.Failure("Google Drive permission was not granted. Please connect Drive again.")
+        }
+        preferences.setGoogleDriveAccountEmail(account.email.orEmpty())
+        DriveSyncResult.Success("Google Drive connected${account.email?.let { " as $it" }.orEmpty()}.")
     }
 
     suspend fun pushToDrive(): DriveSyncResult = withContext(Dispatchers.IO) {
-        val root = selectedRootOrFailure() ?: return@withContext DriveSyncResult.Failure("Choose a Google Drive sync folder first.")
-        val vault = root.ensureMyVaultLayout()
-        val remoteManifest = vault.manifests.findFile(SyncManifestFile)?.readJsonObjectOrNull()
+        val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
+        val vault = drive.ensureMyVaultLayout()
+        val remoteManifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
+        val remoteManifest = remoteManifestFile?.let { drive.downloadJsonObject(it.id) }
         val remoteVersion = remoteManifest?.optLong("cloudVersion", 0L) ?: 0L
         val lastSyncedVersion = preferences.userPreferences.first().lastGoogleDriveManifestAt
         if (remoteVersion > 0L && remoteVersion > lastSyncedVersion) {
@@ -55,8 +68,8 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             )
         }
 
-        val backupFile = File(context.cacheDir, "drive-sync-export-${System.currentTimeMillis()}.vaultbackup")
-        val unzipDir = File(context.cacheDir, "drive-sync-export-${System.currentTimeMillis()}").apply { mkdirs() }
+        val backupFile = File(context.cacheDir, "drive-api-sync-export-${System.currentTimeMillis()}.vaultbackup")
+        val unzipDir = File(context.cacheDir, "drive-api-sync-export-${System.currentTimeMillis()}").apply { mkdirs() }
         try {
             backupRepository.exportBackupToFile(backupFile)
             val entries = backupFile.toDriveEntries(unzipDir)
@@ -71,29 +84,41 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     if (entry.kind == EntryKindFile) skippedFiles += 1
                     return@forEach
                 }
-                val targetFolder = if (entry.kind == EntryKindFile) vault.files else vault.metadata
-                targetFolder.writeChildFile(entry.fileName, entry.mimeType, entry.file)
+                val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
+                val existingId = remote?.cloudFileId ?: drive.findChild(parentId, entry.fileName)?.id
+                val uploaded = drive.uploadFile(
+                    parentId = parentId,
+                    existingFileId = existingId,
+                    name = entry.fileName,
+                    mimeType = entry.mimeType,
+                    source = entry.file,
+                )
+                entry.cloudFileId = uploaded.id
                 if (entry.kind == EntryKindFile) uploadedFiles += 1 else uploadedMetadata += 1
             }
 
             val localPaths = entries.map { it.path }.toSet()
             remoteEntries.values
-                .filter { it.path !in localPaths }
-                .forEach { stale ->
-                    val folder = if (stale.kind == EntryKindFile) vault.files else vault.metadata
-                    folder.findFile(stale.fileName)?.delete()
-                }
+                .filter { it.path !in localPaths && it.cloudFileId.isNotBlank() }
+                .forEach { stale -> drive.deleteFile(stale.cloudFileId) }
 
             val cloudVersion = System.currentTimeMillis()
             val manifest = entries.toManifest(cloudVersion)
-            vault.manifests.writeTextFile(SyncManifestFile, manifest.toString(2), "application/json")
+            val existingManifestId = remoteManifestFile?.id ?: drive.findChild(vault.manifests.id, SyncManifestFile)?.id
+            drive.uploadTextFile(
+                parentId = vault.manifests.id,
+                existingFileId = existingManifestId,
+                name = SyncManifestFile,
+                text = manifest.toString(2),
+                mimeType = "application/json",
+            )
             preferences.markGoogleDriveSync(cloudVersion)
 
             DriveSyncResult.Success(
                 "Drive push complete: $uploadedMetadata metadata file(s), $uploadedFiles file(s) uploaded, $skippedFiles unchanged file(s) skipped.",
             )
         } catch (error: Throwable) {
-            DriveSyncResult.Failure(error.message ?: "Drive push failed.")
+            DriveSyncResult.Failure(error.driveMessage("Drive push failed"))
         } finally {
             backupFile.delete()
             unzipDir.deleteRecursively()
@@ -101,14 +126,15 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     }
 
     suspend fun pullLatestFromDrive(): DriveSyncResult = withContext(Dispatchers.IO) {
-        val root = selectedRootOrFailure() ?: return@withContext DriveSyncResult.Failure("Choose a Google Drive sync folder first.")
-        val vault = root.ensureMyVaultLayout()
-        val manifest = vault.manifests.findFile(SyncManifestFile)?.readJsonObjectOrNull()
+        val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
+        val vault = drive.ensureMyVaultLayout()
+        val manifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
             ?: return@withContext DriveSyncResult.Failure("No MyVault Drive sync manifest found yet. Push from your latest device first.")
+        val manifest = drive.downloadJsonObject(manifestFile.id)
         val entries = manifest.toRemoteEntryMap().values.sortedWith(compareBy<RemoteEntry> { it.kind }.thenBy { it.path })
         if (entries.isEmpty()) return@withContext DriveSyncResult.Failure("Drive sync manifest is empty.")
 
-        val zipFile = File(context.cacheDir, "drive-sync-pull-${System.currentTimeMillis()}.vaultbackup")
+        val zipFile = File(context.cacheDir, "drive-api-sync-pull-${System.currentTimeMillis()}.vaultbackup")
         var downloadedFiles = 0
         var reusedLocalFiles = 0
         try {
@@ -123,11 +149,15 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                             localFile.inputStream().use { it.copyTo(zip) }
                             reusedLocalFiles += 1
                         } else {
-                            vault.files.requireFile(entry.fileName).openInputStream().use { it.copyTo(zip) }
+                            val fileId = entry.cloudFileId.ifBlank { drive.findChild(vault.files.id, entry.fileName)?.id.orEmpty() }
+                            if (fileId.isBlank()) error("Missing Drive sync file: ${entry.fileName}")
+                            drive.downloadFile(fileId).use { it.copyTo(zip) }
                             downloadedFiles += 1
                         }
                     } else {
-                        vault.metadata.requireFile(entry.fileName).openInputStream().use { it.copyTo(zip) }
+                        val fileId = entry.cloudFileId.ifBlank { drive.findChild(vault.metadata.id, entry.fileName)?.id.orEmpty() }
+                        if (fileId.isBlank()) error("Missing Drive sync metadata: ${entry.fileName}")
+                        drive.downloadFile(fileId).use { it.copyTo(zip) }
                     }
                     zip.closeEntry()
                 }
@@ -139,16 +169,18 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 "Drive pull complete: ${restored.noteCount} notes, ${restored.attachmentCount} attachments. $downloadedFiles file(s) downloaded, $reusedLocalFiles reused locally.",
             )
         } catch (error: Throwable) {
-            DriveSyncResult.Failure(error.message ?: "Drive pull failed.")
+            DriveSyncResult.Failure(error.driveMessage("Drive pull failed"))
         } finally {
             zipFile.delete()
         }
     }
 
     suspend fun checkForRemoteUpdates(): DriveSyncResult = withContext(Dispatchers.IO) {
-        val root = selectedRootOrFailure() ?: return@withContext DriveSyncResult.Skipped("Choose a Google Drive sync folder first.")
-        val vault = root.ensureMyVaultLayout()
-        val remoteVersion = vault.manifests.findFile(SyncManifestFile)?.readJsonObjectOrNull()?.optLong("cloudVersion", 0L) ?: 0L
+        val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Skipped("Connect Google Drive first.")
+        val vault = drive.ensureMyVaultLayout()
+        val remoteVersion = drive.findChild(vault.manifests.id, SyncManifestFile)
+            ?.let { drive.downloadJsonObject(it.id).optLong("cloudVersion", 0L) }
+            ?: 0L
         val localVersion = preferences.userPreferences.first().lastGoogleDriveManifestAt
         when {
             remoteVersion <= 0L -> DriveSyncResult.Skipped("No Drive sync has been pushed yet.")
@@ -157,24 +189,16 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         }
     }
 
-    private suspend fun selectedRootOrFailure(): DocumentFile? {
-        val uri = preferences.userPreferences.first().googleDriveSyncFolderUri.takeIf { it.isNotBlank() }?.let(Uri::parse)
-            ?: return null
-        return uri.openDocumentTreeRoot()
-    }
+    private fun signInOptions(): GoogleSignInOptions =
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(DriveScope)
+            .build()
 
-    private fun Uri.openDocumentTreeRoot(): DocumentFile? =
-        DocumentFile.fromTreeUri(context, this)?.takeIf { it.exists() && it.isDirectory }
-
-    private fun DocumentFile.ensureMyVaultLayout(): DriveVaultFolder {
-        val myVault = ensureDirectory(MyVaultRoot)
-        return DriveVaultFolder(
-            root = myVault,
-            metadata = myVault.ensureDirectory("metadata"),
-            files = myVault.ensureDirectory("files"),
-            manifests = myVault.ensureDirectory("manifests"),
-            backups = myVault.ensureDirectory("backups"),
-        )
+    private fun driveOrFailure(): DriveApiClient? {
+        val account = GoogleSignIn.getLastSignedInAccount(context) ?: return null
+        if (!GoogleSignIn.hasPermissions(account, DriveScope)) return null
+        return DriveApiClient(context, account)
     }
 
     private fun File.toDriveEntries(unzipDir: File): List<DriveEntry> {
@@ -233,7 +257,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         JSONObject()
             .put("schemaVersion", 1)
             .put("cloudVersion", cloudVersion)
-            .put("storage", "google-drive-saf")
+            .put("storage", "google-drive-api")
             .put("layout", "MyVault/metadata, MyVault/files, MyVault/manifests, MyVault/backups")
             .put(
                 "entries",
@@ -247,6 +271,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                                 .put("kind", entry.kind)
                                 .put("sha256", entry.sha256)
                                 .put("size", entry.size)
+                                .put("cloudFileId", entry.cloudFileId)
                                 .put("updatedAt", cloudVersion),
                         )
                     }
@@ -269,36 +294,12 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                         kind = item.optString("kind", if (path.startsWith("files/")) EntryKindFile else EntryKindMetadata),
                         sha256 = item.getString("sha256"),
                         size = item.optLong("size", -1L),
+                        cloudFileId = item.optString("cloudFileId"),
                     ),
                 )
             }
         }
     }
-
-    private fun DocumentFile.ensureDirectory(name: String): DocumentFile =
-        findFile(name)?.takeIf { it.isDirectory } ?: createDirectory(name) ?: error("Unable to create Drive folder: $name")
-
-    private fun DocumentFile.requireFile(name: String): DocumentFile =
-        findFile(name)?.takeIf { it.isFile } ?: error("Missing Drive sync file: $name")
-
-    private fun DocumentFile.writeTextFile(name: String, text: String, mimeType: String) {
-        val file = findFile(name)?.takeIf { it.isFile } ?: createFile(mimeType, name) ?: error("Unable to create Drive file: $name")
-        context.contentResolver.openOutputStream(file.uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-            ?: error("Unable to write Drive file: $name")
-    }
-
-    private fun DocumentFile.writeChildFile(name: String, mimeType: String, source: File) {
-        val file = findFile(name)?.takeIf { it.isFile } ?: createFile(mimeType, name) ?: error("Unable to create Drive file: $name")
-        context.contentResolver.openOutputStream(file.uri, "wt")?.use { output ->
-            source.inputStream().use { it.copyTo(output) }
-        } ?: error("Unable to write Drive file: $name")
-    }
-
-    private fun DocumentFile.openInputStream(): InputStream =
-        context.contentResolver.openInputStream(uri) ?: error("Unable to read Drive file: ${name.orEmpty()}")
-
-    private fun DocumentFile.readJsonObjectOrNull(): JSONObject? =
-        runCatching { JSONObject(openInputStream().bufferedReader().use { it.readText() }) }.getOrNull()
 
     private fun File.sha256(): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -320,12 +321,159 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         return raw.takeIf { it.isNotBlank() && it.length <= 8 } ?: "bin"
     }
 
+    private fun Throwable.driveMessage(prefix: String): String =
+        when (this) {
+            is UserRecoverableAuthException -> "$prefix: Google Drive needs permission again. Connect Drive, then retry."
+            else -> message?.let { "$prefix: $it" } ?: prefix
+        }
+
+    private class DriveApiClient(
+        private val context: Context,
+        private val account: GoogleSignInAccount,
+    ) {
+        fun ensureMyVaultLayout(): DriveVaultFolder {
+            val root = ensureFolder(parentId = "root", name = MyVaultRoot)
+            return DriveVaultFolder(
+                root = root,
+                metadata = ensureFolder(root.id, "metadata"),
+                files = ensureFolder(root.id, "files"),
+                manifests = ensureFolder(root.id, "manifests"),
+                backups = ensureFolder(root.id, "backups"),
+            )
+        }
+
+        fun ensureFolder(parentId: String, name: String): DriveFile =
+            findChild(parentId, name, FolderMimeType) ?: createFolder(parentId, name)
+
+        fun findChild(parentId: String, name: String, mimeType: String? = null): DriveFile? {
+            val query = buildString {
+                append("'").append(parentId.escapeDriveQuery()).append("' in parents")
+                append(" and name = '").append(name.escapeDriveQuery()).append("'")
+                append(" and trashed = false")
+                if (mimeType != null) append(" and mimeType = '").append(mimeType.escapeDriveQuery()).append("'")
+            }
+            val json = requestJson(
+                method = "GET",
+                url = "$DriveFilesUrl?q=${query.urlEncode()}&spaces=drive&fields=files(id,name,mimeType,size,modifiedTime)",
+            )
+            val files = json.optJSONArray("files") ?: return null
+            if (files.length() == 0) return null
+            return files.getJSONObject(0).toDriveFile()
+        }
+
+        fun createFolder(parentId: String, name: String): DriveFile {
+            val body = JSONObject()
+                .put("name", name)
+                .put("mimeType", FolderMimeType)
+                .put("parents", JSONArray().put(parentId))
+            return requestJson(
+                method = "POST",
+                url = "$DriveFilesUrl?fields=id,name,mimeType,modifiedTime",
+                body = body.toString().toByteArray(Charsets.UTF_8),
+                contentType = "application/json; charset=UTF-8",
+            ).toDriveFile()
+        }
+
+        fun uploadFile(parentId: String, existingFileId: String?, name: String, mimeType: String, source: File): DriveFile =
+            source.inputStream().use { input ->
+                uploadBytes(parentId, existingFileId, name, mimeType, input.readBytes())
+            }
+
+        fun uploadTextFile(parentId: String, existingFileId: String?, name: String, text: String, mimeType: String): DriveFile =
+            uploadBytes(parentId, existingFileId, name, mimeType, text.toByteArray(Charsets.UTF_8))
+
+        private fun uploadBytes(parentId: String, existingFileId: String?, name: String, mimeType: String, bytes: ByteArray): DriveFile {
+            val boundary = "myvault-${System.currentTimeMillis()}"
+            val metadata = JSONObject()
+                .put("name", name)
+                .put("mimeType", mimeType)
+                .also { if (existingFileId.isNullOrBlank()) it.put("parents", JSONArray().put(parentId)) }
+            val body = ByteArrayOutputStream().use { output ->
+                output.writeUtf8("--$boundary\r\n")
+                output.writeUtf8("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+                output.writeUtf8(metadata.toString())
+                output.writeUtf8("\r\n--$boundary\r\n")
+                output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
+                output.write(bytes)
+                output.writeUtf8("\r\n--$boundary--\r\n")
+                output.toByteArray()
+            }
+            val url = if (existingFileId.isNullOrBlank()) {
+                "$DriveUploadUrl?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime"
+            } else {
+                "$DriveUploadUrl/${existingFileId.urlPathEncode()}?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime"
+            }
+            return requestJson(
+                method = if (existingFileId.isNullOrBlank()) "POST" else "PATCH",
+                url = url,
+                body = body,
+                contentType = "multipart/related; boundary=$boundary",
+            ).toDriveFile()
+        }
+
+        fun downloadJsonObject(fileId: String): JSONObject =
+            JSONObject(downloadFile(fileId).bufferedReader().use { it.readText() })
+
+        fun downloadFile(fileId: String): InputStream =
+            requestStream("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media")
+
+        fun deleteFile(fileId: String) {
+            requestBytes("DELETE", "$DriveFilesUrl/${fileId.urlPathEncode()}", null, null)
+        }
+
+        private fun requestJson(method: String, url: String, body: ByteArray? = null, contentType: String? = null): JSONObject =
+            JSONObject(requestBytes(method, url, body, contentType).toString(Charsets.UTF_8))
+
+        private fun requestStream(method: String, url: String): InputStream =
+            requestBytes(method, url, null, null).inputStream()
+
+        private fun requestBytes(method: String, url: String, body: ByteArray?, contentType: String?): ByteArray {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 30_000
+                readTimeout = 120_000
+                setRequestProperty("Authorization", "Bearer ${accessToken()}")
+                if (contentType != null) setRequestProperty("Content-Type", contentType)
+                if (body != null) {
+                    doOutput = true
+                    setRequestProperty("Content-Length", body.size.toString())
+                }
+            }
+            if (body != null) connection.outputStream.use { it.write(body) }
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+            if (responseCode !in 200..299) {
+                error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+            }
+            return bytes
+        }
+
+        private fun accessToken(): String {
+            val androidAccount = account.account ?: error("Google account is unavailable. Connect Drive again.")
+            return GoogleAuthUtil.getToken(context, androidAccount, "oauth2:$DriveScopeUrl")
+        }
+
+        private fun JSONObject.toDriveFile(): DriveFile =
+            DriveFile(
+                id = getString("id"),
+                name = optString("name"),
+                mimeType = optString("mimeType"),
+            )
+    }
+
     private data class DriveVaultFolder(
-        val root: DocumentFile,
-        val metadata: DocumentFile,
-        val files: DocumentFile,
-        val manifests: DocumentFile,
-        val backups: DocumentFile,
+        val root: DriveFile,
+        val metadata: DriveFile,
+        val files: DriveFile,
+        val manifests: DriveFile,
+        val backups: DriveFile,
+    )
+
+    private data class DriveFile(
+        val id: String,
+        val name: String,
+        val mimeType: String,
     )
 
     private data class DriveEntry(
@@ -337,6 +485,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val size: Long,
         val sha256: String,
         val file: File,
+        var cloudFileId: String = "",
     )
 
     private data class RemoteEntry(
@@ -346,6 +495,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val kind: String,
         val sha256: String,
         val size: Long,
+        val cloudFileId: String,
     )
 
     private companion object {
@@ -353,7 +503,22 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         const val SyncManifestFile = "sync_manifest.json"
         const val EntryKindMetadata = "metadata"
         const val EntryKindFile = "file"
+        const val DriveScopeUrl = "https://www.googleapis.com/auth/drive.file"
+        val DriveScope = Scope(DriveScopeUrl)
+        const val FolderMimeType = "application/vnd.google-apps.folder"
+        const val DriveFilesUrl = "https://www.googleapis.com/drive/v3/files"
+        const val DriveUploadUrl = "https://www.googleapis.com/upload/drive/v3/files"
     }
+}
+
+private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")
+
+private fun String.urlPathEncode(): String = URLEncoder.encode(this, "UTF-8").replace("+", "%20")
+
+private fun String.escapeDriveQuery(): String = replace("\\", "\\\\").replace("'", "\\'")
+
+private fun OutputStream.writeUtf8(value: String) {
+    write(value.toByteArray(Charsets.UTF_8))
 }
 
 sealed interface DriveSyncResult {

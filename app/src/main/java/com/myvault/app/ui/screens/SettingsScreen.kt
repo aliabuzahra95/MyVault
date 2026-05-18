@@ -1,5 +1,6 @@
 package com.myvault.app.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -90,7 +91,8 @@ fun SettingsScreen(
     onCloudSignOut: () -> Unit = {},
     onCloudBackup: () -> Unit = {},
     onCloudRestore: () -> Unit = {},
-    onGoogleDriveFolderSelected: (Uri) -> Unit = {},
+    googleDriveSignInIntent: Intent? = null,
+    onGoogleDriveSignInResult: (Intent?) -> Unit = {},
     onGoogleDrivePush: () -> Unit = {},
     onGoogleDrivePull: () -> Unit = {},
     onGoogleDriveCheck: () -> Unit = {},
@@ -118,8 +120,8 @@ fun SettingsScreen(
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         restoreConfirmUri = uri
     }
-    val googleDriveFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        uri?.let(onGoogleDriveFolderSelected)
+    val googleDriveSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        onGoogleDriveSignInResult(result.data)
     }
 
     Scaffold(modifier = modifier.fillMaxSize(), containerColor = colors.bg) { innerPadding ->
@@ -195,7 +197,9 @@ fun SettingsScreen(
             },
             onCloudBackupClick = onCloudBackup,
             onCloudRestoreClick = { cloudRestoreConfirmOpen = true },
-            onGoogleDriveFolderClick = { googleDriveFolderLauncher.launch(null) },
+                    onGoogleDriveConnectClick = {
+                        googleDriveSignInIntent?.let { googleDriveSignInLauncher.launch(it) }
+                    },
             onGoogleDrivePushClick = onGoogleDrivePush,
             onGoogleDrivePullClick = onGoogleDrivePull,
             onGoogleDriveCheckClick = onGoogleDriveCheck,
@@ -542,7 +546,7 @@ private fun BackupSettingsDialog(
     onCloudAccountClick: () -> Unit,
     onCloudBackupClick: () -> Unit,
     onCloudRestoreClick: () -> Unit,
-    onGoogleDriveFolderClick: () -> Unit,
+    onGoogleDriveConnectClick: () -> Unit,
     onGoogleDrivePushClick: () -> Unit,
     onGoogleDrivePullClick: () -> Unit,
     onGoogleDriveCheckClick: () -> Unit,
@@ -574,10 +578,11 @@ private fun BackupSettingsDialog(
                 SettingsRow(Icons.Rounded.Storage, "Supabase account", cloudBackup.statusLabel, onClick = onCloudAccountClick)
                 SettingsRow(Icons.Rounded.Backup, "Cloud backup", if (cloudBackup.signedIn) "Upload now" else "Sign in first", onClick = onCloudBackupClick)
                 SettingsRow(Icons.Rounded.Restore, "Cloud restore", if (cloudBackup.signedIn) "Download latest" else "Sign in first", onClick = onCloudRestoreClick)
-                SettingsRow(Icons.Rounded.Storage, "Google Drive sync folder", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder" else "Selected", onClick = onGoogleDriveFolderClick)
-                SettingsRow(Icons.Rounded.Verified, "Check Drive updates", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder first" else "Compare manifest", onClick = onGoogleDriveCheckClick)
-                SettingsRow(Icons.Rounded.Backup, "Push to Drive", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder first" else "Incremental upload", onClick = onGoogleDrivePushClick)
-                SettingsRow(Icons.Rounded.Restore, "Pull latest from Drive", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder first" else "Incremental download", onClick = onGoogleDrivePullClick)
+                val driveConnected = preferences.googleDriveAccountEmail.isNotBlank()
+                SettingsRow(Icons.Rounded.Storage, "Google Drive account", if (driveConnected) preferences.googleDriveAccountEmail else "Connect account", onClick = onGoogleDriveConnectClick)
+                SettingsRow(Icons.Rounded.Verified, "Check Drive updates", if (driveConnected) "Compare manifest" else "Connect Drive first", onClick = onGoogleDriveCheckClick)
+                SettingsRow(Icons.Rounded.Backup, "Push to Drive", if (driveConnected) "Incremental upload" else "Connect Drive first", onClick = onGoogleDrivePushClick)
+                SettingsRow(Icons.Rounded.Restore, "Pull latest from Drive", if (driveConnected) "Incremental download" else "Connect Drive first", onClick = onGoogleDrivePullClick)
                 SettingsRow(Icons.Rounded.Backup, "Last local backup", preferences.lastLocalBackupAt.displayBackupTime())
                 SettingsRow(Icons.Rounded.Storage, "Last cloud backup", preferences.lastCloudBackupAt.displayBackupTime())
                 SettingsRow(Icons.Rounded.Storage, "Last Drive sync", preferences.lastGoogleDriveSyncAt.displayBackupTime())

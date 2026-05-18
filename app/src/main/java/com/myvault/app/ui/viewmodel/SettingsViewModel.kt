@@ -1,5 +1,6 @@
 package com.myvault.app.ui.viewmodel
 
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -191,9 +192,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setGoogleDriveSyncFolder(uri: Uri, onComplete: (String) -> Unit) {
+    fun googleDriveSignInIntent(): Intent =
+        googleDriveSyncRepository.signInIntent()
+
+    fun handleGoogleDriveSignInResult(data: Intent?, onComplete: (String) -> Unit) {
         viewModelScope.launch {
-            onComplete(googleDriveSyncRepository.setSyncFolder(uri).displayMessage())
+            onComplete(googleDriveSyncRepository.handleSignInResult(data).displayMessage())
         }
     }
 
