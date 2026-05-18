@@ -90,6 +90,10 @@ fun SettingsScreen(
     onCloudSignOut: () -> Unit = {},
     onCloudBackup: () -> Unit = {},
     onCloudRestore: () -> Unit = {},
+    onGoogleDriveFolderSelected: (Uri) -> Unit = {},
+    onGoogleDrivePush: () -> Unit = {},
+    onGoogleDrivePull: () -> Unit = {},
+    onGoogleDriveCheck: () -> Unit = {},
     onVerifyBackup: () -> Unit = {},
     backupMessage: String? = null,
     onDismissBackupMessage: () -> Unit = {},
@@ -113,6 +117,9 @@ fun SettingsScreen(
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         restoreConfirmUri = uri
+    }
+    val googleDriveFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(onGoogleDriveFolderSelected)
     }
 
     Scaffold(modifier = modifier.fillMaxSize(), containerColor = colors.bg) { innerPadding ->
@@ -188,6 +195,10 @@ fun SettingsScreen(
             },
             onCloudBackupClick = onCloudBackup,
             onCloudRestoreClick = { cloudRestoreConfirmOpen = true },
+            onGoogleDriveFolderClick = { googleDriveFolderLauncher.launch(null) },
+            onGoogleDrivePushClick = onGoogleDrivePush,
+            onGoogleDrivePullClick = onGoogleDrivePull,
+            onGoogleDriveCheckClick = onGoogleDriveCheck,
             onVerifyBackupClick = onVerifyBackup,
         )
     }
@@ -531,6 +542,10 @@ private fun BackupSettingsDialog(
     onCloudAccountClick: () -> Unit,
     onCloudBackupClick: () -> Unit,
     onCloudRestoreClick: () -> Unit,
+    onGoogleDriveFolderClick: () -> Unit,
+    onGoogleDrivePushClick: () -> Unit,
+    onGoogleDrivePullClick: () -> Unit,
+    onGoogleDriveCheckClick: () -> Unit,
     onVerifyBackupClick: () -> Unit,
 ) {
     AlertDialog(
@@ -559,8 +574,13 @@ private fun BackupSettingsDialog(
                 SettingsRow(Icons.Rounded.Storage, "Supabase account", cloudBackup.statusLabel, onClick = onCloudAccountClick)
                 SettingsRow(Icons.Rounded.Backup, "Cloud backup", if (cloudBackup.signedIn) "Upload now" else "Sign in first", onClick = onCloudBackupClick)
                 SettingsRow(Icons.Rounded.Restore, "Cloud restore", if (cloudBackup.signedIn) "Download latest" else "Sign in first", onClick = onCloudRestoreClick)
+                SettingsRow(Icons.Rounded.Storage, "Google Drive sync folder", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder" else "Selected", onClick = onGoogleDriveFolderClick)
+                SettingsRow(Icons.Rounded.Verified, "Check Drive updates", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder first" else "Compare manifest", onClick = onGoogleDriveCheckClick)
+                SettingsRow(Icons.Rounded.Backup, "Push to Drive", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder first" else "Incremental upload", onClick = onGoogleDrivePushClick)
+                SettingsRow(Icons.Rounded.Restore, "Pull latest from Drive", if (preferences.googleDriveSyncFolderUri.isBlank()) "Choose folder first" else "Incremental download", onClick = onGoogleDrivePullClick)
                 SettingsRow(Icons.Rounded.Backup, "Last local backup", preferences.lastLocalBackupAt.displayBackupTime())
                 SettingsRow(Icons.Rounded.Storage, "Last cloud backup", preferences.lastCloudBackupAt.displayBackupTime())
+                SettingsRow(Icons.Rounded.Storage, "Last Drive sync", preferences.lastGoogleDriveSyncAt.displayBackupTime())
             }
         },
         confirmButton = {

@@ -13,6 +13,8 @@ import com.myvault.app.data.supabase.CloudBackupResult
 import com.myvault.app.data.supabase.SupabaseCloudBackupRepository
 import com.myvault.app.data.supabase.SupabaseConfig
 import com.myvault.app.data.supabase.SupabaseSession
+import com.myvault.app.data.sync.DriveSyncResult
+import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
 import com.myvault.app.ui.theme.VaultThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +34,7 @@ class SettingsViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
     private val folderRepository: FolderRepository,
     private val cloudBackupRepository: SupabaseCloudBackupRepository,
+    private val googleDriveSyncRepository: GoogleDriveIncrementalSyncRepository,
 ) : ViewModel() {
     val userPreferences: StateFlow<VaultUserPreferences> =
         preferences.userPreferences.stateIn(
@@ -188,6 +191,32 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setGoogleDriveSyncFolder(uri: Uri, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            onComplete(googleDriveSyncRepository.setSyncFolder(uri).displayMessage())
+        }
+    }
+
+    fun pushGoogleDriveSync(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            onComplete(googleDriveSyncRepository.pushToDrive().displayMessage())
+        }
+    }
+
+    fun pullGoogleDriveSync(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            val result = googleDriveSyncRepository.pullLatestFromDrive()
+            if (result is DriveSyncResult.Success) refreshStorage()
+            onComplete(result.displayMessage())
+        }
+    }
+
+    fun checkGoogleDriveUpdates(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            onComplete(googleDriveSyncRepository.checkForRemoteUpdates().displayMessage())
+        }
+    }
+
     fun restoreNote(noteId: String) {
         viewModelScope.launch { noteRepository.restoreNote(noteId) }
     }
@@ -274,6 +303,14 @@ private fun kotlinx.coroutines.flow.Flow<SupabaseSession>.combineToCloudState():
             signedIn = session.isSignedIn,
             email = session.email,
         )
+    }
+
+private fun DriveSyncResult.displayMessage(): String =
+    when (this) {
+        is DriveSyncResult.Success -> message
+        is DriveSyncResult.Conflict -> message
+        is DriveSyncResult.Skipped -> message
+        is DriveSyncResult.Failure -> message
     }
 
 private fun String?.hasDeletedFolderAncestor(

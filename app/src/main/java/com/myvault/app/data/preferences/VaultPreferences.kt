@@ -30,6 +30,9 @@ data class VaultUserPreferences(
     val securityLockTimeoutMs: Long = 30_000L,
     val lastLocalBackupAt: Long = 0L,
     val lastCloudBackupAt: Long = 0L,
+    val googleDriveSyncFolderUri: String = "",
+    val lastGoogleDriveSyncAt: Long = 0L,
+    val lastGoogleDriveManifestAt: Long = 0L,
     val expandedFolderIds: Set<String> = emptySet(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
@@ -52,6 +55,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 securityLockTimeoutMs = preferences[Keys.SecurityLockTimeoutMs] ?: 30_000L,
                 lastLocalBackupAt = preferences[Keys.LastLocalBackupAt] ?: 0L,
                 lastCloudBackupAt = preferences[Keys.LastCloudBackupAt] ?: 0L,
+                googleDriveSyncFolderUri = preferences[Keys.GoogleDriveSyncFolderUri].orEmpty(),
+                lastGoogleDriveSyncAt = preferences[Keys.LastGoogleDriveSyncAt] ?: 0L,
+                lastGoogleDriveManifestAt = preferences[Keys.LastGoogleDriveManifestAt] ?: 0L,
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
                 libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
@@ -129,6 +135,19 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setGoogleDriveSyncFolderUri(uri: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.GoogleDriveSyncFolderUri] = uri
+        }
+    }
+
+    suspend fun markGoogleDriveSync(cloudManifestAt: Long) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.LastGoogleDriveSyncAt] = System.currentTimeMillis()
+            preferences[Keys.LastGoogleDriveManifestAt] = cloudManifestAt
+        }
+    }
+
     suspend fun setExpandedFolderIds(folderIds: Set<String>) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.ExpandedFolderIds] = folderIds
@@ -168,6 +187,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val SecurityLockTimeoutMs: Preferences.Key<Long> = longPreferencesKey("security_lock_timeout_ms")
         val LastLocalBackupAt: Preferences.Key<Long> = longPreferencesKey("last_local_backup_at")
         val LastCloudBackupAt: Preferences.Key<Long> = longPreferencesKey("last_cloud_backup_at")
+        val GoogleDriveSyncFolderUri: Preferences.Key<String> = stringPreferencesKey("google_drive_sync_folder_uri")
+        val LastGoogleDriveSyncAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_sync_at")
+        val LastGoogleDriveManifestAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_manifest_at")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
