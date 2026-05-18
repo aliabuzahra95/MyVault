@@ -1134,9 +1134,9 @@ private fun drawPdfHighlights(
     val pageInset = pdfView.pdfFile?.getSecondaryPageOffset(pageIndex, pdfView.zoom) ?: 0f
     canvas.save()
     if (pdfView.isSwipeVertical) {
-        canvas.translate(pageInset, 0f)
+        canvas.translate(pdfView.currentXOffset + pageInset, pdfView.currentYOffset)
     } else {
-        canvas.translate(0f, pageInset)
+        canvas.translate(pdfView.currentXOffset, pdfView.currentYOffset + pageInset)
     }
     annotations.forEach { annotation ->
         val left = annotation.left * pageWidth
