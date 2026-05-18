@@ -441,6 +441,8 @@ fun HomeScreen(
                 FloatingActionMenu(
                     expanded = fabExpanded,
                     actions = createActions,
+                    mainButtonSize = 48.dp,
+                    actionButtonSize = 38.dp,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = VaultSpacing.screen, bottom = VaultSpacing.screen)

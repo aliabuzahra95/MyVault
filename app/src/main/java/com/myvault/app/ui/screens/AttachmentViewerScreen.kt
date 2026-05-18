@@ -23,13 +23,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -577,6 +580,26 @@ private fun PdfAttachmentViewer(
                 highlightSaveMessage?.let { message ->
                     PdfHighlightSaveMessage(message = message)
                 }
+
+                selectedAnnotation?.let { annotation ->
+                    PdfAnnotationActionsCard(
+                        annotation = annotation,
+                        onDismiss = { selectedAnnotation = null },
+                        onColorSelected = { color ->
+                            onUpdateHighlightColor(annotation.id, color)
+                            selectedAnnotation = null
+                        },
+                        onAddNote = {
+                            noteDraft = annotation.noteText.orEmpty()
+                            noteDialogAnnotation = annotation
+                            selectedAnnotation = null
+                        },
+                        onDelete = {
+                            selectedAnnotation = null
+                            annotationDeleteRequest = annotation
+                        },
+                    )
+                }
             }
         }
     }
@@ -587,26 +610,6 @@ private fun PdfAttachmentViewer(
             "Annotations Flow emitted count=${annotations.size} pages=${annotations.groupingBy { it.pageIndex }.eachCount()}",
         )
         pdfView?.invalidate()
-    }
-
-    selectedAnnotation?.let { annotation ->
-        PdfAnnotationActionsDialog(
-            annotation = annotation,
-            onDismiss = { selectedAnnotation = null },
-            onColorSelected = { color ->
-                onUpdateHighlightColor(annotation.id, color)
-                selectedAnnotation = null
-            },
-            onAddNote = {
-                noteDraft = annotation.noteText.orEmpty()
-                noteDialogAnnotation = annotation
-                selectedAnnotation = null
-            },
-            onDelete = {
-                selectedAnnotation = null
-                annotationDeleteRequest = annotation
-            },
-        )
     }
 
     annotationDeleteRequest?.let { annotation ->
@@ -635,6 +638,7 @@ private fun PdfAttachmentViewer(
                 }
             },
             containerColor = VaultThemeTokens.colors.elevated,
+            shape = VaultShapes.xxl,
             tonalElevation = 0.dp,
         )
     }
@@ -642,30 +646,61 @@ private fun PdfAttachmentViewer(
     noteDialogAnnotation?.let { annotation ->
         AlertDialog(
             onDismissRequest = { noteDialogAnnotation = null },
-            title = { Text("Annotation note") },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Surface(
+                        color = VaultThemeTokens.colors.accentSoft,
+                        shape = VaultShapes.md,
+                        border = BorderStroke(1.dp, VaultThemeTokens.colors.accentBorder),
+                    ) {
+                        Icon(
+                            Icons.Rounded.StickyNote2,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .size(18.dp),
+                            tint = VaultThemeTokens.colors.accent,
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Annotation note")
+                        Text(
+                            "Page ${annotation.pageIndex + 1}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = VaultThemeTokens.colors.textMuted,
+                        )
+                    }
+                }
+            },
             text = {
                 OutlinedTextField(
                     value = noteDraft,
                     onValueChange = { noteDraft = it },
                     minLines = 4,
+                    shape = VaultShapes.lg,
                     label = { Text("Quick note") },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             },
             confirmButton = {
-                TextButton(
+                PremiumPdfDialogButton(
+                    label = "Save",
+                    filled = true,
                     onClick = {
                         onUpdateAnnotationNote(annotation.id, noteDraft)
                         noteDialogAnnotation = null
                     },
-                ) {
-                    Text("Save")
-                }
+                )
             },
             dismissButton = {
-                TextButton(onClick = { noteDialogAnnotation = null }) {
-                    Text("Cancel")
-                }
+                PremiumPdfDialogButton(label = "Cancel", onClick = { noteDialogAnnotation = null })
             },
+            containerColor = VaultThemeTokens.colors.elevated,
+            shape = VaultShapes.xxl,
+            tonalElevation = 0.dp,
         )
     }
 }
@@ -814,13 +849,13 @@ private fun BoxScope.PdfReaderControls(
         modifier = modifier
             .align(Alignment.BottomCenter)
             .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
-        color = colors.elevated.copy(alpha = 0.94f),
-        shape = VaultShapes.lg,
+        color = colors.elevated.copy(alpha = 0.98f),
+        shape = VaultShapes.xxl,
         border = BorderStroke(1.dp, if (highlighterMode) colors.accent.copy(alpha = 0.55f) else colors.border),
-        shadowElevation = 2.dp,
+        shadowElevation = 8.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -831,7 +866,7 @@ private fun BoxScope.PdfReaderControls(
                 border = BorderStroke(1.dp, if (highlighterMode) colors.accent.copy(alpha = 0.5f) else colors.border),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -846,7 +881,7 @@ private fun BoxScope.PdfReaderControls(
             PdfHighlightColors.forEach { color ->
                 Surface(
                     onClick = { onHighlightColorChange(color) },
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(32.dp),
                     shape = VaultShapes.pill,
                     color = color.toPdfHighlightColor().copy(
                         alpha = when {
@@ -868,69 +903,194 @@ private fun BoxScope.PdfReaderControls(
 }
 
 @Composable
-private fun PdfAnnotationActionsDialog(
+private fun BoxScope.PdfAnnotationActionsCard(
     annotation: PdfAnnotationEntity,
     onDismiss: () -> Unit,
     onColorSelected: (String) -> Unit,
     onAddNote: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (annotation.noteText.isNullOrBlank()) "Highlight" else "Annotation") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Page ${annotation.pageIndex + 1}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VaultThemeTokens.colors.textMuted,
-                )
-                if (!annotation.noteText.isNullOrBlank()) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .zIndex(5f)
+            .padding(start = VaultSpacing.screen, end = VaultSpacing.screen, bottom = 92.dp)
+            .widthIn(max = 430.dp)
+            .fillMaxWidth(),
+        color = colors.elevated.copy(alpha = 0.98f),
+        shape = VaultShapes.xxl,
+        border = BorderStroke(1.dp, colors.border),
+        shadowElevation = 8.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    color = colors.accentSoft,
+                    shape = VaultShapes.md,
+                    border = BorderStroke(1.dp, colors.accentBorder),
+                ) {
+                    Icon(
+                        Icons.Rounded.Draw,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .size(18.dp),
+                        tint = colors.accent,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = if (annotation.noteText.isNullOrBlank()) "Highlight" else "Annotation",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                    )
+                    Text(
+                        text = "Page ${annotation.pageIndex + 1}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textMuted,
+                    )
+                }
+            }
+
+            if (!annotation.noteText.isNullOrBlank()) {
+                Surface(
+                    color = colors.surface,
+                    shape = VaultShapes.lg,
+                    border = BorderStroke(1.dp, colors.border),
+                ) {
+                    Text(
+                        text = annotation.noteText.orEmpty(),
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.text,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PdfHighlightColors.forEach { color ->
+                    val selected = annotation.color == color
                     Surface(
-                        color = VaultThemeTokens.colors.surface,
-                        shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, VaultThemeTokens.colors.border),
-                    ) {
-                        Text(
-                            text = annotation.noteText.orEmpty(),
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = VaultThemeTokens.colors.text,
-                        )
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PdfHighlightColors.forEach { color ->
-                        Surface(
-                            onClick = { onColorSelected(color) },
-                            modifier = Modifier.size(30.dp),
-                            shape = VaultShapes.pill,
-                            color = color.toPdfHighlightColor().copy(alpha = if (annotation.color == color) 0.9f else 0.45f),
-                            border = BorderStroke(
-                                1.dp,
-                                if (annotation.color == color) VaultThemeTokens.colors.textSecondary else VaultThemeTokens.colors.border,
-                            ),
-                        ) {}
-                    }
+                        onClick = { onColorSelected(color) },
+                        modifier = Modifier.size(34.dp),
+                        shape = VaultShapes.pill,
+                        color = color.toPdfHighlightColor().copy(alpha = if (selected) 0.94f else 0.56f),
+                        border = BorderStroke(
+                            width = if (selected) 2.dp else 1.dp,
+                            color = if (selected) colors.text else colors.border,
+                        ),
+                    ) {}
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onAddNote) {
-                Text(if (annotation.noteText.isNullOrBlank()) "Add note" else "Edit note")
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PremiumPdfActionButton(
+                    label = "Delete",
+                    icon = Icons.Rounded.Delete,
+                    destructive = true,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDelete,
+                )
+                PremiumPdfActionButton(
+                    label = "Close",
+                    icon = Icons.Rounded.Close,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss,
+                )
+                PremiumPdfActionButton(
+                    label = if (annotation.noteText.isNullOrBlank()) "Add note" else "Edit note",
+                    icon = Icons.Rounded.StickyNote2,
+                    filled = true,
+                    modifier = Modifier.weight(1.25f),
+                    onClick = onAddNote,
+                )
             }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onDelete) {
-                    Text("Delete")
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Close")
-                }
-            }
-        },
-    )
+        }
+    }
+}
+
+@Composable
+private fun PremiumPdfActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    filled: Boolean = false,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val accentColor = when {
+        destructive -> colors.warning
+        filled -> colors.accent
+        else -> colors.textSecondary
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = VaultShapes.pill,
+        color = if (filled) colors.accent else colors.surface,
+        border = BorderStroke(1.dp, if (filled) colors.accentBorder else colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp),
+                tint = if (filled) Color.White else accentColor,
+            )
+            Text(
+                text = label,
+                modifier = Modifier.padding(start = 6.dp),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W900),
+                color = if (filled) Color.White else accentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PremiumPdfDialogButton(
+    label: String,
+    filled: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        shape = VaultShapes.pill,
+        color = if (filled) colors.accent else colors.surface,
+        border = BorderStroke(1.dp, if (filled) colors.accentBorder else colors.border),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+            color = if (filled) Color.White else colors.textSecondary,
+        )
+    }
 }
 
 @Composable
