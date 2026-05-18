@@ -100,6 +100,7 @@ fun SettingsScreen(
     var permanentDeleteTarget by remember { mutableStateOf<DeletedTarget?>(null) }
     var deleteAllDeletedConfirmOpen by remember { mutableStateOf(false) }
     var backupSettingsOpen by remember { mutableStateOf(false) }
+    var driveRestoreConfirmOpen by remember { mutableStateOf(false) }
     var releaseReadinessOpen by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         uri?.let(onBackupSelected)
@@ -177,7 +178,35 @@ fun SettingsScreen(
                 googleDriveSignInIntent?.let { googleDriveSignInLauncher.launch(it) }
             },
             onGoogleDrivePushClick = onGoogleDrivePush,
-            onGoogleDrivePullClick = onGoogleDrivePull,
+            onGoogleDrivePullClick = { driveRestoreConfirmOpen = true },
+        )
+    }
+
+    if (driveRestoreConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { driveRestoreConfirmOpen = false },
+            title = { Text("Restore from Drive?") },
+            text = {
+                Text(
+                    "This will pull the latest MyVault backup from Google Drive and apply it to this device. A local emergency backup is created before restore, but you should only continue when this device is ready to receive the Drive version.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        driveRestoreConfirmOpen = false
+                        backupSettingsOpen = false
+                        onGoogleDrivePull()
+                    },
+                ) {
+                    Text("Restore")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { driveRestoreConfirmOpen = false }) {
+                    Text("Cancel")
+                }
+            },
         )
     }
 

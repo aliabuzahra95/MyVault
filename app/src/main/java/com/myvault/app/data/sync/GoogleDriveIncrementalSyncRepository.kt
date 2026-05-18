@@ -19,9 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -82,6 +80,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             entries.forEach { entry ->
                 val remote = remoteEntries[entry.path]
                 if (remote?.sha256 == entry.sha256 && remote.size == entry.size) {
+                    entry.cloudFileId = remote.cloudFileId.ifBlank {
+                        val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
+                        drive.findChild(parentId, entry.fileName)?.id.orEmpty()
+                    }
                     if (entry.kind == EntryKindFile) skippedFiles += 1
                     return@forEach
                 }
@@ -98,11 +100,6 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 if (entry.kind == EntryKindFile) uploadedFiles += 1 else uploadedMetadata += 1
             }
 
-            val localPaths = entries.map { it.path }.toSet()
-            remoteEntries.values
-                .filter { it.path !in localPaths && it.cloudFileId.isNotBlank() }
-                .forEach { stale -> drive.deleteFile(stale.cloudFileId) }
-
             val cloudVersion = System.currentTimeMillis()
             val manifest = entries.toManifest(cloudVersion)
             val existingManifestId = remoteManifestFile?.id ?: drive.findChild(vault.manifests.id, SyncManifestFile)?.id
@@ -113,6 +110,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 text = manifest.toString(2),
                 mimeType = "application/json",
             )
+
+            val localPaths = entries.map { it.path }.toSet()
+            remoteEntries.values
+                .filter { it.path !in localPaths && it.cloudFileId.isNotBlank() }
+                .forEach { stale ->
+                    runCatching { drive.deleteFile(stale.cloudFileId) }
+                }
+
             preferences.markGoogleDriveSync(cloudVersion)
 
             DriveSyncResult.Success(
@@ -152,13 +157,13 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                         } else {
                             val fileId = entry.cloudFileId.ifBlank { drive.findChild(vault.files.id, entry.fileName)?.id.orEmpty() }
                             if (fileId.isBlank()) error("Missing Drive sync file: ${entry.fileName}")
-                            drive.downloadFile(fileId).use { it.copyTo(zip) }
+                            drive.copyFileTo(fileId, zip)
                             downloadedFiles += 1
                         }
                     } else {
                         val fileId = entry.cloudFileId.ifBlank { drive.findChild(vault.metadata.id, entry.fileName)?.id.orEmpty() }
                         if (fileId.isBlank()) error("Missing Drive sync metadata: ${entry.fileName}")
-                        drive.downloadFile(fileId).use { it.copyTo(zip) }
+                        drive.copyFileTo(fileId, zip)
                     }
                     zip.closeEntry()
                 }
@@ -385,47 +390,59 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         }
 
         fun uploadFile(parentId: String, existingFileId: String?, name: String, mimeType: String, source: File): DriveFile =
-            source.inputStream().use { input ->
-                uploadBytes(parentId, existingFileId, name, mimeType, input.readBytes())
+            uploadMultipart(parentId, existingFileId, name, mimeType) { output ->
+                source.inputStream().buffered().use { input ->
+                    input.copyTo(output)
+                }
             }
 
         fun uploadTextFile(parentId: String, existingFileId: String?, name: String, text: String, mimeType: String): DriveFile =
             uploadBytes(parentId, existingFileId, name, mimeType, text.toByteArray(Charsets.UTF_8))
 
         private fun uploadBytes(parentId: String, existingFileId: String?, name: String, mimeType: String, bytes: ByteArray): DriveFile {
+            return uploadMultipart(parentId, existingFileId, name, mimeType) { output ->
+                output.write(bytes)
+            }
+        }
+
+        private fun uploadMultipart(
+            parentId: String,
+            existingFileId: String?,
+            name: String,
+            mimeType: String,
+            writeMedia: (OutputStream) -> Unit,
+        ): DriveFile {
             val boundary = "myvault-${System.currentTimeMillis()}"
             val metadata = JSONObject()
                 .put("name", name)
                 .put("mimeType", mimeType)
                 .also { if (existingFileId.isNullOrBlank()) it.put("parents", JSONArray().put(parentId)) }
-            val body = ByteArrayOutputStream().use { output ->
-                output.writeUtf8("--$boundary\r\n")
-                output.writeUtf8("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-                output.writeUtf8(metadata.toString())
-                output.writeUtf8("\r\n--$boundary\r\n")
-                output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
-                output.write(bytes)
-                output.writeUtf8("\r\n--$boundary--\r\n")
-                output.toByteArray()
-            }
             val url = if (existingFileId.isNullOrBlank()) {
                 "$DriveUploadUrl?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime"
             } else {
                 "$DriveUploadUrl/${existingFileId.urlPathEncode()}?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime"
             }
-            return requestJson(
+            return requestJsonStreaming(
                 method = if (existingFileId.isNullOrBlank()) "POST" else "PATCH",
                 url = url,
-                body = body,
                 contentType = "multipart/related; boundary=$boundary",
-            ).toDriveFile()
+            ) { output ->
+                output.writeUtf8("--$boundary\r\n")
+                output.writeUtf8("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+                output.writeUtf8(metadata.toString())
+                output.writeUtf8("\r\n--$boundary\r\n")
+                output.writeUtf8("Content-Type: $mimeType\r\n\r\n")
+                writeMedia(output)
+                output.writeUtf8("\r\n--$boundary--\r\n")
+            }.toDriveFile()
         }
 
         fun downloadJsonObject(fileId: String): JSONObject =
-            JSONObject(downloadFile(fileId).bufferedReader().use { it.readText() })
+            JSONObject(requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null).toString(Charsets.UTF_8))
 
-        fun downloadFile(fileId: String): InputStream =
-            requestStream("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media")
+        fun copyFileTo(fileId: String, output: OutputStream) {
+            requestToOutput("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", output)
+        }
 
         fun deleteFile(fileId: String) {
             requestBytes("DELETE", "$DriveFilesUrl/${fileId.urlPathEncode()}", null, null)
@@ -434,8 +451,13 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         private fun requestJson(method: String, url: String, body: ByteArray? = null, contentType: String? = null): JSONObject =
             JSONObject(requestBytes(method, url, body, contentType).toString(Charsets.UTF_8))
 
-        private fun requestStream(method: String, url: String): InputStream =
-            requestBytes(method, url, null, null).inputStream()
+        private fun requestJsonStreaming(
+            method: String,
+            url: String,
+            contentType: String,
+            writeBody: (OutputStream) -> Unit,
+        ): JSONObject =
+            JSONObject(requestBytesStreaming(method, url, contentType, writeBody).toString(Charsets.UTF_8))
 
         private fun requestBytes(method: String, url: String, body: ByteArray?, contentType: String?): ByteArray {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -457,6 +479,47 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
             }
             return bytes
+        }
+
+        private fun requestBytesStreaming(
+            method: String,
+            url: String,
+            contentType: String,
+            writeBody: (OutputStream) -> Unit,
+        ): ByteArray {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 30_000
+                readTimeout = 120_000
+                doOutput = true
+                setChunkedStreamingMode(DEFAULT_BUFFER_SIZE)
+                setRequestProperty("Authorization", "Bearer ${accessToken()}")
+                setRequestProperty("Content-Type", contentType)
+            }
+            connection.outputStream.use(writeBody)
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+            if (responseCode !in 200..299) {
+                error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+            }
+            return bytes
+        }
+
+        private fun requestToOutput(method: String, url: String, output: OutputStream) {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 30_000
+                readTimeout = 120_000
+                setRequestProperty("Authorization", "Bearer ${accessToken()}")
+            }
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            if (responseCode !in 200..299) {
+                val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+                error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+            }
+            stream?.use { it.copyTo(output) }
         }
 
         private fun accessToken(): String {

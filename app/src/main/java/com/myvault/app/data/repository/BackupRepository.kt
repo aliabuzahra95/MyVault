@@ -201,7 +201,7 @@ class BackupRepository @Inject constructor(
                     if (entry.name.startsWith("files/")) {
                         validateAttachmentEntryName(entry.name.removePrefix("files/"))
                         fileEntries += entry.name
-                        zip.readBytes()
+                        zip.discardCurrentEntryBytes()
                     } else {
                         entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
                     }
@@ -612,6 +612,13 @@ private fun validateFolderHierarchy(folders: JSONArray, folderIds: Set<String>) 
             check(seen.add(current)) { "Backup contains a circular folder hierarchy." }
             current = parentById[current]
         }
+    }
+}
+
+private fun ZipInputStream.discardCurrentEntryBytes() {
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (read(buffer) > 0) {
+        // Drain large attachment entries during verification without holding them in memory.
     }
 }
 
