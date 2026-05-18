@@ -29,7 +29,7 @@ class PdfAnnotationRepository @Inject constructor(
         val normalizedRight = maxOf(left, right).coerceIn(0f, 1f)
         val normalizedTop = minOf(top, bottom).coerceIn(0f, 1f)
         val normalizedBottom = maxOf(top, bottom).coerceIn(0f, 1f)
-        if (normalizedRight - normalizedLeft < 0.01f || normalizedBottom - normalizedTop < 0.01f) return
+        if (normalizedRight - normalizedLeft < 0.003f || normalizedBottom - normalizedTop < 0.003f) return
 
         val now = System.currentTimeMillis()
         annotationDao.upsert(

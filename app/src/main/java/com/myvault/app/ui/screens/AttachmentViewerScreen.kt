@@ -343,12 +343,22 @@ private fun PdfAttachmentViewer(
 
                 val startPoint = normalizedStart.offset
                 val endPoint = normalizedEnd.offset
-                val left = minOf(startPoint.x, endPoint.x)
-                val top = minOf(startPoint.y, endPoint.y)
-                val right = maxOf(startPoint.x, endPoint.x)
-                val bottom = maxOf(startPoint.y, endPoint.y)
-                if ((right - left) > 0.01f && (bottom - top) > 0.01f) {
-                    onAddHighlight(attachment.libraryFolderId, pageIndex, left, top, right, bottom, highlightColor)
+                val rect = expandPdfHighlightRect(
+                    left = minOf(startPoint.x, endPoint.x),
+                    top = minOf(startPoint.y, endPoint.y),
+                    right = maxOf(startPoint.x, endPoint.x),
+                    bottom = maxOf(startPoint.y, endPoint.y),
+                )
+                if (rect != null) {
+                    onAddHighlight(
+                        attachment.libraryFolderId,
+                        pageIndex,
+                        rect.left,
+                        rect.top,
+                        rect.right,
+                        rect.bottom,
+                        highlightColor,
+                    )
                 }
             }
         }
@@ -960,6 +970,39 @@ private data class PagePoint(
     val pageIndex: Int,
     val offset: Offset,
 )
+
+private data class PdfHighlightRect(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+)
+
+private fun expandPdfHighlightRect(
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+): PdfHighlightRect? {
+    val width = (right - left).coerceAtLeast(0f)
+    val height = (bottom - top).coerceAtLeast(0f)
+    if (width < 0.003f && height < 0.003f) return null
+
+    val expandedWidth = width.coerceAtLeast(0.006f)
+    val expandedHeight = height.coerceAtLeast(0.012f)
+    val centerX = ((left + right) / 2f).coerceIn(0f, 1f)
+    val centerY = ((top + bottom) / 2f).coerceIn(0f, 1f)
+    val expandedLeft = (centerX - expandedWidth / 2f).coerceIn(0f, 1f)
+    val expandedTop = (centerY - expandedHeight / 2f).coerceIn(0f, 1f)
+    val expandedRight = (expandedLeft + expandedWidth).coerceIn(0f, 1f)
+    val expandedBottom = (expandedTop + expandedHeight).coerceIn(0f, 1f)
+    return PdfHighlightRect(
+        left = (expandedRight - expandedWidth).coerceAtLeast(0f).takeIf { expandedRight == 1f } ?: expandedLeft,
+        top = (expandedBottom - expandedHeight).coerceAtLeast(0f).takeIf { expandedBottom == 1f } ?: expandedTop,
+        right = expandedRight,
+        bottom = expandedBottom,
+    )
+}
 
 private fun PDFView.toNormalizedPagePoint(
     x: Float,
