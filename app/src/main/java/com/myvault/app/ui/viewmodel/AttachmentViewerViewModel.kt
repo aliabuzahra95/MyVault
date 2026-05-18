@@ -1,5 +1,6 @@
 package com.myvault.app.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -64,9 +65,10 @@ class AttachmentViewerViewModel @Inject constructor(
         right: Float,
         bottom: Float,
         color: String,
+        onSaved: (Boolean) -> Unit = {},
     ) {
         viewModelScope.launch {
-            pdfAnnotationRepository.addHighlight(
+            val saved = pdfAnnotationRepository.addHighlight(
                 attachmentId = attachmentId,
                 libraryFolderId = libraryFolderId,
                 pageIndex = pageIndex,
@@ -76,6 +78,8 @@ class AttachmentViewerViewModel @Inject constructor(
                 bottom = bottom,
                 color = color,
             )
+            Log.d("MyVaultPdfHighlight", "ViewModel highlight insert result=$saved attachmentId=$attachmentId")
+            onSaved(saved)
         }
     }
 

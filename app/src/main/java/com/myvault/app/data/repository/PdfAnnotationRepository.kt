@@ -1,5 +1,6 @@
 package com.myvault.app.data.repository
 
+import android.util.Log
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import java.util.UUID
@@ -23,33 +24,47 @@ class PdfAnnotationRepository @Inject constructor(
         right: Float,
         bottom: Float,
         color: String,
-    ) {
-        if (attachmentId.isBlank()) return
+    ): Boolean {
+        if (attachmentId.isBlank()) {
+            Log.w("MyVaultPdfHighlight", "Repository rejected highlight: blank attachmentId")
+            return false
+        }
         val normalizedLeft = minOf(left, right).coerceIn(0f, 1f)
         val normalizedRight = maxOf(left, right).coerceIn(0f, 1f)
         val normalizedTop = minOf(top, bottom).coerceIn(0f, 1f)
         val normalizedBottom = maxOf(top, bottom).coerceIn(0f, 1f)
-        if (normalizedRight - normalizedLeft < 0.003f || normalizedBottom - normalizedTop < 0.003f) return
+        val width = normalizedRight - normalizedLeft
+        val height = normalizedBottom - normalizedTop
+        if (width < 0.003f || height < 0.003f) {
+            Log.w("MyVaultPdfHighlight", "Repository rejected highlight: too small width=$width height=$height")
+            return false
+        }
 
         val now = System.currentTimeMillis()
-        annotationDao.upsert(
-            PdfAnnotationEntity(
-                id = UUID.randomUUID().toString(),
-                attachmentId = attachmentId,
-                libraryFolderId = libraryFolderId,
-                pageIndex = pageIndex.coerceAtLeast(0),
-                left = normalizedLeft,
-                top = normalizedTop,
-                right = normalizedRight,
-                bottom = normalizedBottom,
-                color = color,
-                noteText = null,
-                displayTitle = null,
-                displayFolderId = libraryFolderId,
-                createdAt = now,
-                updatedAt = now,
-            ),
+        val annotation = PdfAnnotationEntity(
+            id = UUID.randomUUID().toString(),
+            attachmentId = attachmentId,
+            libraryFolderId = libraryFolderId,
+            pageIndex = pageIndex.coerceAtLeast(0),
+            left = normalizedLeft,
+            top = normalizedTop,
+            right = normalizedRight,
+            bottom = normalizedBottom,
+            color = color,
+            noteText = null,
+            displayTitle = null,
+            displayFolderId = libraryFolderId,
+            createdAt = now,
+            updatedAt = now,
         )
+        annotationDao.upsert(
+            annotation,
+        )
+        Log.d(
+            "MyVaultPdfHighlight",
+            "DAO insert success id=${annotation.id} page=${annotation.pageIndex} rect=${annotation.left},${annotation.top},${annotation.right},${annotation.bottom}",
+        )
+        return true
     }
 
     suspend fun updateColor(id: String, color: String) {

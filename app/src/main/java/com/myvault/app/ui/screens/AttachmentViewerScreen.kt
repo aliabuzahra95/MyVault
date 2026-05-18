@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.content.Context
+import android.util.Log
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -80,6 +81,7 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.util.openAttachment
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -146,7 +148,7 @@ fun AttachmentViewerScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
     onPdfProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit = { _, _ -> },
-    onAddPdfHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String) -> Unit = { _, _, _, _, _, _, _ -> },
+    onAddPdfHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String, onSaved: (Boolean) -> Unit) -> Unit = { _, _, _, _, _, _, _, callback -> callback(false) },
     onUpdatePdfHighlightColor: (annotationId: String, color: String) -> Unit = { _, _ -> },
     onUpdatePdfAnnotationNote: (annotationId: String, noteText: String) -> Unit = { _, _ -> },
     onDeletePdfAnnotation: (annotationId: String) -> Unit = {},
@@ -283,7 +285,7 @@ private fun PdfAttachmentViewer(
     annotations: List<PdfAnnotationEntity>,
     initialPageIndex: Int,
     onProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit,
-    onAddHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String) -> Unit,
+    onAddHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String, onSaved: (Boolean) -> Unit) -> Unit,
     onUpdateHighlightColor: (annotationId: String, color: String) -> Unit,
     onUpdateAnnotationNote: (annotationId: String, noteText: String) -> Unit,
     onDeleteAnnotation: (annotationId: String) -> Unit,
@@ -302,10 +304,11 @@ private fun PdfAttachmentViewer(
     var pdfView by remember(attachment.id) { mutableStateOf<PDFView?>(null) }
     var dragStart by remember(attachment.id) { mutableStateOf<Offset?>(null) }
     var dragEnd by remember(attachment.id) { mutableStateOf<Offset?>(null) }
+    var highlightSaveMessage by remember(attachment.id) { mutableStateOf<String?>(null) }
     val annotationsByPage = remember(annotations) {
         annotations.groupBy { it.pageIndex }
     }
-    val currentAnnotationsByPage by rememberUpdatedState(annotationsByPage)
+    val currentAnnotationsByPageState = rememberUpdatedState(annotationsByPage)
     val surfaceColorArgb = VaultThemeTokens.colors.inset.toArgb()
 
     fun finishHighlightDrag() {
@@ -315,6 +318,7 @@ private fun PdfAttachmentViewer(
         if (view != null && startOffset != null && endOffset != null) {
             val start = view.toNormalizedPagePoint(startOffset.x, startOffset.y, clampToPage = false)
             val end = view.toNormalizedPagePoint(endOffset.x, endOffset.y, clampToPage = false)
+            Log.d("MyVaultPdfHighlight", "Release raw start=$startOffset end=$endOffset mappedStart=$start mappedEnd=$end")
             val pageIndex = start?.pageIndex ?: end?.pageIndex ?: view.findFocusPage(
                 view.currentXOffset,
                 view.currentYOffset,
@@ -336,6 +340,8 @@ private fun PdfAttachmentViewer(
                     )
 
                 if (normalizedStart == null || normalizedEnd == null) {
+                    Log.w("MyVaultPdfHighlight", "Release failed: normalized points null page=$pageIndex")
+                    highlightSaveMessage = "Highlight not saved"
                     dragStart = null
                     dragEnd = null
                     return
@@ -343,6 +349,7 @@ private fun PdfAttachmentViewer(
 
                 val startPoint = normalizedStart.offset
                 val endPoint = normalizedEnd.offset
+                Log.d("MyVaultPdfHighlight", "Release page=$pageIndex normalizedStart=$startPoint normalizedEnd=$endPoint")
                 val rect = expandPdfHighlightRect(
                     left = minOf(startPoint.x, endPoint.x),
                     top = minOf(startPoint.y, endPoint.y),
@@ -350,6 +357,10 @@ private fun PdfAttachmentViewer(
                     bottom = maxOf(startPoint.y, endPoint.y),
                 )
                 if (rect != null) {
+                    Log.d(
+                        "MyVaultPdfHighlight",
+                        "Insert call page=$pageIndex rect=${rect.left},${rect.top},${rect.right},${rect.bottom} width=${rect.right - rect.left} height=${rect.bottom - rect.top}",
+                    )
                     onAddHighlight(
                         attachment.libraryFolderId,
                         pageIndex,
@@ -358,12 +369,32 @@ private fun PdfAttachmentViewer(
                         rect.right,
                         rect.bottom,
                         highlightColor,
-                    )
+                    ) { saved ->
+                        Log.d("MyVaultPdfHighlight", "Insert callback saved=$saved")
+                        highlightSaveMessage = if (saved) "Highlight saved" else "Highlight not saved"
+                        if (saved) view.invalidate()
+                    }
+                } else {
+                    Log.w("MyVaultPdfHighlight", "Release failed: rect too small after expansion")
+                    highlightSaveMessage = "Highlight not saved"
                 }
+            } else {
+                Log.w("MyVaultPdfHighlight", "Release failed: invalid page index $pageIndex")
+                highlightSaveMessage = "Highlight not saved"
             }
+        } else {
+            Log.w("MyVaultPdfHighlight", "Release failed: missing view/start/end view=${view != null} start=$startOffset end=$endOffset")
+            highlightSaveMessage = "Highlight not saved"
         }
         dragStart = null
         dragEnd = null
+    }
+
+    LaunchedEffect(highlightSaveMessage) {
+        if (highlightSaveMessage != null) {
+            delay(1400)
+            highlightSaveMessage = null
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -446,7 +477,7 @@ private fun PdfAttachmentViewer(
                                                 pageIndex = currentPage,
                                                 pageWidth = pageWidth,
                                                 pageHeight = pageHeight,
-                                                annotations = currentAnnotationsByPage[currentPage].orEmpty(),
+                                                annotations = currentAnnotationsByPageState.value[currentPage].orEmpty(),
                                             )
                                         }
                                     })
@@ -455,7 +486,7 @@ private fun PdfAttachmentViewer(
                                             if (e == null) return false
                                             if (highlighterMode) return true
                                             val point = pdf.toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
-                                            val annotation = currentAnnotationsByPage[point.pageIndex]
+                                            val annotation = currentAnnotationsByPageState.value[point.pageIndex]
                                                 .orEmpty()
                                                 .lastOrNull { point.offset.x in it.left..it.right && point.offset.y in it.top..it.bottom }
                                             return if (annotation != null) {
@@ -536,11 +567,19 @@ private fun PdfAttachmentViewer(
                     },
                     onHighlightColorChange = { highlightColor = it },
                 )
+
+                highlightSaveMessage?.let { message ->
+                    PdfHighlightSaveMessage(message = message)
+                }
             }
         }
     }
 
     LaunchedEffect(annotations, pdfView) {
+        Log.d(
+            "MyVaultPdfHighlight",
+            "Annotations Flow emitted count=${annotations.size} pages=${annotations.groupingBy { it.pageIndex }.eachCount()}",
+        )
         pdfView?.invalidate()
     }
 
@@ -645,6 +684,27 @@ private fun PdfHighlightDraftLayer(
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx(), 5.dp.toPx()),
             )
         }
+    }
+}
+
+@Composable
+private fun BoxScope.PdfHighlightSaveMessage(message: String) {
+    Surface(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .zIndex(4f)
+            .padding(bottom = 82.dp),
+        color = VaultThemeTokens.colors.elevated.copy(alpha = 0.96f),
+        shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, VaultThemeTokens.colors.border),
+        shadowElevation = 2.dp,
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+            color = if (message == "Highlight saved") VaultThemeTokens.colors.accent else VaultThemeTokens.colors.textSecondary,
+        )
     }
 }
 
