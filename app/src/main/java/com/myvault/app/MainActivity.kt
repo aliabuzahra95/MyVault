@@ -37,6 +37,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -139,15 +141,22 @@ class MainActivity : ComponentActivity() {
                 mode = userPreferences.theme,
                 accentColorHex = userPreferences.accentColor,
             ) {
+                val locked = loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (loadedPreferences != null) {
-                        VaultNavHost(
-                            pendingOpenNoteId = pendingSharedNoteId,
-                            onPendingOpenNoteConsumed = { pendingSharedNoteId = null },
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(if (locked) Modifier.blur(18.dp) else Modifier),
+                        ) {
+                            VaultNavHost(
+                                pendingOpenNoteId = pendingSharedNoteId,
+                                onPendingOpenNoteConsumed = { pendingSharedNoteId = null },
+                            )
+                        }
                     }
                     AnimatedVisibility(
-                        visible = loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked,
+                        visible = locked,
                         enter = fadeIn(animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)),
                         exit = fadeOut(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)),
                     ) {
@@ -256,10 +265,22 @@ private fun VaultLockOverlay(
     val colors = VaultThemeTokens.colors
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .background(colors.bg.copy(alpha = 0.96f)),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.bg.copy(alpha = 0.985f))
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                },
+        )
         Column(
             modifier = Modifier.padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
