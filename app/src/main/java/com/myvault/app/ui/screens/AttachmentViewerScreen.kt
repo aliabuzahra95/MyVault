@@ -3,6 +3,7 @@ package com.myvault.app.ui.screens
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
+import android.graphics.Path
 import android.content.Context
 import android.util.Log
 import android.view.MotionEvent
@@ -486,9 +487,14 @@ private fun PdfAttachmentViewer(
                                             if (e == null) return false
                                             if (highlighterMode) return true
                                             val point = pdf.toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
+                                            val pageSize = pdf.pdfFile?.getScaledPageSize(point.pageIndex, pdf.zoom) ?: return false
                                             val annotation = currentAnnotationsByPageState.value[point.pageIndex]
                                                 .orEmpty()
-                                                .lastOrNull { point.offset.x in it.left..it.right && point.offset.y in it.top..it.bottom }
+                                                .findPdfAnnotationAt(
+                                                    point = point.offset,
+                                                    pageWidth = pageSize.width,
+                                                    pageHeight = pageSize.height,
+                                                )
                                             return if (annotation != null) {
                                                 selectedAnnotation = annotation
                                                 true
@@ -1038,6 +1044,15 @@ private data class PdfHighlightRect(
     val bottom: Float,
 )
 
+private data class PdfAnnotationMarkerBounds(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+    val tailPointsLeft: Boolean,
+    val outsideHighlight: Boolean,
+)
+
 private fun expandPdfHighlightRect(
     left: Float,
     top: Float,
@@ -1121,6 +1136,54 @@ private fun PDFView.toNormalizedPointOnPage(
     )
 }
 
+private fun List<PdfAnnotationEntity>.findPdfAnnotationAt(
+    point: Offset,
+    pageWidth: Float,
+    pageHeight: Float,
+): PdfAnnotationEntity? =
+    asReversed().firstOrNull { annotation ->
+        val inHighlight = point.x in annotation.left..annotation.right && point.y in annotation.top..annotation.bottom
+        val inMarker = annotation.noteText?.isNotBlank() == true &&
+            annotation.markerBounds(pageWidth, pageHeight)?.let { marker ->
+                point.x in marker.left..marker.right && point.y in marker.top..marker.bottom
+            } == true
+        inHighlight || inMarker
+    }
+
+private fun PdfAnnotationEntity.markerBounds(
+    pageWidth: Float,
+    pageHeight: Float,
+): PdfAnnotationMarkerBounds? {
+    if (pageWidth <= 0f || pageHeight <= 0f || noteText.isNullOrBlank()) return null
+    val leftPx = left * pageWidth
+    val topPx = top * pageHeight
+    val rightPx = right * pageWidth
+    val bottomPx = bottom * pageHeight
+    val markerWidth = PDF_ANNOTATION_MARKER_WIDTH
+    val markerHeight = PDF_ANNOTATION_MARKER_HEIGHT
+    val gap = 9f
+    val verticalCenter = ((topPx + bottomPx) / 2f) - markerHeight / 2f
+    val markerTopPx = verticalCenter.coerceIn(6f, (pageHeight - markerHeight - 6f).coerceAtLeast(6f))
+    val rightSideLeft = rightPx + gap
+    val leftSideLeft = leftPx - markerWidth - gap
+    val canPlaceRight = rightSideLeft + markerWidth <= pageWidth - 6f
+    val canPlaceLeft = leftSideLeft >= 6f
+
+    val markerLeftPx = when {
+        canPlaceRight -> rightSideLeft
+        canPlaceLeft -> leftSideLeft
+        else -> (rightPx - markerWidth - 6f).coerceIn(6f, (pageWidth - markerWidth - 6f).coerceAtLeast(6f))
+    }
+    return PdfAnnotationMarkerBounds(
+        left = (markerLeftPx / pageWidth).coerceIn(0f, 1f),
+        top = (markerTopPx / pageHeight).coerceIn(0f, 1f),
+        right = ((markerLeftPx + markerWidth) / pageWidth).coerceIn(0f, 1f),
+        bottom = ((markerTopPx + markerHeight) / pageHeight).coerceIn(0f, 1f),
+        tailPointsLeft = canPlaceRight || !canPlaceLeft,
+        outsideHighlight = canPlaceRight || canPlaceLeft,
+    )
+}
+
 private fun drawPdfHighlights(
     canvas: android.graphics.Canvas,
     pdfView: PDFView,
@@ -1146,25 +1209,53 @@ private fun drawPdfHighlights(
         paint.style = Paint.Style.FILL
         paint.color = annotation.color.toPdfHighlightArgb(alpha = 86)
         canvas.drawRoundRect(left, top, right, bottom, 8f, 8f, paint)
-        if (!annotation.noteText.isNullOrBlank()) {
-            val markerSize = 38f
-            val markerRadius = 13f
-            val markerLeft = (right - markerSize - 5f).coerceAtLeast(left + 5f)
-            val markerTop = (top + 5f).coerceAtMost((bottom - markerSize - 5f).coerceAtLeast(top + 5f))
-            paint.color = android.graphics.Color.argb(238, 255, 255, 255)
-            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, markerRadius, markerRadius, paint)
-            paint.color = annotation.color.toPdfHighlightArgb(alpha = 224)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3.2f
-            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, markerRadius, markerRadius, paint)
-            paint.style = Paint.Style.FILL
-            canvas.drawRoundRect(markerLeft + 10f, markerTop + 10f, markerLeft + 28f, markerTop + 13.5f, 2f, 2f, paint)
-            canvas.drawRoundRect(markerLeft + 10f, markerTop + 17f, markerLeft + 25f, markerTop + 20.5f, 2f, 2f, paint)
-            canvas.drawRoundRect(markerLeft + 10f, markerTop + 24f, markerLeft + 21f, markerTop + 27.5f, 2f, 2f, paint)
-        }
+        drawPdfAnnotationMarker(canvas, paint, annotation, pageWidth, pageHeight)
     }
     canvas.restore()
 }
+
+private fun drawPdfAnnotationMarker(
+    canvas: android.graphics.Canvas,
+    paint: Paint,
+    annotation: PdfAnnotationEntity,
+    pageWidth: Float,
+    pageHeight: Float,
+) {
+    val marker = annotation.markerBounds(pageWidth, pageHeight) ?: return
+    val markerLeft = marker.left * pageWidth
+    val markerTop = marker.top * pageHeight
+    val markerRight = marker.right * pageWidth
+    val markerBottom = marker.bottom * pageHeight
+    val radius = 16f
+
+    paint.style = Paint.Style.FILL
+    paint.color = android.graphics.Color.argb(238, 0, 0, 0)
+    canvas.drawRoundRect(markerLeft, markerTop, markerRight, markerBottom, radius, radius, paint)
+
+    if (marker.outsideHighlight) {
+        val tail = Path()
+        val tailCenterY = markerTop + PDF_ANNOTATION_MARKER_HEIGHT * 0.64f
+        if (marker.tailPointsLeft) {
+            tail.moveTo(markerLeft + 2f, tailCenterY - 8f)
+            tail.lineTo(markerLeft - 13f, tailCenterY + 1f)
+            tail.lineTo(markerLeft + 2f, tailCenterY + 11f)
+        } else {
+            tail.moveTo(markerRight - 2f, tailCenterY - 8f)
+            tail.lineTo(markerRight + 13f, tailCenterY + 1f)
+            tail.lineTo(markerRight - 2f, tailCenterY + 11f)
+        }
+        tail.close()
+        canvas.drawPath(tail, paint)
+    }
+
+    paint.color = android.graphics.Color.argb(238, 255, 255, 255)
+    canvas.drawRoundRect(markerLeft + 14f, markerTop + 13f, markerRight - 14f, markerTop + 18f, 2.5f, 2.5f, paint)
+    canvas.drawRoundRect(markerLeft + 14f, markerTop + 27f, markerRight - 14f, markerTop + 32f, 2.5f, 2.5f, paint)
+    canvas.drawRoundRect(markerLeft + 14f, markerTop + 41f, markerLeft + 49f, markerTop + 46f, 2.5f, 2.5f, paint)
+}
+
+private const val PDF_ANNOTATION_MARKER_WIDTH = 74f
+private const val PDF_ANNOTATION_MARKER_HEIGHT = 58f
 
 private fun String.toPdfHighlightArgb(alpha: Int): Int {
     val color = toPdfHighlightColor()
