@@ -8,7 +8,11 @@ import android.os.CancellationSignal
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.lifecycle.lifecycleScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.repository.NoteRepository
@@ -64,13 +70,19 @@ class MainActivity : ComponentActivity() {
             val loadedPreferences by preferences.userPreferences.collectAsState(initial = null)
             val userPreferences = loadedPreferences ?: VaultUserPreferences()
             val lifecycleOwner = LocalLifecycleOwner.current
-            var unlocked by rememberSaveable { mutableStateOf(!userPreferences.securityLockEnabled) }
+            var unlocked by rememberSaveable { mutableStateOf(false) }
+            var lockGeneration by rememberSaveable { mutableLongStateOf(0L) }
+            var promptedGeneration by rememberSaveable { mutableLongStateOf(-1L) }
             var promptMessage by remember { mutableStateOf<String?>(null) }
 
-            fun requestUnlock() {
+            fun requestUnlock(force: Boolean = false) {
+                if (loadedPreferences == null || !userPreferences.securityLockEnabled || unlocked) return
+                if (!force && promptedGeneration == lockGeneration) return
+                promptedGeneration = lockGeneration
                 showVaultAuthenticationPrompt(
                     onAuthenticated = {
                         unlocked = true
+                        lastPausedAt = System.currentTimeMillis()
                         promptMessage = null
                     },
                     onUnavailable = { message ->
@@ -79,11 +91,20 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            LaunchedEffect(loadedPreferences, userPreferences.securityLockEnabled) {
+            fun lockAndPrompt() {
+                if (loadedPreferences == null || !userPreferences.securityLockEnabled) return
+                if (unlocked) {
+                    unlocked = false
+                    lockGeneration += 1
+                    promptMessage = null
+                }
+                requestUnlock()
+            }
+
+            LaunchedEffect(loadedPreferences != null, userPreferences.securityLockEnabled) {
                 if (loadedPreferences == null) return@LaunchedEffect
                 if (userPreferences.securityLockEnabled) {
-                    unlocked = false
-                    requestUnlock()
+                    lockAndPrompt()
                 } else {
                     unlocked = true
                     promptMessage = null
@@ -102,7 +123,8 @@ class MainActivity : ComponentActivity() {
                             val shouldRelock = userPreferences.securityLockEnabled &&
                                 System.currentTimeMillis() - lastPausedAt > userPreferences.securityLockTimeoutMs
                             if (shouldRelock) {
-                                unlocked = false
+                                lockAndPrompt()
+                            } else if (userPreferences.securityLockEnabled && !unlocked) {
                                 requestUnlock()
                             }
                         }
@@ -118,16 +140,20 @@ class MainActivity : ComponentActivity() {
                 accentColorHex = userPreferences.accentColor,
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    if (loadedPreferences != null && unlocked) {
+                    if (loadedPreferences != null) {
                         VaultNavHost(
                             pendingOpenNoteId = pendingSharedNoteId,
                             onPendingOpenNoteConsumed = { pendingSharedNoteId = null },
                         )
                     }
-                    if (loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked) {
+                    AnimatedVisibility(
+                        visible = loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked,
+                        enter = fadeIn(animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)),
+                        exit = fadeOut(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)),
+                    ) {
                         VaultLockOverlay(
                             message = promptMessage,
-                            onUnlockClick = ::requestUnlock,
+                            onUnlockClick = { requestUnlock(force = true) },
                         )
                     }
                 }
@@ -231,7 +257,7 @@ private fun VaultLockOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(colors.bg),
+            .background(colors.bg.copy(alpha = 0.96f)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
