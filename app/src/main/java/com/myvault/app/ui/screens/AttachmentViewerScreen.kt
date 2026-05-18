@@ -1147,19 +1147,20 @@ private fun drawPdfHighlights(
         paint.color = annotation.color.toPdfHighlightArgb(alpha = 86)
         canvas.drawRoundRect(left, top, right, bottom, 8f, 8f, paint)
         if (!annotation.noteText.isNullOrBlank()) {
-            val markerSize = 22f
-            val markerLeft = (right - markerSize - 4f).coerceAtLeast(left + 4f)
-            val markerTop = (top + 4f).coerceAtMost((bottom - markerSize - 4f).coerceAtLeast(top + 4f))
-            paint.color = android.graphics.Color.argb(222, 255, 255, 255)
-            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, 8f, 8f, paint)
+            val markerSize = 38f
+            val markerRadius = 13f
+            val markerLeft = (right - markerSize - 5f).coerceAtLeast(left + 5f)
+            val markerTop = (top + 5f).coerceAtMost((bottom - markerSize - 5f).coerceAtLeast(top + 5f))
+            paint.color = android.graphics.Color.argb(238, 255, 255, 255)
+            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, markerRadius, markerRadius, paint)
             paint.color = annotation.color.toPdfHighlightArgb(alpha = 224)
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.2f
-            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, 8f, 8f, paint)
+            paint.strokeWidth = 3.2f
+            canvas.drawRoundRect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, markerRadius, markerRadius, paint)
             paint.style = Paint.Style.FILL
-            canvas.drawCircle(markerLeft + 7f, markerTop + 7f, 1.7f, paint)
-            canvas.drawCircle(markerLeft + 15f, markerTop + 7f, 1.7f, paint)
-            canvas.drawCircle(markerLeft + 11f, markerTop + 14f, 1.7f, paint)
+            canvas.drawRoundRect(markerLeft + 10f, markerTop + 10f, markerLeft + 28f, markerTop + 13.5f, 2f, 2f, paint)
+            canvas.drawRoundRect(markerLeft + 10f, markerTop + 17f, markerLeft + 25f, markerTop + 20.5f, 2f, 2f, paint)
+            canvas.drawRoundRect(markerLeft + 10f, markerTop + 24f, markerLeft + 21f, markerTop + 27.5f, 2f, 2f, paint)
         }
     }
     canvas.restore()

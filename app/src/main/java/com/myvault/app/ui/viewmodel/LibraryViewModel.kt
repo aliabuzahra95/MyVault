@@ -65,6 +65,8 @@ data class LibraryFileItem(
     val progressPercent: Float? = null,
     val lastOpenedAt: Long = 0L,
     val pinned: Boolean = false,
+    val highlightCount: Int = 0,
+    val annotationNoteCount: Int = 0,
 )
 
 data class LibraryAnnotationItem(
@@ -153,6 +155,15 @@ class LibraryViewModel @Inject constructor(
         val progressByAttachment = progress.associateBy { it.attachmentId }
         val activeFiles = allFiles.filter { it.deletedAt == null }
         val attachmentsById = activeFiles.associateBy { it.id }
+        val annotationStatsByAttachment = annotations
+            .filter { it.attachmentId in attachmentsById }
+            .groupBy { it.attachmentId }
+            .mapValues { (_, items) ->
+                LibraryAnnotationStats(
+                    highlightCount = items.size,
+                    annotationNoteCount = items.count { !it.noteText.isNullOrBlank() },
+                )
+            }
         val annotationItemsByFolder = annotations
             .filter { !it.noteText.isNullOrBlank() }
             .mapNotNull { annotation ->
@@ -166,7 +177,7 @@ class LibraryViewModel @Inject constructor(
             .filter { it.deletedAt == null }
             .groupBy { it.libraryFolderId }
             .mapValues { (_, files) ->
-                files.map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+                files.map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
                     .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenBy { it.name.lowercase() })
             }
         val fileCounts = activeFiles
@@ -183,10 +194,10 @@ class LibraryViewModel @Inject constructor(
             .map { it.toLibraryFolderItem(libraryFolders, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) }
 
         val currentFileItems = currentFiles
-            .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+            .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
             .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta })
         val continueReadingItems = (if (folderId == null) allFiles else currentFiles)
-            .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+            .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
         val currentFileIds = (if (folderId == null) allFiles else currentFiles).map { it.id }.toSet()
         val currentAnnotationIds = annotationItemsByFolder[folderId].orEmpty().map { it.id }.toSet()
 
@@ -196,7 +207,7 @@ class LibraryViewModel @Inject constructor(
             files = currentFileItems,
             pinnedFiles = allFiles
                 .filter { it.isPinned }
-                .map { it.toLibraryFileItem(progressByAttachment[it.id]) }
+                .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
                 .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
             annotations = annotations
                 .filter {
@@ -367,7 +378,10 @@ private fun FolderEntity.toLibraryFolderItem(
     )
 }
 
-private fun AttachmentEntity.toLibraryFileItem(progress: PdfReadingProgressEntity?): LibraryFileItem =
+private fun AttachmentEntity.toLibraryFileItem(
+    progress: PdfReadingProgressEntity?,
+    annotationStats: LibraryAnnotationStats?,
+): LibraryFileItem =
     LibraryFileItem(
         id = id,
         name = fileName,
@@ -385,7 +399,14 @@ private fun AttachmentEntity.toLibraryFileItem(progress: PdfReadingProgressEntit
         progressPercent = progress?.progressPercent,
         lastOpenedAt = progress?.lastOpenedAt ?: 0L,
         pinned = isPinned,
+        highlightCount = annotationStats?.highlightCount.orZero(),
+        annotationNoteCount = annotationStats?.annotationNoteCount.orZero(),
     )
+
+private data class LibraryAnnotationStats(
+    val highlightCount: Int,
+    val annotationNoteCount: Int,
+)
 
 private fun PdfAnnotationEntity.toLibraryAnnotationItem(attachment: AttachmentEntity): LibraryAnnotationItem =
     LibraryAnnotationItem(

@@ -1500,8 +1500,18 @@ private fun LibraryFileItem.toPinnedCardData(): VaultNoteCardData =
         id = id,
         title = name,
         meta = meta,
-        preview = kind,
+        preview = annotationSummaryLabel() ?: kind,
     )
+
+private fun LibraryFileItem.annotationSummaryLabel(): String? {
+    val highlights = highlightCount.takeIf { it > 0 }?.let { count ->
+        "$count highlight${if (count == 1) "" else "s"}"
+    }
+    val annotations = annotationNoteCount.takeIf { it > 0 }?.let { count ->
+        "$count annotation${if (count == 1) "" else "s"}"
+    }
+    return listOfNotNull(highlights, annotations).takeIf { it.isNotEmpty() }?.joinToString(" - ")
+}
 
 private fun String.toAnnotationColor(): Color =
     when (lowercase()) {
@@ -1689,13 +1699,17 @@ private fun LibraryNestedFileRow(
     } else {
         ""
     }
+    val tagSummary = tags.take(2).joinToString(" • ") { it.name } + if (tags.size > 2) " • +${tags.size - 2}" else ""
+    val annotationSummary = file.annotationSummaryLabel()
     LibraryHierarchyRow(
         depth = depth,
         title = file.name,
         subtitle = when {
-            tags.isNotEmpty() -> tags.take(2).joinToString(" • ") { it.name } + if (tags.size > 2) " • +${tags.size - 2}" else ""
+            tags.isNotEmpty() && annotationSummary != null -> "$tagSummary - $annotationSummary"
+            tags.isNotEmpty() -> tagSummary
+            showMetadata && annotationSummary != null -> "${file.kind} · ${file.size} · ${file.meta}$progress - $annotationSummary"
             showMetadata -> "${file.kind} · ${file.size} · ${file.meta}$progress"
-            else -> null
+            else -> annotationSummary
         },
         leading = { topLevel ->
             AttachmentThumbnail(
