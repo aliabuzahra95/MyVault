@@ -1,9 +1,18 @@
 package com.myvault.app.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "attachments")
+@Entity(
+    tableName = "attachments",
+    indices = [
+        Index("noteId", "deletedAt", "createdAt"),
+        Index("libraryFolderId", "deletedAt", "createdAt"),
+        Index("deletedAt", "createdAt"),
+        Index("isPinned"),
+    ],
+)
 data class AttachmentEntity(
     @PrimaryKey val id: String,
     val noteId: String,

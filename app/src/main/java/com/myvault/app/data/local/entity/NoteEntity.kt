@@ -1,9 +1,17 @@
 package com.myvault.app.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "notes")
+@Entity(
+    tableName = "notes",
+    indices = [
+        Index("folderId", "deletedAt", "updatedAt"),
+        Index("deletedAt", "updatedAt"),
+        Index("isPinned", "deletedAt", "updatedAt"),
+    ],
+)
 data class NoteEntity(
     @PrimaryKey val id: String,
     val folderId: String?,

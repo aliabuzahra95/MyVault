@@ -1,5 +1,7 @@
 package com.myvault.app.data.repository
 
+import androidx.room.withTransaction
+import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
@@ -28,6 +30,7 @@ import javax.inject.Singleton
 
 @Singleton
 class NoteRepository @Inject constructor(
+    private val database: VaultDatabase,
     private val noteDao: NoteDao,
     private val folderDao: FolderDao,
     private val blockDao: BlockDao,
@@ -178,14 +181,18 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun deleteNote(noteId: String) {
-        val now = System.currentTimeMillis()
-        noteDao.updateDeletedAt(listOf(noteId), now, now)
-        attachmentDao.updateDeletedAtForNotes(listOf(noteId), now)
+        database.withTransaction {
+            val now = System.currentTimeMillis()
+            noteDao.updateDeletedAt(listOf(noteId), now, now)
+            attachmentDao.updateDeletedAtForNotes(listOf(noteId), now)
+        }
     }
 
     suspend fun restoreNote(noteId: String) {
-        noteDao.updateDeletedAt(listOf(noteId), null, System.currentTimeMillis())
-        attachmentDao.updateDeletedAtForNotes(listOf(noteId), null)
+        database.withTransaction {
+            noteDao.updateDeletedAt(listOf(noteId), null, System.currentTimeMillis())
+            attachmentDao.updateDeletedAtForNotes(listOf(noteId), null)
+        }
     }
 
     suspend fun permanentlyDeleteNote(noteId: String) {
@@ -198,22 +205,24 @@ class NoteRepository @Inject constructor(
                 .filter { it.attachmentId in attachmentIds }
                 .map { it.id }
         }
-        if (attachmentIds.isNotEmpty()) {
-            pdfAnnotationDao.deleteForAttachments(attachmentIds)
-            pdfReadingProgressDao.deleteForAttachments(attachmentIds)
-            sourceBacklinkDao.deleteForAttachments(attachmentIds)
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, attachmentIds)
+        database.withTransaction {
+            if (attachmentIds.isNotEmpty()) {
+                pdfAnnotationDao.deleteForAttachments(attachmentIds)
+                pdfReadingProgressDao.deleteForAttachments(attachmentIds)
+                sourceBacklinkDao.deleteForAttachments(attachmentIds)
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, attachmentIds)
+            }
+            if (annotationIds.isNotEmpty()) {
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
+            }
+            blockDao.deleteForNotes(listOf(noteId))
+            tagDao.deleteRefsForNotes(listOf(noteId))
+            sourceBacklinkDao.deleteForNotes(listOf(noteId))
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, listOf(noteId))
+            noteTableDao.deleteForNotes(listOf(noteId))
+            attachmentDao.deleteForNotes(listOf(noteId))
+            noteDao.deleteByIds(listOf(noteId))
         }
-        if (annotationIds.isNotEmpty()) {
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
-        }
-        blockDao.deleteForNotes(listOf(noteId))
-        tagDao.deleteRefsForNotes(listOf(noteId))
-        sourceBacklinkDao.deleteForNotes(listOf(noteId))
-        knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, listOf(noteId))
-        noteTableDao.deleteForNotes(listOf(noteId))
-        attachmentDao.deleteForNotes(listOf(noteId))
-        noteDao.deleteByIds(listOf(noteId))
         attachments.deleteLocalFiles()
     }
 

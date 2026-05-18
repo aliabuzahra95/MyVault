@@ -40,6 +40,7 @@ object AppModule {
                 VaultDatabase.MIGRATION_8_9,
                 VaultDatabase.MIGRATION_9_10,
                 VaultDatabase.MIGRATION_10_11,
+                VaultDatabase.MIGRATION_11_12,
             )
             .build()
 

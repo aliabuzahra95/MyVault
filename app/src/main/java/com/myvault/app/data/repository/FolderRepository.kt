@@ -1,5 +1,7 @@
 package com.myvault.app.data.repository
 
+import androidx.room.withTransaction
+import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
@@ -22,6 +24,7 @@ import javax.inject.Singleton
 
 @Singleton
 class FolderRepository @Inject constructor(
+    private val database: VaultDatabase,
     private val folderDao: FolderDao,
     private val noteDao: NoteDao,
     private val attachmentDao: AttachmentDao,
@@ -143,39 +146,43 @@ class FolderRepository @Inject constructor(
     }
 
     suspend fun deleteFolderTree(folderId: String) {
-        val folders = folderDao.getAll()
-        val folderIds = descendantFolderIds(folderId, folders) + folderId
-        val noteIds = noteDao.getAll()
-            .filter { it.folderId in folderIds }
-            .map { it.id }
+        database.withTransaction {
+            val folders = folderDao.getAll()
+            val folderIds = descendantFolderIds(folderId, folders) + folderId
+            val noteIds = noteDao.getAll()
+                .filter { it.folderId in folderIds }
+                .map { it.id }
 
-        val now = System.currentTimeMillis()
-        if (noteIds.isNotEmpty()) {
-            noteDao.updateDeletedAt(noteIds, now, now)
-            attachmentDao.updateDeletedAtForNotes(noteIds, now)
+            val now = System.currentTimeMillis()
+            if (noteIds.isNotEmpty()) {
+                noteDao.updateDeletedAt(noteIds, now, now)
+                attachmentDao.updateDeletedAtForNotes(noteIds, now)
+            }
+            if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+                attachmentDao.updateDeletedAtForLibraryFolders(folderIds, now)
+            }
+            folderDao.updateDeletedAt(folderIds, now, now)
         }
-        if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
-            attachmentDao.updateDeletedAtForLibraryFolders(folderIds, now)
-        }
-        folderDao.updateDeletedAt(folderIds, now, now)
     }
 
     suspend fun restoreFolderTree(folderId: String) {
-        val folders = folderDao.getAllIncludingDeleted()
-        val folderIds = descendantFolderIds(folderId, folders) + folderId
-        val noteIds = noteDao.getAllIncludingDeleted()
-            .filter { it.folderId in folderIds }
-            .map { it.id }
+        database.withTransaction {
+            val folders = folderDao.getAllIncludingDeleted()
+            val folderIds = descendantFolderIds(folderId, folders) + folderId
+            val noteIds = noteDao.getAllIncludingDeleted()
+                .filter { it.folderId in folderIds }
+                .map { it.id }
 
-        val now = System.currentTimeMillis()
-        if (noteIds.isNotEmpty()) {
-            noteDao.updateDeletedAt(noteIds, null, now)
-            attachmentDao.updateDeletedAtForNotes(noteIds, null)
+            val now = System.currentTimeMillis()
+            if (noteIds.isNotEmpty()) {
+                noteDao.updateDeletedAt(noteIds, null, now)
+                attachmentDao.updateDeletedAtForNotes(noteIds, null)
+            }
+            if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+                attachmentDao.updateDeletedAtForLibraryFolders(folderIds, null)
+            }
+            folderDao.updateDeletedAt(folderIds, null, now)
         }
-        if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
-            attachmentDao.updateDeletedAtForLibraryFolders(folderIds, null)
-        }
-        folderDao.updateDeletedAt(folderIds, null, now)
     }
 
     suspend fun permanentlyDeleteFolderTree(folderId: String) {
@@ -184,56 +191,57 @@ class FolderRepository @Inject constructor(
         val noteIds = noteDao.getAllIncludingDeleted()
             .filter { it.folderId in folderIds }
             .map { it.id }
-
-        if (noteIds.isNotEmpty()) {
-            val attachments = attachmentDao.getForNotes(noteIds)
-            val attachmentIds = attachments.map { it.id }
-            val annotationIds = if (attachmentIds.isEmpty()) {
-                emptyList()
-            } else {
-                pdfAnnotationDao.getAll()
-                    .filter { it.attachmentId in attachmentIds }
-                    .map { it.id }
-            }
-            if (attachmentIds.isNotEmpty()) {
-                pdfAnnotationDao.deleteForAttachments(attachmentIds)
-                pdfReadingProgressDao.deleteForAttachments(attachmentIds)
-                sourceBacklinkDao.deleteForAttachments(attachmentIds)
-                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, attachmentIds)
-            }
-            if (annotationIds.isNotEmpty()) {
-                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
-            }
-            blockDao.deleteForNotes(noteIds)
-            tagDao.deleteRefsForNotes(noteIds)
-            sourceBacklinkDao.deleteForNotes(noteIds)
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, noteIds)
-            noteTableDao.deleteForNotes(noteIds)
-            attachmentDao.deleteForNotes(noteIds)
-            noteDao.deleteByIds(noteIds)
-            attachments.deleteLocalFiles()
-        }
+        val noteAttachments = if (noteIds.isNotEmpty()) attachmentDao.getForNotes(noteIds) else emptyList()
         val libraryAttachments = if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
             attachmentDao.getAllIncludingDeleted().filter { it.libraryFolderId in folderIds }
         } else {
             emptyList()
         }
-        if (libraryAttachments.isNotEmpty()) {
-            val libraryAttachmentIds = libraryAttachments.map { it.id }
-            val libraryAnnotationIds = pdfAnnotationDao.getAll()
-                .filter { it.attachmentId in libraryAttachmentIds }
-                .map { it.id }
-            pdfAnnotationDao.deleteForAttachments(libraryAttachmentIds)
-            pdfReadingProgressDao.deleteForAttachments(libraryAttachmentIds)
-            sourceBacklinkDao.deleteForAttachments(libraryAttachmentIds)
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, libraryAttachmentIds)
-            if (libraryAnnotationIds.isNotEmpty()) {
-                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, libraryAnnotationIds)
+
+        database.withTransaction {
+            if (noteIds.isNotEmpty()) {
+                val attachmentIds = noteAttachments.map { it.id }
+                val annotationIds = if (attachmentIds.isEmpty()) {
+                    emptyList()
+                } else {
+                    pdfAnnotationDao.getAll()
+                        .filter { it.attachmentId in attachmentIds }
+                        .map { it.id }
+                }
+                if (attachmentIds.isNotEmpty()) {
+                    pdfAnnotationDao.deleteForAttachments(attachmentIds)
+                    pdfReadingProgressDao.deleteForAttachments(attachmentIds)
+                    sourceBacklinkDao.deleteForAttachments(attachmentIds)
+                    knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, attachmentIds)
+                }
+                if (annotationIds.isNotEmpty()) {
+                    knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
+                }
+                blockDao.deleteForNotes(noteIds)
+                tagDao.deleteRefsForNotes(noteIds)
+                sourceBacklinkDao.deleteForNotes(noteIds)
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, noteIds)
+                noteTableDao.deleteForNotes(noteIds)
+                attachmentDao.deleteForNotes(noteIds)
+                noteDao.deleteByIds(noteIds)
             }
-            attachmentDao.upsertAll(libraryAttachments.map { it.copy(deletedAt = System.currentTimeMillis()) })
-            libraryAttachments.deleteLocalFiles()
+            if (libraryAttachments.isNotEmpty()) {
+                val libraryAttachmentIds = libraryAttachments.map { it.id }
+                val libraryAnnotationIds = pdfAnnotationDao.getAll()
+                    .filter { it.attachmentId in libraryAttachmentIds }
+                    .map { it.id }
+                pdfAnnotationDao.deleteForAttachments(libraryAttachmentIds)
+                pdfReadingProgressDao.deleteForAttachments(libraryAttachmentIds)
+                sourceBacklinkDao.deleteForAttachments(libraryAttachmentIds)
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, libraryAttachmentIds)
+                if (libraryAnnotationIds.isNotEmpty()) {
+                    knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, libraryAnnotationIds)
+                }
+                attachmentDao.deleteByIds(libraryAttachmentIds)
+            }
+            folderDao.deleteByIds(folderIds)
         }
-        folderDao.deleteByIds(folderIds)
+        (noteAttachments + libraryAttachments).deleteLocalFiles()
     }
 
     private fun descendantFolderIds(folderId: String, folders: List<FolderEntity>): List<String> {

@@ -60,6 +60,9 @@ interface AttachmentDao {
     @Query("DELETE FROM attachments WHERE noteId IN (:noteIds)")
     suspend fun deleteForNotes(noteIds: List<String>)
 
+    @Query("DELETE FROM attachments WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(attachments: List<AttachmentEntity>)
 }

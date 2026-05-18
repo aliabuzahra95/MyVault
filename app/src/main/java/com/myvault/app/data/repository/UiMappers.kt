@@ -34,6 +34,7 @@ fun buildTree(
     val notesByFolder = visibleNotes.groupBy { it.folderId }
     val attachmentsByNote = attachments.groupBy { it.noteId }
     val tablesByNote = tables.groupBy { it.noteId }
+    val countCache = mutableMapOf<String, Int>()
 
     fun folderItem(folder: FolderEntity, depth: Int): VaultTreeItem {
         val childFolders = foldersByParent[folder.id].orEmpty().sortedBy { it.orderIndex }.map { folderItem(it, depth + 1) }
@@ -45,7 +46,7 @@ fun buildTree(
             id = folder.id,
             name = folder.name,
             type = VaultTreeItemType.Folder,
-            count = countNotes(folder, foldersByParent, notesByFolder),
+            count = countNotes(folder, foldersByParent, notesByFolder, countCache),
             updatedAt = folder.updatedAt,
             favourite = folder.isFavourite,
             children = children,
@@ -78,10 +79,12 @@ private fun countNotes(
     folder: FolderEntity,
     foldersByParent: Map<String?, List<FolderEntity>>,
     notesByFolder: Map<String?, List<NoteEntity>>,
+    cache: MutableMap<String, Int>,
 ): Int {
+    cache[folder.id]?.let { return it }
     val own = notesByFolder[folder.id].orEmpty().size
-    val childCount = foldersByParent[folder.id].orEmpty().sumOf { countNotes(it, foldersByParent, notesByFolder) }
-    return own + childCount
+    val childCount = foldersByParent[folder.id].orEmpty().sumOf { countNotes(it, foldersByParent, notesByFolder, cache) }
+    return (own + childCount).also { cache[folder.id] = it }
 }
 
 fun BlockEntity.toEditorBlock(): EditorBlock = when (type) {

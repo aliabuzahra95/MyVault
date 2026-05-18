@@ -2,6 +2,8 @@ package com.myvault.app.data.repository
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
+import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
@@ -46,6 +48,7 @@ import javax.inject.Singleton
 @Singleton
 class BackupRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val database: VaultDatabase,
     private val folderDao: FolderDao,
     private val noteDao: NoteDao,
     private val blockDao: BlockDao,
@@ -316,7 +319,14 @@ class BackupRepository @Inject constructor(
             check(progress.getString("attachmentId") in activeAttachmentIds) {
                 "Backup contains PDF progress without a matching attachment."
             }
+            val pageCount = progress.getInt("pageCount")
+            val pageIndex = progress.getInt("pageIndex")
+            check(pageCount > 0 && pageIndex in 0 until pageCount) {
+                "Backup contains invalid PDF reading progress."
+            }
         }
+        val activeAnnotationIds = List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index).getString("id") }.toSet()
+        check(activeAnnotationIds.size == pdfAnnotations.length()) { "Backup contains duplicate PDF annotation IDs." }
         List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index) }.forEach { annotation ->
             check(annotation.getString("attachmentId") in activeAttachmentIds) {
                 "Backup contains a PDF annotation without a matching attachment."
@@ -336,8 +346,12 @@ class BackupRepository @Inject constructor(
             check(left in 0.0..1.0 && top in 0.0..1.0 && right in 0.0..1.0 && bottom in 0.0..1.0 && left < right && top < bottom) {
                 "Backup contains an invalid PDF annotation rectangle."
             }
+            check(annotation.getString("color") in setOf("yellow", "blue", "green", "red")) {
+                "Backup contains an invalid PDF annotation colour."
+            }
         }
-        val activeAnnotationIds = List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index).getString("id") }.toSet()
+        val sourceBacklinkIds = List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index).getString("id") }.toSet()
+        check(sourceBacklinkIds.size == sourceBacklinks.length()) { "Backup contains duplicate source reference IDs." }
         List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index) }.forEach { link ->
             check(link.getString("noteId") in noteIds) { "Backup contains a source link without a matching note." }
             check(link.getString("attachmentId") in activeAttachmentIds) { "Backup contains a source link without a matching attachment." }
@@ -348,8 +362,14 @@ class BackupRepository @Inject constructor(
         }
         val knowledgeTagIds = List(knowledgeTags.length()) { index -> knowledgeTags.getJSONObject(index).getString("id") }.toSet()
         check(knowledgeTagIds.size == knowledgeTags.length()) { "Backup contains duplicate knowledge tag IDs." }
+        val knowledgeTagNames = List(knowledgeTags.length()) { index -> knowledgeTags.getJSONObject(index).getString("name").lowercase() }.toSet()
+        check(knowledgeTagNames.size == knowledgeTags.length()) { "Backup contains duplicate knowledge tag names." }
+        val knowledgeTagLinkKeys = mutableSetOf<String>()
         List(knowledgeTagLinks.length()) { index -> knowledgeTagLinks.getJSONObject(index) }.forEach { link ->
             check(link.getString("tagId") in knowledgeTagIds) { "Backup contains a tag link without a matching tag." }
+            check(knowledgeTagLinkKeys.add("${link.getString("tagId")}:${link.getString("targetType")}:${link.getString("targetId")}")) {
+                "Backup contains duplicate tag links."
+            }
             when (link.getString("targetType")) {
                 KnowledgeRepository.TargetNote -> check(link.getString("targetId") in noteIds) { "Backup contains a tag link without a matching note." }
                 KnowledgeRepository.TargetAttachment -> check(link.getString("targetId") in activeAttachmentIds) { "Backup contains a tag link without a matching attachment." }
@@ -367,141 +387,149 @@ class BackupRepository @Inject constructor(
     private suspend fun restoreBackup(input: InputStream): BackupResult {
         val entries = mutableMapOf<String, String>()
         val restoredFiles = mutableMapOf<String, File>()
-
-        ZipInputStream(input.buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                if (!entry.isDirectory) {
-                    if (entry.name.startsWith("files/")) {
-                        val attachmentId = entry.name.removePrefix("files/")
-                        validateAttachmentEntryName(attachmentId)
-                        val file = File(context.cacheDir, "restore-$attachmentId").apply {
-                            parentFile?.mkdirs()
+        try {
+            ZipInputStream(input.buffered()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        if (entry.name.startsWith("files/")) {
+                            val attachmentId = entry.name.removePrefix("files/")
+                            validateAttachmentEntryName(attachmentId)
+                            val file = File(context.cacheDir, "restore-$attachmentId").apply {
+                                parentFile?.mkdirs()
+                            }
+                            file.outputStream().use { zip.copyTo(it) }
+                            restoredFiles[attachmentId] = file
+                        } else {
+                            entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
                         }
-                        file.outputStream().use { zip.copyTo(it) }
-                        restoredFiles[attachmentId] = file
-                    } else {
-                        entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
                     }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
             }
-        }
 
-        validateManifest(entries["manifest.json"])
+            validateManifest(entries["manifest.json"])
 
-        val folders = entries.requireJsonArray("folders.json").mapJson { it.toFolderEntity() }
-        val notes = entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() }
-        val restoredNoteIds = notes.map { it.id }.toSet()
-        val blocks = entries.requireJsonArray("blocks.json")
-            .mapJson { it.toBlockEntity() }
-            .filter { it.noteId in restoredNoteIds }
-        val tags = entries.requireJsonArray("tags.json").mapJson { it.toTagEntity() }
-        val tagRefs = entries.requireJsonArray("note_tags.json")
-            .mapJson { it.toNoteTagCrossRef() }
-            .filter { it.noteId in restoredNoteIds }
-        val tables = entries.requireJsonArray("note_tables.json")
-            .mapJson { it.toNoteTableEntity() }
-            .filter { it.noteId in restoredNoteIds }
-        val aiConversations = entries.optionalJsonArray("ai_conversations.json")
-            .mapJson { it.toAiConversationEntity() }
-            .filter { it.noteId in restoredNoteIds }
-        val aiConversationIds = aiConversations.map { it.id }.toSet()
-        val aiMessages = entries.optionalJsonArray("ai_messages.json")
-            .mapJson { it.toAiMessageEntity() }
-            .filter { it.noteId in restoredNoteIds && it.conversationId in aiConversationIds }
-        val attachmentsJson = entries.requireJsonArray("attachments.json")
-        attachmentsJson.validateAttachmentFiles(restoredFiles.keys)
-        val attachments = attachmentsJson
-            .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")]) }
-            .filter {
-                val restoredFolderIds = folders.map { folder -> folder.id }.toSet()
-                it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredFolderIds
-            }
-        val restoredAttachmentIds = attachments.map { it.id }.toSet()
-        val activeRestoredAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
-        val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
-            .mapJson { it.toPdfReadingProgressEntity() }
-            .filter { it.attachmentId in activeRestoredAttachmentIds }
-        val restoredLibraryFolderIds = folders.map { it.id }.toSet()
-        val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
-            .mapJson { it.toPdfAnnotationEntity() }
-            .filter {
-                it.attachmentId in activeRestoredAttachmentIds &&
-                    (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds) &&
-                    (it.displayFolderId == null || it.displayFolderId in restoredLibraryFolderIds)
-            }
-        val restoredAnnotationIds = pdfAnnotations.map { it.id }.toSet()
-        val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
-            .mapJson { it.toSourceBacklinkEntity() }
-            .filter {
-                it.noteId in restoredNoteIds &&
+            val folders = entries.requireJsonArray("folders.json").mapJson { it.toFolderEntity() }
+            val notes = entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() }
+            val restoredNoteIds = notes.map { it.id }.toSet()
+            val blocks = entries.requireJsonArray("blocks.json")
+                .mapJson { it.toBlockEntity() }
+                .filter { it.noteId in restoredNoteIds }
+            val tags = entries.requireJsonArray("tags.json").mapJson { it.toTagEntity() }
+            val tagRefs = entries.requireJsonArray("note_tags.json")
+                .mapJson { it.toNoteTagCrossRef() }
+                .filter { it.noteId in restoredNoteIds }
+            val tables = entries.requireJsonArray("note_tables.json")
+                .mapJson { it.toNoteTableEntity() }
+                .filter { it.noteId in restoredNoteIds }
+            val aiConversations = entries.optionalJsonArray("ai_conversations.json")
+                .mapJson { it.toAiConversationEntity() }
+                .filter { it.noteId in restoredNoteIds }
+            val aiConversationIds = aiConversations.map { it.id }.toSet()
+            val aiMessages = entries.optionalJsonArray("ai_messages.json")
+                .mapJson { it.toAiMessageEntity() }
+                .filter { it.noteId in restoredNoteIds && it.conversationId in aiConversationIds }
+            val attachmentsJson = entries.requireJsonArray("attachments.json")
+            attachmentsJson.validateAttachmentFiles(restoredFiles.keys)
+            val restoredLibraryFolderIds = folders.map { it.id }.toSet()
+            val attachments = attachmentsJson
+                .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")]) }
+                .filter {
+                    it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredLibraryFolderIds
+                }
+            val restoredAttachmentIds = attachments.map { it.id }.toSet()
+            val activeRestoredAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
+            val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
+                .mapJson { it.toPdfReadingProgressEntity() }
+                .filter {
                     it.attachmentId in activeRestoredAttachmentIds &&
-                    (it.annotationId == null || it.annotationId in restoredAnnotationIds)
+                        it.pageCount > 0 &&
+                        it.pageIndex in 0 until it.pageCount
+                }
+            val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
+                .mapJson { it.toPdfAnnotationEntity() }
+                .filter {
+                    it.attachmentId in activeRestoredAttachmentIds &&
+                        it.left < it.right &&
+                        it.top < it.bottom &&
+                        (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds) &&
+                        (it.displayFolderId == null || it.displayFolderId in restoredLibraryFolderIds)
+                }
+            val restoredAnnotationIds = pdfAnnotations.map { it.id }.toSet()
+            val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
+                .mapJson { it.toSourceBacklinkEntity() }
+                .filter {
+                    it.noteId in restoredNoteIds &&
+                        it.attachmentId in activeRestoredAttachmentIds &&
+                        (it.annotationId == null || it.annotationId in restoredAnnotationIds)
+                }
+            val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json").mapJson { it.toKnowledgeTagEntity() }
+            val knowledgeTagIds = knowledgeTags.map { it.id }.toSet()
+            val knowledgeTagLinks = entries.optionalJsonArray("knowledge_tag_links.json")
+                .mapJson { it.toKnowledgeTagLinkEntity() }
+                .filter {
+                    it.tagId in knowledgeTagIds &&
+                        when (it.targetType) {
+                            KnowledgeRepository.TargetNote -> it.targetId in restoredNoteIds
+                            KnowledgeRepository.TargetAttachment -> it.targetId in activeRestoredAttachmentIds
+                            KnowledgeRepository.TargetAnnotation -> it.targetId in restoredAnnotationIds
+                            else -> false
+                        }
+                }
+
+            createEmergencyBackupBeforeRestore()
+
+            database.withTransaction {
+                if (folders.isNotEmpty()) folderDao.upsertAll(folders)
+                if (notes.isNotEmpty()) {
+                    noteDao.upsertAll(notes)
+                    searchDao.upsertFts(notes.map { NoteFtsEntity(title = it.title, bodyPlainText = it.bodyPlainText) })
+                }
+                if (blocks.isNotEmpty()) blockDao.upsertAll(blocks)
+                if (tags.isNotEmpty()) tagDao.upsertAll(tags)
+                if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
+                if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
+                if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
+                if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
+                if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
+                val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
+                    emptyList()
+                } else {
+                    pdfAnnotationDao.getAll()
+                        .filter { it.attachmentId in restoredAttachmentIds }
+                        .map { it.id }
+                }
+                if (restoredAttachmentIds.isNotEmpty()) {
+                    pdfReadingProgressDao.deleteForAttachments(restoredAttachmentIds.toList())
+                    pdfAnnotationDao.deleteForAttachments(restoredAttachmentIds.toList())
+                    sourceBacklinkDao.deleteForAttachments(restoredAttachmentIds.toList())
+                    knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, restoredAttachmentIds.toList())
+                }
+                if (restoredNoteIds.isNotEmpty()) {
+                    sourceBacklinkDao.deleteForNotes(restoredNoteIds.toList())
+                    knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, restoredNoteIds.toList())
+                }
+                val annotationIdsToClear = (existingAnnotationIdsForRestoredAttachments + restoredAnnotationIds).distinct()
+                if (annotationIdsToClear.isNotEmpty()) {
+                    knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIdsToClear)
+                }
+                if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
+                if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)
+                if (sourceBacklinks.isNotEmpty()) sourceBacklinkDao.upsertAll(sourceBacklinks)
+                if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
+                if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
             }
-        val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json").mapJson { it.toKnowledgeTagEntity() }
-        val knowledgeTagIds = knowledgeTags.map { it.id }.toSet()
-        val knowledgeTagLinks = entries.optionalJsonArray("knowledge_tag_links.json")
-            .mapJson { it.toKnowledgeTagLinkEntity() }
-            .filter {
-                it.tagId in knowledgeTagIds &&
-                    when (it.targetType) {
-                        KnowledgeRepository.TargetNote -> it.targetId in restoredNoteIds
-                        KnowledgeRepository.TargetAttachment -> it.targetId in activeRestoredAttachmentIds
-                        KnowledgeRepository.TargetAnnotation -> it.targetId in restoredAnnotationIds
-                        else -> false
-                    }
-            }
 
-        createEmergencyBackupBeforeRestore()
-
-        if (folders.isNotEmpty()) folderDao.upsertAll(folders)
-        if (notes.isNotEmpty()) {
-            noteDao.upsertAll(notes)
-            searchDao.upsertFts(notes.map { NoteFtsEntity(title = it.title, bodyPlainText = it.bodyPlainText) })
+            return BackupResult(
+                folderCount = folders.size,
+                noteCount = notes.size,
+                attachmentCount = attachments.size,
+            )
+        } finally {
+            restoredFiles.values.forEach { it.delete() }
         }
-        if (blocks.isNotEmpty()) blockDao.upsertAll(blocks)
-        if (tags.isNotEmpty()) tagDao.upsertAll(tags)
-        if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
-        if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
-        if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
-        if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
-        if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
-        val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
-            emptyList()
-        } else {
-            pdfAnnotationDao.getAll()
-                .filter { it.attachmentId in restoredAttachmentIds }
-                .map { it.id }
-        }
-        if (restoredAttachmentIds.isNotEmpty()) {
-            pdfReadingProgressDao.deleteForAttachments(restoredAttachmentIds.toList())
-            pdfAnnotationDao.deleteForAttachments(restoredAttachmentIds.toList())
-            sourceBacklinkDao.deleteForAttachments(restoredAttachmentIds.toList())
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, restoredAttachmentIds.toList())
-        }
-        if (restoredNoteIds.isNotEmpty()) {
-            sourceBacklinkDao.deleteForNotes(restoredNoteIds.toList())
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, restoredNoteIds.toList())
-        }
-        val annotationIdsToClear = (existingAnnotationIdsForRestoredAttachments + restoredAnnotationIds).distinct()
-        if (annotationIdsToClear.isNotEmpty()) {
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIdsToClear)
-        }
-        if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
-        if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)
-        if (sourceBacklinks.isNotEmpty()) sourceBacklinkDao.upsertAll(sourceBacklinks)
-        if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
-        if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
-
-        restoredFiles.values.forEach { it.delete() }
-
-        return BackupResult(
-            folderCount = folders.size,
-            noteCount = notes.size,
-            attachmentCount = attachments.size,
-        )
     }
 
     private fun JSONObject.toAttachmentEntity(restoredFile: File?): AttachmentEntity {
@@ -794,7 +822,7 @@ private fun JSONObject.toPdfReadingProgressEntity(): PdfReadingProgressEntity =
         attachmentId = getString("attachmentId"),
         pageIndex = getInt("pageIndex"),
         pageCount = getInt("pageCount"),
-        progressPercent = optDouble("progressPercent", 0.0).toFloat(),
+        progressPercent = optDouble("progressPercent", 0.0).toFloat().coerceIn(0f, 1f),
         lastOpenedAt = getLong("lastOpenedAt"),
         updatedAt = getLong("updatedAt"),
     )

@@ -1,9 +1,18 @@
 package com.myvault.app.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "pdf_annotations")
+@Entity(
+    tableName = "pdf_annotations",
+    indices = [
+        Index("attachmentId", "pageIndex", "createdAt"),
+        Index("libraryFolderId", "updatedAt"),
+        Index("displayFolderId", "updatedAt"),
+        Index("updatedAt"),
+    ],
+)
 data class PdfAnnotationEntity(
     @PrimaryKey val id: String,
     val attachmentId: String,

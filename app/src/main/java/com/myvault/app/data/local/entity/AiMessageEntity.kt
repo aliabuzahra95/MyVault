@@ -1,9 +1,16 @@
 package com.myvault.app.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "ai_messages")
+@Entity(
+    tableName = "ai_messages",
+    indices = [
+        Index("conversationId", "createdAt"),
+        Index("noteId", "createdAt"),
+    ],
+)
 data class AiMessageEntity(
     @PrimaryKey val id: String,
     val conversationId: String,

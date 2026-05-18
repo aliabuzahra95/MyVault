@@ -3,6 +3,8 @@ package com.myvault.app.data.repository
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.room.withTransaction
+import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
@@ -23,6 +25,7 @@ import javax.inject.Singleton
 @Singleton
 class AttachmentRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val database: VaultDatabase,
     private val attachmentDao: AttachmentDao,
     private val noteDao: NoteDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
@@ -138,16 +141,18 @@ class AttachmentRepository @Inject constructor(
     }
 
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
-        val annotationIds = pdfAnnotationDao.getAll()
-            .filter { it.attachmentId == attachmentId }
-            .map { it.id }
-        attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
-        pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
-        pdfReadingProgressDao.deleteForAttachments(listOf(attachmentId))
-        sourceBacklinkDao.deleteForAttachments(listOf(attachmentId))
-        knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, listOf(attachmentId))
-        if (annotationIds.isNotEmpty()) {
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
+        database.withTransaction {
+            val annotationIds = pdfAnnotationDao.getAll()
+                .filter { it.attachmentId == attachmentId }
+                .map { it.id }
+            attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
+            pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
+            pdfReadingProgressDao.deleteForAttachments(listOf(attachmentId))
+            sourceBacklinkDao.deleteForAttachments(listOf(attachmentId))
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, listOf(attachmentId))
+            if (annotationIds.isNotEmpty()) {
+                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
+            }
         }
     }
 
@@ -159,11 +164,13 @@ class AttachmentRepository @Inject constructor(
     }
 
     suspend fun moveLibraryAttachment(attachmentId: String, folderId: String?) = withContext(Dispatchers.IO) {
-        val oldFolderId = attachmentDao.getByIdIncludingDeleted(attachmentId)?.libraryFolderId
-        attachmentDao.updateLibraryFolder(attachmentId, folderId)
-        val now = System.currentTimeMillis()
-        pdfAnnotationDao.updateSourceFolderForAttachment(attachmentId, folderId, now)
-        pdfAnnotationDao.updateDisplayFolderForAttachmentIfMatching(attachmentId, oldFolderId, folderId, now)
+        database.withTransaction {
+            val oldFolderId = attachmentDao.getByIdIncludingDeleted(attachmentId)?.libraryFolderId
+            attachmentDao.updateLibraryFolder(attachmentId, folderId)
+            val now = System.currentTimeMillis()
+            pdfAnnotationDao.updateSourceFolderForAttachment(attachmentId, folderId, now)
+            pdfAnnotationDao.updateDisplayFolderForAttachmentIfMatching(attachmentId, oldFolderId, folderId, now)
+        }
     }
 
     suspend fun setPinned(attachmentId: String, pinned: Boolean) = withContext(Dispatchers.IO) {

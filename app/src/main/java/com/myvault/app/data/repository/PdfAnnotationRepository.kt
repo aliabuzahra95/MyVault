@@ -1,6 +1,9 @@
 package com.myvault.app.data.repository
 
 import android.util.Log
+import androidx.room.withTransaction
+import com.myvault.app.data.local.VaultDatabase
+import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import java.util.UUID
@@ -9,7 +12,9 @@ import javax.inject.Singleton
 
 @Singleton
 class PdfAnnotationRepository @Inject constructor(
+    private val database: VaultDatabase,
     private val annotationDao: PdfAnnotationDao,
+    private val knowledgeTagDao: KnowledgeTagDao,
 ) {
     fun observeAll() = annotationDao.observeAll()
 
@@ -96,6 +101,9 @@ class PdfAnnotationRepository @Inject constructor(
 
     suspend fun delete(id: String) {
         if (id.isBlank()) return
-        annotationDao.deleteById(id)
+        database.withTransaction {
+            annotationDao.deleteById(id)
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, listOf(id))
+        }
     }
 }

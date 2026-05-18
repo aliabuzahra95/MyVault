@@ -50,7 +50,7 @@ import com.myvault.app.data.local.entity.TagEntity
         KnowledgeTagEntity::class,
         KnowledgeTagLinkEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -237,6 +237,32 @@ abstract class VaultDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_tag_links_tagId ON knowledge_tag_links(tagId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_knowledge_tag_links_targetType_targetId ON knowledge_tag_links(targetType, targetId)")
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_parentId_orderIndex ON folders(parentId, orderIndex)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_mode_parentId_orderIndex ON folders(mode, parentId, orderIndex)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_deletedAt_orderIndex ON folders(deletedAt, orderIndex)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notes_folderId_deletedAt_updatedAt ON notes(folderId, deletedAt, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notes_deletedAt_updatedAt ON notes(deletedAt, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notes_isPinned_deletedAt_updatedAt ON notes(isPinned, deletedAt, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_noteId_deletedAt_createdAt ON attachments(noteId, deletedAt, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_libraryFolderId_deletedAt_createdAt ON attachments(libraryFolderId, deletedAt, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_deletedAt_createdAt ON attachments(deletedAt, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_isPinned ON attachments(isPinned)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_blocks_noteId_orderIndex ON blocks(noteId, orderIndex)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_note_tables_noteId_orderIndex ON note_tables(noteId, orderIndex)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_note_tags_tagName ON note_tags(tagName)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_conversations_noteId_updatedAt ON ai_conversations(noteId, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_messages_conversationId_createdAt ON ai_messages(conversationId, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_messages_noteId_createdAt ON ai_messages(noteId, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_reading_progress_lastOpenedAt ON pdf_reading_progress(lastOpenedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_attachmentId_pageIndex_createdAt ON pdf_annotations(attachmentId, pageIndex, createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_libraryFolderId_updatedAt ON pdf_annotations(libraryFolderId, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_displayFolderId_updatedAt ON pdf_annotations(displayFolderId, updatedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_updatedAt ON pdf_annotations(updatedAt)")
             }
         }
     }

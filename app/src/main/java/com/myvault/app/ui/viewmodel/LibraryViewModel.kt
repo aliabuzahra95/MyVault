@@ -187,11 +187,11 @@ class LibraryViewModel @Inject constructor(
         val annotationCounts = annotationItemsByFolder
             .mapNotNull { (folderId, items) -> folderId?.let { it to items.size } }
             .toMap()
+        val foldersByParent = libraryFolders.groupBy { it.parentId }
         val currentFolder = folderId?.let { id -> libraryFolders.firstOrNull { it.id == id } }
-        val visibleFolders = libraryFolders
-            .filter { it.parentId == folderId }
+        val visibleFolders = foldersByParent[folderId].orEmpty()
             .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
-            .map { it.toLibraryFolderItem(libraryFolders, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) }
+            .map { it.toLibraryFolderItem(foldersByParent, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) }
 
         val currentFileItems = currentFiles
             .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
@@ -237,7 +237,7 @@ class LibraryViewModel @Inject constructor(
             allFolders = libraryFolders
                 .filter { it.parentId == null }
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
-                .map { it.toLibraryFolderItem(libraryFolders, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) },
+                .map { it.toLibraryFolderItem(foldersByParent, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) },
             expandedFolderIds = preferences.expandedFolderIds,
             viewMode = LibraryViewMode.fromStoredValue(
                 preferences.libraryViewModesByLocation[viewModeLocationKey] ?: preferences.libraryViewMode,
@@ -356,17 +356,16 @@ class LibraryViewModel @Inject constructor(
 }
 
 private fun FolderEntity.toLibraryFolderItem(
-    allFolders: List<FolderEntity>,
+    foldersByParent: Map<String?, List<FolderEntity>>,
     fileCounts: Map<String, Int>,
     annotationCounts: Map<String, Int>,
     filesByFolder: Map<String?, List<LibraryFileItem>>,
     annotationsByFolder: Map<String?, List<LibraryAnnotationItem>>,
     depth: Int,
 ): LibraryFolderItem {
-    val children = allFolders
-        .filter { it.parentId == id }
+    val children = foldersByParent[id].orEmpty()
         .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
-        .map { it.toLibraryFolderItem(allFolders, fileCounts, annotationCounts, filesByFolder, annotationsByFolder, depth + 1) }
+        .map { it.toLibraryFolderItem(foldersByParent, fileCounts, annotationCounts, filesByFolder, annotationsByFolder, depth + 1) }
     return LibraryFolderItem(
         id = id,
         name = name,
