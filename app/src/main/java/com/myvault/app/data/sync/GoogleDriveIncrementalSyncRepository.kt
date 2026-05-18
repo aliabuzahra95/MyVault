@@ -7,6 +7,7 @@ import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.myvault.app.data.local.dao.AttachmentDao
@@ -46,7 +47,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val account = runCatching {
             GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
         }.getOrElse { error ->
-            return@withContext DriveSyncResult.Failure(error.message ?: "Google Drive sign in was cancelled.")
+            return@withContext DriveSyncResult.Failure(error.googleSignInMessage())
         }
         if (!GoogleSignIn.hasPermissions(account, DriveScope)) {
             return@withContext DriveSyncResult.Failure("Google Drive permission was not granted. Please connect Drive again.")
@@ -325,6 +326,15 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         when (this) {
             is UserRecoverableAuthException -> "$prefix: Google Drive needs permission again. Connect Drive, then retry."
             else -> message?.let { "$prefix: $it" } ?: prefix
+        }
+
+    private fun Throwable.googleSignInMessage(): String =
+        if (this is ApiException && statusCode == GoogleSignInStatusCodes.DEVELOPER_ERROR) {
+            "Google Drive sign in is not configured for this signed APK yet. In Google Cloud or Firebase, add an Android OAuth client in project myvault-fbfd1 with package com.myvault.app and release SHA-1 77:D0:EE:6A:B8:DF:03:59:6D:50:B7:13:68:58:03:D7:76:F9:18:16, then retry."
+        } else if (this is ApiException) {
+            "Google Drive sign in failed: ${GoogleSignInStatusCodes.getStatusCodeString(statusCode)} ($statusCode)."
+        } else {
+            message ?: "Google Drive sign in was cancelled."
         }
 
     private class DriveApiClient(
