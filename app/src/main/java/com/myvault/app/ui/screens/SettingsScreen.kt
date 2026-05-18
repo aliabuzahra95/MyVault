@@ -35,7 +35,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,7 +46,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.components.SettingsRow
 import com.myvault.app.ui.components.ThemePreviewCard
@@ -56,7 +54,6 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.data.preferences.VaultUserPreferences
-import com.myvault.app.ui.viewmodel.CloudBackupUiState
 import com.myvault.app.ui.viewmodel.DeletedItemUiState
 import com.myvault.app.ui.viewmodel.RecentlyDeletedUiState
 import java.text.SimpleDateFormat
@@ -80,23 +77,15 @@ fun SettingsScreen(
     onSecurityLockTimeoutSelected: (Long) -> Unit = {},
     storageLabel: String = "Calculating...",
     recentlyDeleted: RecentlyDeletedUiState = RecentlyDeletedUiState(),
-    cloudBackup: CloudBackupUiState = CloudBackupUiState(),
     onRestoreDeletedNote: (String) -> Unit = {},
     onPermanentlyDeleteNote: (String) -> Unit = {},
     onRestoreDeletedFolder: (String) -> Unit = {},
     onPermanentlyDeleteFolder: (String) -> Unit = {},
     onPermanentlyDeleteAllDeleted: () -> Unit = {},
-    onCloudSignUp: (email: String, password: String) -> Unit = { _, _ -> },
-    onCloudSignIn: (email: String, password: String) -> Unit = { _, _ -> },
-    onCloudSignOut: () -> Unit = {},
-    onCloudBackup: () -> Unit = {},
-    onCloudRestore: () -> Unit = {},
     googleDriveSignInIntent: Intent? = null,
     onGoogleDriveSignInResult: (Intent?) -> Unit = {},
     onGoogleDrivePush: () -> Unit = {},
     onGoogleDrivePull: () -> Unit = {},
-    onGoogleDriveCheck: () -> Unit = {},
-    onVerifyBackup: () -> Unit = {},
     backupMessage: String? = null,
     onDismissBackupMessage: () -> Unit = {},
 ) {
@@ -110,8 +99,6 @@ fun SettingsScreen(
     var recentlyDeletedOpen by remember { mutableStateOf(false) }
     var permanentDeleteTarget by remember { mutableStateOf<DeletedTarget?>(null) }
     var deleteAllDeletedConfirmOpen by remember { mutableStateOf(false) }
-    var cloudSignInOpen by remember { mutableStateOf(false) }
-    var cloudRestoreConfirmOpen by remember { mutableStateOf(false) }
     var backupSettingsOpen by remember { mutableStateOf(false) }
     var releaseReadinessOpen by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
@@ -161,7 +148,6 @@ fun SettingsScreen(
                 SettingsGroupVault(
                     preferences = preferences,
                     storageLabel = storageLabel,
-                    cloudBackup = cloudBackup,
                     onSecurityLockClick = {
                         onSecurityLockChanged(!preferences.securityLockEnabled)
                     },
@@ -178,7 +164,6 @@ fun SettingsScreen(
     if (backupSettingsOpen) {
         BackupSettingsDialog(
             preferences = preferences,
-            cloudBackup = cloudBackup,
             onDismiss = { backupSettingsOpen = false },
             onBackupClick = {
                 backupSettingsOpen = false
@@ -188,22 +173,11 @@ fun SettingsScreen(
                 backupSettingsOpen = false
                 restoreLauncher.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
             },
-            onCloudAccountClick = {
-                if (cloudBackup.signedIn) {
-                    onCloudSignOut()
-                } else {
-                    cloudSignInOpen = true
-                }
+            onGoogleDriveConnectClick = {
+                googleDriveSignInIntent?.let { googleDriveSignInLauncher.launch(it) }
             },
-            onCloudBackupClick = onCloudBackup,
-            onCloudRestoreClick = { cloudRestoreConfirmOpen = true },
-                    onGoogleDriveConnectClick = {
-                        googleDriveSignInIntent?.let { googleDriveSignInLauncher.launch(it) }
-                    },
             onGoogleDrivePushClick = onGoogleDrivePush,
             onGoogleDrivePullClick = onGoogleDrivePull,
-            onGoogleDriveCheckClick = onGoogleDriveCheck,
-            onVerifyBackupClick = onVerifyBackup,
         )
     }
 
@@ -361,47 +335,6 @@ fun SettingsScreen(
         )
     }
 
-    if (cloudSignInOpen) {
-        CloudSignInDialog(
-            onDismiss = { cloudSignInOpen = false },
-            onSignIn = { email, password ->
-                cloudSignInOpen = false
-                onCloudSignIn(email, password)
-            },
-            onSignUp = { email, password ->
-                cloudSignInOpen = false
-                onCloudSignUp(email, password)
-            },
-        )
-    }
-
-    if (cloudRestoreConfirmOpen) {
-        AlertDialog(
-            onDismissRequest = { cloudRestoreConfirmOpen = false },
-            title = { Text("Restore cloud backup?") },
-            text = {
-                Text(
-                    "This will merge the latest Supabase backup into your current vault. It will not clear your vault first, but matching notes, folders, tables, and attachments can be updated by the backup.",
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        cloudRestoreConfirmOpen = false
-                        onCloudRestore()
-                    },
-                ) {
-                    Text("Restore")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { cloudRestoreConfirmOpen = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
-
     permanentDeleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { permanentDeleteTarget = null },
@@ -510,7 +443,6 @@ private fun SettingsGroupEditor(
 private fun SettingsGroupVault(
     preferences: VaultUserPreferences,
     storageLabel: String,
-    cloudBackup: CloudBackupUiState,
     onSecurityLockClick: () -> Unit,
     onBackupSettingsClick: () -> Unit,
     onLockTimerClick: () -> Unit,
@@ -525,7 +457,7 @@ private fun SettingsGroupVault(
         SettingsRow(
             Icons.Rounded.Backup,
             "Backup & restore",
-            preferences.backupSummary(cloudBackup),
+            preferences.backupSummary(),
             onClick = onBackupSettingsClick,
         )
         SettingsRow(Icons.Rounded.RestoreFromTrash, "Recently Deleted", "$recentlyDeletedCount item${if (recentlyDeletedCount == 1) "" else "s"}", onClick = onRecentlyDeletedClick)
@@ -539,18 +471,12 @@ private fun SettingsGroupVault(
 @Composable
 private fun BackupSettingsDialog(
     preferences: VaultUserPreferences,
-    cloudBackup: CloudBackupUiState,
     onDismiss: () -> Unit,
     onBackupClick: () -> Unit,
     onRestoreClick: () -> Unit,
-    onCloudAccountClick: () -> Unit,
-    onCloudBackupClick: () -> Unit,
-    onCloudRestoreClick: () -> Unit,
     onGoogleDriveConnectClick: () -> Unit,
     onGoogleDrivePushClick: () -> Unit,
     onGoogleDrivePullClick: () -> Unit,
-    onGoogleDriveCheckClick: () -> Unit,
-    onVerifyBackupClick: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -573,19 +499,12 @@ private fun BackupSettingsDialog(
                     }
                 }
                 SettingsRow(Icons.Rounded.Backup, "Backup vault", "Export file", onClick = onBackupClick)
-                SettingsRow(Icons.Rounded.Verified, "Check backup safety", "Run check", onClick = onVerifyBackupClick)
                 SettingsRow(Icons.Rounded.Restore, "Restore vault", "Import file", onClick = onRestoreClick)
-                SettingsRow(Icons.Rounded.Storage, "Supabase account", cloudBackup.statusLabel, onClick = onCloudAccountClick)
-                SettingsRow(Icons.Rounded.Backup, "Cloud backup", if (cloudBackup.signedIn) "Upload now" else "Sign in first", onClick = onCloudBackupClick)
-                SettingsRow(Icons.Rounded.Restore, "Cloud restore", if (cloudBackup.signedIn) "Download latest" else "Sign in first", onClick = onCloudRestoreClick)
                 val driveConnected = preferences.googleDriveAccountEmail.isNotBlank()
-                SettingsRow(Icons.Rounded.Storage, "Google Drive account", if (driveConnected) preferences.googleDriveAccountEmail else "Connect account", onClick = onGoogleDriveConnectClick)
-                SettingsRow(Icons.Rounded.Verified, "Check Drive updates", if (driveConnected) "Compare manifest" else "Connect Drive first", onClick = onGoogleDriveCheckClick)
+                SettingsRow(Icons.Rounded.Storage, "Login", if (driveConnected) preferences.googleDriveAccountEmail else "Connect Google Drive", onClick = onGoogleDriveConnectClick)
                 SettingsRow(Icons.Rounded.Backup, "Push to Drive", if (driveConnected) "Incremental upload" else "Connect Drive first", onClick = onGoogleDrivePushClick)
-                SettingsRow(Icons.Rounded.Restore, "Pull latest from Drive", if (driveConnected) "Incremental download" else "Connect Drive first", onClick = onGoogleDrivePullClick)
-                SettingsRow(Icons.Rounded.Backup, "Last local backup", preferences.lastLocalBackupAt.displayBackupTime())
-                SettingsRow(Icons.Rounded.Storage, "Last cloud backup", preferences.lastCloudBackupAt.displayBackupTime())
-                SettingsRow(Icons.Rounded.Storage, "Last Drive sync", preferences.lastGoogleDriveSyncAt.displayBackupTime())
+                SettingsRow(Icons.Rounded.Restore, "Restore from Drive", if (driveConnected) "Pull latest vault" else "Connect Drive first", onClick = onGoogleDrivePullClick)
+                SettingsRow(Icons.Rounded.Storage, "Last Drive update", preferences.lastGoogleDriveSyncAt.displayBackupTime())
             }
         },
         confirmButton = {
@@ -604,9 +523,8 @@ private fun ReleaseReadinessDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
                 Text("Before installing as your main notes app:", style = MaterialTheme.typography.bodyMedium)
-                Text("• Run Check backup safety", style = MaterialTheme.typography.bodySmall)
                 Text("• Export one manual backup file", style = MaterialTheme.typography.bodySmall)
-                Text("• Upload one Supabase cloud backup", style = MaterialTheme.typography.bodySmall)
+                Text("• Push one Google Drive backup", style = MaterialTheme.typography.bodySmall)
                 Text("• Restore a backup on a test install", style = MaterialTheme.typography.bodySmall)
                 Text("• Confirm the launcher icon and app name on your phone", style = MaterialTheme.typography.bodySmall)
             }
@@ -667,62 +585,6 @@ private fun RecentlyDeletedDialog(
                 TextButton(onClick = onDeleteAll) {
                     Text("Delete all")
                 }
-            }
-        },
-    )
-}
-
-@Composable
-private fun CloudSignInDialog(
-    onDismiss: () -> Unit,
-    onSignIn: (email: String, password: String) -> Unit,
-    onSignUp: (email: String, password: String) -> Unit,
-) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    val canSubmit = email.isNotBlank() && password.length >= 6
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Supabase account") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = "Use the account you want this vault backup stored under.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VaultThemeTokens.colors.textMuted,
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = canSubmit,
-                onClick = { onSignIn(email, password) },
-            ) {
-                Text("Sign in")
-            }
-        },
-        dismissButton = {
-            TextButton(
-                enabled = canSubmit,
-                onClick = { onSignUp(email, password) },
-            ) {
-                Text("Create account")
             }
         },
     )
@@ -853,11 +715,11 @@ private fun Long.displayBackupTime(): String =
         SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()).format(Date(this))
     }
 
-private fun VaultUserPreferences.backupSummary(cloudBackup: CloudBackupUiState): String =
-    backupReminderText() ?: if (cloudBackup.signedIn) "Cloud ready" else "Manual backup"
+private fun VaultUserPreferences.backupSummary(): String =
+    backupReminderText() ?: if (googleDriveAccountEmail.isNotBlank()) "Google Drive ready" else "Manual backup"
 
 private fun VaultUserPreferences.backupReminderText(now: Long = System.currentTimeMillis()): String? {
-    val mostRecent = maxOf(lastLocalBackupAt, lastCloudBackupAt)
+    val mostRecent = maxOf(lastLocalBackupAt, lastGoogleDriveSyncAt)
     if (mostRecent <= 0L) return "No backup yet"
     val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
     return if (now - mostRecent > sevenDaysMs) "Backup recommended" else null

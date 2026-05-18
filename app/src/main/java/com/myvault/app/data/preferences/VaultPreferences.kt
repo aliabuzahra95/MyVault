@@ -29,7 +29,6 @@ data class VaultUserPreferences(
     val securityLockEnabled: Boolean = false,
     val securityLockTimeoutMs: Long = 30_000L,
     val lastLocalBackupAt: Long = 0L,
-    val lastCloudBackupAt: Long = 0L,
     val googleDriveAccountEmail: String = "",
     val lastGoogleDriveSyncAt: Long = 0L,
     val lastGoogleDriveManifestAt: Long = 0L,
@@ -54,7 +53,6 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 securityLockEnabled = preferences[Keys.SecurityLockEnabled] ?: false,
                 securityLockTimeoutMs = preferences[Keys.SecurityLockTimeoutMs] ?: 30_000L,
                 lastLocalBackupAt = preferences[Keys.LastLocalBackupAt] ?: 0L,
-                lastCloudBackupAt = preferences[Keys.LastCloudBackupAt] ?: 0L,
                 googleDriveAccountEmail = preferences[Keys.GoogleDriveAccountEmail].orEmpty(),
                 lastGoogleDriveSyncAt = preferences[Keys.LastGoogleDriveSyncAt] ?: 0L,
                 lastGoogleDriveManifestAt = preferences[Keys.LastGoogleDriveManifestAt] ?: 0L,
@@ -129,12 +127,6 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
-    suspend fun markCloudBackupNow() {
-        context.vaultDataStore.edit { preferences ->
-            preferences[Keys.LastCloudBackupAt] = System.currentTimeMillis()
-        }
-    }
-
     suspend fun setGoogleDriveAccountEmail(email: String) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.GoogleDriveAccountEmail] = email
@@ -186,7 +178,6 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val SecurityLockEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("security_lock_enabled")
         val SecurityLockTimeoutMs: Preferences.Key<Long> = longPreferencesKey("security_lock_timeout_ms")
         val LastLocalBackupAt: Preferences.Key<Long> = longPreferencesKey("last_local_backup_at")
-        val LastCloudBackupAt: Preferences.Key<Long> = longPreferencesKey("last_cloud_backup_at")
         val GoogleDriveAccountEmail: Preferences.Key<String> = stringPreferencesKey("google_drive_account_email")
         val LastGoogleDriveSyncAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_sync_at")
         val LastGoogleDriveManifestAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_manifest_at")

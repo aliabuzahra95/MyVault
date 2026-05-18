@@ -10,10 +10,6 @@ import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.StorageRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
-import com.myvault.app.data.supabase.CloudBackupResult
-import com.myvault.app.data.supabase.SupabaseCloudBackupRepository
-import com.myvault.app.data.supabase.SupabaseConfig
-import com.myvault.app.data.supabase.SupabaseSession
 import com.myvault.app.data.sync.DriveSyncResult
 import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
 import com.myvault.app.ui.theme.VaultThemeMode
@@ -23,7 +19,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -34,7 +29,6 @@ class SettingsViewModel @Inject constructor(
     private val storageRepository: StorageRepository,
     private val noteRepository: NoteRepository,
     private val folderRepository: FolderRepository,
-    private val cloudBackupRepository: SupabaseCloudBackupRepository,
     private val googleDriveSyncRepository: GoogleDriveIncrementalSyncRepository,
 ) : ViewModel() {
     val userPreferences: StateFlow<VaultUserPreferences> =
@@ -45,10 +39,6 @@ class SettingsViewModel @Inject constructor(
         )
     private val _storageLabel = MutableStateFlow("Calculating...")
     val storageLabel: StateFlow<String> = _storageLabel
-    val cloudBackupState: StateFlow<CloudBackupUiState> =
-        cloudBackupRepository.session
-            .combineToCloudState()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CloudBackupUiState())
     val recentlyDeleted: StateFlow<RecentlyDeletedUiState> =
         combine(
             noteRepository.observeDeletedNotes(),
@@ -133,62 +123,6 @@ class SettingsViewModel @Inject constructor(
                 .onFailure {
                     onComplete("Restore failed: ${it.message ?: "Unknown error"}")
                 }
-        }
-    }
-
-    fun verifyBackupIntegrity(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            val result = backupRepository.verifyCurrentBackupIntegrity()
-            onComplete(result.message)
-        }
-    }
-
-    fun signUpToCloud(email: String, password: String, onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            when (val result = cloudBackupRepository.signUp(email, password)) {
-                is CloudBackupResult.Success -> onComplete(result.message)
-                is CloudBackupResult.Failure -> onComplete(result.message)
-            }
-        }
-    }
-
-    fun signInToCloud(email: String, password: String, onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            when (val result = cloudBackupRepository.signIn(email, password)) {
-                is CloudBackupResult.Success -> onComplete(result.message)
-                is CloudBackupResult.Failure -> onComplete(result.message)
-            }
-        }
-    }
-
-    fun signOutOfCloud(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            cloudBackupRepository.signOut()
-            onComplete("Signed out of Supabase.")
-        }
-    }
-
-    fun uploadCloudBackup(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            when (val result = cloudBackupRepository.uploadLatestBackup()) {
-                is CloudBackupResult.Success -> {
-                    preferences.markCloudBackupNow()
-                    onComplete(result.message)
-                }
-                is CloudBackupResult.Failure -> onComplete(result.message)
-            }
-        }
-    }
-
-    fun restoreCloudBackup(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            when (val result = cloudBackupRepository.restoreLatestBackup()) {
-                is CloudBackupResult.Success -> {
-                    refreshStorage()
-                    onComplete(result.message)
-                }
-                is CloudBackupResult.Failure -> onComplete(result.message)
-            }
         }
     }
 
@@ -285,29 +219,6 @@ data class DeletedItemUiState(
     val kind: String,
     val deletedAt: Long,
 )
-
-data class CloudBackupUiState(
-    val configured: Boolean = SupabaseConfig.isConfigured,
-    val signedIn: Boolean = false,
-    val email: String = "",
-) {
-    val statusLabel: String
-        get() = when {
-            !configured -> "Needs setup"
-            signedIn -> email.ifBlank { "Signed in" }
-            else -> "Not signed in"
-        }
-}
-
-private fun kotlinx.coroutines.flow.Flow<SupabaseSession>.combineToCloudState():
-    kotlinx.coroutines.flow.Flow<CloudBackupUiState> =
-    map { session ->
-        CloudBackupUiState(
-            configured = SupabaseConfig.isConfigured,
-            signedIn = session.isSignedIn,
-            email = session.email,
-        )
-    }
 
 private fun DriveSyncResult.displayMessage(): String =
     when (this) {

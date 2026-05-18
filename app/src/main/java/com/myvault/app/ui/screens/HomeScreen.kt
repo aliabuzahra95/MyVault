@@ -527,10 +527,10 @@ fun HomeScreen(
             onDismissRequest = { quickBackupConfirmOpen = false },
             containerColor = colors.elevated,
             tonalElevation = 0.dp,
-            title = { Text("Back up to cloud?") },
+            title = { Text("Push to Google Drive?") },
             text = {
                 Text(
-                    "This will replace the current cloud backup with the notes on this device. Make sure this phone has your latest notes before continuing.",
+                    "This will push this device's latest vault to Google Drive. Make sure this phone has your latest notes before continuing.",
                     color = colors.textSecondary,
                 )
             },
@@ -541,7 +541,7 @@ fun HomeScreen(
                         onQuickBackupClick()
                     },
                 ) {
-                    Text("Back up now")
+                    Text("Push now")
                 }
             },
             dismissButton = {

@@ -187,7 +187,7 @@ fun VaultNavHost(
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.uploadCloudBackup {
+                            settingsViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -244,7 +244,7 @@ fun VaultNavHost(
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.uploadCloudBackup {
+                            settingsViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -318,7 +318,7 @@ fun VaultNavHost(
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.uploadCloudBackup {
+                            settingsViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -623,7 +623,6 @@ fun VaultNavHost(
             val preferences by viewModel.userPreferences.collectAsState()
             val storageLabel by viewModel.storageLabel.collectAsState()
             val recentlyDeleted by viewModel.recentlyDeleted.collectAsState()
-            val cloudBackup by viewModel.cloudBackupState.collectAsState()
             var backupMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
             SettingsScreen(
                 preferences = preferences,
@@ -640,23 +639,15 @@ fun VaultNavHost(
                 onSecurityLockTimeoutSelected = viewModel::setSecurityLockTimeout,
                 storageLabel = storageLabel,
                 recentlyDeleted = recentlyDeleted,
-                cloudBackup = cloudBackup,
                 onRestoreDeletedNote = viewModel::restoreNote,
                 onPermanentlyDeleteNote = { noteId -> viewModel.permanentlyDeleteNote(noteId) { backupMessage = it } },
                 onRestoreDeletedFolder = viewModel::restoreFolder,
                 onPermanentlyDeleteFolder = { folderId -> viewModel.permanentlyDeleteFolder(folderId) { backupMessage = it } },
                 onPermanentlyDeleteAllDeleted = { viewModel.permanentlyDeleteAllRecentlyDeleted { backupMessage = it } },
-                onCloudSignUp = { email, password -> viewModel.signUpToCloud(email, password) { backupMessage = it } },
-                onCloudSignIn = { email, password -> viewModel.signInToCloud(email, password) { backupMessage = it } },
-                onCloudSignOut = { viewModel.signOutOfCloud { backupMessage = it } },
-                onCloudBackup = { viewModel.uploadCloudBackup { backupMessage = it } },
-                onCloudRestore = { viewModel.restoreCloudBackup { backupMessage = it } },
                 googleDriveSignInIntent = viewModel.googleDriveSignInIntent(),
                 onGoogleDriveSignInResult = { data -> viewModel.handleGoogleDriveSignInResult(data) { backupMessage = it } },
                 onGoogleDrivePush = { viewModel.pushGoogleDriveSync { backupMessage = it } },
                 onGoogleDrivePull = { viewModel.pullGoogleDriveSync { backupMessage = it } },
-                onGoogleDriveCheck = { viewModel.checkGoogleDriveUpdates { backupMessage = it } },
-                onVerifyBackup = { viewModel.verifyBackupIntegrity { backupMessage = it } },
                 backupMessage = backupMessage,
                 onDismissBackupMessage = { backupMessage = null },
             )
@@ -774,7 +765,7 @@ private fun String.toPreviewLines(): Int = when (this) {
 }
 
 private fun com.myvault.app.data.preferences.VaultUserPreferences.quickBackupRecommended(): Boolean {
-    val mostRecent = maxOf(lastLocalBackupAt, lastCloudBackupAt)
+    val mostRecent = lastGoogleDriveSyncAt
     if (mostRecent <= 0L) return true
     return System.currentTimeMillis() - mostRecent > 7L * 24L * 60L * 60L * 1000L
 }
