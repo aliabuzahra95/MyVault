@@ -1,8 +1,13 @@
 package com.myvault.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,19 +19,27 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.WbSunny
@@ -72,13 +85,21 @@ fun QuranShellScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
+    var search by rememberSaveable { mutableStateOf("") }
+    var typeFilter by rememberSaveable { mutableStateOf("All") }
+    var selectedSurah by rememberSaveable { mutableStateOf(1) }
+    var selectorOpen by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(colors.bg),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+        ) {
             VaultTopBar(
                 title = workspaceTitle,
                 titleContent = {
@@ -94,23 +115,199 @@ fun QuranShellScreen(
                 IconBtn(Icons.Rounded.Settings, "Settings", onClick = onSettingsClick)
             }
 
-            QuranSurahList(
+            QuranReaderSurface(
+                surah = quranCatalog.firstOrNull { it.num == selectedSurah } ?: quranCatalog.first(),
+                onOpenSelector = { selectorOpen = true },
                 modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        QuranSurahSelectorOverlay(
+            visible = selectorOpen,
+            selectedSurah = selectedSurah,
+            search = search,
+            typeFilter = typeFilter,
+            onSearchChange = { search = it },
+            onTypeFilterChange = { typeFilter = it },
+            onDismiss = { selectorOpen = false },
+            onSelect = { surah ->
+                selectedSurah = surah.num
+                selectorOpen = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun QuranReaderSurface(
+    surah: SurahInfo,
+    onOpenSelector: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        QuranReaderHeader(
+            surah = surah,
+            onOpenSelector = onOpenSelector,
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = VaultSpacing.screen,
+                end = VaultSpacing.screen,
+                bottom = 132.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = VaultShapes.lg,
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.border),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            text = surah.arabic,
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.W700),
+                            color = colors.text,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = surah.name,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                            color = colors.text,
+                        )
+                        Text(
+                            text = "${surah.type} • ${surah.ayat} ayat • Juz ${surah.juz}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                        )
+                    }
+                }
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = VaultShapes.lg,
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.border),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "Reader foundation",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
+                            color = colors.text,
+                        )
+                        Text(
+                            text = "The Qur'an tab now opens like a reader first. Tap the Surah name above to open the selector. The full ayah reader lands in the next migration pass.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuranReaderHeader(
+    surah: SurahInfo,
+    onOpenSelector: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen)
+            .padding(top = 6.dp),
+        shape = VaultShapes.lg,
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onOpenSelector,
+                )
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = surah.name,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${surah.type} • ${surah.ayat} ayat • Juz ${surah.juz}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+            Spacer(Modifier.size(12.dp))
+            Text(
+                text = surah.arabic,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
+                color = colors.textSecondary,
+                maxLines = 1,
+            )
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = "Open Surah selector",
+                modifier = Modifier
+                    .padding(start = 10.dp)
+                    .size(18.dp),
+                tint = colors.textSecondary,
             )
         }
     }
 }
 
 @Composable
-private fun QuranSurahList(
-    modifier: Modifier = Modifier,
+private fun QuranSurahSelectorOverlay(
+    visible: Boolean,
+    selectedSurah: Int,
+    search: String,
+    typeFilter: String,
+    onSearchChange: (String) -> Unit,
+    onTypeFilterChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSelect: (SurahInfo) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    var search by rememberSaveable { mutableStateOf("") }
-    var typeFilter by rememberSaveable { mutableStateOf("All") }
-    var selectedSurah by rememberSaveable { mutableStateOf(1) }
+    val dismissInteraction = remember { MutableInteractionSource() }
+    val panelInteraction = remember { MutableInteractionSource() }
     val listState: LazyListState = rememberLazyListState()
-
     val filtered = remember(search, typeFilter) {
         quranCatalog.filter { surah ->
             val q = search.trim().lowercase()
@@ -124,64 +321,109 @@ private fun QuranSurahList(
     }
     val juzGroups = remember(filtered) { filtered.groupBy { it.juz }.toList() }
 
-    LazyColumn(
-        modifier = modifier,
-        state = listState,
-        contentPadding = PaddingValues(
-            start = VaultSpacing.screen,
-            end = VaultSpacing.screen,
-            top = 8.dp,
-            bottom = 132.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)) +
+            slideInVertically(
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                initialOffsetY = { -it / 4 },
+            ),
+        exit = fadeOut(animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)) +
+            slideOutVertically(
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                targetOffsetY = { -it / 5 },
+            ),
     ) {
-        item {
-            Text(
-                text = "Qur'an",
-                style = MaterialTheme.typography.displayMedium,
-                color = colors.text,
-            )
-            Text(
-                text = "Select Surah",
-                modifier = Modifier.padding(top = 2.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-            )
-            Spacer(Modifier.height(12.dp))
-        }
-
-        item {
-            QuranSearchBar(
-                query = search,
-                onQueryChange = { search = it },
-            )
-        }
-
-        item {
-            QuranTypeFilters(
-                selected = typeFilter,
-                onSelected = { typeFilter = it },
-            )
-        }
-
-        selectedSurah.let { number ->
-            quranCatalog.firstOrNull { it.num == number }?.let { surah ->
-                item(key = "selected_${surah.num}") {
-                    QuranSelectedSurahNotice(surah = surah)
-                }
-            }
-        }
-
-        juzGroups.forEach { (juz, surahs) ->
-            item(key = "juz_$juz") {
-                JuzDivider(juzNumber = juz)
-            }
-            items(items = surahs, key = { it.num }) { surah ->
-                SurahRow(
-                    surah = surah,
-                    isCurrent = surah.num == selectedSurah,
-                    onClick = { selectedSurah = surah.num },
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.bg.copy(alpha = 0.46f))
+                .clickable(
+                    interactionSource = dismissInteraction,
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(colors.bg)
+                    .border(1.dp, colors.border, RoundedCornerShape(24.dp))
+                    .clickable(
+                        interactionSource = panelInteraction,
+                        indication = null,
+                        onClick = {},
+                    )
+                    .padding(bottom = 8.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 720.dp)
+                    .align(Alignment.TopCenter),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 8.dp, bottom = 4.dp)
+                        .size(width = 34.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(colors.border),
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 15.dp)
+                        .padding(top = 6.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Select Surah",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                    )
+                    IconBtn(
+                        icon = Icons.Rounded.Close,
+                        contentDescription = "Close",
+                        onClick = onDismiss,
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 15.dp)
+                        .padding(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    QuranSearchBar(query = search, onQueryChange = onSearchChange)
+                    QuranTypeFilters(selected = typeFilter, onSelected = onTypeFilterChange)
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 15.dp),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    juzGroups.forEach { (juz, surahs) ->
+                        item(key = "juz_$juz") {
+                            JuzDivider(juzNumber = juz)
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        items(items = surahs, key = { it.num }) { surah ->
+                            SurahRow(
+                                surah = surah,
+                                isCurrent = surah.num == selectedSurah,
+                                onClick = { onSelect(surah) },
+                            )
+                        }
+                    }
+                    item {
+                        Spacer(Modifier.height(16.dp))
+                    }
+                }
             }
         }
     }
@@ -284,28 +526,6 @@ private fun QuranFilterPill(
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(vertical = 6.dp, horizontal = 14.dp),
     )
-}
-
-@Composable
-private fun QuranSelectedSurahNotice(surah: SurahInfo) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 4.dp),
-        shape = VaultShapes.md,
-        color = colors.accentSoft.copy(alpha = 0.52f),
-        border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.8f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Text(
-            text = "${surah.name} selected. Reader opens in the next migration pass.",
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
-            color = colors.accent,
-        )
-    }
 }
 
 @Composable

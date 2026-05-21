@@ -715,8 +715,8 @@ private fun String.workspaceValue(): String =
 
 private enum class VaultRootMode(val label: String, val icon: ImageVector) {
     Study("Study", Icons.Rounded.MenuBook),
-    Quran("Qur'an", Icons.Rounded.AutoStories),
     Library("Library", Icons.Rounded.LocalLibrary),
+    Quran("Qur'an", Icons.Rounded.AutoStories),
     Personal("Personal", Icons.Rounded.Person),
 }
 
@@ -731,7 +731,7 @@ private fun StudyLibraryPersonalShell(
     val modes = if (workspace == WORKSPACE_PERSONAL) {
         listOf(VaultRootMode.Personal)
     } else {
-        listOf(VaultRootMode.Study, VaultRootMode.Quran, VaultRootMode.Library)
+        listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran)
     }
     val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
     val scope = rememberCoroutineScope()
