@@ -20,6 +20,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.LocalLibrary
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Person
@@ -59,6 +60,7 @@ import com.myvault.app.ui.screens.FolderViewScreen
 import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
+import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
@@ -211,6 +213,25 @@ fun VaultNavHost(
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         currentFolderMode = FOLDER_MODE_STUDY,
+                    )
+                },
+                quranContent = {
+                    QuranShellScreen(
+                        workspaceTitle = preferences.workspace.workspaceLabel(),
+                        workspaceOptions = WorkspaceLabels,
+                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onThemeClick = {
+                            settingsViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            settingsViewModel.pushGoogleDriveSync {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
                     )
                 },
                 libraryContent = {
@@ -694,6 +715,7 @@ private fun String.workspaceValue(): String =
 
 private enum class VaultRootMode(val label: String, val icon: ImageVector) {
     Study("Study", Icons.Rounded.MenuBook),
+    Quran("Qur'an", Icons.Rounded.AutoStories),
     Library("Library", Icons.Rounded.LocalLibrary),
     Personal("Personal", Icons.Rounded.Person),
 }
@@ -702,13 +724,14 @@ private enum class VaultRootMode(val label: String, val icon: ImageVector) {
 private fun StudyLibraryPersonalShell(
     workspace: String,
     studyContent: @Composable () -> Unit,
+    quranContent: @Composable () -> Unit,
     libraryContent: @Composable () -> Unit,
     personalContent: @Composable () -> Unit,
 ) {
     val modes = if (workspace == WORKSPACE_PERSONAL) {
         listOf(VaultRootMode.Personal)
     } else {
-        listOf(VaultRootMode.Study, VaultRootMode.Library)
+        listOf(VaultRootMode.Study, VaultRootMode.Quran, VaultRootMode.Library)
     }
     val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
     val scope = rememberCoroutineScope()
@@ -738,6 +761,7 @@ private fun StudyLibraryPersonalShell(
         ) { page ->
             when (modes[page]) {
                 VaultRootMode.Study -> studyContent()
+                VaultRootMode.Quran -> quranContent()
                 VaultRootMode.Library -> libraryContent()
                 VaultRootMode.Personal -> personalContent()
             }
