@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -33,6 +34,9 @@ data class VaultUserPreferences(
     val googleDriveAccountEmail: String = "",
     val lastGoogleDriveSyncAt: Long = 0L,
     val lastGoogleDriveManifestAt: Long = 0L,
+    val quranLastReadSurah: Int = 1,
+    val quranLastReadAyah: Int = 1,
+    val quranArabicFontPercent: Int = 100,
     val expandedFolderIds: Set<String> = emptySet(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
@@ -58,6 +62,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 googleDriveAccountEmail = preferences[Keys.GoogleDriveAccountEmail].orEmpty(),
                 lastGoogleDriveSyncAt = preferences[Keys.LastGoogleDriveSyncAt] ?: 0L,
                 lastGoogleDriveManifestAt = preferences[Keys.LastGoogleDriveManifestAt] ?: 0L,
+                quranLastReadSurah = preferences[Keys.QuranLastReadSurah] ?: 1,
+                quranLastReadAyah = preferences[Keys.QuranLastReadAyah] ?: 1,
+                quranArabicFontPercent = preferences[Keys.QuranArabicFontPercent] ?: 100,
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
                 libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
@@ -148,6 +155,19 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setQuranReadingPosition(surahNumber: Int, ayahNumber: Int) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranLastReadSurah] = surahNumber.coerceAtLeast(1)
+            preferences[Keys.QuranLastReadAyah] = ayahNumber.coerceAtLeast(1)
+        }
+    }
+
+    suspend fun setQuranArabicFontPercent(percent: Int) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranArabicFontPercent] = percent.coerceIn(70, 140)
+        }
+    }
+
     suspend fun setExpandedFolderIds(folderIds: Set<String>) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.ExpandedFolderIds] = folderIds
@@ -190,6 +210,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val GoogleDriveAccountEmail: Preferences.Key<String> = stringPreferencesKey("google_drive_account_email")
         val LastGoogleDriveSyncAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_sync_at")
         val LastGoogleDriveManifestAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_manifest_at")
+        val QuranLastReadSurah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_surah")
+        val QuranLastReadAyah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_ayah")
+        val QuranArabicFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_arabic_font_percent")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")

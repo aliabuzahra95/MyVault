@@ -74,6 +74,7 @@ import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
 import com.myvault.app.ui.viewmodel.LibraryViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
+import com.myvault.app.ui.viewmodel.QuranReaderViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -216,6 +217,8 @@ fun VaultNavHost(
                     )
                 },
                 quranContent = {
+                    val quranViewModel: QuranReaderViewModel = hiltViewModel()
+                    val quranState by quranViewModel.uiState.collectAsState()
                     QuranShellScreen(
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
@@ -232,6 +235,11 @@ fun VaultNavHost(
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
+                        uiState = quranState,
+                        onSelectSurah = quranViewModel::selectSurah,
+                        onIncreaseFontScale = quranViewModel::increaseArabicFont,
+                        onDecreaseFontScale = quranViewModel::decreaseArabicFont,
+                        onLastReadAyahChanged = quranViewModel::updateLastReadPosition,
                     )
                 },
                 libraryContent = {
