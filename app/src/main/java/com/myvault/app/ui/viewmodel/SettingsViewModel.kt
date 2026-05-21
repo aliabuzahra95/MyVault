@@ -64,6 +64,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferences.setTheme(mode) }
     }
 
+    fun setWorkspace(workspace: String) {
+        viewModelScope.launch { preferences.setWorkspace(workspace) }
+    }
+
     fun setAccentColor(accentColor: String) {
         viewModelScope.launch { preferences.setAccentColor(accentColor) }
     }

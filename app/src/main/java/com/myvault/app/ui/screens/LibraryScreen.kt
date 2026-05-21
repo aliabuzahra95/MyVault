@@ -86,6 +86,7 @@ import com.myvault.app.ui.components.PinnedNoteCard
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTopBar
+import com.myvault.app.ui.components.VaultWorkspaceSwitcher
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -103,6 +104,9 @@ fun LibraryScreen(
     onAttachmentClick: (String) -> Unit,
     onAnnotationClick: (String, Int) -> Unit,
     onReferenceNoteClick: (String) -> Unit,
+    workspaceTitle: String = "Islamic Corpus",
+    workspaceOptions: List<String> = emptyList(),
+    onWorkspaceSelected: (String) -> Unit = {},
     onRenameAnnotation: (String, String) -> Unit,
     onMoveAnnotation: (String, String?) -> Unit,
     onDeleteAnnotationNote: (String) -> Unit,
@@ -133,6 +137,9 @@ fun LibraryScreen(
     LibraryArchiveScreen(
         title = "Library",
         subtitle = null,
+        workspaceTitle = workspaceTitle,
+        workspaceOptions = workspaceOptions,
+        onWorkspaceSelected = onWorkspaceSelected,
         uiState = uiState,
         onBackClick = null,
         currentFolderId = null,
@@ -241,6 +248,9 @@ fun LibraryFolderScreen(
 private fun LibraryArchiveScreen(
     title: String,
     subtitle: String?,
+    workspaceTitle: String = title,
+    workspaceOptions: List<String> = emptyList(),
+    onWorkspaceSelected: (String) -> Unit = {},
     uiState: LibraryUiState,
     onBackClick: (() -> Unit)?,
     currentFolderId: String?,
@@ -331,7 +341,20 @@ private fun LibraryArchiveScreen(
             ) {
                 item {
                     if (onBackClick == null) {
-                        VaultTopBar(title = title) {
+                        VaultTopBar(
+                            title = workspaceTitle,
+                            titleContent = if (workspaceOptions.isNotEmpty()) {
+                                {
+                                    VaultWorkspaceSwitcher(
+                                        selectedLabel = workspaceTitle,
+                                        options = workspaceOptions,
+                                        onSelected = onWorkspaceSelected,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        ) {
                             IconBtn(
                                 icon = Icons.Rounded.Search,
                                 contentDescription = "Search Library",

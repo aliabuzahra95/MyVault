@@ -19,6 +19,7 @@ private val Context.vaultDataStore by preferencesDataStore(name = "vault_prefere
 
 data class VaultUserPreferences(
     val theme: VaultThemeMode = VaultThemeMode.Auto,
+    val workspace: String = WORKSPACE_ISLAMIC_CORPUS,
     val accentColor: String = "#5B8DEF",
     val fontSize: String = "medium",
     val dashboardFontSize: String = "medium",
@@ -43,6 +44,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         context.vaultDataStore.data.map { preferences ->
             VaultUserPreferences(
                 theme = VaultThemeMode.fromStoredValue(preferences[Keys.Theme]),
+                workspace = preferences[Keys.Workspace] ?: WORKSPACE_ISLAMIC_CORPUS,
                 accentColor = preferences[Keys.AccentColor] ?: "#5B8DEF",
                 fontSize = preferences[Keys.FontSize] ?: "medium",
                 dashboardFontSize = preferences[Keys.DashboardFontSize] ?: preferences[Keys.FontSize] ?: "medium",
@@ -70,6 +72,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     suspend fun setTheme(theme: VaultThemeMode) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.Theme] = theme.storedValue
+        }
+    }
+
+    suspend fun setWorkspace(workspace: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.Workspace] = workspace
         }
     }
 
@@ -168,6 +176,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
     private object Keys {
         val Theme: Preferences.Key<String> = stringPreferencesKey("theme")
+        val Workspace: Preferences.Key<String> = stringPreferencesKey("workspace")
         val AccentColor: Preferences.Key<String> = stringPreferencesKey("accent_color")
         val FontSize: Preferences.Key<String> = stringPreferencesKey("font_size")
         val DashboardFontSize: Preferences.Key<String> = stringPreferencesKey("dashboard_font_size")
@@ -186,3 +195,6 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
     }
 }
+
+const val WORKSPACE_PERSONAL = "personal"
+const val WORKSPACE_ISLAMIC_CORPUS = "islamic_corpus"

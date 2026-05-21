@@ -49,6 +49,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
+import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
+import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
 import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
 import com.myvault.app.ui.screens.AskAiScreen
@@ -132,10 +134,14 @@ fun VaultNavHost(
                 )
             }
             StudyLibraryPersonalShell(
+                workspace = preferences.workspace,
                 studyContent = {
                     HomeScreen(
                         uiState = studyState,
                         onSearchClick = {},
+                        workspaceTitle = preferences.workspace.workspaceLabel(),
+                        workspaceOptions = WorkspaceLabels,
+                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = {},
@@ -212,6 +218,9 @@ fun VaultNavHost(
                     val libraryState by libraryViewModel.uiState.collectAsState()
                     LibraryScreen(
                         uiState = libraryState,
+                        workspaceTitle = preferences.workspace.workspaceLabel(),
+                        workspaceOptions = WorkspaceLabels,
+                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
                         onFolderClick = { folderId ->
                             navController.navigate(VaultDestination.LibraryFolder.route(folderId))
                         },
@@ -267,6 +276,9 @@ fun VaultNavHost(
                     HomeScreen(
                         uiState = personalState,
                         onSearchClick = {},
+                        workspaceTitle = preferences.workspace.workspaceLabel(),
+                        workspaceOptions = WorkspaceLabels,
+                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = {},
@@ -666,6 +678,20 @@ fun VaultNavHost(
     }
 }
 
+private val WorkspaceLabels = listOf("Personal", "Islamic Corpus")
+
+private fun String.workspaceLabel(): String =
+    when (this) {
+        WORKSPACE_PERSONAL -> "Personal"
+        else -> "Islamic Corpus"
+    }
+
+private fun String.workspaceValue(): String =
+    when (this) {
+        "Personal" -> WORKSPACE_PERSONAL
+        else -> WORKSPACE_ISLAMIC_CORPUS
+    }
+
 private enum class VaultRootMode(val label: String, val icon: ImageVector) {
     Study("Study", Icons.Rounded.MenuBook),
     Library("Library", Icons.Rounded.LocalLibrary),
@@ -674,14 +700,26 @@ private enum class VaultRootMode(val label: String, val icon: ImageVector) {
 
 @Composable
 private fun StudyLibraryPersonalShell(
+    workspace: String,
     studyContent: @Composable () -> Unit,
     libraryContent: @Composable () -> Unit,
     personalContent: @Composable () -> Unit,
 ) {
-    val modes = VaultRootMode.entries
+    val modes = if (workspace == WORKSPACE_PERSONAL) {
+        listOf(VaultRootMode.Personal)
+    } else {
+        listOf(VaultRootMode.Study, VaultRootMode.Library)
+    }
     val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
     val scope = rememberCoroutineScope()
     val colors = VaultThemeTokens.colors
+
+    LaunchedEffect(workspace) {
+        pagerState.animateScrollToPage(
+            page = 0,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -707,7 +745,7 @@ private fun StudyLibraryPersonalShell(
 
         FloatingBottomNav(
             modes = modes,
-            selectedIndex = pagerState.currentPage,
+            selectedIndex = pagerState.currentPage.coerceIn(0, modes.lastIndex),
             onModeSelected = { index ->
                 scope.launch {
                     pagerState.animateScrollToPage(

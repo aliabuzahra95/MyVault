@@ -92,6 +92,7 @@ import com.myvault.app.ui.components.SearchResultCard
 import com.myvault.app.ui.components.SearchResultData
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultTopBar
+import com.myvault.app.ui.components.VaultWorkspaceSwitcher
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.components.WorkspaceHeader
@@ -108,6 +109,9 @@ fun HomeScreen(
     uiState: HomeUiState,
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier,
+    workspaceTitle: String = "My Vault",
+    onWorkspaceSelected: (String) -> Unit = {},
+    workspaceOptions: List<String> = emptyList(),
     onSearchQueryChange: (String) -> Unit = {},
     onSettingsClick: () -> Unit,
     onFolderClick: (String) -> Unit,
@@ -204,7 +208,20 @@ fun HomeScreen(
                 contentPadding = PaddingValues(bottom = 144.dp),
             ) {
                 item {
-                    VaultTopBar(title = "My Vault") {
+                    VaultTopBar(
+                        title = workspaceTitle,
+                        titleContent = if (workspaceOptions.isNotEmpty()) {
+                            {
+                                VaultWorkspaceSwitcher(
+                                    selectedLabel = workspaceTitle,
+                                    options = workspaceOptions,
+                                    onSelected = onWorkspaceSelected,
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                    ) {
                         if (organizeMode) {
                             Surface(
                                 onClick = { organizeMode = false },
