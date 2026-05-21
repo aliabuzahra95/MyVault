@@ -8,8 +8,11 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +32,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -36,9 +40,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
@@ -70,12 +78,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.R
@@ -112,6 +123,9 @@ fun QuranShellScreen(
     onDecreaseFontScale: () -> Unit,
     onSetTajweedEnabled: (Boolean) -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
+    onToggleTafsir: (String) -> Unit,
+    onToggleBookmark: (String) -> Unit,
+    onCreateReflectionNote: (QuranAyah) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -151,6 +165,9 @@ fun QuranShellScreen(
                 onDecreaseFontScale = onDecreaseFontScale,
                 onSetTajweedEnabled = onSetTajweedEnabled,
                 onLastReadAyahChanged = onLastReadAyahChanged,
+                onToggleTafsir = onToggleTafsir,
+                onToggleBookmark = onToggleBookmark,
+                onCreateReflectionNote = onCreateReflectionNote,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -180,13 +197,18 @@ private fun QuranReaderSurface(
     onDecreaseFontScale: () -> Unit,
     onSetTajweedEnabled: (Boolean) -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
+    onToggleTafsir: (String) -> Unit,
+    onToggleBookmark: (String) -> Unit,
+    onCreateReflectionNote: (QuranAyah) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     val listState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
     val hasBismillahHeader = uiState.selectedSurah.num != 1 && uiState.selectedSurah.num != 9
     var lastScrolledSurah by rememberSaveable { mutableIntStateOf(-1) }
     var readerOptionsOpen by rememberSaveable { mutableStateOf(false) }
+    var ayahActionsTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(uiState.selectedSurah.num, uiState.ayahs.size, uiState.loading) {
@@ -262,6 +284,13 @@ private fun QuranReaderSurface(
                         ayah = ayah,
                         arabicTextSize = uiState.arabicTextSize,
                         tajweedEnabled = uiState.tajweedEnabled,
+                        isBookmarked = ayah.verseKey in uiState.bookmarkedVerseKeys,
+                        tafsir = uiState.tafsirByVerse[ayah.verseKey].orEmpty(),
+                        isTafsirExpanded = uiState.expandedTafsirVerseKey == ayah.verseKey,
+                        isTafsirLoading = ayah.verseKey in uiState.loadingTafsirVerseKeys,
+                        onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
+                        onOpenActions = { ayahActionsTarget = ayah.verseKey },
+                        onCreateReflectionNote = { onCreateReflectionNote(ayah) },
                     )
                 }
                 item("quran_bottom_pad") {
@@ -302,6 +331,32 @@ private fun QuranReaderSurface(
                 )
             }
         }
+
+        val selectedAyah = remember(ayahActionsTarget, uiState.ayahs) {
+            uiState.ayahs.firstOrNull { it.verseKey == ayahActionsTarget }
+        }
+        AyahActionsSheet(
+            ayah = selectedAyah,
+            surah = uiState.selectedSurah,
+            isBookmarked = selectedAyah?.verseKey in uiState.bookmarkedVerseKeys,
+            onDismiss = { ayahActionsTarget = null },
+            onCopy = {
+                selectedAyah?.let { ayah ->
+                    clipboardManager.setText(
+                        AnnotatedString("${uiState.selectedSurah.name} ${uiState.selectedSurah.num}:${ayah.ayahNumber}\n\n${ayah.arabicText}"),
+                    )
+                }
+                ayahActionsTarget = null
+            },
+            onToggleBookmark = {
+                selectedAyah?.let { onToggleBookmark(it.verseKey) }
+                ayahActionsTarget = null
+            },
+            onCreateReflectionNote = {
+                selectedAyah?.let(onCreateReflectionNote)
+                ayahActionsTarget = null
+            },
+        )
     }
 }
 
@@ -621,9 +676,17 @@ private fun AyahRow(
     ayah: QuranAyah,
     arabicTextSize: androidx.compose.ui.unit.TextUnit,
     tajweedEnabled: Boolean,
+    isBookmarked: Boolean,
+    tafsir: String,
+    isTafsirExpanded: Boolean,
+    isTafsirLoading: Boolean,
+    onToggleTafsir: () -> Unit,
+    onOpenActions: () -> Unit,
+    onCreateReflectionNote: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val cardShape = RoundedCornerShape(14.dp)
+    val pillShape = RoundedCornerShape(9.dp)
     val renderedArabic = remember(ayah.verseKey, ayah.arabicText, ayah.tajweedAnnotations, tajweedEnabled, colors) {
         runCatching {
             buildQuranArabicText(
@@ -642,6 +705,8 @@ private fun AyahRow(
             )
         }
     }
+    val showTafsirExpansion = tafsir.length > 420
+    var tafsirTextExpanded by rememberSaveable(ayah.verseKey) { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .padding(horizontal = 15.dp)
@@ -653,6 +718,12 @@ private fun AyahRow(
             .clip(cardShape)
             .background(colors.surface.copy(alpha = if (colors == DarkVaultColors) 0.96f else 1f))
             .border(1.dp, colors.surface.copy(alpha = if (colors == DarkVaultColors) 0.96f else 1f), cardShape)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {},
+                onLongClick = onOpenActions,
+            )
             .padding(vertical = 10.dp, horizontal = 14.dp),
     ) {
         Column(
@@ -681,12 +752,33 @@ private fun AyahRow(
                         color = colors.textSecondary,
                     )
                 }
+                if (isBookmarked) {
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(pillShape)
+                            .background(Color.Transparent)
+                            .border(1.dp, colors.accentBorder, pillShape)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            text = "Bookmarked",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W600),
+                            color = colors.accent,
+                        )
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
                     contentDescription = "More",
                     tint = colors.textMuted,
                     modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onOpenActions,
+                        )
                         .padding(4.dp)
                         .size(18.dp),
                 )
@@ -713,19 +805,289 @@ private fun AyahRow(
             ) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(Color.Transparent)
-                        .border(1.dp, colors.border.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
+                        .clip(pillShape)
+                        .background(if (isTafsirExpanded) colors.surface else Color.Transparent)
+                        .border(1.dp, if (isTafsirExpanded) colors.accentBorder else colors.border.copy(alpha = 0.7f), pillShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onToggleTafsir,
+                        )
                         .padding(vertical = 6.dp, horizontal = 13.dp),
                 ) {
                     Text(
                         text = "Tafsir",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W600),
+                        color = if (isTafsirExpanded) colors.accent else colors.textSecondary,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(pillShape)
+                        .background(Color.Transparent)
+                        .border(1.dp, colors.border.copy(alpha = 0.7f), pillShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onCreateReflectionNote,
+                        )
+                        .padding(vertical = 6.dp, horizontal = 13.dp),
+                ) {
+                    Text(
+                        text = "Add reflection",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W600),
                         color = colors.textSecondary,
                     )
                 }
             }
+
+            AnimatedVisibility(
+                visible = isTafsirExpanded,
+                enter = fadeIn(animationSpec = tween(durationMillis = 170)) + expandVertically(animationSpec = tween(durationMillis = 220)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 130)) + shrinkVertically(animationSpec = tween(durationMillis = 180)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .clip(cardShape)
+                        .background(colors.elevated)
+                        .border(1.dp, colors.border.copy(alpha = 0.82f), cardShape)
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
+                ) {
+                    Text(
+                        text = "TAFSIR",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.W800,
+                            letterSpacing = 1.sp,
+                        ),
+                        color = colors.textMuted,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SelectionContainer {
+                        Text(
+                            text = when {
+                                isTafsirLoading -> "Loading tafsir..."
+                                tafsir.isNotBlank() -> tafsir
+                                else -> "No tafsir is available for this ayah in the current abridged source."
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 23.sp),
+                            color = colors.textSecondary,
+                            maxLines = if (tafsirTextExpanded || !showTafsirExpansion || isTafsirLoading) Int.MAX_VALUE else 6,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (!isTafsirLoading && showTafsirExpansion) {
+                        Spacer(Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(pillShape)
+                                .background(colors.surface)
+                                .border(1.dp, colors.border.copy(alpha = 0.78f), pillShape)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { tafsirTextExpanded = !tafsirTextExpanded },
+                                )
+                                .padding(vertical = 5.dp, horizontal = 10.dp),
+                        ) {
+                            Text(
+                                text = if (tafsirTextExpanded) "Show less" else "Read more",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W600),
+                                color = colors.textSecondary,
+                            )
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun AyahActionsSheet(
+    ayah: QuranAyah?,
+    surah: SurahInfo,
+    isBookmarked: Boolean,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onCreateReflectionNote: () -> Unit,
+) {
+    if (ayah == null) return
+
+    val colors = VaultThemeTokens.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sectionShape = RoundedCornerShape(16.dp)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.bg,
+        contentColor = colors.text,
+        scrimColor = colors.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp, bottom = 2.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.borderStrong),
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .heightIn(max = 560.dp)
+                .padding(bottom = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 15.dp)
+                    .padding(top = 6.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Ayah actions",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                    color = colors.text,
+                )
+                IconBtn(
+                    icon = Icons.Rounded.Close,
+                    contentDescription = "Close ayah actions",
+                    onClick = onDismiss,
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 15.dp)
+                    .clip(sectionShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.border.copy(alpha = 0.78f), sectionShape)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "${surah.name} ${surah.num}:${ayah.ayahNumber}",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                        color = colors.text,
+                    )
+                    if (isBookmarked) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(colors.accentSoft)
+                                .border(1.dp, colors.accentBorder, RoundedCornerShape(9.dp))
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                text = "Bookmarked",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W600),
+                                color = colors.accent,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = ayah.arabicText,
+                    style = TextStyle(
+                        fontFamily = UthmaniHafsFamily,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal,
+                        textDirection = TextDirection.Rtl,
+                        lineHeight = 39.sp,
+                    ),
+                    color = colors.text,
+                    textAlign = TextAlign.Right,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 15.dp)
+                    .clip(sectionShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.border.copy(alpha = 0.78f), sectionShape),
+            ) {
+                AyahActionRow(
+                    label = "Copy ayah",
+                    icon = Icons.Rounded.ContentCopy,
+                    onClick = onCopy,
+                )
+                AyahActionRow(
+                    label = if (isBookmarked) "Remove bookmark" else "Bookmark ayah",
+                    icon = Icons.Rounded.Bookmark,
+                    onClick = onToggleBookmark,
+                )
+                AyahActionRow(
+                    label = "Add reflection/note",
+                    icon = Icons.Rounded.Edit,
+                    onClick = onCreateReflectionNote,
+                    isLast = true,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AyahActionRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    isLast: Boolean = false,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.textSecondary,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+            )
+        }
+    }
+    if (!isLast) {
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            color = colors.border.copy(alpha = 0.65f),
+            thickness = 1.dp,
+        )
     }
 }
 

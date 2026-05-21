@@ -241,6 +241,13 @@ fun VaultNavHost(
                         onDecreaseFontScale = quranViewModel::decreaseArabicFont,
                         onSetTajweedEnabled = quranViewModel::setTajweedEnabled,
                         onLastReadAyahChanged = quranViewModel::updateLastReadPosition,
+                        onToggleTafsir = quranViewModel::toggleTafsir,
+                        onToggleBookmark = quranViewModel::toggleBookmark,
+                        onCreateReflectionNote = { ayah ->
+                            quranViewModel.createReflectionNoteForAyah(ayah) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
                     )
                 },
                 libraryContent = {

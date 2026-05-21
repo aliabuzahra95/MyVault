@@ -20,12 +20,17 @@ class QuranTextRepository @Inject constructor(
     private val surahMutex = Mutex()
     private var arabicSource: JSONObject? = null
     private var tajweedByVerse: Map<String, List<TajweedAnnotation>>? = null
+    private var tafsirByVerse: Map<String, String>? = null
 
     suspend fun getSurahAyahs(surahNumber: Int): List<QuranAyah> {
         surahCache[surahNumber]?.let { return it }
         return surahMutex.withLock {
             surahCache[surahNumber] ?: loadSurahAyahs(surahNumber).also { surahCache[surahNumber] = it }
         }
+    }
+
+    suspend fun getTafsir(verseKey: String): String {
+        return loadTafsirSource()[verseKey].orEmpty()
     }
 
     private suspend fun loadSurahAyahs(surahNumber: Int): List<QuranAyah> = withContext(Dispatchers.IO) {
@@ -78,6 +83,27 @@ class QuranTextRepository @Inject constructor(
                     }
                 }
             }.also { tajweedByVerse = it }
+        }
+    }
+
+    private suspend fun loadTafsirSource(): Map<String, String> {
+        tafsirByVerse?.let { return it }
+        return jsonMutex.withLock {
+            tafsirByVerse ?: withContext(Dispatchers.IO) {
+                val source = JSONObject(
+                    context.assets.open("abridged_tafsir.json").bufferedReader().use { it.readText() },
+                )
+                buildMap {
+                    val keys = source.keys()
+                    while (keys.hasNext()) {
+                        val verseKey = keys.next()
+                        val tafsir = source.optJSONObject(verseKey)?.optString("text").orEmpty().trim()
+                        if (tafsir.isNotBlank()) {
+                            put(verseKey, tafsir)
+                        }
+                    }
+                }
+            }.also { tafsirByVerse = it }
         }
     }
 }

@@ -23,6 +23,10 @@ data class QuranReaderUiState(
     val restoredAyah: Int = 1,
     val arabicFontPercent: Int = 100,
     val tajweedEnabled: Boolean = false,
+    val expandedTafsirVerseKey: String? = null,
+    val tafsirByVerse: Map<String, String> = emptyMap(),
+    val loadingTafsirVerseKeys: Set<String> = emptySet(),
+    val bookmarkedVerseKeys: Set<String> = emptySet(),
     val loading: Boolean = true,
 )
 

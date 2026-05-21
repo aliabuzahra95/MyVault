@@ -38,6 +38,7 @@ data class VaultUserPreferences(
     val quranLastReadAyah: Int = 1,
     val quranArabicFontPercent: Int = 100,
     val quranTajweedEnabled: Boolean = false,
+    val quranBookmarkedVerses: Set<String> = emptySet(),
     val expandedFolderIds: Set<String> = emptySet(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
@@ -67,6 +68,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranLastReadAyah = preferences[Keys.QuranLastReadAyah] ?: 1,
                 quranArabicFontPercent = preferences[Keys.QuranArabicFontPercent] ?: 100,
                 quranTajweedEnabled = preferences[Keys.QuranTajweedEnabled] ?: false,
+                quranBookmarkedVerses = preferences[Keys.QuranBookmarkedVerses].orEmpty(),
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
                 libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
@@ -176,6 +178,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setQuranBookmarkedVerses(verseKeys: Set<String>) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranBookmarkedVerses] = verseKeys
+        }
+    }
+
     suspend fun setExpandedFolderIds(folderIds: Set<String>) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.ExpandedFolderIds] = folderIds
@@ -222,6 +230,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranLastReadAyah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_ayah")
         val QuranArabicFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_arabic_font_percent")
         val QuranTajweedEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_tajweed_enabled")
+        val QuranBookmarkedVerses: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_bookmarked_verses")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
