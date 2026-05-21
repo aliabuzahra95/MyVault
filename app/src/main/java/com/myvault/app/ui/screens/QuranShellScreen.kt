@@ -79,8 +79,10 @@ import com.myvault.app.data.quran.SurahInfo
 import com.myvault.app.data.quran.arabicTextSize
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.buildQuranArabicText
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
+import com.myvault.app.ui.theme.DarkVaultColors
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
@@ -543,6 +545,14 @@ private fun AyahRow(
 ) {
     val colors = VaultThemeTokens.colors
     val cardShape = RoundedCornerShape(14.dp)
+    val renderedArabic = remember(ayah.verseKey, ayah.arabicText, ayah.tajweedAnnotations) {
+        buildQuranArabicText(
+            text = ayah.arabicText,
+            annotations = ayah.tajweedAnnotations,
+            tajweedEnabled = false,
+            isDark = colors == DarkVaultColors,
+        )
+    }
     Box(
         modifier = Modifier
             .padding(horizontal = 15.dp)
@@ -585,7 +595,7 @@ private fun AyahRow(
             }
 
             Text(
-                text = ayah.arabicText,
+                text = renderedArabic,
                 modifier = Modifier.fillMaxWidth(),
                 style = TextStyle(
                     fontFamily = UthmaniHafsFamily,

@@ -8,6 +8,13 @@ data class QuranAyah(
     val surahNumber: Int,
     val ayahNumber: Int,
     val arabicText: String,
+    val tajweedAnnotations: List<TajweedAnnotation> = emptyList(),
+)
+
+data class TajweedAnnotation(
+    val start: Int,
+    val end: Int,
+    val rule: String,
 )
 
 data class QuranReaderUiState(
@@ -20,4 +27,3 @@ data class QuranReaderUiState(
 
 val QuranReaderUiState.arabicTextSize: TextUnit
     get() = (29f * arabicFontPercent.coerceIn(70, 140) / 100f).sp
-
