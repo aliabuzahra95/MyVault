@@ -302,6 +302,7 @@ class NoteViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val routedAction = routeAiIntent(action, question)
+            val effectiveModel = model.fastForLightweight(routedAction)
             val userPrompt = if (question.isNotBlank()) question.trim() else userMessageFor(routedAction, question)
             val appendToConversation = !routedAction.isEditorOutputMode()
             val history = _aiState.value.messages.toConversationHistory()
@@ -312,14 +313,14 @@ class NoteViewModel @Inject constructor(
                     content = userPrompt,
                     action = routedAction,
                     provider = provider,
-                    model = model,
+                    model = effectiveModel,
                 )
                 _aiState.update {
                     it.copy(
                         loading = true,
                         action = routedAction,
                         provider = provider,
-                        model = model,
+                        model = effectiveModel,
                         error = null,
                         result = "",
                         progressLabel = loadingLabelFor(routedAction, body),
@@ -341,7 +342,7 @@ class NoteViewModel @Inject constructor(
                         loading = true,
                         action = routedAction,
                         provider = provider,
-                        model = model,
+                        model = effectiveModel,
                         error = null,
                         result = "",
                         progressLabel = loadingLabelFor(routedAction, body),
@@ -353,7 +354,7 @@ class NoteViewModel @Inject constructor(
                 noteAiRepository.generate(
                     action = routedAction,
                     provider = provider,
-                    model = model,
+                    model = effectiveModel,
                     title = title,
                     body = body,
                     question = question,
@@ -371,7 +372,7 @@ class NoteViewModel @Inject constructor(
                             content = result,
                             action = routedAction,
                             provider = provider,
-                            model = model,
+                            model = effectiveModel,
                         )
                         val conversationId = it.activeConversationId
                         viewModelScope.launch {
@@ -382,14 +383,14 @@ class NoteViewModel @Inject constructor(
                             loading = false,
                             action = routedAction,
                             provider = provider,
-                            model = model,
+                            model = effectiveModel,
                             result = result,
                             error = null,
                             progressLabel = null,
                             messages = it.messages + assistantMessage,
                         )
                     } else {
-                        it.copy(loading = false, action = routedAction, provider = provider, model = model, result = result, error = null, progressLabel = null)
+                        it.copy(loading = false, action = routedAction, provider = provider, model = effectiveModel, result = result, error = null, progressLabel = null)
                     }
                 }
             }.onFailure { error ->
@@ -402,7 +403,7 @@ class NoteViewModel @Inject constructor(
                             content = message,
                             action = routedAction,
                             provider = provider,
-                            model = model,
+                            model = effectiveModel,
                         )
                         val conversationId = it.activeConversationId
                         viewModelScope.launch {
@@ -413,13 +414,13 @@ class NoteViewModel @Inject constructor(
                             loading = false,
                             action = routedAction,
                             provider = provider,
-                            model = model,
+                            model = effectiveModel,
                             error = message,
                             progressLabel = null,
                             messages = it.messages + errorMessage,
                         )
                     } else {
-                        it.copy(loading = false, action = routedAction, provider = provider, model = model, error = message, progressLabel = null)
+                        it.copy(loading = false, action = routedAction, provider = provider, model = effectiveModel, error = message, progressLabel = null)
                     }
                 }
             }
@@ -617,6 +618,22 @@ private fun loadingLabelFor(action: NoteAiAction, body: String): String =
 
 private fun NoteAiAction.isEditorOutputMode(): Boolean =
     this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
+
+private fun NoteAiModel.fastForLightweight(action: NoteAiAction): NoteAiModel =
+    if (
+        this == NoteAiModel.Gemini3Pro &&
+        action in setOf(
+            NoteAiAction.QuickSummary,
+            NoteAiAction.DeepSummary,
+            NoteAiAction.ExplainNote,
+            NoteAiAction.FormatNote,
+            NoteAiAction.CleanFormat,
+        )
+    ) {
+        NoteAiModel.Gemini25Flash
+    } else {
+        this
+    }
 
 private fun routeAiIntent(action: NoteAiAction, question: String): NoteAiAction {
     if (action != NoteAiAction.Ask && action != NoteAiAction.GeneralAsk) return action

@@ -90,6 +90,17 @@ class FolderRepository @Inject constructor(
         return folderId
     }
 
+    suspend fun ensureRootFolderForMode(name: String, mode: String): String {
+        val folders = folderDao.getAll()
+        folders.firstOrNull {
+            it.parentId == null &&
+                it.mode == mode &&
+                it.name.equals(name, ignoreCase = true)
+        }?.let { return it.id }
+
+        return createFolder(parentId = null, name = name, mode = mode)
+    }
+
     suspend fun renameFolder(folderId: String, name: String) {
         folderDao.updateName(folderId, name.ifBlank { "Untitled folder" }, System.currentTimeMillis())
     }

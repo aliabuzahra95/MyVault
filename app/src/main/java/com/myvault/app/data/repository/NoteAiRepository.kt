@@ -6,6 +6,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.ResponseStoppedException
 import com.google.firebase.ai.type.generationConfig
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.supabase.SupabaseConfig
@@ -322,9 +323,35 @@ class NoteAiRepository @Inject constructor(
                 modelName = model.modelName,
                 generationConfig = config,
             )
-        val response = generativeModel.generateContent(promptRequest.prompt)
-        return response.text?.trim().orEmpty().ifBlank {
-            error("Gemini did not return any text. Please try again.")
+        val response = runCatching {
+            generativeModel.generateContent(promptRequest.prompt)
+        }.getOrElse { error ->
+            if (error is ResponseStoppedException) {
+                val partial = error.response.text?.trim().orEmpty()
+                if (partial.isNotBlank()) {
+                    return partial + "\n\n[Gemini stopped because the answer reached its output limit. The useful partial answer above was kept.]"
+                }
+                val reason = error.response.candidates.firstOrNull()?.finishReason?.name ?: "unknown"
+                throw IllegalStateException(
+                    if (reason == "MAX_TOKENS") {
+                        "Gemini reached its answer length limit before returning text. Try the fast model, shorten the request, or ask for a smaller section."
+                    } else {
+                        "Gemini stopped before finishing. Reason: $reason."
+                    },
+                )
+            }
+            throw error
+        }
+        val text = response.text?.trim().orEmpty()
+        return text.ifBlank {
+            val reason = response.candidates.firstOrNull()?.finishReason?.name
+            error(
+                if (reason == "MAX_TOKENS") {
+                    "Gemini reached its answer length limit. Try a shorter request or split the note into sections."
+                } else {
+                    "Gemini did not return any text. Please try again."
+                },
+            )
         }
     }
 
@@ -378,7 +405,7 @@ class NoteAiRepository @Inject constructor(
                 .put("action", action.toFunctionAction())
                 .put("model", model.toFunctionModel())
                 .put("title", title)
-                .put("body", body)
+                .put("body", body.scopedForAiFunctionPayload(action))
                 .put("question", question)
                 .put("systemInstruction", promptRequest.systemInstruction)
                 .put("prompt", promptRequest.prompt)
@@ -403,8 +430,35 @@ class NoteAiRepository @Inject constructor(
             throw IllegalStateException(error.message ?: "ChatGPT request failed.")
         }.also {
             connection.disconnect()
-        }
     }
+}
+
+private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
+    val maxChars = when (action) {
+        NoteAiAction.QuickSummary -> 8_000
+        NoteAiAction.DeepSummary,
+        NoteAiAction.ExplainNote,
+        NoteAiAction.FormatNote,
+        NoteAiAction.CleanFormat,
+        -> 12_000
+        NoteAiAction.Ask,
+        NoteAiAction.GeneralAsk,
+        -> 14_000
+        NoteAiAction.StudyTutor,
+        NoteAiAction.DeepAnalysis,
+        NoteAiAction.IntelligentStructure,
+        -> 18_000
+    }
+    val clean = trim()
+    if (clean.length <= maxChars) return clean
+    val headLength = (maxChars * 0.62f).toInt()
+    val tailLength = maxChars - headLength
+    return buildString {
+        append(clean.take(headLength).trimEnd())
+        append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
+        append(clean.takeLast(tailLength).trimStart())
+    }
+}
 
     private suspend fun authenticatedSupabaseSession(): SupabaseSession {
         val session = sessionStore.session.first()

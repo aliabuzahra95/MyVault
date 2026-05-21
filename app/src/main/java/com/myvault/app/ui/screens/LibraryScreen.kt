@@ -619,7 +619,7 @@ private fun LibraryArchiveScreen(
                 actionButtonSize = 38.dp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = VaultSpacing.xl)
+                    .padding(end = VaultSpacing.screen, bottom = 92.dp)
                     .size(width = 220.dp, height = 230.dp),
                 onToggle = { fabExpanded = !fabExpanded },
                 onActionClick = { action ->

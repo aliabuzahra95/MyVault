@@ -23,6 +23,9 @@ enum class VaultInlineStyle {
     Italic,
     Underline,
     Heading,
+    Heading2,
+    Heading3,
+    Heading4,
     Quote,
     ColorRed,
     ColorOrange,
@@ -266,7 +269,9 @@ internal fun activeVaultToolsForSelection(
         if (VaultInlineStyle.Italic in styles) add(EditorTool.Italic)
         if (VaultInlineStyle.Underline in styles) add(EditorTool.Underline)
         if (VaultInlineStyle.Heading in styles) add(EditorTool.Heading)
-        if (VaultInlineStyle.Quote in styles) add(EditorTool.Quote)
+        if (VaultInlineStyle.Heading2 in styles) add(EditorTool.Heading2)
+        if (VaultInlineStyle.Heading3 in styles) add(EditorTool.Heading3)
+        if (VaultInlineStyle.Heading4 in styles) add(EditorTool.Heading4)
         if (styles.any { it.isColor() }) add(EditorTool.TextColor)
     }
 }
@@ -644,10 +649,18 @@ private fun togglePendingStyle(
 
 private fun relatedStylesFor(style: VaultInlineStyle): List<VaultInlineStyle> =
     when {
-        style == VaultInlineStyle.Heading -> listOf(VaultInlineStyle.Heading)
+        style in headingStyles() -> headingStyles()
         style.isColor() -> colorStyles()
         else -> listOf(style)
     }
+
+private fun headingStyles(): List<VaultInlineStyle> =
+    listOf(
+        VaultInlineStyle.Heading,
+        VaultInlineStyle.Heading2,
+        VaultInlineStyle.Heading3,
+        VaultInlineStyle.Heading4,
+    )
 
 private fun colorStyles(): List<VaultInlineStyle> =
     listOf(
@@ -668,6 +681,9 @@ private fun VaultInlineStyle.toSpanStyle(colors: VaultColors): SpanStyle =
         VaultInlineStyle.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
         VaultInlineStyle.Underline -> SpanStyle(textDecoration = TextDecoration.Underline)
         VaultInlineStyle.Heading -> SpanStyle(color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        VaultInlineStyle.Heading2 -> SpanStyle(color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        VaultInlineStyle.Heading3 -> SpanStyle(color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        VaultInlineStyle.Heading4 -> SpanStyle(color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         VaultInlineStyle.Quote -> SpanStyle(color = colors.textSecondary, fontStyle = FontStyle.Italic)
         VaultInlineStyle.ColorRed -> SpanStyle(color = Color(0xFFE5484D))
         VaultInlineStyle.ColorOrange -> SpanStyle(color = Color(0xFFF97316))

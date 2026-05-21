@@ -111,9 +111,14 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { seeder.seedIfNeeded() }
     }
 
-    fun createNote(folderId: String? = null, onCreated: (String) -> Unit) {
+    fun createNote(folderId: String? = null, mode: String = FOLDER_MODE_STUDY, onCreated: (String) -> Unit) {
         viewModelScope.launch {
-            onCreated(noteRepository.createNote(folderId = folderId))
+            val targetFolderId = folderId ?: if (mode == FOLDER_MODE_PERSONAL) {
+                folderRepository.ensureRootFolderForMode(name = "Inbox", mode = FOLDER_MODE_PERSONAL)
+            } else {
+                null
+            }
+            onCreated(noteRepository.createNote(folderId = targetFolderId))
         }
     }
 

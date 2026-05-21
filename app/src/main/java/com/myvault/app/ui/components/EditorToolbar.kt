@@ -17,9 +17,7 @@ import androidx.compose.material.icons.rounded.FormatBold
 import androidx.compose.material.icons.rounded.FormatColorText
 import androidx.compose.material.icons.rounded.FormatItalic
 import androidx.compose.material.icons.rounded.FormatListNumbered
-import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.FormatUnderlined
-import androidx.compose.material.icons.rounded.HorizontalRule
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.TableChart
@@ -102,6 +100,9 @@ enum class EditorTool(
     val showLabel: Boolean = false,
 ) {
     Heading("H1", Icons.Rounded.Title, true),
+    Heading2("H2", Icons.Rounded.Title, true),
+    Heading3("H3", Icons.Rounded.Title, true),
+    Heading4("H4", Icons.Rounded.Title, true),
     Bold("B", Icons.Rounded.FormatBold),
     Italic("I", Icons.Rounded.FormatItalic),
     Underline("U", Icons.Rounded.FormatUnderlined),
@@ -109,8 +110,6 @@ enum class EditorTool(
     BulletList("Bullets", Icons.AutoMirrored.Rounded.FormatListBulleted),
     NumberedList("Numbers", Icons.Rounded.FormatListNumbered),
     Checklist("Check", Icons.Rounded.CheckBox),
-    Quote("Quote", Icons.Rounded.FormatQuote),
-    Divider("Line", Icons.Rounded.HorizontalRule),
     Table("Table", Icons.Rounded.TableChart),
     Link("Link", Icons.Rounded.Link),
     Attachment("File", Icons.Rounded.AttachFile),

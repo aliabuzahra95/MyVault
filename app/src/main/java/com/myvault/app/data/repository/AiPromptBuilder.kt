@@ -169,18 +169,21 @@ object AiPromptBuilder {
     ): AiPromptRequest {
         val safeTitle = title.ifBlank { "Untitled note" }
         val safeQuestion = question.ifBlank { "No question provided." }
+        val systemInstruction = systemInstructionFor(action)
+        val safeBody = body.scopedForAction(action)
+        val safeHistory = if (action.isLightweightAction()) emptyList() else history.takeLast(4)
         val noteContext = """
             <note>
             <title>$safeTitle</title>
             <body>
-            $body
+            $safeBody
             </body>
             </note>
         """.trimIndent()
         val modeName = action.displayName
         val outputType = outputTypeFor(action)
         val prompt = """
-            $fullSystemInstruction
+            $systemInstruction
 
             Selected mode: $modeName
             Output type: ${outputType.name}
@@ -193,7 +196,7 @@ object AiPromptBuilder {
             $noteContext
 
             Recent current-note conversation:
-            ${history.toPromptHistory()}
+            ${safeHistory.toPromptHistory(maxCharsPerTurn = 1_500)}
 
             User question/request:
             <question>
@@ -202,7 +205,7 @@ object AiPromptBuilder {
         """.trimIndent()
 
         return AiPromptRequest(
-            systemInstruction = fullSystemInstruction,
+            systemInstruction = systemInstruction,
             prompt = prompt,
             temperature = temperatureFor(action, provider, model),
             maxOutputTokens = maxOutputTokensFor(action, provider, model),
@@ -216,8 +219,9 @@ object AiPromptBuilder {
         model: NoteAiModel = NoteAiModel.Gemini25Flash,
     ): AiPromptRequest {
         val safeTitle = title.ifBlank { "Untitled note" }
+        val safeBody = body.takeMiddleAware(16_000)
         val prompt = """
-            $fullSystemInstruction
+            $editorSystemInstruction
 
             Internal planning task for Intelligent Structure.
 
@@ -240,13 +244,13 @@ object AiPromptBuilder {
             <note>
             <title>$safeTitle</title>
             <body>
-            $body
+            $safeBody
             </body>
             </note>
         """.trimIndent()
 
         return AiPromptRequest(
-            systemInstruction = fullSystemInstruction,
+            systemInstruction = editorSystemInstruction,
             prompt = prompt,
             temperature = if (provider == NoteAiProvider.ChatGPT && model == NoteAiModel.Gemini3Pro) 0.2f else 0.18f,
             maxOutputTokens = when (provider) {
@@ -268,8 +272,9 @@ object AiPromptBuilder {
     ): AiPromptRequest {
         val safeTitle = title.ifBlank { "Untitled note" }
         val safeQuestion = question.ifBlank { "Discuss this selected text." }
+        val systemInstruction = selectedTextSystemInstruction
         val prompt = """
-            $fullSystemInstruction
+            $systemInstruction
 
             Selected-text AI mode: ${action.displayName}
             Output type: ${AiOutputType.ChatAnswerPlainText.name}
@@ -299,7 +304,7 @@ object AiPromptBuilder {
             <note>
             <title>$safeTitle</title>
             <body>
-            ${body.take(12_000)}
+            ${body.takeMiddleAware(6_000)}
             </body>
             </note>
 
@@ -314,11 +319,11 @@ object AiPromptBuilder {
             </question>
 
             Recent current-note conversation:
-            ${history.toPromptHistory()}
+            ${history.takeLast(2).toPromptHistory(maxCharsPerTurn = 1_200)}
         """.trimIndent()
 
         return AiPromptRequest(
-            systemInstruction = fullSystemInstruction,
+            systemInstruction = systemInstruction,
             prompt = prompt,
             temperature = selectedTextTemperatureFor(action, provider, model),
             maxOutputTokens = selectedTextMaxOutputTokensFor(action, provider, model),
@@ -386,14 +391,41 @@ object AiPromptBuilder {
             ContextPolicy,
         ).joinToString("\n\n")
 
-    private fun List<NoteAiConversationTurn>.toPromptHistory(): String {
+    private val lightweightSystemInstruction: String
+        get() = listOf(
+            BaseSystemInstruction,
+            AcademicIntegrityRules,
+            LanguageRules,
+            ContextPolicy,
+        ).joinToString("\n\n")
+
+    private val editorSystemInstruction: String
+        get() = listOf(
+            BaseSystemInstruction,
+            AcademicIntegrityRules,
+            LanguageRules,
+            ContextPolicy,
+        ).joinToString("\n\n")
+
+    private val selectedTextSystemInstruction: String
+        get() = listOf(
+            BaseSystemInstruction,
+            AcademicIntegrityRules,
+            LanguageRules,
+            ContextPolicy,
+        ).joinToString("\n\n")
+
+    private fun systemInstructionFor(action: NoteAiAction): String =
+        if (action.isLightweightAction()) lightweightSystemInstruction else fullSystemInstruction
+
+    private fun List<NoteAiConversationTurn>.toPromptHistory(maxCharsPerTurn: Int = 4_000): String {
         if (isEmpty()) return "<history>No previous conversation in this note AI session.</history>"
         return joinToString(separator = "\n\n", prefix = "<history>\n", postfix = "\n</history>") { turn ->
             val role = when (turn.role) {
                 NoteAiChatRole.User -> "user"
                 NoteAiChatRole.Assistant -> "assistant"
             }
-            "<message role=\"$role\">\n${turn.content.take(4_000)}\n</message>"
+            "<message role=\"$role\">\n${turn.content.take(maxCharsPerTurn)}\n</message>"
         }
     }
 
@@ -852,9 +884,9 @@ object AiPromptBuilder {
                     NoteAiAction.ExplainNote,
                     -> 3_200
                     NoteAiAction.DeepAnalysis -> 3_600
-                    NoteAiAction.IntelligentStructure -> 4_000
-                    NoteAiAction.CleanFormat -> 3_200
-                    NoteAiAction.FormatNote -> 2_600
+                    NoteAiAction.IntelligentStructure -> 6_000
+                    NoteAiAction.CleanFormat -> 4_000
+                    NoteAiAction.FormatNote -> 3_200
                 }
                 NoteAiModel.Gemini3Pro -> when (action) {
                     NoteAiAction.QuickSummary -> 1_000
@@ -866,9 +898,9 @@ object AiPromptBuilder {
                     NoteAiAction.ExplainNote,
                     -> 4_200
                     NoteAiAction.DeepAnalysis -> 5_000
-                    NoteAiAction.IntelligentStructure -> 5_500
-                    NoteAiAction.CleanFormat -> 4_200
-                    NoteAiAction.FormatNote -> 3_400
+                    NoteAiAction.IntelligentStructure -> 8_000
+                    NoteAiAction.CleanFormat -> 5_500
+                    NoteAiAction.FormatNote -> 4_200
                 }
             }
         }
@@ -907,6 +939,44 @@ object AiPromptBuilder {
             provider == NoteAiProvider.ChatGPT && model == NoteAiModel.Gemini3Pro -> (base * 1.45f).toInt()
             provider == NoteAiProvider.Gemini && model == NoteAiModel.Gemini3Pro -> (base * 1.2f).toInt()
             else -> base
+        }
+    }
+
+    private fun NoteAiAction.isLightweightAction(): Boolean =
+        this in setOf(
+            NoteAiAction.QuickSummary,
+            NoteAiAction.DeepSummary,
+            NoteAiAction.ExplainNote,
+            NoteAiAction.FormatNote,
+            NoteAiAction.CleanFormat,
+        )
+
+    private fun String.scopedForAction(action: NoteAiAction): String =
+        when (action) {
+            NoteAiAction.QuickSummary -> takeMiddleAware(8_000)
+            NoteAiAction.DeepSummary,
+            NoteAiAction.ExplainNote,
+            NoteAiAction.FormatNote,
+            NoteAiAction.CleanFormat,
+            -> takeMiddleAware(12_000)
+            NoteAiAction.Ask,
+            NoteAiAction.GeneralAsk,
+            -> takeMiddleAware(14_000)
+            NoteAiAction.StudyTutor,
+            NoteAiAction.DeepAnalysis,
+            NoteAiAction.IntelligentStructure,
+            -> takeMiddleAware(18_000)
+        }
+
+    private fun String.takeMiddleAware(maxChars: Int): String {
+        val clean = trim()
+        if (clean.length <= maxChars) return clean
+        val headLength = (maxChars * 0.62f).toInt()
+        val tailLength = maxChars - headLength
+        return buildString {
+            append(clean.take(headLength).trimEnd())
+            append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
+            append(clean.takeLast(tailLength).trimStart())
         }
     }
 }

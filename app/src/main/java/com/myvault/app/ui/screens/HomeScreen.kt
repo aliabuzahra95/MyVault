@@ -201,7 +201,7 @@ fun HomeScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 112.dp),
+                contentPadding = PaddingValues(bottom = 144.dp),
             ) {
                 item {
                     VaultTopBar(title = "My Vault") {
@@ -445,7 +445,7 @@ fun HomeScreen(
                     actionButtonSize = 38.dp,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = VaultSpacing.screen, bottom = VaultSpacing.screen)
+                        .padding(end = VaultSpacing.screen, bottom = 92.dp)
                         .size(width = 220.dp, height = 320.dp),
                     onToggle = { fabExpanded = !fabExpanded },
                     onActionClick = { action ->

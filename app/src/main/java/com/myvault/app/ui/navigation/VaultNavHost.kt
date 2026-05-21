@@ -2,9 +2,10 @@ package com.myvault.app.ui.navigation
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,23 +14,33 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.LocalLibrary
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -130,7 +141,7 @@ fun VaultNavHost(
                         onFolderClick = {},
                         onNoteClick = openNote,
                         onNewNoteClick = { folderId ->
-                            homeViewModel.createNote(folderId = folderId) { noteId ->
+                            homeViewModel.createNote(folderId = folderId, mode = FOLDER_MODE_STUDY) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
@@ -261,7 +272,7 @@ fun VaultNavHost(
                         onFolderClick = {},
                         onNoteClick = openNote,
                         onNewNoteClick = { folderId ->
-                            homeViewModel.createNote(folderId = folderId) { noteId ->
+                            homeViewModel.createNote(folderId = folderId, mode = FOLDER_MODE_PERSONAL) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
@@ -655,10 +666,10 @@ fun VaultNavHost(
     }
 }
 
-private enum class VaultRootMode(val label: String) {
-    Study("Study"),
-    Library("Library"),
-    Personal("Personal"),
+private enum class VaultRootMode(val label: String, val icon: ImageVector) {
+    Study("Study", Icons.Rounded.MenuBook),
+    Library("Library", Icons.Rounded.LocalLibrary),
+    Personal("Personal", Icons.Rounded.Person),
 }
 
 @Composable
@@ -694,26 +705,54 @@ private fun StudyLibraryPersonalShell(
             }
         }
 
-        Row(
+        FloatingBottomNav(
+            modes = modes,
+            selectedIndex = pagerState.currentPage,
+            onModeSelected = { index ->
+                scope.launch {
+                    pagerState.animateScrollToPage(
+                        page = index,
+                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    )
+                }
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = VaultSpacing.lg),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                .padding(vertical = VaultSpacing.lg),
+        )
+    }
+}
+
+
+@Composable
+private fun FloatingBottomNav(
+    modes: List<VaultRootMode>,
+    selectedIndex: Int,
+    onModeSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = modifier
+            .widthIn(min = 218.dp, max = 236.dp),
+        color = colors.elevated.copy(alpha = 0.96f),
+        contentColor = colors.textSecondary,
+        shape = VaultShapes.pill,
+        tonalElevation = 0.dp,
+        shadowElevation = 7.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 3.dp, vertical = 3.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             modes.forEachIndexed { index, mode ->
-                val selected = pagerState.currentPage == index
-                RootModePill(
+                FloatingBottomNavItem(
                     label = mode.label,
-                    selected = selected,
-                    onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(
-                                page = index,
-                                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                            )
-                        }
-                    },
+                    icon = mode.icon,
+                    selected = selectedIndex == index,
+                    onClick = { onModeSelected(index) },
                 )
             }
         }
@@ -721,26 +760,54 @@ private fun StudyLibraryPersonalShell(
 }
 
 @Composable
-private fun RootModePill(
+private fun FloatingBottomNavItem(
     label: String,
+    icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) colors.accent else colors.textSecondary.copy(alpha = 0.74f),
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        label = "bottomNavContentColor",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.03f else 1f,
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        label = "bottomNavScale",
+    )
+
     Surface(
         onClick = onClick,
-        color = if (selected) colors.accentSoft else colors.elevated.copy(alpha = 0.74f),
-        contentColor = if (selected) colors.accent else colors.textSecondary.copy(alpha = 0.78f),
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        contentColor = contentColor,
         shape = VaultShapes.pill,
-        border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border.copy(alpha = 0.7f)),
         tonalElevation = 0.dp,
-        shadowElevation = if (selected) 1.dp else 0.dp,
+        shadowElevation = 0.dp,
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
-        )
+        Column(
+            modifier = Modifier
+                .scale(scale)
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                  modifier = Modifier.size(14.dp),
+                tint = contentColor,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.sp,
+                    fontWeight = if (selected) FontWeight.W800 else FontWeight.W600,
+                ),
+                color = contentColor,
+            )
+        }
     }
 }
 

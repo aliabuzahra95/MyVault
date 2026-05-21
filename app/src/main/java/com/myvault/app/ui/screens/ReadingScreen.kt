@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
@@ -57,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -216,6 +218,7 @@ fun ReadingScreen(
                     fallbackText = note?.bodyPlainText.orEmpty(),
                     richText = uiState.richText,
                     onNoteLinkClick = onNoteLinkClick,
+                    onDoubleTapEdit = onEditClick,
                     bodyFontSizeSp = bodyFontSizeSp,
                     modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                 )
@@ -579,6 +582,7 @@ private fun RichNoteBody(
     fallbackText: String,
     richText: VaultRichTextDocument,
     onNoteLinkClick: (String) -> Unit,
+    onDoubleTapEdit: () -> Unit,
     bodyFontSizeSp: Float,
     modifier: Modifier = Modifier,
 ) {
@@ -594,7 +598,13 @@ private fun RichNoteBody(
         )
     } else {
         val annotated = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
-        SelectionContainer(modifier = modifier.fillMaxWidth()) {
+        SelectionContainer(
+            modifier = modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { onDoubleTapEdit() })
+                },
+        ) {
             ClickableText(
                 text = annotated,
                 modifier = Modifier.fillMaxWidth(),

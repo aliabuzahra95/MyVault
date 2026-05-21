@@ -166,7 +166,7 @@ fun EditorScreen(
     var lastSavedLinks by remember { mutableStateOf<List<VaultNoteLink>>(emptyList()) }
     var linkDialogOpen by remember { mutableStateOf(false) }
     var linkUrl by remember { mutableStateOf("") }
-    var colorDialogOpen by remember { mutableStateOf(false) }
+    var colorToolbarOpen by remember { mutableStateOf(false) }
     var tableDialogOpen by remember { mutableStateOf(false) }
     var tableDeleteRequest by remember { mutableStateOf<String?>(null) }
     var moreMenuOpen by remember { mutableStateOf(false) }
@@ -200,14 +200,15 @@ fun EditorScreen(
     val supportedTools = remember {
         listOf(
             EditorTool.Heading,
+            EditorTool.Heading2,
+            EditorTool.Heading3,
+            EditorTool.Heading4,
             EditorTool.Bold,
             EditorTool.Italic,
             EditorTool.Underline,
             EditorTool.TextColor,
             EditorTool.BulletList,
             EditorTool.NumberedList,
-            EditorTool.Quote,
-            EditorTool.Divider,
             EditorTool.Table,
             EditorTool.Link,
             EditorTool.Attachment,
@@ -310,7 +311,7 @@ fun EditorScreen(
         if (noteId != null && loadedNoteId != noteId) {
             val noteTitle = uiState.note.title
             title = TextFieldValue(noteTitle, TextRange(noteTitle.length))
-            bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(uiState.richText.text, TextRange(uiState.richText.text.length)))
+            bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(uiState.richText.text, TextRange.Zero))
             styleMarks = sanitizeVaultStyleMarks(uiState.richText.styleMarks, uiState.richText.text.length)
             noteLinks = sanitizeVaultNoteLinks(uiState.richText.noteLinks, uiState.richText.text.length)
             pendingInlineStyles = emptySet()
@@ -522,7 +523,7 @@ fun EditorScreen(
                 pendingInlineStyles = update.pendingStyles
             }
             EditorTool.TextColor -> {
-                colorDialogOpen = true
+                colorToolbarOpen = !colorToolbarOpen
                 return
             }
             EditorTool.Heading -> {
@@ -531,15 +532,26 @@ fun EditorScreen(
                 styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
                 pendingInlineStyles = update.pendingStyles
             }
-            EditorTool.BulletList -> applyRichTextTransform(applyBulletListTransform(bodyValue))
-            EditorTool.NumberedList -> applyRichTextTransform(applyNumberedListTransform(bodyValue))
-            EditorTool.Quote -> {
+            EditorTool.Heading2 -> {
                 val value = sanitizeVaultTextFieldValue(bodyValue)
-                val update = applyVaultStyleFromToolbar(value, styleMarks, pendingInlineStyles, VaultInlineStyle.Quote)
+                val update = applyVaultStyleFromToolbar(value, styleMarks, pendingInlineStyles, VaultInlineStyle.Heading2)
                 styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
                 pendingInlineStyles = update.pendingStyles
             }
-            EditorTool.Divider -> applyBodyTransform(bodyValue.insertText("\n---\n"))
+            EditorTool.Heading3 -> {
+                val value = sanitizeVaultTextFieldValue(bodyValue)
+                val update = applyVaultStyleFromToolbar(value, styleMarks, pendingInlineStyles, VaultInlineStyle.Heading3)
+                styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
+                pendingInlineStyles = update.pendingStyles
+            }
+            EditorTool.Heading4 -> {
+                val value = sanitizeVaultTextFieldValue(bodyValue)
+                val update = applyVaultStyleFromToolbar(value, styleMarks, pendingInlineStyles, VaultInlineStyle.Heading4)
+                styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
+                pendingInlineStyles = update.pendingStyles
+            }
+            EditorTool.BulletList -> applyRichTextTransform(applyBulletListTransform(bodyValue))
+            EditorTool.NumberedList -> applyRichTextTransform(applyNumberedListTransform(bodyValue))
             EditorTool.Table -> {
                 tableDialogOpen = true
                 return
@@ -561,12 +573,29 @@ fun EditorScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.bg,
         bottomBar = {
-            EditorToolbar(
-                modifier = Modifier.imePadding(),
-                tools = supportedTools,
-                activeTools = activeTools,
-                onToolClick = ::applyTool,
-            )
+            Column(modifier = Modifier.imePadding()) {
+                if (colorToolbarOpen) {
+                    InlineTextColorToolbar(
+                        activeStyles = pendingInlineStyles + activeStylesForToolbar(safeBodyValue, styleMarks),
+                        onColorSelected = { selectedStyle ->
+                            val safeValue = sanitizeVaultTextFieldValue(bodyValue)
+                            val update = if (selectedStyle == null) {
+                                clearVaultColorFromToolbar(safeValue, styleMarks, pendingInlineStyles)
+                            } else {
+                                applyVaultStyleFromToolbar(safeValue, styleMarks, pendingInlineStyles, selectedStyle)
+                            }
+                            styleMarks = sanitizeVaultStyleMarks(update.marks, safeValue.text.length)
+                            pendingInlineStyles = update.pendingStyles
+                            bodyFocusRequester.requestFocus()
+                        },
+                    )
+                }
+                EditorToolbar(
+                    tools = supportedTools,
+                    activeTools = activeTools,
+                    onToolClick = ::applyTool,
+                )
+            }
         },
     ) { innerPadding ->
         Box(
@@ -881,23 +910,6 @@ fun EditorScreen(
         )
     }
 
-    if (colorDialogOpen) {
-        TextColorDialog(
-            onDismiss = { colorDialogOpen = false },
-            onColorSelected = { selectedStyle ->
-                val update = if (selectedStyle == null) {
-                    clearVaultColorFromToolbar(sanitizeVaultTextFieldValue(bodyValue), styleMarks, pendingInlineStyles)
-                } else {
-                    applyVaultStyleFromToolbar(sanitizeVaultTextFieldValue(bodyValue), styleMarks, pendingInlineStyles, selectedStyle)
-                }
-                styleMarks = sanitizeVaultStyleMarks(update.marks, sanitizeVaultTextFieldValue(bodyValue).text.length)
-                pendingInlineStyles = update.pendingStyles
-                colorDialogOpen = false
-                bodyFocusRequester.requestFocus()
-            },
-        )
-    }
-
     if (tableDialogOpen) {
         TableSizeDialog(
             onDismiss = { tableDialogOpen = false },
@@ -1051,6 +1063,76 @@ fun EditorScreen(
 }
 
 private const val EditorHistoryLimit = 80
+
+@Composable
+private fun InlineTextColorToolbar(
+    activeStyles: Set<VaultInlineStyle>,
+    onColorSelected: (VaultInlineStyle?) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val options = remember {
+        listOf(
+            TextColorOption("Red", Color(0xFFE5484D), VaultInlineStyle.ColorRed),
+            TextColorOption("Orange", Color(0xFFF97316), VaultInlineStyle.ColorOrange),
+            TextColorOption("Green", Color(0xFF2F9E66), VaultInlineStyle.ColorGreen),
+            TextColorOption("Blue", Color(0xFF2F80ED), VaultInlineStyle.ColorBlue),
+            TextColorOption("Purple", Color(0xFF8B5CF6), VaultInlineStyle.ColorPurple),
+            TextColorOption("Pink", Color(0xFFDB2777), VaultInlineStyle.ColorPink),
+            TextColorOption("Slate", Color(0xFF64748B), VaultInlineStyle.ColorSlate),
+            TextColorOption("Default", colors.text, null),
+        )
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.elevated,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Colour",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                color = colors.textMuted,
+            )
+            options.forEach { option ->
+                val active = option.style != null && option.style in activeStyles
+                Surface(
+                    onClick = { onColorSelected(option.style) },
+                    modifier = Modifier.size(32.dp),
+                    color = if (active) colors.accentSoft else colors.surface,
+                    shape = VaultShapes.pill,
+                    border = BorderStroke(1.dp, if (active) colors.accentBorder else colors.border),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Surface(
+                            modifier = Modifier.size(if (active) 22.dp else 19.dp),
+                            color = option.color,
+                            shape = VaultShapes.pill,
+                            border = BorderStroke(1.dp, colors.border),
+                            content = {},
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun activeStylesForToolbar(
+    value: TextFieldValue,
+    marks: List<VaultStyleMark>,
+): Set<VaultInlineStyle> {
+    val safeValue = sanitizeVaultTextFieldValue(value)
+    val cursor = safeValue.selection.start.coerceIn(0, safeValue.text.length)
+    return sanitizeVaultStyleMarks(marks, safeValue.text.length)
+        .filter { cursor >= it.start && cursor < it.end }
+        .mapTo(linkedSetOf()) { it.style }
+}
 
 private data class EditorHistorySnapshot(
     val title: TextFieldValue,
