@@ -1,5 +1,6 @@
 package com.myvault.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,9 +27,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -38,13 +36,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -73,7 +70,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.R
@@ -85,8 +81,6 @@ import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
-import com.myvault.app.ui.theme.VaultShapes
-import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
@@ -144,7 +138,6 @@ fun QuranShellScreen(
             QuranReaderSurface(
                 uiState = uiState,
                 onOpenSelector = { selectorOpen = true },
-                onOpenSettings = onSettingsClick,
                 onIncreaseFontScale = onIncreaseFontScale,
                 onDecreaseFontScale = onDecreaseFontScale,
                 onLastReadAyahChanged = onLastReadAyahChanged,
@@ -172,7 +165,6 @@ fun QuranShellScreen(
 private fun QuranReaderSurface(
     uiState: QuranReaderUiState,
     onOpenSelector: () -> Unit,
-    onOpenSettings: () -> Unit,
     onIncreaseFontScale: () -> Unit,
     onDecreaseFontScale: () -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
@@ -182,6 +174,7 @@ private fun QuranReaderSurface(
     val listState = rememberLazyListState()
     val hasBismillahHeader = uiState.selectedSurah.num != 1 && uiState.selectedSurah.num != 9
     var lastScrolledSurah by rememberSaveable { mutableIntStateOf(-1) }
+    var readerOptionsOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uiState.selectedSurah.num, uiState.ayahs.size, uiState.loading) {
         if (!uiState.loading && uiState.ayahs.isNotEmpty() && lastScrolledSurah != uiState.selectedSurah.num) {
@@ -214,9 +207,7 @@ private fun QuranReaderSurface(
         QuranTopBar(
             surah = uiState.selectedSurah,
             onOpenSelector = onOpenSelector,
-            onOpenSettings = onOpenSettings,
-            onIncreaseFontScale = onIncreaseFontScale,
-            onDecreaseFontScale = onDecreaseFontScale,
+            onOpenSearch = onOpenSelector,
         )
 
         if (uiState.loading) {
@@ -249,6 +240,16 @@ private fun QuranReaderSurface(
                     }
                 }
 
+                item("reader_options") {
+                    QuranReaderOptionsPanel(
+                        expanded = readerOptionsOpen,
+                        fontPercent = uiState.arabicFontPercent,
+                        onToggleExpanded = { readerOptionsOpen = !readerOptionsOpen },
+                        onIncreaseFontScale = onIncreaseFontScale,
+                        onDecreaseFontScale = onDecreaseFontScale,
+                    )
+                }
+
                 items(
                     items = uiState.ayahs,
                     key = { it.verseKey },
@@ -274,9 +275,7 @@ private fun QuranReaderSurface(
 private fun QuranTopBar(
     surah: SurahInfo,
     onOpenSelector: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onIncreaseFontScale: () -> Unit,
-    onDecreaseFontScale: () -> Unit,
+    onOpenSearch: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
@@ -326,31 +325,7 @@ private fun QuranTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ReaderTopIconButton(onClick = onDecreaseFontScale) {
-                Icon(
-                    imageVector = Icons.Rounded.Remove,
-                    contentDescription = "Smaller Arabic text",
-                    tint = colors.textSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            ReaderTopIconButton(onClick = onIncreaseFontScale) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "Larger Arabic text",
-                    tint = colors.textSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            ReaderTopIconButton(onClick = onOpenSettings) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = "Settings",
-                    tint = colors.textSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            ReaderTopIconButton(onClick = onOpenSelector) {
+            ReaderTopIconButton(onClick = onOpenSearch) {
                 Icon(
                     imageVector = Icons.Rounded.Search,
                     contentDescription = "Search Surah",
@@ -372,8 +347,8 @@ private fun ReaderTopIconButton(
         modifier = Modifier
             .size(34.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(colors.surface)
-            .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+            .background(colors.surface.copy(alpha = 0.82f))
+            .border(1.dp, colors.border.copy(alpha = 0.9f), RoundedCornerShape(10.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -404,10 +379,12 @@ private fun BismillahHeader(
                 fontFamily = UthmaniHafsFamily,
                 textDirection = TextDirection.Rtl,
                 fontWeight = FontWeight.Normal,
+                fontSize = 24.sp,
             ),
             color = colors.text,
             textAlign = TextAlign.Center,
-            lineHeight = 41.sp,
+            lineHeight = 38.sp,
+            maxLines = 1,
             modifier = Modifier.padding(bottom = 6.dp),
         )
         Text(
@@ -422,6 +399,112 @@ private fun BismillahHeader(
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = colors.border, thickness = 1.dp)
         Spacer(Modifier.height(14.dp))
+    }
+}
+
+@Composable
+private fun QuranReaderOptionsPanel(
+    expanded: Boolean,
+    fontPercent: Int,
+    onToggleExpanded: () -> Unit,
+    onIncreaseFontScale: () -> Unit,
+    onDecreaseFontScale: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 15.dp)
+            .padding(bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.surface.copy(alpha = 0.8f))
+                    .border(1.dp, colors.border.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleExpanded,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Tune,
+                    contentDescription = "Reader display options",
+                    tint = colors.textSecondary,
+                    modifier = Modifier.size(15.dp),
+                )
+                Text(
+                    text = "Display",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                    color = colors.textSecondary,
+                )
+            }
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(colors.surface.copy(alpha = 0.9f))
+                    .border(1.dp, colors.border.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "QUR'AN DISPLAY",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.W800,
+                        letterSpacing = 1.sp,
+                    ),
+                    color = colors.textMuted,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Arabic size",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.text,
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ReaderTopIconButton(onClick = onDecreaseFontScale) {
+                            Text(
+                                text = "−",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
+                                color = colors.textSecondary,
+                            )
+                        }
+                        Text(
+                            text = "${fontPercent.coerceIn(80, 170)}%",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                            color = colors.textSecondary,
+                        )
+                        ReaderTopIconButton(onClick = onIncreaseFontScale) {
+                            Text(
+                                text = "+",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
+                                color = colors.textSecondary,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -464,35 +547,38 @@ private fun AyahRow(
         modifier = Modifier
             .padding(horizontal = 15.dp)
             .shadow(
-                elevation = 3.dp,
+                elevation = 1.5.dp,
                 shape = cardShape,
                 clip = false,
             )
             .clip(cardShape)
-            .background(colors.surface)
-            .border(1.dp, colors.border, cardShape)
+            .background(colors.surface.copy(alpha = 0.9f))
+            .border(1.dp, colors.border.copy(alpha = 0.78f), cardShape)
             .padding(vertical = 10.dp, horizontal = 14.dp),
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 2.dp),
+                    .padding(bottom = 1.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(9.dp))
                         .background(Color.Transparent)
-                        .border(1.dp, colors.border, RoundedCornerShape(9.dp))
+                        .border(1.dp, colors.border.copy(alpha = 0.7f), RoundedCornerShape(9.dp))
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = ayah.ayahNumber.toString(),
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.W600,
+                            fontSize = 11.sp,
+                        ),
                         color = colors.textSecondary,
                     )
                 }
@@ -506,7 +592,7 @@ private fun AyahRow(
                     fontSize = arabicTextSize,
                     fontWeight = FontWeight.Normal,
                     textDirection = TextDirection.Rtl,
-                    lineHeight = (arabicTextSize.value * 1.95f).sp,
+                    lineHeight = (arabicTextSize.value * 1.72f).sp,
                 ),
                 color = colors.text,
                 textAlign = TextAlign.Right,
@@ -530,6 +616,7 @@ private fun QuranSurahSelectorOverlay(
     val dismissInteraction = remember { MutableInteractionSource() }
     val panelInteraction = remember { MutableInteractionSource() }
     val listState: LazyListState = rememberLazyListState()
+    val panelShape = RoundedCornerShape(24.dp)
     val filtered = remember(search, typeFilter) {
         quranCatalog.filter { surah ->
             val q = search.trim().lowercase()
@@ -556,6 +643,7 @@ private fun QuranSurahSelectorOverlay(
                 targetOffsetY = { -it / 5 },
             ),
     ) {
+        BackHandler(onBack = onDismiss)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -568,11 +656,12 @@ private fun QuranSurahSelectorOverlay(
         ) {
             Column(
                 modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .clip(RoundedCornerShape(24.dp))
+                    .shadow(12.dp, panelShape, clip = false)
+                    .clip(panelShape)
                     .background(colors.bg)
-                    .border(1.dp, colors.border, RoundedCornerShape(24.dp))
+                    .border(1.dp, colors.border.copy(alpha = 0.8f), panelShape)
                     .clickable(
                         interactionSource = panelInteraction,
                         indication = null,
@@ -660,9 +749,9 @@ private fun QuranSearchBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(VaultShapes.md)
+            .clip(RoundedCornerShape(14.dp))
             .background(colors.surface)
-            .border(1.dp, colors.border.copy(alpha = 0.78f), VaultShapes.md)
+            .border(1.dp, colors.border.copy(alpha = 0.78f), RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -700,7 +789,7 @@ private fun QuranTypeFilters(
     onSelected: (String) -> Unit,
 ) {
     Row(
-        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+        modifier = Modifier.padding(bottom = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         listOf("All 114" to "All", "Makki" to "Makki", "Madani" to "Madani").forEach { (label, key) ->
@@ -723,17 +812,17 @@ private fun QuranFilterPill(
     val interactionSource = remember { MutableInteractionSource() }
     val bg by animateColorAsState(
         targetValue = if (selected) colors.accentSoft else Color.Transparent,
-        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
         label = "quranFilterBg",
     )
     val border by animateColorAsState(
         targetValue = if (selected) colors.accent else colors.border,
-        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
         label = "quranFilterBorder",
     )
     val textColor by animateColorAsState(
         targetValue = if (selected) colors.accent else colors.textSecondary,
-        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
         label = "quranFilterText",
     )
 
@@ -764,11 +853,6 @@ private fun JuzDivider(juzNumber: Int) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        HorizontalDivider(
-            modifier = Modifier.weight(1f),
-            thickness = 1.dp,
-            color = colors.border,
-        )
         Text(
             text = "Juz $juzNumber",
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700, letterSpacing = 0.3.sp),
@@ -808,7 +892,7 @@ private fun SurahRow(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = VaultShapes.lg,
+        shape = RoundedCornerShape(14.dp),
         color = bg,
         border = BorderStroke(1.dp, border),
         tonalElevation = 0.dp,
@@ -829,7 +913,7 @@ private fun SurahRow(
             Box(
                 modifier = Modifier
                     .size(34.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(CircleShape)
                     .background(if (isCurrent) colors.accent.copy(alpha = 0.14f) else colors.bg),
                 contentAlignment = Alignment.Center,
             ) {
@@ -846,7 +930,10 @@ private fun SurahRow(
             ) {
                 Text(
                     text = surah.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.W800,
+                        fontSize = 19.sp,
+                    ),
                     color = titleColor,
                 )
                 Text(
@@ -866,6 +953,7 @@ private fun SurahRow(
                         fontFamily = UthmaniHafsFamily,
                         textDirection = TextDirection.ContentOrRtl,
                         fontWeight = FontWeight.W400,
+                        fontSize = 20.sp,
                     ),
                     color = if (isCurrent) colors.accent else colors.text,
                 )
