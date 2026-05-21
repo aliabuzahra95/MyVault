@@ -184,6 +184,27 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun restoreBackedUpPreferences(backup: VaultBackupPreferences) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.Theme] = backup.theme
+            preferences[Keys.Workspace] = backup.workspace
+            preferences[Keys.AccentColor] = backup.accentColor
+            preferences[Keys.FontSize] = backup.fontSize
+            preferences[Keys.DashboardFontSize] = backup.dashboardFontSize
+            preferences[Keys.NoteFontSize] = backup.noteFontSize
+            preferences[Keys.NotePreview] = backup.notePreview
+            preferences[Keys.DefaultNoteView] = backup.defaultNoteView
+            preferences[Keys.AutoTagSuggestions] = backup.autoTagSuggestions
+            preferences[Keys.SecurityLockEnabled] = backup.securityLockEnabled
+            preferences[Keys.SecurityLockTimeoutMs] = backup.securityLockTimeoutMs
+            preferences[Keys.QuranLastReadSurah] = backup.quranLastReadSurah.coerceAtLeast(1)
+            preferences[Keys.QuranLastReadAyah] = backup.quranLastReadAyah.coerceAtLeast(1)
+            preferences[Keys.QuranArabicFontPercent] = backup.quranArabicFontPercent.coerceIn(70, 140)
+            preferences[Keys.QuranTajweedEnabled] = backup.quranTajweedEnabled
+            preferences[Keys.QuranBookmarkedVerses] = backup.quranBookmarkedVerses
+        }
+    }
+
     suspend fun setExpandedFolderIds(folderIds: Set<String>) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.ExpandedFolderIds] = folderIds
@@ -239,3 +260,22 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
 const val WORKSPACE_PERSONAL = "personal"
 const val WORKSPACE_ISLAMIC_CORPUS = "islamic_corpus"
+
+data class VaultBackupPreferences(
+    val theme: String,
+    val workspace: String,
+    val accentColor: String,
+    val fontSize: String,
+    val dashboardFontSize: String,
+    val noteFontSize: String,
+    val notePreview: String,
+    val defaultNoteView: String,
+    val autoTagSuggestions: Boolean,
+    val securityLockEnabled: Boolean,
+    val securityLockTimeoutMs: Long,
+    val quranLastReadSurah: Int,
+    val quranLastReadAyah: Int,
+    val quranArabicFontPercent: Int,
+    val quranTajweedEnabled: Boolean,
+    val quranBookmarkedVerses: Set<String>,
+)

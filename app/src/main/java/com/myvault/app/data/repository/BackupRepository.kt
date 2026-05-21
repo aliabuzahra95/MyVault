@@ -31,8 +31,12 @@ import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
+import com.myvault.app.data.preferences.VaultBackupPreferences
+import com.myvault.app.data.preferences.VaultPreferences
+import com.myvault.app.data.preferences.VaultUserPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -61,6 +65,7 @@ class BackupRepository @Inject constructor(
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
     private val knowledgeTagDao: KnowledgeTagDao,
+    private val vaultPreferences: VaultPreferences,
 ) {
     suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "vault-manual-export-${System.currentTimeMillis()}.vaultbackup")
@@ -156,9 +161,11 @@ class BackupRepository @Inject constructor(
                     else -> false
                 }
         }
+        val preferences = vaultPreferences.userPreferences.first()
 
         ZipOutputStream(output.buffered()).use { zip ->
             zip.writeJson("manifest.json", manifestJson())
+            zip.writeJson("settings.json", preferences.toBackupJson())
             zip.writeJson("folders.json", folders.toJsonArray { it.toJson() })
             zip.writeJson("notes.json", notes.toJsonArray { it.toJson() })
             zip.writeJson("blocks.json", blocks.toJsonArray { it.toJson() })
@@ -223,6 +230,7 @@ class BackupRepository @Inject constructor(
         val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
         val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json")
         val knowledgeTagLinks = entries.optionalJsonArray("knowledge_tag_links.json")
+        entries["settings.json"]?.let { validateBackupSettings(JSONObject(it)) }
         entries.requireJsonArray("folders.json")
         entries.requireJsonArray("tags.json")
         entries.requireJsonArray("note_tags.json")
@@ -478,6 +486,7 @@ class BackupRepository @Inject constructor(
                             else -> false
                         }
                 }
+            val backedUpPreferences = entries["settings.json"]?.let { JSONObject(it).toBackupPreferences() }
 
             createEmergencyBackupBeforeRestore()
 
@@ -521,6 +530,7 @@ class BackupRepository @Inject constructor(
                 if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
                 if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
             }
+            backedUpPreferences?.let { vaultPreferences.restoreBackedUpPreferences(it) }
 
             return BackupResult(
                 folderCount = folders.size,
@@ -586,6 +596,15 @@ private fun validateManifest(manifestText: String?) {
     }
 }
 
+private fun validateBackupSettings(settings: JSONObject) {
+    check(settings.optInt("schemaVersion", 1) == 1) { "Backup contains unsupported settings data." }
+    settings.optString("theme").takeIf { it.isNotBlank() } ?: error("Backup settings are missing theme.")
+    settings.optString("workspace").takeIf { it.isNotBlank() } ?: error("Backup settings are missing workspace.")
+    check(settings.optInt("quranLastReadSurah", 1) >= 1) { "Backup contains invalid Qur'an Surah position." }
+    check(settings.optInt("quranLastReadAyah", 1) >= 1) { "Backup contains invalid Qur'an ayah position." }
+    check(settings.optInt("quranArabicFontPercent", 100) in 70..140) { "Backup contains invalid Qur'an font size." }
+}
+
 private fun validateAttachmentEntryName(attachmentId: String) {
     if (attachmentId.isBlank() || attachmentId.contains("/") || attachmentId.contains("..")) {
         error("Backup contains an invalid attachment file")
@@ -644,6 +663,46 @@ private fun manifestJson(): JSONObject =
         .put("format", "myvault-backup")
         .put("version", 1)
         .put("createdAt", System.currentTimeMillis())
+
+private fun VaultUserPreferences.toBackupJson(): JSONObject =
+    JSONObject()
+        .put("schemaVersion", 1)
+        .put("theme", theme.storedValue)
+        .put("workspace", workspace)
+        .put("accentColor", accentColor)
+        .put("fontSize", fontSize)
+        .put("dashboardFontSize", dashboardFontSize)
+        .put("noteFontSize", noteFontSize)
+        .put("notePreview", notePreview)
+        .put("defaultNoteView", defaultNoteView)
+        .put("autoTagSuggestions", autoTagSuggestions)
+        .put("securityLockEnabled", securityLockEnabled)
+        .put("securityLockTimeoutMs", securityLockTimeoutMs)
+        .put("quranLastReadSurah", quranLastReadSurah)
+        .put("quranLastReadAyah", quranLastReadAyah)
+        .put("quranArabicFontPercent", quranArabicFontPercent)
+        .put("quranTajweedEnabled", quranTajweedEnabled)
+        .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
+
+private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
+    VaultBackupPreferences(
+        theme = optString("theme").ifBlank { "auto" },
+        workspace = optString("workspace").ifBlank { "islamic_corpus" },
+        accentColor = optString("accentColor").ifBlank { "#5B8DEF" },
+        fontSize = optString("fontSize").ifBlank { "medium" },
+        dashboardFontSize = optString("dashboardFontSize").ifBlank { optString("fontSize").ifBlank { "medium" } },
+        noteFontSize = optString("noteFontSize").ifBlank { optString("fontSize").ifBlank { "medium" } },
+        notePreview = optString("notePreview").ifBlank { "off" },
+        defaultNoteView = optString("defaultNoteView").ifBlank { "reading" },
+        autoTagSuggestions = optBoolean("autoTagSuggestions", true),
+        securityLockEnabled = optBoolean("securityLockEnabled", false),
+        securityLockTimeoutMs = optLong("securityLockTimeoutMs", 30_000L).coerceAtLeast(0L),
+        quranLastReadSurah = optInt("quranLastReadSurah", 1).coerceAtLeast(1),
+        quranLastReadAyah = optInt("quranLastReadAyah", 1).coerceAtLeast(1),
+        quranArabicFontPercent = optInt("quranArabicFontPercent", 100).coerceIn(70, 140),
+        quranTajweedEnabled = optBoolean("quranTajweedEnabled", false),
+        quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
+    )
 
 private fun ZipOutputStream.writeJson(name: String, json: Any) {
     putNextEntry(ZipEntry(name))
@@ -950,6 +1009,15 @@ private fun <T> List<T>.toJsonArray(transform: (T) -> JSONObject): JSONArray =
 
 private fun <T> JSONArray.mapJson(transform: (JSONObject) -> T): List<T> =
     List(length()) { index -> transform(getJSONObject(index)) }
+
+private fun JSONArray?.toStringSet(): Set<String> {
+    val array = this ?: return emptySet()
+    return buildSet {
+        for (index in 0 until array.length()) {
+            array.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+        }
+    }
+}
 
 private fun JSONObject.optNullableString(name: String): String? =
     if (isNull(name)) null else optString(name)
