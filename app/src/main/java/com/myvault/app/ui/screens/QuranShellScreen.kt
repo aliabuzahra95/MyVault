@@ -44,11 +44,14 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -164,6 +167,7 @@ fun QuranShellScreen(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun QuranReaderSurface(
     uiState: QuranReaderUiState,
     onOpenSelector: () -> Unit,
@@ -177,6 +181,7 @@ private fun QuranReaderSurface(
     val hasBismillahHeader = uiState.selectedSurah.num != 1 && uiState.selectedSurah.num != 9
     var lastScrolledSurah by rememberSaveable { mutableIntStateOf(-1) }
     var readerOptionsOpen by rememberSaveable { mutableStateOf(false) }
+    val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(uiState.selectedSurah.num, uiState.ayahs.size, uiState.loading) {
         if (!uiState.loading && uiState.ayahs.isNotEmpty() && lastScrolledSurah != uiState.selectedSurah.num) {
@@ -243,12 +248,8 @@ private fun QuranReaderSurface(
                 }
 
                 item("reader_options") {
-                    QuranReaderOptionsPanel(
-                        expanded = readerOptionsOpen,
-                        fontPercent = uiState.arabicFontPercent,
-                        onToggleExpanded = { readerOptionsOpen = !readerOptionsOpen },
-                        onIncreaseFontScale = onIncreaseFontScale,
-                        onDecreaseFontScale = onDecreaseFontScale,
+                    QuranReaderOptionsTrigger(
+                        onOpen = { readerOptionsOpen = true },
                     )
                 }
 
@@ -268,6 +269,33 @@ private fun QuranReaderSurface(
                             .navigationBarsPadding(),
                     )
                 }
+            }
+        }
+
+        if (readerOptionsOpen) {
+            ModalBottomSheet(
+                onDismissRequest = { readerOptionsOpen = false },
+                sheetState = readerOptionsSheetState,
+                containerColor = colors.elevated,
+                contentColor = colors.text,
+                scrimColor = colors.scrim,
+                tonalElevation = 0.dp,
+                dragHandle = {
+                    Surface(
+                        modifier = Modifier
+                            .padding(top = 10.dp, bottom = 6.dp)
+                            .size(width = 36.dp, height = 4.dp),
+                        color = colors.borderStrong,
+                        shape = RoundedCornerShape(999.dp),
+                    ) {}
+                },
+            ) {
+                QuranReaderOptionsSheet(
+                    fontPercent = uiState.arabicFontPercent,
+                    onIncreaseFontScale = onIncreaseFontScale,
+                    onDecreaseFontScale = onDecreaseFontScale,
+                    onDismiss = { readerOptionsOpen = false },
+                )
             }
         }
     }
@@ -405,106 +433,125 @@ private fun BismillahHeader(
 }
 
 @Composable
-private fun QuranReaderOptionsPanel(
-    expanded: Boolean,
+private fun QuranReaderOptionsTrigger(
+    onOpen: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 15.dp)
+            .padding(bottom = 6.dp),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        ReaderTopIconButton(onClick = onOpen) {
+            Icon(
+                imageVector = Icons.Rounded.Tune,
+                contentDescription = "Reader display options",
+                tint = colors.textSecondary,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun QuranReaderOptionsSheet(
     fontPercent: Int,
-    onToggleExpanded: () -> Unit,
     onIncreaseFontScale: () -> Unit,
     onDecreaseFontScale: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 15.dp)
-            .padding(bottom = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 18.dp)
+            .padding(bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+        Text(
+            text = "Qur'an display",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+            color = colors.text,
+        )
+        Text(
+            text = "Adjust how the reader feels while keeping the page calm.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+        )
+        Surface(
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.border),
+            shape = RoundedCornerShape(18.dp),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
         ) {
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(colors.surface.copy(alpha = 0.8f))
-                    .border(1.dp, colors.border.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onToggleExpanded,
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Tune,
-                    contentDescription = "Reader display options",
-                    tint = colors.textSecondary,
-                    modifier = Modifier.size(15.dp),
-                )
-                Text(
-                    text = "Display",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                    color = colors.textSecondary,
-                )
-            }
-        }
-
-        AnimatedVisibility(visible = expanded) {
-            Column(
-                modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(colors.surface.copy(alpha = 0.9f))
-                    .border(1.dp, colors.border.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    text = "QUR'AN DISPLAY",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.W800,
-                        letterSpacing = 1.sp,
-                    ),
-                    color = colors.textMuted,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         text = "Arabic size",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W700),
                         color = colors.text,
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ReaderTopIconButton(onClick = onDecreaseFontScale) {
-                            Text(
-                                text = "−",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
-                                color = colors.textSecondary,
-                            )
-                        }
+                    Text(
+                        text = "${fontPercent.coerceIn(80, 170)}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ReaderTopIconButton(onClick = onDecreaseFontScale) {
                         Text(
-                            text = "${fontPercent.coerceIn(80, 170)}%",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                            text = "−",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
                             color = colors.textSecondary,
                         )
-                        ReaderTopIconButton(onClick = onIncreaseFontScale) {
-                            Text(
-                                text = "+",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
-                                color = colors.textSecondary,
-                            )
-                        }
+                    }
+                    ReaderTopIconButton(onClick = onIncreaseFontScale) {
+                        Text(
+                            text = "+",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
+                            color = colors.textSecondary,
+                        )
                     }
                 }
+            }
+        }
+        Text(
+            text = "Translation, tajweed, tafsir, and spacing options can live here next without crowding the reader.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
+        Surface(
+            onClick = onDismiss,
+            color = colors.accentSoft,
+            contentColor = colors.accent,
+            border = BorderStroke(1.dp, colors.accentBorder),
+            shape = RoundedCornerShape(14.dp),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Done",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+                )
             }
         }
     }

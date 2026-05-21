@@ -804,16 +804,16 @@ private fun FloatingBottomNav(
     val colors = VaultThemeTokens.colors
     Surface(
         modifier = modifier
-            .widthIn(min = 218.dp, max = 236.dp),
+            .widthIn(min = 236.dp, max = 258.dp),
         color = colors.elevated.copy(alpha = 0.96f),
         contentColor = colors.textSecondary,
         shape = VaultShapes.pill,
         tonalElevation = 0.dp,
-        shadowElevation = 7.dp,
+        shadowElevation = 8.dp,
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 3.dp, vertical = 3.dp),
+                .padding(horizontal = 5.dp, vertical = 5.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -859,20 +859,20 @@ private fun FloatingBottomNavItem(
         Column(
             modifier = Modifier
                 .scale(scale)
-                .padding(horizontal = 6.dp, vertical = 3.dp),
+                .padding(horizontal = 8.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                  modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(16.dp),
                 tint = contentColor,
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 9.sp,
+                    fontSize = 10.sp,
                     fontWeight = if (selected) FontWeight.W800 else FontWeight.W600,
                 ),
                 color = contentColor,

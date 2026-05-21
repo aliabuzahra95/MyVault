@@ -1,5 +1,7 @@
 package com.myvault.app.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,9 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.BorderStroke
 import com.myvault.app.ui.theme.VaultSpacing
@@ -107,6 +112,14 @@ fun VaultWorkspaceSwitcher(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .shadow(10.dp, VaultShapes.lg, clip = false)
+                .background(colors.elevated)
+                .border(BorderStroke(1.dp, colors.borderStrong), VaultShapes.lg),
+            shape = VaultShapes.lg,
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
             properties = PopupProperties(focusable = true),
         ) {
             options.forEach { option ->
@@ -120,6 +133,9 @@ fun VaultWorkspaceSwitcher(
                             color = if (option == selectedLabel) colors.accent else colors.text,
                         )
                     },
+                    colors = MenuDefaults.itemColors(
+                        textColor = if (option == selectedLabel) colors.accent else colors.text,
+                    ),
                     onClick = {
                         expanded = false
                         onSelected(option)
