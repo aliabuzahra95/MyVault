@@ -22,6 +22,7 @@ data class QuranReaderUiState(
     val ayahs: List<QuranAyah> = emptyList(),
     val restoredAyah: Int = 1,
     val arabicFontPercent: Int = 100,
+    val tajweedEnabled: Boolean = false,
     val loading: Boolean = true,
 )
 

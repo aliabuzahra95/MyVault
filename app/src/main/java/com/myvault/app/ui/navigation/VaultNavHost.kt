@@ -239,6 +239,7 @@ fun VaultNavHost(
                         onSelectSurah = quranViewModel::selectSurah,
                         onIncreaseFontScale = quranViewModel::increaseArabicFont,
                         onDecreaseFontScale = quranViewModel::decreaseArabicFont,
+                        onSetTajweedEnabled = quranViewModel::setTajweedEnabled,
                         onLastReadAyahChanged = quranViewModel::updateLastReadPosition,
                     )
                 },

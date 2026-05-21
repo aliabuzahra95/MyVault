@@ -34,6 +34,7 @@ class QuranReaderViewModel @Inject constructor(
                 surahNumber = preferences.quranLastReadSurah,
                 restoredAyah = preferences.quranLastReadAyah,
                 fontPercent = preferences.quranArabicFontPercent,
+                tajweedEnabled = preferences.quranTajweedEnabled,
             )
         }
     }
@@ -48,6 +49,7 @@ class QuranReaderViewModel @Inject constructor(
             surahNumber = surahNumber,
             restoredAyah = restoredAyah,
             fontPercent = _uiState.value.arabicFontPercent,
+            tajweedEnabled = _uiState.value.tajweedEnabled,
         )
     }
 
@@ -71,6 +73,14 @@ class QuranReaderViewModel @Inject constructor(
         setArabicFontPercent(_uiState.value.arabicFontPercent - 8)
     }
 
+    fun setTajweedEnabled(enabled: Boolean) {
+        if (_uiState.value.tajweedEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(tajweedEnabled = enabled)
+        viewModelScope.launch {
+            vaultPreferences.setQuranTajweedEnabled(enabled)
+        }
+    }
+
     private fun setArabicFontPercent(percent: Int) {
         val clamped = percent.coerceIn(70, 140)
         if (_uiState.value.arabicFontPercent == clamped) return
@@ -84,6 +94,7 @@ class QuranReaderViewModel @Inject constructor(
         surahNumber: Int,
         restoredAyah: Int,
         fontPercent: Int,
+        tajweedEnabled: Boolean,
     ) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -92,6 +103,7 @@ class QuranReaderViewModel @Inject constructor(
                 selectedSurah = surah,
                 restoredAyah = restoredAyah.coerceIn(1, surah.ayat),
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
+                tajweedEnabled = tajweedEnabled,
                 loading = true,
             )
             val ayahs = quranTextRepository.getSurahAyahs(surah.num)
@@ -100,9 +112,9 @@ class QuranReaderViewModel @Inject constructor(
                 ayahs = ayahs,
                 restoredAyah = restoredAyah.coerceIn(1, ayahs.lastOrNull()?.ayahNumber ?: surah.ayat),
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
+                tajweedEnabled = tajweedEnabled,
                 loading = false,
             )
         }
     }
 }
-
