@@ -268,6 +268,12 @@ fun VaultNavHost(
                         onChooseOtherReciter = quranViewModel::chooseOtherReciterForCurrentAudio,
                         onRefreshAudioDownloads = quranViewModel::refreshAudioDownloadStates,
                         onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
+                        onStartMemorizingAyah = quranViewModel::startMemorizingAyah,
+                        onToggleMemorizedAyah = quranViewModel::toggleMemorizedAyah,
+                        onToggleWeakMemorization = quranViewModel::toggleWeakMemorization,
+                        onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
+                        onSetMemorizationRepeatMode = quranViewModel::setMemorizationRepeatMode,
+                        onStopMemorizationRepeat = quranViewModel::stopMemorizationRepeat,
                     )
                 },
                 memoriseContent = {

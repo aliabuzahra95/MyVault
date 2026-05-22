@@ -16,6 +16,9 @@ import com.myvault.app.data.quran.audio.PlaybackMode
 import com.myvault.app.data.quran.audio.QuranAudioPlayer
 import com.myvault.app.data.quran.audio.QuranAudioRepository
 import com.myvault.app.data.quran.audio.SurahDownloadState
+import com.myvault.app.data.quran.memorization.MemorizationConcealAmount
+import com.myvault.app.data.quran.memorization.MemorizationRecord
+import com.myvault.app.data.quran.memorization.MemorizationRepeatMode
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.quran.tafsirCacheKey
@@ -88,6 +91,13 @@ class QuranReaderViewModel @Inject constructor(
         viewModelScope.launch {
             quranAudioRepository.surahDownloadStates.collect { states ->
                 _uiState.value = _uiState.value.copy(audioDownloadStates = states)
+            }
+        }
+        viewModelScope.launch {
+            vaultPreferences.userPreferences.collect { preferences ->
+                _uiState.value = _uiState.value.copy(
+                    memorizationRecords = preferences.quranMemorizationRecords,
+                )
             }
         }
     }
@@ -434,6 +444,60 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    fun startMemorizingAyah(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            (existing ?: ayah.toMemorizationRecord(now)).copy(
+                lastReviewedAt = now,
+                reviewCount = (existing?.reviewCount ?: 0).coerceAtLeast(0),
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun toggleMemorizedAyah(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            val current = existing ?: ayah.toMemorizationRecord(now)
+            current.copy(
+                memorizedAt = if (current.isMemorized) null else now,
+                lastReviewedAt = now,
+                reviewCount = current.reviewCount + 1,
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun toggleWeakMemorization(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            val current = existing ?: ayah.toMemorizationRecord(now)
+            current.copy(
+                isWeak = !current.isWeak,
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun setMemorizationConcealAmount(verseKey: String, amount: MemorizationConcealAmount?) {
+        _uiState.value = _uiState.value.copy(
+            memorizationConcealedVerseKey = if (amount == null) null else verseKey,
+            memorizationConcealAmount = amount,
+        )
+    }
+
+    fun setMemorizationRepeatMode(ayah: QuranAyah, mode: MemorizationRepeatMode) {
+        _uiState.value = _uiState.value.copy(
+            memorizationRepeatVerseKey = ayah.verseKey,
+            memorizationRepeatMode = mode,
+        )
+        playAudioForAyah(ayah)
+    }
+
+    fun stopMemorizationRepeat() {
+        _uiState.value = _uiState.value.copy(
+            memorizationRepeatVerseKey = null,
+            memorizationRepeatMode = null,
+        )
+    }
+
     fun setArabicFontPercentFromSlider(percent: Int) {
         setArabicFontPercent(percent)
     }
@@ -489,6 +553,22 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    private fun updateMemorizationRecord(
+        ayah: QuranAyah,
+        build: (MemorizationRecord?, Long) -> MemorizationRecord,
+    ) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val currentRecords = vaultPreferences.userPreferences.first().quranMemorizationRecords
+            val existing = currentRecords.firstOrNull { it.verseKey == ayah.verseKey }
+            val updatedRecord = build(existing, now)
+            val updated = (currentRecords.filterNot { it.verseKey == ayah.verseKey } + updatedRecord)
+                .sortedWith(compareBy<MemorizationRecord> { it.surahNumber }.thenBy { it.ayahNumber })
+            _uiState.value = _uiState.value.copy(memorizationRecords = updated)
+            vaultPreferences.setQuranMemorizationRecords(updated)
+        }
+    }
+
     override fun onCleared() {
         quranAudioPlayer.release()
         super.onCleared()
@@ -525,3 +605,17 @@ private fun List<com.myvault.app.data.quran.QuranRecentLocation>.updatedWith(
             ),
         ) + filterNot { it.surahNumber == surahNumber }
     ).sortedByDescending { it.lastReadAt }.take(5)
+
+private fun QuranAyah.toMemorizationRecord(now: Long): MemorizationRecord =
+    MemorizationRecord(
+        verseKey = verseKey,
+        surahNumber = surahNumber,
+        ayahNumber = ayahNumber,
+        startedAt = now,
+        lastReviewedAt = now,
+        reviewCount = 0,
+        memorizedAt = null,
+        isRevision = false,
+        isWeak = false,
+        updatedAt = now,
+    )

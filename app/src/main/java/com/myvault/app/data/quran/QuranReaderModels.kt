@@ -6,6 +6,9 @@ import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
 import com.myvault.app.data.quran.audio.AudioPickerAyah
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
 import com.myvault.app.data.quran.audio.SurahDownloadState
+import com.myvault.app.data.quran.memorization.MemorizationConcealAmount
+import com.myvault.app.data.quran.memorization.MemorizationRecord
+import com.myvault.app.data.quran.memorization.MemorizationRepeatMode
 
 data class QuranAyah(
     val verseKey: String,
@@ -52,6 +55,11 @@ data class QuranReaderUiState(
     val audioPlaybackSpeed: Float = 1f,
     val miniPlayer: AudioMiniPlayerUiState? = null,
     val audioDownloadStates: Map<String, SurahDownloadState> = emptyMap(),
+    val memorizationRecords: List<MemorizationRecord> = emptyList(),
+    val memorizationConcealedVerseKey: String? = null,
+    val memorizationConcealAmount: MemorizationConcealAmount? = null,
+    val memorizationRepeatVerseKey: String? = null,
+    val memorizationRepeatMode: MemorizationRepeatMode? = null,
     val loading: Boolean = true,
 )
 

@@ -212,12 +212,12 @@ private fun MemoriseMetrics(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             MemoriseMetricCard("Started", overview.startedCount.toString(), selectedGroup == MemorizationDashboardGroup.Started, { onSelectGroup(MemorizationDashboardGroup.Started) }, Modifier.weight(1f))
-            MemoriseMetricCard("Ayahs", overview.memorizedCount.toString(), selectedGroup == MemorizationDashboardGroup.Memorised, { onSelectGroup(MemorizationDashboardGroup.Memorised) }, Modifier.weight(1f))
+            MemoriseMetricCard("Memorised ayahs", overview.memorizedCount.toString(), selectedGroup == MemorizationDashboardGroup.Memorised, { onSelectGroup(MemorizationDashboardGroup.Memorised) }, Modifier.weight(1f))
             MemoriseMetricCard("Revision", overview.revisionCount.toString(), selectedGroup == MemorizationDashboardGroup.Revision, { onSelectGroup(MemorizationDashboardGroup.Revision) }, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             MemoriseMetricCard("Difficult", overview.difficultCount.toString(), selectedGroup == MemorizationDashboardGroup.Difficult, { onSelectGroup(MemorizationDashboardGroup.Difficult) }, Modifier.weight(1f))
-            MemoriseMetricCard("Surahs", overview.memorizedSurahCount.toString(), false, {}, Modifier.weight(1f))
+            MemoriseMetricCard("Surahs memorised", overview.memorizedSurahCount.toString(), selectedGroup == MemorizationDashboardGroup.Surahs, { onSelectGroup(MemorizationDashboardGroup.Surahs) }, Modifier.weight(1f))
         }
     }
 }

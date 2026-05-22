@@ -49,8 +49,30 @@ enum class MemorizationDashboardGroup(val label: String) {
     All("All"),
     Started("Started"),
     Memorised("Ayahs"),
+    Surahs("Surahs"),
     Revision("Revision"),
     Difficult("Difficult"),
+}
+
+enum class MemorizationConcealAmount(
+    val label: String,
+    val badgeLabel: String,
+    val concealedFraction: Float,
+) {
+    Quarter(label = "Hide quarter", badgeLabel = "1/4 hidden", concealedFraction = 0.25f),
+    Half(label = "Hide half", badgeLabel = "1/2 hidden", concealedFraction = 0.5f),
+    ThreeQuarters(label = "Hide 3/4", badgeLabel = "3/4 hidden", concealedFraction = 0.75f),
+    Full(label = "Hide all", badgeLabel = "Hidden", concealedFraction = 1f),
+}
+
+enum class MemorizationRepeatMode(
+    val label: String,
+    val repeatCount: Int?,
+) {
+    Three(label = "3x", repeatCount = 3),
+    Five(label = "5x", repeatCount = 5),
+    Ten(label = "10x", repeatCount = 10),
+    UntilStopped(label = "Until stopped", repeatCount = null),
 }
 
 data class MemorizationUiState(
@@ -78,12 +100,22 @@ data class MemorizationUiState(
         }
 
     val dashboardItems: List<MemorizationDashboardItem>
-        get() = records
+        get() {
+            val fullyMemorizedSurahs = records
+                .filter { it.isMemorized }
+                .groupBy { it.surahNumber }
+                .filter { (surahNumber, surahRecords) ->
+                    val surah = quranCatalog.firstOrNull { it.num == surahNumber }
+                    surah != null && surahRecords.map { it.ayahNumber }.toSet().size >= surah.ayat
+                }
+                .keys
+            return records
             .filter { record ->
                 when (selectedGroup) {
                     MemorizationDashboardGroup.All -> true
                     MemorizationDashboardGroup.Started -> !record.isMemorized
                     MemorizationDashboardGroup.Memorised -> record.isMemorized
+                    MemorizationDashboardGroup.Surahs -> record.surahNumber in fullyMemorizedSurahs
                     MemorizationDashboardGroup.Revision -> record.isRevision
                     MemorizationDashboardGroup.Difficult -> record.isWeak
                 }
@@ -94,6 +126,7 @@ data class MemorizationUiState(
                     MemorizationDashboardItem(record, surah)
                 }
             }
+        }
 
     val continueItem: MemorizationDashboardItem?
         get() = records

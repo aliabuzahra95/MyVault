@@ -12,12 +12,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -51,6 +54,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Forward10
@@ -114,6 +118,8 @@ import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
 import com.myvault.app.data.quran.audio.QuranAudioDownloadService
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
 import com.myvault.app.data.quran.audio.SurahDownloadState
+import com.myvault.app.data.quran.memorization.MemorizationConcealAmount
+import com.myvault.app.data.quran.memorization.MemorizationRepeatMode
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.data.quran.tafsirCacheKey
 import com.myvault.app.data.quran.translationTextSize
@@ -125,6 +131,7 @@ import com.myvault.app.ui.theme.DarkVaultColors
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
 import kotlin.math.roundToLong
 
 private val UthmaniHafsFamily = FontFamily(
@@ -165,6 +172,12 @@ fun QuranShellScreen(
     onChooseOtherReciter: () -> Unit,
     onRefreshAudioDownloads: (AudioReciterUiModel) -> Unit,
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
+    onStartMemorizingAyah: (QuranAyah) -> Unit,
+    onToggleMemorizedAyah: (QuranAyah) -> Unit,
+    onToggleWeakMemorization: (QuranAyah) -> Unit,
+    onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
+    onSetMemorizationRepeatMode: (QuranAyah, MemorizationRepeatMode) -> Unit,
+    onStopMemorizationRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -227,6 +240,12 @@ fun QuranShellScreen(
                 onChooseOtherReciter = onChooseOtherReciter,
                 onRefreshAudioDownloads = onRefreshAudioDownloads,
                 onDownloadSurahAudio = onDownloadSurahAudio,
+                onStartMemorizingAyah = onStartMemorizingAyah,
+                onToggleMemorizedAyah = onToggleMemorizedAyah,
+                onToggleWeakMemorization = onToggleWeakMemorization,
+                onSetMemorizationConcealAmount = onSetMemorizationConcealAmount,
+                onSetMemorizationRepeatMode = onSetMemorizationRepeatMode,
+                onStopMemorizationRepeat = onStopMemorizationRepeat,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -275,6 +294,12 @@ private fun QuranReaderSurface(
     onChooseOtherReciter: () -> Unit,
     onRefreshAudioDownloads: (AudioReciterUiModel) -> Unit,
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
+    onStartMemorizingAyah: (QuranAyah) -> Unit,
+    onToggleMemorizedAyah: (QuranAyah) -> Unit,
+    onToggleWeakMemorization: (QuranAyah) -> Unit,
+    onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
+    onSetMemorizationRepeatMode: (QuranAyah, MemorizationRepeatMode) -> Unit,
+    onStopMemorizationRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -290,11 +315,16 @@ private fun QuranReaderSurface(
     var reflectionTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
     var audioDownloadsOpen by rememberSaveable { mutableStateOf(false) }
+    var memorizationPanelVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var readingPositionSavedMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val memorizationRecordsByVerse = remember(uiState.memorizationRecords) {
+        uiState.memorizationRecords.associateBy { it.verseKey }
+    }
 
-    BackHandler(enabled = readerOptionsOpen || ayahActionsTarget != null || reflectionTarget != null || bookmarksOpen || audioDownloadsOpen) {
+    BackHandler(enabled = readerOptionsOpen || ayahActionsTarget != null || reflectionTarget != null || bookmarksOpen || audioDownloadsOpen || memorizationPanelVerseKey != null) {
         when {
+            memorizationPanelVerseKey != null -> memorizationPanelVerseKey = null
             reflectionTarget != null -> reflectionTarget = null
             ayahActionsTarget != null -> ayahActionsTarget = null
             audioDownloadsOpen -> audioDownloadsOpen = false
@@ -392,6 +422,7 @@ private fun QuranReaderSurface(
                     items = uiState.ayahs,
                     key = { it.verseKey },
                 ) { ayah ->
+                    val memorizationRecord = memorizationRecordsByVerse[ayah.verseKey]
                     AyahRow(
                         ayah = ayah,
                         arabicTextSize = uiState.arabicTextSize,
@@ -416,6 +447,29 @@ private fun QuranReaderSurface(
                         isAudioPlaying = uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer?.isPlaying == true,
                         isAudioLoading = uiState.audioLoadingVerseKey == ayah.verseKey,
                         onPlayAudio = { onPlayAudioForAyah(ayah) },
+                        isMemorizationActive = memorizationRecord != null,
+                        isMemorized = memorizationRecord?.isMemorized == true,
+                        isMemorizationWeak = memorizationRecord?.isWeak == true,
+                        memorizationConcealAmount = if (uiState.memorizationConcealedVerseKey == ayah.verseKey) {
+                            uiState.memorizationConcealAmount
+                        } else {
+                            null
+                        },
+                        memorizationRepeatMode = if (uiState.memorizationRepeatVerseKey == ayah.verseKey) {
+                            uiState.memorizationRepeatMode
+                        } else {
+                            null
+                        },
+                        isMemorizationPanelExpanded = memorizationPanelVerseKey == ayah.verseKey,
+                        onOpenMemorization = {
+                            memorizationPanelVerseKey = if (memorizationPanelVerseKey == ayah.verseKey) null else ayah.verseKey
+                        },
+                        onStartMemorizing = { onStartMemorizingAyah(ayah) },
+                        onToggleMemorized = { onToggleMemorizedAyah(ayah) },
+                        onToggleWeakMemorization = { onToggleWeakMemorization(ayah) },
+                        onSetMemorizationConcealAmount = { amount -> onSetMemorizationConcealAmount(ayah.verseKey, amount) },
+                        onSetMemorizationRepeatMode = { mode -> onSetMemorizationRepeatMode(ayah, mode) },
+                        onStopMemorizationRepeat = onStopMemorizationRepeat,
                     )
                 }
                     if (uiState.audioStatusMessage != null) {
@@ -1193,6 +1247,19 @@ private fun AyahRow(
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
     onPlayAudio: () -> Unit,
+    isMemorizationActive: Boolean,
+    isMemorized: Boolean,
+    isMemorizationWeak: Boolean,
+    memorizationConcealAmount: MemorizationConcealAmount?,
+    memorizationRepeatMode: MemorizationRepeatMode?,
+    isMemorizationPanelExpanded: Boolean,
+    onOpenMemorization: () -> Unit,
+    onStartMemorizing: () -> Unit,
+    onToggleMemorized: () -> Unit,
+    onToggleWeakMemorization: () -> Unit,
+    onSetMemorizationConcealAmount: (MemorizationConcealAmount?) -> Unit,
+    onSetMemorizationRepeatMode: (MemorizationRepeatMode) -> Unit,
+    onStopMemorizationRepeat: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val cardShape = RoundedCornerShape(14.dp)
@@ -1202,21 +1269,25 @@ private fun AyahRow(
         fontWeight = FontWeight.Medium,
         letterSpacing = 0.sp,
     )
-    val renderedArabic = remember(ayah.verseKey, ayah.arabicText, ayah.tajweedAnnotations, tajweedEnabled, colors) {
+    val renderedArabic = remember(ayah.verseKey, ayah.arabicText, ayah.tajweedAnnotations, tajweedEnabled, colors, memorizationConcealAmount) {
         runCatching {
-            buildQuranArabicText(
+            val base = buildQuranArabicText(
                 text = ayah.arabicText,
                 annotations = ayah.tajweedAnnotations,
                 tajweedEnabled = tajweedEnabled,
                 isDark = colors == DarkVaultColors,
             )
+            buildMemorizationDisplayText(base, memorizationConcealAmount)
         }.getOrElse {
             Log.w("QuranShellScreen", "Falling back to plain Arabic rendering for ${ayah.verseKey}", it)
-            buildQuranArabicText(
+            buildMemorizationDisplayText(
+                buildQuranArabicText(
                 text = ayah.arabicText,
                 annotations = emptyList(),
                 tajweedEnabled = false,
                 isDark = colors == DarkVaultColors,
+                ),
+                memorizationConcealAmount,
             )
         }
     }
@@ -1285,6 +1356,76 @@ private fun AyahRow(
                     }
                 }
                 Spacer(Modifier.weight(1f))
+                if (isMemorizationActive) {
+                    Text(
+                        text = memorizationConcealAmount?.badgeLabel ?: "Memorising",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W700),
+                        color = colors.accent,
+                        modifier = Modifier
+                            .clip(pillShape)
+                            .background(colors.accentSoft)
+                            .border(1.dp, colors.accentBorder, pillShape)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                if (isMemorizationWeak) {
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(colors.elevated)
+                            .border(1.dp, colors.borderStrong, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Flag,
+                            contentDescription = "Difficult",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(11.dp),
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(pillShape)
+                        .background(if (isMemorizationActive) colors.accentSoft else Color.Transparent)
+                        .border(1.dp, if (isMemorizationActive) colors.accentBorder else colors.border.copy(alpha = 0.7f), pillShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onOpenMemorization,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.MenuBook,
+                        contentDescription = "Open memorisation",
+                        tint = if (isMemorizationActive) colors.accent else colors.textSecondary,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+                if (isMemorized) {
+                    Spacer(Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(colors.accentSoft)
+                            .border(1.dp, colors.accentBorder, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = "Memorised",
+                            tint = colors.accent,
+                            modifier = Modifier.size(11.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
                     contentDescription = "More",
@@ -1313,6 +1454,28 @@ private fun AyahRow(
                 color = colors.text,
                 textAlign = TextAlign.Right,
             )
+
+            if (memorizationConcealAmount != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .clip(pillShape)
+                        .background(colors.accentSoft)
+                        .border(1.dp, colors.accentBorder, pillShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onSetMemorizationConcealAmount(null) },
+                        )
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        text = "Reveal ayah",
+                        style = actionPillTextStyle,
+                        color = colors.accent,
+                    )
+                }
+            }
 
             AnimatedVisibility(
                 visible = translationEnabled && translation.isNotBlank(),
@@ -1393,6 +1556,109 @@ private fun AyahRow(
                             tint = if (isAudioPlaying) colors.text else colors.textSecondary,
                             modifier = Modifier.size(20.dp),
                         )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = isMemorizationPanelExpanded,
+                enter = fadeIn(animationSpec = tween(durationMillis = 180)) + expandVertically(animationSpec = tween(durationMillis = 220)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 140)) + shrinkVertically(animationSpec = tween(durationMillis = 180)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .clip(cardShape)
+                        .background(colors.elevated)
+                        .border(1.dp, colors.border.copy(alpha = 0.78f), cardShape)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "MEMORISATION",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900, letterSpacing = 1.sp),
+                            color = colors.textMuted,
+                        )
+                        QuranMemorizationButton(
+                            label = if (isMemorizationActive) "Memorising now" else "Start memorising",
+                            selected = isMemorizationActive,
+                            onClick = onStartMemorizing,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    ) {
+                        QuranMemorizationButton(
+                            label = if (isMemorizationWeak) "Difficult" else "Mark difficult",
+                            selected = isMemorizationWeak,
+                            onClick = onToggleWeakMemorization,
+                        )
+                        QuranMemorizationButton(
+                            label = if (isMemorized) "Memorised" else "Mark memorised",
+                            selected = isMemorized,
+                            onClick = onToggleMemorized,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        QuranMemorizationButton(
+                            label = "Play ayah",
+                            selected = false,
+                            onClick = onPlayAudio,
+                        )
+                        if (memorizationRepeatMode != null) {
+                            QuranMemorizationButton(
+                                label = "Stop repeat",
+                                selected = true,
+                                onClick = onStopMemorizationRepeat,
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MemorizationRepeatMode.entries.forEach { mode ->
+                            QuranMemorizationButton(
+                                label = mode.label,
+                                selected = memorizationRepeatMode == mode,
+                                onClick = { onSetMemorizationRepeatMode(mode) },
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        QuranMemorizationButton(
+                            label = "Show all",
+                            selected = memorizationConcealAmount == null,
+                            onClick = { onSetMemorizationConcealAmount(null) },
+                        )
+                        MemorizationConcealAmount.entries.forEach { amount ->
+                            QuranMemorizationButton(
+                                label = amount.label,
+                                selected = memorizationConcealAmount == amount,
+                                onClick = { onSetMemorizationConcealAmount(amount) },
+                            )
+                        }
                     }
                 }
             }
@@ -1491,6 +1757,63 @@ private fun AyahRow(
             }
         }
     }
+}
+
+@Composable
+private fun QuranMemorizationButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val shape = RoundedCornerShape(9.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(if (selected) colors.accentSoft else Color.Transparent)
+            .border(1.dp, if (selected) colors.accentBorder else colors.border.copy(alpha = 0.78f), shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, fontWeight = FontWeight.W800),
+            color = if (selected) colors.accent else colors.textSecondary,
+        )
+    }
+}
+
+private fun buildMemorizationDisplayText(
+    source: AnnotatedString,
+    concealAmount: MemorizationConcealAmount?,
+): AnnotatedString {
+    if (concealAmount == null || source.text.isBlank()) return source
+    val nonSpaceIndexes = source.text.indices.filterNot { source.text[it].isWhitespace() }
+    if (nonSpaceIndexes.isEmpty()) return source
+    val concealedCount = ceil(nonSpaceIndexes.size * concealAmount.concealedFraction.toDouble())
+        .toInt()
+        .coerceIn(1, nonSpaceIndexes.size)
+    val concealedIndexes = nonSpaceIndexes.take(concealedCount).toSet()
+    val hiddenText = source.text.mapIndexed { index, char ->
+        when {
+            index !in concealedIndexes -> char
+            char.isWhitespace() -> char
+            else -> 'ـ'
+        }
+    }.joinToString(separator = "")
+
+    return AnnotatedString.Builder(hiddenText).apply {
+        source.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
+        source.paragraphStyles.forEach { addStyle(it.item, it.start, it.end) }
+        source.getStringAnnotations(start = 0, end = source.length).forEach { annotation ->
+            addStringAnnotation(annotation.tag, annotation.item, annotation.start, annotation.end)
+        }
+    }.toAnnotatedString()
 }
 
 @Composable
