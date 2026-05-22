@@ -30,7 +30,14 @@ data class QuranReaderUiState(
     val tafsirByVerse: Map<String, String> = emptyMap(),
     val loadingTafsirVerseKeys: Set<String> = emptySet(),
     val bookmarkedVerseKeys: Set<String> = emptySet(),
+    val recentLocations: List<QuranRecentLocation> = emptyList(),
     val loading: Boolean = true,
+)
+
+data class QuranRecentLocation(
+    val surahNumber: Int,
+    val ayahNumber: Int,
+    val lastReadAt: Long,
 )
 
 val QuranReaderUiState.arabicTextSize: TextUnit

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.myvault.app.ui.theme.VaultThemeMode
+import com.myvault.app.data.quran.QuranRecentLocation
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -41,6 +42,7 @@ data class VaultUserPreferences(
     val quranTranslationEnabled: Boolean = true,
     val quranTajweedEnabled: Boolean = false,
     val quranBookmarkedVerses: Set<String> = emptySet(),
+    val quranRecentLocations: List<QuranRecentLocation> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
@@ -73,6 +75,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranTranslationEnabled = preferences[Keys.QuranTranslationEnabled] ?: true,
                 quranTajweedEnabled = preferences[Keys.QuranTajweedEnabled] ?: false,
                 quranBookmarkedVerses = preferences[Keys.QuranBookmarkedVerses].orEmpty(),
+                quranRecentLocations = preferences[Keys.QuranRecentLocations].orEmpty().toQuranRecentLocations(),
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
                 libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
@@ -167,6 +170,10 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.QuranLastReadSurah] = surahNumber.coerceAtLeast(1)
             preferences[Keys.QuranLastReadAyah] = ayahNumber.coerceAtLeast(1)
+            val updated = preferences[Keys.QuranRecentLocations].orEmpty()
+                .toQuranRecentLocations()
+                .updatedWith(surahNumber = surahNumber, ayahNumber = ayahNumber)
+            preferences[Keys.QuranRecentLocations] = updated.toPreferenceSet()
         }
     }
 
@@ -220,6 +227,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
             preferences[Keys.QuranTranslationEnabled] = backup.quranTranslationEnabled
             preferences[Keys.QuranTajweedEnabled] = backup.quranTajweedEnabled
             preferences[Keys.QuranBookmarkedVerses] = backup.quranBookmarkedVerses
+            preferences[Keys.QuranRecentLocations] = backup.quranRecentLocations.toPreferenceSet()
         }
     }
 
@@ -272,6 +280,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranTranslationEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_translation_enabled")
         val QuranTajweedEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_tajweed_enabled")
         val QuranBookmarkedVerses: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_bookmarked_verses")
+        val QuranRecentLocations: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_recent_locations")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
@@ -300,4 +309,38 @@ data class VaultBackupPreferences(
     val quranTranslationEnabled: Boolean,
     val quranTajweedEnabled: Boolean,
     val quranBookmarkedVerses: Set<String>,
+    val quranRecentLocations: List<QuranRecentLocation>,
 )
+
+private fun Set<String>.toQuranRecentLocations(): List<QuranRecentLocation> =
+    mapNotNull { entry ->
+        val parts = entry.split(':')
+        if (parts.size != 3) return@mapNotNull null
+        QuranRecentLocation(
+            surahNumber = parts[0].toIntOrNull()?.coerceAtLeast(1) ?: return@mapNotNull null,
+            ayahNumber = parts[1].toIntOrNull()?.coerceAtLeast(1) ?: return@mapNotNull null,
+            lastReadAt = parts[2].toLongOrNull()?.coerceAtLeast(0L) ?: return@mapNotNull null,
+        )
+    }
+        .sortedByDescending { it.lastReadAt }
+        .take(QURAN_RECENT_LIMIT)
+
+private fun List<QuranRecentLocation>.updatedWith(surahNumber: Int, ayahNumber: Int): List<QuranRecentLocation> =
+    (
+        listOf(
+            QuranRecentLocation(
+                surahNumber = surahNumber.coerceAtLeast(1),
+                ayahNumber = ayahNumber.coerceAtLeast(1),
+                lastReadAt = System.currentTimeMillis(),
+            ),
+        ) + filterNot { it.surahNumber == surahNumber }
+    )
+        .sortedByDescending { it.lastReadAt }
+        .take(QURAN_RECENT_LIMIT)
+
+private fun List<QuranRecentLocation>.toPreferenceSet(): Set<String> =
+    take(QURAN_RECENT_LIMIT)
+        .map { "${it.surahNumber}:${it.ayahNumber}:${it.lastReadAt}" }
+        .toSet()
+
+private const val QURAN_RECENT_LIMIT = 5

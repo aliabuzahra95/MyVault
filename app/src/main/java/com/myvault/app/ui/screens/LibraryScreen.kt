@@ -456,6 +456,15 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
+                if (currentFolderId == null && uiState.recentFiles.isNotEmpty()) {
+                    item {
+                        RecentLibraryFilesRow(
+                            files = uiState.recentFiles,
+                            onAttachmentClick = onAttachmentClick,
+                        )
+                    }
+                }
+
                 if (uiState.pinnedFiles.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(5.dp))
@@ -1599,6 +1608,89 @@ private fun ContinueReadingCard(
                     text = listOf(pageLabel, percent).filter { it.isNotBlank() }.joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.textMuted,
+                )
+            }
+    }
+    }
+}
+
+@Composable
+private fun RecentLibraryFilesRow(
+    files: List<LibraryFileItem>,
+    onAttachmentClick: (String) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "Recent files",
+            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+            color = colors.textMuted,
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(files.take(8), key = { it.id }) { file ->
+                RecentLibraryFileCard(
+                    file = file,
+                    onClick = { onAttachmentClick(file.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentLibraryFileCard(
+    file: LibraryFileItem,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val progress = file.progressPercent?.let { "${(it.coerceIn(0f, 1f) * 100).toInt()}%" }.orEmpty()
+    Surface(
+        onClick = onClick,
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .width(188.dp)
+                .padding(horizontal = 11.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AttachmentThumbnail(
+                mimeType = file.mimeType,
+                localPath = file.localPath,
+                kind = file.kind,
+                size = 24.dp,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = file.name,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = listOf(file.kind, progress).filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

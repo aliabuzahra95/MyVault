@@ -44,6 +44,7 @@ class QuranReaderViewModel @Inject constructor(
                 translationEnabled = preferences.quranTranslationEnabled,
                 tajweedEnabled = preferences.quranTajweedEnabled,
                 bookmarkedVerseKeys = preferences.quranBookmarkedVerses,
+                recentLocations = preferences.quranRecentLocations,
             )
         }
     }
@@ -62,6 +63,7 @@ class QuranReaderViewModel @Inject constructor(
             translationEnabled = _uiState.value.translationEnabled,
             tajweedEnabled = _uiState.value.tajweedEnabled,
             bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
+            recentLocations = _uiState.value.recentLocations,
         )
     }
 
@@ -76,6 +78,7 @@ class QuranReaderViewModel @Inject constructor(
             translationEnabled = _uiState.value.translationEnabled,
             tajweedEnabled = _uiState.value.tajweedEnabled,
             bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
+            recentLocations = _uiState.value.recentLocations,
         )
     }
 
@@ -85,7 +88,10 @@ class QuranReaderViewModel @Inject constructor(
         val position = safeSurah to safeAyah
         if (lastSavedPosition == position) return
         lastSavedPosition = position
-        _uiState.value = _uiState.value.copy(restoredAyah = safeAyah)
+        _uiState.value = _uiState.value.copy(
+            restoredAyah = safeAyah,
+            recentLocations = _uiState.value.recentLocations.updatedWith(safeSurah, safeAyah),
+        )
         viewModelScope.launch {
             vaultPreferences.setQuranReadingPosition(safeSurah, safeAyah)
         }
@@ -202,6 +208,7 @@ class QuranReaderViewModel @Inject constructor(
         translationEnabled: Boolean,
         tajweedEnabled: Boolean,
         bookmarkedVerseKeys: Set<String>,
+        recentLocations: List<com.myvault.app.data.quran.QuranRecentLocation>,
     ) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -214,6 +221,7 @@ class QuranReaderViewModel @Inject constructor(
                 translationEnabled = translationEnabled,
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
+                recentLocations = recentLocations,
                 expandedTafsirVerseKey = null,
                 loading = true,
             )
@@ -227,9 +235,24 @@ class QuranReaderViewModel @Inject constructor(
                 translationEnabled = translationEnabled,
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
+                recentLocations = recentLocations,
                 expandedTafsirVerseKey = null,
                 loading = false,
             )
         }
     }
 }
+
+private fun List<com.myvault.app.data.quran.QuranRecentLocation>.updatedWith(
+    surahNumber: Int,
+    ayahNumber: Int,
+): List<com.myvault.app.data.quran.QuranRecentLocation> =
+    (
+        listOf(
+            com.myvault.app.data.quran.QuranRecentLocation(
+                surahNumber = surahNumber,
+                ayahNumber = ayahNumber,
+                lastReadAt = System.currentTimeMillis(),
+            ),
+        ) + filterNot { it.surahNumber == surahNumber }
+    ).sortedByDescending { it.lastReadAt }.take(5)

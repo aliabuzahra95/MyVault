@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -71,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -106,6 +108,7 @@ import com.myvault.app.ui.theme.DarkVaultColors
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.launch
 
 private val UthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
@@ -213,8 +216,11 @@ private fun QuranReaderSurface(
 ) {
     val colors = VaultThemeTokens.colors
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val hasBismillahHeader = uiState.selectedSurah.num != 1 && uiState.selectedSurah.num != 9
+    val continuityItemCount = 1 + if (uiState.recentLocations.isNotEmpty()) 1 else 0
+    val readerHeaderItemCount = continuityItemCount + 1
     var lastScrolledSurah by rememberSaveable { mutableIntStateOf(-1) }
     var readerOptionsOpen by rememberSaveable { mutableStateOf(false) }
     var ayahActionsTarget by rememberSaveable { mutableStateOf<String?>(null) }
@@ -225,20 +231,16 @@ private fun QuranReaderSurface(
     LaunchedEffect(uiState.selectedSurah.num, uiState.ayahs.size, uiState.loading) {
         if (!uiState.loading && uiState.ayahs.isNotEmpty() && lastScrolledSurah != uiState.selectedSurah.num) {
             lastScrolledSurah = uiState.selectedSurah.num
-            val targetIndex = ((uiState.restoredAyah - 1).coerceAtLeast(0) + if (hasBismillahHeader) 1 else 0)
-                .coerceAtMost(uiState.ayahs.lastIndex + if (hasBismillahHeader) 1 else 0)
+            val targetIndex = ((uiState.restoredAyah - 1).coerceAtLeast(0) + readerHeaderItemCount)
+                .coerceAtMost(uiState.ayahs.lastIndex + readerHeaderItemCount)
             listState.scrollToItem(targetIndex)
         }
     }
 
-    LaunchedEffect(listState, uiState.selectedSurah.num, uiState.ayahs.size, hasBismillahHeader) {
+    LaunchedEffect(listState, uiState.selectedSurah.num, uiState.ayahs.size, readerHeaderItemCount) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .mapNotNull { firstVisibleIndex ->
-                val ayahIndex = if (hasBismillahHeader) {
-                    (firstVisibleIndex - 1).coerceAtLeast(0)
-                } else {
-                    firstVisibleIndex.coerceAtLeast(0)
-                }
+                val ayahIndex = (firstVisibleIndex - readerHeaderItemCount).coerceAtLeast(0)
                 uiState.ayahs.getOrNull(ayahIndex)?.ayahNumber
             }
             .distinctUntilChanged()
@@ -272,6 +274,35 @@ private fun QuranReaderSurface(
                 contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                item(key = "quran_continue_${uiState.selectedSurah.num}") {
+                    val resumeIndex = ((uiState.restoredAyah - 1).coerceAtLeast(0) + readerHeaderItemCount)
+                        .coerceAtMost(uiState.ayahs.lastIndex + readerHeaderItemCount)
+                    QuranContinueReadingCard(
+                        surah = uiState.selectedSurah,
+                        ayahNumber = uiState.restoredAyah,
+                        onClick = {
+                            scope.launch { listState.animateScrollToItem(resumeIndex) }
+                        },
+                    )
+                }
+                if (uiState.recentLocations.isNotEmpty()) {
+                    item(key = "quran_recent_surahs") {
+                        QuranRecentSurahsRow(
+                            recents = uiState.recentLocations,
+                            onOpen = { location ->
+                                val sameSurah = location.surahNumber == uiState.selectedSurah.num
+                                if (sameSurah) {
+                                    onLastReadAyahChanged(location.surahNumber, location.ayahNumber)
+                                    val index = ((location.ayahNumber - 1).coerceAtLeast(0) + readerHeaderItemCount)
+                                        .coerceAtMost(uiState.ayahs.lastIndex + readerHeaderItemCount)
+                                    scope.launch { listState.animateScrollToItem(index) }
+                                } else {
+                                    onOpenBookmark("${location.surahNumber}:${location.ayahNumber}")
+                                }
+                            },
+                        )
+                    }
+                }
                 if (hasBismillahHeader) {
                     item(key = "bismillah_${uiState.selectedSurah.num}") {
                         BismillahHeader(
@@ -505,6 +536,161 @@ private fun ReaderTopIconButton(
         contentAlignment = Alignment.Center,
     ) {
         content()
+    }
+}
+
+@Composable
+private fun QuranContinueReadingCard(
+    surah: SurahInfo,
+    ayahNumber: Int,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 15.dp)
+            .padding(top = 8.dp, bottom = 2.dp),
+        color = colors.surface,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.82f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(colors.accentSoft)
+                    .border(1.dp, colors.accentBorder, RoundedCornerShape(13.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = surah.num.toString(),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+                    color = colors.accent,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = "Continue reading",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+                    color = colors.accent,
+                )
+                Text(
+                    text = "${surah.name} · Ayah ${ayahNumber.coerceIn(1, surah.ayat)}",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${surah.ayat} ayat · ${surah.type} · Juz ${surah.juz}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+            Text(
+                text = surah.arabic,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = UthmaniHafsFamily,
+                    textDirection = TextDirection.ContentOrRtl,
+                    fontWeight = FontWeight.Normal,
+                ),
+                color = colors.text,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuranRecentSurahsRow(
+    recents: List<com.myvault.app.data.quran.QuranRecentLocation>,
+    onOpen: (com.myvault.app.data.quran.QuranRecentLocation) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "Recent Surahs",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+            color = colors.textMuted,
+            modifier = Modifier.padding(horizontal = 15.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 15.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(recents.take(5), key = { "${it.surahNumber}:${it.lastReadAt}" }) { recent ->
+                val surah = quranCatalog.firstOrNull { it.num == recent.surahNumber } ?: return@items
+                QuranRecentSurahChip(
+                    surah = surah,
+                    ayahNumber = recent.ayahNumber,
+                    onClick = { onOpen(recent) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuranRecentSurahChip(
+    surah: SurahInfo,
+    ayahNumber: Int,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        color = colors.surface,
+        shape = RoundedCornerShape(15.dp),
+        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(132.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = surah.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "Ayah ${ayahNumber.coerceIn(1, surah.ayat)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textSecondary,
+            )
+            Text(
+                text = surah.arabic,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = UthmaniHafsFamily,
+                    textDirection = TextDirection.ContentOrRtl,
+                    fontWeight = FontWeight.Normal,
+                ),
+                color = colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

@@ -34,6 +34,7 @@ import com.myvault.app.data.local.entity.TagEntity
 import com.myvault.app.data.preferences.VaultBackupPreferences
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
+import com.myvault.app.data.quran.QuranRecentLocation
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -686,6 +687,7 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranTranslationEnabled", quranTranslationEnabled)
         .put("quranTajweedEnabled", quranTajweedEnabled)
         .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
+        .put("quranRecentLocations", quranRecentLocations.toJsonArray())
 
 private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
     VaultBackupPreferences(
@@ -707,7 +709,37 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranTranslationEnabled = optBoolean("quranTranslationEnabled", true),
         quranTajweedEnabled = optBoolean("quranTajweedEnabled", false),
         quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
+        quranRecentLocations = optJSONArray("quranRecentLocations").toQuranRecentLocations(),
     )
+
+private fun List<QuranRecentLocation>.toJsonArray(): JSONArray =
+    JSONArray(
+        map {
+            JSONObject()
+                .put("surahNumber", it.surahNumber)
+                .put("ayahNumber", it.ayahNumber)
+                .put("lastReadAt", it.lastReadAt)
+        },
+    )
+
+private fun JSONArray?.toQuranRecentLocations(): List<QuranRecentLocation> {
+    val array = this ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val surahNumber = item.optInt("surahNumber", 0)
+            val ayahNumber = item.optInt("ayahNumber", 0)
+            if (surahNumber <= 0 || ayahNumber <= 0) continue
+            add(
+                QuranRecentLocation(
+                    surahNumber = surahNumber,
+                    ayahNumber = ayahNumber,
+                    lastReadAt = item.optLong("lastReadAt", 0L).coerceAtLeast(0L),
+                ),
+            )
+        }
+    }.sortedByDescending { it.lastReadAt }.take(5)
+}
 
 private fun ZipOutputStream.writeJson(name: String, json: Any) {
     putNextEntry(ZipEntry(name))

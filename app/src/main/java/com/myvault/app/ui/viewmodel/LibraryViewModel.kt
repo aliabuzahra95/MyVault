@@ -97,6 +97,7 @@ data class LibraryUiState(
     val annotationTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
     val studyNotes: List<LibraryStudyNoteItem> = emptyList(),
     val continueReading: LibraryFileItem? = null,
+    val recentFiles: List<LibraryFileItem> = emptyList(),
     val allFolders: List<LibraryFolderItem> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val viewMode: LibraryViewMode = LibraryViewMode.List,
@@ -234,6 +235,11 @@ class LibraryViewModel @Inject constructor(
             continueReading = continueReadingItems
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
+            recentFiles = allFiles
+                .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
+                .filter { it.lastOpenedAt > 0L }
+                .sortedByDescending { it.lastOpenedAt }
+                .take(8),
             allFolders = libraryFolders
                 .filter { it.parentId == null }
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
