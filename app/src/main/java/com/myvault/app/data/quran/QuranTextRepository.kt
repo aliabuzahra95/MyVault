@@ -19,6 +19,7 @@ class QuranTextRepository @Inject constructor(
     private val jsonMutex = Mutex()
     private val surahMutex = Mutex()
     private var arabicSource: JSONObject? = null
+    private var translationByVerse: Map<String, String>? = null
     private var tajweedByVerse: Map<String, List<TajweedAnnotation>>? = null
     private var tafsirByVerse: Map<String, String>? = null
 
@@ -35,6 +36,7 @@ class QuranTextRepository @Inject constructor(
 
     private suspend fun loadSurahAyahs(surahNumber: Int): List<QuranAyah> = withContext(Dispatchers.IO) {
         val source = loadArabicSource()
+        val translationSource = loadTranslationSource()
         val tajweedSource = loadTajweedSource()
         source.keys().asSequence()
             .filter { it.substringBefore(':').toIntOrNull() == surahNumber }
@@ -45,6 +47,7 @@ class QuranTextRepository @Inject constructor(
                         surahNumber = verse.optInt("surah"),
                         ayahNumber = verse.optInt("ayah"),
                         arabicText = stripTrailingVerseNumber(verse.optString("text").orEmpty()),
+                        translation = translationSource[verseKey].orEmpty(),
                         tajweedAnnotations = tajweedSource[verseKey].orEmpty(),
                     )
                 }
@@ -83,6 +86,25 @@ class QuranTextRepository @Inject constructor(
                     }
                 }
             }.also { tajweedByVerse = it }
+        }
+    }
+
+    private suspend fun loadTranslationSource(): Map<String, String> {
+        translationByVerse?.let { return it }
+        return jsonMutex.withLock {
+            translationByVerse ?: withContext(Dispatchers.IO) {
+                val source = JSONObject(
+                    context.assets.open("Sahih_international.json").bufferedReader().use { it.readText() },
+                )
+                buildMap {
+                    val keys = source.keys()
+                    while (keys.hasNext()) {
+                        val verseKey = keys.next()
+                        val translation = source.optJSONObject(verseKey)?.optString("t").orEmpty().trim()
+                        if (translation.isNotBlank()) put(verseKey, translation)
+                    }
+                }
+            }.also { translationByVerse = it }
         }
     }
 

@@ -37,6 +37,8 @@ data class VaultUserPreferences(
     val quranLastReadSurah: Int = 1,
     val quranLastReadAyah: Int = 1,
     val quranArabicFontPercent: Int = 100,
+    val quranTranslationFontPercent: Int = 100,
+    val quranTranslationEnabled: Boolean = true,
     val quranTajweedEnabled: Boolean = false,
     val quranBookmarkedVerses: Set<String> = emptySet(),
     val expandedFolderIds: Set<String> = emptySet(),
@@ -67,6 +69,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranLastReadSurah = preferences[Keys.QuranLastReadSurah] ?: 1,
                 quranLastReadAyah = preferences[Keys.QuranLastReadAyah] ?: 1,
                 quranArabicFontPercent = preferences[Keys.QuranArabicFontPercent] ?: 100,
+                quranTranslationFontPercent = preferences[Keys.QuranTranslationFontPercent] ?: 100,
+                quranTranslationEnabled = preferences[Keys.QuranTranslationEnabled] ?: true,
                 quranTajweedEnabled = preferences[Keys.QuranTajweedEnabled] ?: false,
                 quranBookmarkedVerses = preferences[Keys.QuranBookmarkedVerses].orEmpty(),
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
@@ -172,6 +176,18 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setQuranTranslationFontPercent(percent: Int) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranTranslationFontPercent] = percent.coerceIn(80, 130)
+        }
+    }
+
+    suspend fun setQuranTranslationEnabled(enabled: Boolean) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranTranslationEnabled] = enabled
+        }
+    }
+
     suspend fun setQuranTajweedEnabled(enabled: Boolean) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.QuranTajweedEnabled] = enabled
@@ -200,6 +216,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
             preferences[Keys.QuranLastReadSurah] = backup.quranLastReadSurah.coerceAtLeast(1)
             preferences[Keys.QuranLastReadAyah] = backup.quranLastReadAyah.coerceAtLeast(1)
             preferences[Keys.QuranArabicFontPercent] = backup.quranArabicFontPercent.coerceIn(70, 140)
+            preferences[Keys.QuranTranslationFontPercent] = backup.quranTranslationFontPercent.coerceIn(80, 130)
+            preferences[Keys.QuranTranslationEnabled] = backup.quranTranslationEnabled
             preferences[Keys.QuranTajweedEnabled] = backup.quranTajweedEnabled
             preferences[Keys.QuranBookmarkedVerses] = backup.quranBookmarkedVerses
         }
@@ -250,6 +268,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranLastReadSurah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_surah")
         val QuranLastReadAyah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_ayah")
         val QuranArabicFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_arabic_font_percent")
+        val QuranTranslationFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_translation_font_percent")
+        val QuranTranslationEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_translation_enabled")
         val QuranTajweedEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_tajweed_enabled")
         val QuranBookmarkedVerses: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_bookmarked_verses")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
@@ -276,6 +296,8 @@ data class VaultBackupPreferences(
     val quranLastReadSurah: Int,
     val quranLastReadAyah: Int,
     val quranArabicFontPercent: Int,
+    val quranTranslationFontPercent: Int,
+    val quranTranslationEnabled: Boolean,
     val quranTajweedEnabled: Boolean,
     val quranBookmarkedVerses: Set<String>,
 )

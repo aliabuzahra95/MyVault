@@ -8,6 +8,7 @@ data class QuranAyah(
     val surahNumber: Int,
     val ayahNumber: Int,
     val arabicText: String,
+    val translation: String = "",
     val tajweedAnnotations: List<TajweedAnnotation> = emptyList(),
 )
 
@@ -22,6 +23,8 @@ data class QuranReaderUiState(
     val ayahs: List<QuranAyah> = emptyList(),
     val restoredAyah: Int = 1,
     val arabicFontPercent: Int = 100,
+    val translationFontPercent: Int = 100,
+    val translationEnabled: Boolean = true,
     val tajweedEnabled: Boolean = false,
     val expandedTafsirVerseKey: String? = null,
     val tafsirByVerse: Map<String, String> = emptyMap(),
@@ -32,3 +35,6 @@ data class QuranReaderUiState(
 
 val QuranReaderUiState.arabicTextSize: TextUnit
     get() = (29f * arabicFontPercent.coerceIn(70, 140) / 100f).sp
+
+val QuranReaderUiState.translationTextSize: TextUnit
+    get() = (14f * translationFontPercent.coerceIn(80, 130) / 100f).sp

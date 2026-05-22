@@ -58,6 +58,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Surface
@@ -95,6 +97,7 @@ import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.SurahInfo
 import com.myvault.app.data.quran.arabicTextSize
 import com.myvault.app.data.quran.quranCatalog
+import com.myvault.app.data.quran.translationTextSize
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.buildQuranArabicText
 import com.myvault.app.ui.components.VaultTopBar
@@ -119,13 +122,15 @@ fun QuranShellScreen(
     quickBackupRecommended: Boolean,
     uiState: QuranReaderUiState,
     onSelectSurah: (Int) -> Unit,
-    onIncreaseFontScale: () -> Unit,
-    onDecreaseFontScale: () -> Unit,
+    onSetArabicFontPercent: (Int) -> Unit,
+    onSetTranslationFontPercent: (Int) -> Unit,
+    onSetTranslationEnabled: (Boolean) -> Unit,
     onSetTajweedEnabled: (Boolean) -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
     onToggleTafsir: (String) -> Unit,
     onToggleBookmark: (String) -> Unit,
-    onCreateReflectionNote: (QuranAyah) -> Unit,
+    onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
+    onOpenBookmark: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -161,13 +166,15 @@ fun QuranShellScreen(
             QuranReaderSurface(
                 uiState = uiState,
                 onOpenSelector = { selectorOpen = true },
-                onIncreaseFontScale = onIncreaseFontScale,
-                onDecreaseFontScale = onDecreaseFontScale,
+                onSetArabicFontPercent = onSetArabicFontPercent,
+                onSetTranslationFontPercent = onSetTranslationFontPercent,
+                onSetTranslationEnabled = onSetTranslationEnabled,
                 onSetTajweedEnabled = onSetTajweedEnabled,
                 onLastReadAyahChanged = onLastReadAyahChanged,
                 onToggleTafsir = onToggleTafsir,
                 onToggleBookmark = onToggleBookmark,
                 onCreateReflectionNote = onCreateReflectionNote,
+                onOpenBookmark = onOpenBookmark,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -193,13 +200,15 @@ fun QuranShellScreen(
 private fun QuranReaderSurface(
     uiState: QuranReaderUiState,
     onOpenSelector: () -> Unit,
-    onIncreaseFontScale: () -> Unit,
-    onDecreaseFontScale: () -> Unit,
+    onSetArabicFontPercent: (Int) -> Unit,
+    onSetTranslationFontPercent: (Int) -> Unit,
+    onSetTranslationEnabled: (Boolean) -> Unit,
     onSetTajweedEnabled: (Boolean) -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
     onToggleTafsir: (String) -> Unit,
     onToggleBookmark: (String) -> Unit,
-    onCreateReflectionNote: (QuranAyah) -> Unit,
+    onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
+    onOpenBookmark: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -209,6 +218,8 @@ private fun QuranReaderSurface(
     var lastScrolledSurah by rememberSaveable { mutableIntStateOf(-1) }
     var readerOptionsOpen by rememberSaveable { mutableStateOf(false) }
     var ayahActionsTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var reflectionTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
     val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(uiState.selectedSurah.num, uiState.ayahs.size, uiState.loading) {
@@ -243,6 +254,7 @@ private fun QuranReaderSurface(
             surah = uiState.selectedSurah,
             onOpenSelector = onOpenSelector,
             onOpenSettings = { readerOptionsOpen = true },
+            onOpenBookmarks = { bookmarksOpen = true },
             onOpenSearch = onOpenSelector,
         )
 
@@ -285,12 +297,15 @@ private fun QuranReaderSurface(
                         arabicTextSize = uiState.arabicTextSize,
                         tajweedEnabled = uiState.tajweedEnabled,
                         isBookmarked = ayah.verseKey in uiState.bookmarkedVerseKeys,
+                        translation = ayah.translation,
+                        translationTextSize = uiState.translationTextSize,
+                        translationEnabled = uiState.translationEnabled,
                         tafsir = uiState.tafsirByVerse[ayah.verseKey].orEmpty(),
                         isTafsirExpanded = uiState.expandedTafsirVerseKey == ayah.verseKey,
                         isTafsirLoading = ayah.verseKey in uiState.loadingTafsirVerseKeys,
                         onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
                         onOpenActions = { ayahActionsTarget = ayah.verseKey },
-                        onCreateReflectionNote = { onCreateReflectionNote(ayah) },
+                        onCreateReflectionNote = { reflectionTarget = ayah.verseKey },
                     )
                 }
                 item("quran_bottom_pad") {
@@ -323,9 +338,12 @@ private fun QuranReaderSurface(
             ) {
                 QuranReaderOptionsSheet(
                     fontPercent = uiState.arabicFontPercent,
+                    translationFontPercent = uiState.translationFontPercent,
+                    translationEnabled = uiState.translationEnabled,
                     tajweedEnabled = uiState.tajweedEnabled,
-                    onIncreaseFontScale = onIncreaseFontScale,
-                    onDecreaseFontScale = onDecreaseFontScale,
+                    onSetArabicFontPercent = onSetArabicFontPercent,
+                    onSetTranslationFontPercent = onSetTranslationFontPercent,
+                    onSetTranslationEnabled = onSetTranslationEnabled,
                     onSetTajweedEnabled = onSetTajweedEnabled,
                     onDismiss = { readerOptionsOpen = false },
                 )
@@ -353,8 +371,31 @@ private fun QuranReaderSurface(
                 ayahActionsTarget = null
             },
             onCreateReflectionNote = {
-                selectedAyah?.let(onCreateReflectionNote)
+                reflectionTarget = selectedAyah?.verseKey
                 ayahActionsTarget = null
+            },
+        )
+
+        val reflectionAyah = remember(reflectionTarget, uiState.ayahs) {
+            uiState.ayahs.firstOrNull { it.verseKey == reflectionTarget }
+        }
+        ReflectionEditorSheet(
+            ayah = reflectionAyah,
+            surah = uiState.selectedSurah,
+            onDismiss = { reflectionTarget = null },
+            onSave = { title, body ->
+                reflectionAyah?.let { onCreateReflectionNote(it, title, body) }
+                reflectionTarget = null
+            },
+        )
+
+        QuranBookmarksSheet(
+            visible = bookmarksOpen,
+            bookmarkedVerseKeys = uiState.bookmarkedVerseKeys,
+            onDismiss = { bookmarksOpen = false },
+            onOpenBookmark = { verseKey ->
+                bookmarksOpen = false
+                onOpenBookmark(verseKey)
             },
         )
     }
@@ -365,6 +406,7 @@ private fun QuranTopBar(
     surah: SurahInfo,
     onOpenSelector: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     onOpenSearch: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -415,6 +457,14 @@ private fun QuranTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            ReaderTopIconButton(onClick = onOpenBookmarks) {
+                Icon(
+                    imageVector = Icons.Rounded.Bookmark,
+                    contentDescription = "Qur'an bookmarks",
+                    tint = colors.textSecondary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
             ReaderTopIconButton(onClick = onOpenSettings) {
                 Icon(
                     imageVector = Icons.Rounded.Settings,
@@ -504,9 +554,12 @@ private fun BismillahHeader(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun QuranReaderOptionsSheet(
     fontPercent: Int,
+    translationFontPercent: Int,
+    translationEnabled: Boolean,
     tajweedEnabled: Boolean,
-    onIncreaseFontScale: () -> Unit,
-    onDecreaseFontScale: () -> Unit,
+    onSetArabicFontPercent: (Int) -> Unit,
+    onSetTranslationFontPercent: (Int) -> Unit,
+    onSetTranslationEnabled: (Boolean) -> Unit,
     onSetTajweedEnabled: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -528,96 +581,29 @@ private fun QuranReaderOptionsSheet(
             style = MaterialTheme.typography.bodyMedium,
             color = colors.textSecondary,
         )
-        Surface(
-            color = colors.surface,
-            border = BorderStroke(1.dp, colors.border),
-            shape = RoundedCornerShape(18.dp),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Arabic size",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W700),
-                        color = colors.text,
-                    )
-                    Text(
-                        text = "${fontPercent.coerceIn(80, 170)}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ReaderTopIconButton(onClick = onDecreaseFontScale) {
-                        Text(
-                            text = "−",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
-                            color = colors.textSecondary,
-                        )
-                    }
-                    ReaderTopIconButton(onClick = onIncreaseFontScale) {
-                        Text(
-                            text = "+",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600),
-                            color = colors.textSecondary,
-                        )
-                    }
-                }
-            }
-        }
-        Surface(
-            color = colors.surface,
-            border = BorderStroke(1.dp, colors.border),
-            shape = RoundedCornerShape(18.dp),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Tajweed",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W700),
-                        color = colors.text,
-                    )
-                    Text(
-                        text = "Apply Qur'anic Threads tajweed colours over the Uthmani script.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                }
-                Switch(
-                    checked = tajweedEnabled,
-                    onCheckedChange = onSetTajweedEnabled,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = colors.accent,
-                        checkedTrackColor = colors.accentSoft,
-                        uncheckedThumbColor = colors.textSecondary,
-                        uncheckedTrackColor = colors.surface,
-                        uncheckedBorderColor = colors.borderStrong,
-                    ),
-                )
-            }
-        }
-        Text(
-            text = "Translation, tajweed, tafsir, and spacing options can live here next without crowding the reader.",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
+        QuranSliderSetting(
+            title = "Arabic size",
+            value = fontPercent.coerceIn(70, 140),
+            valueRange = 70f..140f,
+            onValueChange = onSetArabicFontPercent,
+        )
+        QuranToggleSetting(
+            title = "Translation",
+            subtitle = "Show Sahih International beneath each ayah.",
+            checked = translationEnabled,
+            onCheckedChange = onSetTranslationEnabled,
+        )
+        QuranSliderSetting(
+            title = "Translation size",
+            value = translationFontPercent.coerceIn(80, 130),
+            valueRange = 80f..130f,
+            onValueChange = onSetTranslationFontPercent,
+        )
+        QuranToggleSetting(
+            title = "Tajweed",
+            subtitle = "Apply Qur'anic Threads tajweed colours over the Uthmani script.",
+            checked = tajweedEnabled,
+            onCheckedChange = onSetTajweedEnabled,
         )
         Surface(
             onClick = onDismiss,
@@ -639,6 +625,112 @@ private fun QuranReaderOptionsSheet(
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun QuranSliderSetting(
+    title: String,
+    value: Int,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Int) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.border),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W700),
+                    color = colors.text,
+                )
+                Text(
+                    text = "$value%",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                    color = colors.textSecondary,
+                )
+            }
+            Slider(
+                value = value.toFloat(),
+                onValueChange = { onValueChange(it.toInt()) },
+                valueRange = valueRange,
+                steps = 0,
+                colors = SliderDefaults.colors(
+                    thumbColor = colors.accent,
+                    activeTrackColor = colors.accent,
+                    inactiveTrackColor = colors.borderStrong,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuranToggleSetting(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.border),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W700),
+                    color = colors.text,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = colors.accent,
+                    checkedTrackColor = colors.accentSoft,
+                    uncheckedThumbColor = colors.textSecondary,
+                    uncheckedTrackColor = colors.surface,
+                    uncheckedBorderColor = colors.borderStrong,
+                ),
+            )
         }
     }
 }
@@ -677,6 +769,9 @@ private fun AyahRow(
     arabicTextSize: androidx.compose.ui.unit.TextUnit,
     tajweedEnabled: Boolean,
     isBookmarked: Boolean,
+    translation: String,
+    translationTextSize: androidx.compose.ui.unit.TextUnit,
+    translationEnabled: Boolean,
     tafsir: String,
     isTafsirExpanded: Boolean,
     isTafsirLoading: Boolean,
@@ -839,6 +934,22 @@ private fun AyahRow(
                         color = colors.textSecondary,
                     )
                 }
+            }
+
+            AnimatedVisibility(
+                visible = translationEnabled && translation.isNotBlank(),
+                enter = fadeIn(animationSpec = tween(durationMillis = 150)) + expandVertically(animationSpec = tween(durationMillis = 180)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 110)) + shrinkVertically(animationSpec = tween(durationMillis = 150)),
+            ) {
+                Text(
+                    text = translation,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = translationTextSize,
+                        lineHeight = (translationTextSize.value * 1.58f).sp,
+                    ),
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 3.dp),
+                )
             }
 
             AnimatedVisibility(
@@ -1088,6 +1199,358 @@ private fun AyahActionRow(
             color = colors.border.copy(alpha = 0.65f),
             thickness = 1.dp,
         )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ReflectionEditorSheet(
+    ayah: QuranAyah?,
+    surah: SurahInfo,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    if (ayah == null) return
+
+    val colors = VaultThemeTokens.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var title by rememberSaveable(ayah.verseKey) { mutableStateOf("Reflection on ${surah.name} ${surah.num}:${ayah.ayahNumber}") }
+    var body by rememberSaveable(ayah.verseKey) { mutableStateOf("") }
+    val fieldShape = RoundedCornerShape(16.dp)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.bg,
+        contentColor = colors.text,
+        scrimColor = colors.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp, bottom = 2.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.borderStrong),
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .heightIn(max = 620.dp)
+                .padding(horizontal = 15.dp)
+                .padding(bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "Add reflection",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                    )
+                    Text(
+                        text = "${surah.name} ${surah.num}:${ayah.ayahNumber}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
+                IconBtn(Icons.Rounded.Close, "Close reflection", onClick = onDismiss)
+            }
+
+            Surface(
+                color = colors.surface,
+                border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
+                shape = RoundedCornerShape(18.dp),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = ayah.arabicText,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = TextStyle(
+                            fontFamily = UthmaniHafsFamily,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Normal,
+                            textDirection = TextDirection.Rtl,
+                            lineHeight = 38.sp,
+                        ),
+                        color = colors.text,
+                        textAlign = TextAlign.Right,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (ayah.translation.isNotBlank()) {
+                        Text(
+                            text = ayah.translation,
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                            color = colors.textSecondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            QuranTextInput(
+                value = title,
+                onValueChange = { title = it },
+                placeholder = "Reflection title",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 50.dp),
+                shape = fieldShape,
+            )
+
+            QuranTextInput(
+                value = body,
+                onValueChange = { body = it },
+                placeholder = "Write your reflection...",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 132.dp),
+                shape = fieldShape,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Tags",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                    color = colors.textMuted,
+                )
+                Text(
+                    text = "Add later from the saved reflection note",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .border(1.dp, colors.border.copy(alpha = 0.72f), RoundedCornerShape(999.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+            ) {
+                ReflectionSheetButton(label = "Close", onClick = onDismiss)
+                ReflectionSheetButton(
+                    label = "Save",
+                    filled = true,
+                    onClick = { onSave(title, body) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuranTextInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+) {
+    val colors = VaultThemeTokens.colors
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
+        cursorBrush = SolidColor(colors.accent),
+        modifier = modifier
+            .clip(shape)
+            .background(colors.surface)
+            .border(1.dp, colors.border.copy(alpha = 0.78f), shape)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        decorationBox = { inner ->
+            Box {
+                if (value.isBlank()) {
+                    Text(
+                        text = placeholder,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textMuted,
+                    )
+                }
+                inner()
+            }
+        },
+    )
+}
+
+@Composable
+private fun ReflectionSheetButton(
+    label: String,
+    filled: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val shape = RoundedCornerShape(12.dp)
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+        color = if (filled) colors.accent else colors.textSecondary,
+        modifier = Modifier
+            .clip(shape)
+            .background(if (filled) colors.accentSoft else Color.Transparent)
+            .border(1.dp, if (filled) colors.accentBorder else colors.border.copy(alpha = 0.72f), shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 18.dp, vertical = 11.dp),
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun QuranBookmarksSheet(
+    visible: Boolean,
+    bookmarkedVerseKeys: Set<String>,
+    onDismiss: () -> Unit,
+    onOpenBookmark: (String) -> Unit,
+) {
+    if (!visible) return
+    val colors = VaultThemeTokens.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val bookmarks = remember(bookmarkedVerseKeys) {
+        bookmarkedVerseKeys
+            .mapNotNull { key ->
+                val surahNum = key.substringBefore(':').toIntOrNull() ?: return@mapNotNull null
+                val ayahNum = key.substringAfter(':').toIntOrNull() ?: return@mapNotNull null
+                val surah = quranCatalog.firstOrNull { it.num == surahNum } ?: return@mapNotNull null
+                Triple(key, surah, ayahNum)
+            }
+            .sortedWith(compareBy({ it.second.num }, { it.third }))
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.bg,
+        contentColor = colors.text,
+        scrimColor = colors.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp, bottom = 2.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.borderStrong),
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .heightIn(max = 560.dp)
+                .padding(horizontal = 15.dp)
+                .padding(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "Bookmarks",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                    )
+                    Text(
+                        text = "${bookmarks.size} saved ayah${if (bookmarks.size == 1) "" else "s"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
+                IconBtn(Icons.Rounded.Close, "Close bookmarks", onClick = onDismiss)
+            }
+
+            if (bookmarks.isEmpty()) {
+                Surface(
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.border),
+                    shape = RoundedCornerShape(18.dp),
+                    tonalElevation = 0.dp,
+                ) {
+                    Text(
+                        text = "Bookmarked ayahs will appear here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(bookmarks, key = { it.first }) { (key, surah, ayahNum) ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = colors.surface,
+                            border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
+                            onClick = { onOpenBookmark(key) },
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "${surah.name} $ayahNum",
+                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W800),
+                                        color = colors.text,
+                                    )
+                                    Text(
+                                        text = "${surah.type} • Juz ${surah.juz}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.textSecondary,
+                                    )
+                                }
+                                Text(
+                                    text = surah.arabic,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontFamily = UthmaniHafsFamily,
+                                        textDirection = TextDirection.ContentOrRtl,
+                                    ),
+                                    color = colors.text,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1365,17 +1828,17 @@ private fun SurahRow(
     val colors = VaultThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
     val bg by animateColorAsState(
-        targetValue = if (isCurrent) colors.accentSoft.copy(alpha = 0.82f) else colors.surface,
+        targetValue = if (isCurrent) colors.elevated else colors.surface,
         animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
         label = "surahRowBg",
     )
     val border by animateColorAsState(
-        targetValue = if (isCurrent) colors.accentBorder else colors.border,
+        targetValue = if (isCurrent) colors.borderStrong else colors.border,
         animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
         label = "surahRowBorder",
     )
     val titleColor by animateColorAsState(
-        targetValue = if (isCurrent) colors.accent else colors.text,
+        targetValue = colors.text,
         animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
         label = "surahRowTitle",
     )
@@ -1404,13 +1867,13 @@ private fun SurahRow(
                 modifier = Modifier
                     .size(34.dp)
                     .clip(CircleShape)
-                    .background(if (isCurrent) colors.accent.copy(alpha = 0.14f) else colors.bg),
+                    .background(colors.bg),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = surah.num.toString(),
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
-                    color = if (isCurrent) colors.accent else colors.textSecondary,
+                    color = colors.textSecondary,
                 )
             }
 
@@ -1445,7 +1908,7 @@ private fun SurahRow(
                         fontWeight = FontWeight.W400,
                         fontSize = 20.sp,
                     ),
-                    color = if (isCurrent) colors.accent else colors.text,
+                    color = colors.text,
                 )
                 Text(
                     text = "Juz ${surah.juz}",

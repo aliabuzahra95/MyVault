@@ -603,6 +603,7 @@ private fun validateBackupSettings(settings: JSONObject) {
     check(settings.optInt("quranLastReadSurah", 1) >= 1) { "Backup contains invalid Qur'an Surah position." }
     check(settings.optInt("quranLastReadAyah", 1) >= 1) { "Backup contains invalid Qur'an ayah position." }
     check(settings.optInt("quranArabicFontPercent", 100) in 70..140) { "Backup contains invalid Qur'an font size." }
+    check(settings.optInt("quranTranslationFontPercent", 100) in 80..130) { "Backup contains invalid Qur'an translation font size." }
 }
 
 private fun validateAttachmentEntryName(attachmentId: String) {
@@ -681,6 +682,8 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranLastReadSurah", quranLastReadSurah)
         .put("quranLastReadAyah", quranLastReadAyah)
         .put("quranArabicFontPercent", quranArabicFontPercent)
+        .put("quranTranslationFontPercent", quranTranslationFontPercent)
+        .put("quranTranslationEnabled", quranTranslationEnabled)
         .put("quranTajweedEnabled", quranTajweedEnabled)
         .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
 
@@ -700,6 +703,8 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranLastReadSurah = optInt("quranLastReadSurah", 1).coerceAtLeast(1),
         quranLastReadAyah = optInt("quranLastReadAyah", 1).coerceAtLeast(1),
         quranArabicFontPercent = optInt("quranArabicFontPercent", 100).coerceIn(70, 140),
+        quranTranslationFontPercent = optInt("quranTranslationFontPercent", 100).coerceIn(80, 130),
+        quranTranslationEnabled = optBoolean("quranTranslationEnabled", true),
         quranTajweedEnabled = optBoolean("quranTajweedEnabled", false),
         quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
     )

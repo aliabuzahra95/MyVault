@@ -40,6 +40,8 @@ class QuranReaderViewModel @Inject constructor(
                 surahNumber = preferences.quranLastReadSurah,
                 restoredAyah = preferences.quranLastReadAyah,
                 fontPercent = preferences.quranArabicFontPercent,
+                translationFontPercent = preferences.quranTranslationFontPercent,
+                translationEnabled = preferences.quranTranslationEnabled,
                 tajweedEnabled = preferences.quranTajweedEnabled,
                 bookmarkedVerseKeys = preferences.quranBookmarkedVerses,
             )
@@ -56,6 +58,22 @@ class QuranReaderViewModel @Inject constructor(
             surahNumber = surahNumber,
             restoredAyah = restoredAyah,
             fontPercent = _uiState.value.arabicFontPercent,
+            translationFontPercent = _uiState.value.translationFontPercent,
+            translationEnabled = _uiState.value.translationEnabled,
+            tajweedEnabled = _uiState.value.tajweedEnabled,
+            bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
+        )
+    }
+
+    fun openBookmarkedAyah(verseKey: String) {
+        val surah = verseKey.substringBefore(':').toIntOrNull() ?: return
+        val ayah = verseKey.substringAfter(':').toIntOrNull() ?: return
+        loadSurah(
+            surahNumber = surah,
+            restoredAyah = ayah,
+            fontPercent = _uiState.value.arabicFontPercent,
+            translationFontPercent = _uiState.value.translationFontPercent,
+            translationEnabled = _uiState.value.translationEnabled,
             tajweedEnabled = _uiState.value.tajweedEnabled,
             bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
         )
@@ -89,6 +107,14 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    fun setTranslationEnabled(enabled: Boolean) {
+        if (_uiState.value.translationEnabled == enabled) return
+        _uiState.value = _uiState.value.copy(translationEnabled = enabled)
+        viewModelScope.launch {
+            vaultPreferences.setQuranTranslationEnabled(enabled)
+        }
+    }
+
     fun toggleTafsir(verseKey: String) {
         val nextExpanded = if (_uiState.value.expandedTafsirVerseKey == verseKey) null else verseKey
         _uiState.value = _uiState.value.copy(expandedTafsirVerseKey = nextExpanded)
@@ -117,23 +143,31 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
-    fun createReflectionNoteForAyah(ayah: QuranAyah, onCreated: (String) -> Unit) {
+    fun createReflectionNoteForAyah(ayah: QuranAyah, title: String, body: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
             val folderId = folderRepository.ensureRootFolderForMode(
                 name = "Quran Reflections",
                 mode = FOLDER_MODE_STUDY,
             )
             val surah = _uiState.value.selectedSurah
-            val title = "${surah.name} ${surah.num}:${ayah.ayahNumber}"
-            val noteId = noteRepository.createNote(folderId = folderId, title = title)
-            val body = buildString {
-                append(title)
+            val reference = "${surah.name} ${surah.num}:${ayah.ayahNumber}"
+            val noteTitle = title.ifBlank { "Reflection on $reference" }
+            val noteId = noteRepository.createNote(folderId = folderId, title = noteTitle)
+            val noteBody = buildString {
+                append(noteTitle)
+                append("\n\n")
+                append("Source: ")
+                append(reference)
                 append("\n\n")
                 append(ayah.arabicText)
+                if (ayah.translation.isNotBlank()) {
+                    append("\n\n")
+                    append(ayah.translation)
+                }
                 append("\n\n")
-                append("Reflection:")
+                append(body.ifBlank { "Reflection:" })
             }
-            noteRepository.saveRichText(noteId = noteId, text = body, styleMarksJson = "[]")
+            noteRepository.saveRichText(noteId = noteId, text = noteBody, styleMarksJson = "[]")
             onCreated(noteId)
         }
     }
@@ -147,10 +181,25 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    fun setArabicFontPercentFromSlider(percent: Int) {
+        setArabicFontPercent(percent)
+    }
+
+    fun setTranslationFontPercent(percent: Int) {
+        val clamped = percent.coerceIn(80, 130)
+        if (_uiState.value.translationFontPercent == clamped) return
+        _uiState.value = _uiState.value.copy(translationFontPercent = clamped)
+        viewModelScope.launch {
+            vaultPreferences.setQuranTranslationFontPercent(clamped)
+        }
+    }
+
     private fun loadSurah(
         surahNumber: Int,
         restoredAyah: Int,
         fontPercent: Int,
+        translationFontPercent: Int,
+        translationEnabled: Boolean,
         tajweedEnabled: Boolean,
         bookmarkedVerseKeys: Set<String>,
     ) {
@@ -161,6 +210,8 @@ class QuranReaderViewModel @Inject constructor(
                 selectedSurah = surah,
                 restoredAyah = restoredAyah.coerceIn(1, surah.ayat),
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
+                translationFontPercent = translationFontPercent.coerceIn(80, 130),
+                translationEnabled = translationEnabled,
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 expandedTafsirVerseKey = null,
@@ -172,6 +223,8 @@ class QuranReaderViewModel @Inject constructor(
                 ayahs = ayahs,
                 restoredAyah = restoredAyah.coerceIn(1, ayahs.lastOrNull()?.ayahNumber ?: surah.ayat),
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
+                translationFontPercent = translationFontPercent.coerceIn(80, 130),
+                translationEnabled = translationEnabled,
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 expandedTafsirVerseKey = null,

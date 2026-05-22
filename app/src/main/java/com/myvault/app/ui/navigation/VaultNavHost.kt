@@ -237,17 +237,19 @@ fun VaultNavHost(
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         uiState = quranState,
                         onSelectSurah = quranViewModel::selectSurah,
-                        onIncreaseFontScale = quranViewModel::increaseArabicFont,
-                        onDecreaseFontScale = quranViewModel::decreaseArabicFont,
+                        onSetArabicFontPercent = quranViewModel::setArabicFontPercentFromSlider,
+                        onSetTranslationFontPercent = quranViewModel::setTranslationFontPercent,
+                        onSetTranslationEnabled = quranViewModel::setTranslationEnabled,
                         onSetTajweedEnabled = quranViewModel::setTajweedEnabled,
                         onLastReadAyahChanged = quranViewModel::updateLastReadPosition,
                         onToggleTafsir = quranViewModel::toggleTafsir,
                         onToggleBookmark = quranViewModel::toggleBookmark,
-                        onCreateReflectionNote = { ayah ->
-                            quranViewModel.createReflectionNoteForAyah(ayah) { noteId ->
-                                navController.navigate(VaultDestination.Editor.route(noteId))
+                        onCreateReflectionNote = { ayah, title, body ->
+                            quranViewModel.createReflectionNoteForAyah(ayah, title, body) {
+                                Toast.makeText(context, "Reflection saved", Toast.LENGTH_SHORT).show()
                             }
                         },
+                        onOpenBookmark = quranViewModel::openBookmarkedAyah,
                     )
                 },
                 libraryContent = {
