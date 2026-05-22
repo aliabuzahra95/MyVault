@@ -14,6 +14,9 @@ import com.myvault.app.data.sync.DriveSyncResult
 import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
 import com.myvault.app.data.sync.GoogleDriveRestoreController
+import com.myvault.app.data.supabase.SupabaseAuthRepository
+import com.myvault.app.data.supabase.SupabaseSession
+import com.myvault.app.data.supabase.SupabaseSessionStore
 import com.myvault.app.ui.theme.VaultThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +36,8 @@ class SettingsViewModel @Inject constructor(
     private val folderRepository: FolderRepository,
     private val googleDriveSyncRepository: GoogleDriveIncrementalSyncRepository,
     private val googleDriveRestoreController: GoogleDriveRestoreController,
+    private val supabaseAuthRepository: SupabaseAuthRepository,
+    supabaseSessionStore: SupabaseSessionStore,
 ) : ViewModel() {
     val userPreferences: StateFlow<VaultUserPreferences> =
         preferences.userPreferences.stateIn(
@@ -43,6 +48,12 @@ class SettingsViewModel @Inject constructor(
     private val _storageLabel = MutableStateFlow("Calculating...")
     val storageLabel: StateFlow<String> = _storageLabel
     val driveRestoreState: StateFlow<DriveRestoreState> = googleDriveRestoreController.state
+    val supabaseSession: StateFlow<SupabaseSession> =
+        supabaseSessionStore.session.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            SupabaseSession(),
+        )
     val recentlyDeleted: StateFlow<RecentlyDeletedUiState> =
         combine(
             noteRepository.observeDeletedNotes(),
@@ -163,6 +174,21 @@ class SettingsViewModel @Inject constructor(
     fun checkGoogleDriveUpdates(onComplete: (String) -> Unit) {
         viewModelScope.launch {
             onComplete(googleDriveSyncRepository.checkForRemoteUpdates().displayMessage())
+        }
+    }
+
+    fun signInSupabaseAi(email: String, password: String, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            supabaseAuthRepository.signInWithPassword(email, password)
+                .onSuccess { onComplete("ChatGPT AI connected as ${it.email}.") }
+                .onFailure { onComplete("ChatGPT AI login failed: ${it.message ?: "Unknown error"}") }
+        }
+    }
+
+    fun signOutSupabaseAi(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            supabaseAuthRepository.signOut()
+            onComplete("ChatGPT AI signed out.")
         }
     }
 

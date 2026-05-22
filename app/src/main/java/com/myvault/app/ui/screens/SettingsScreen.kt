@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.components.SettingsRow
 import com.myvault.app.ui.components.ThemePreviewCard
@@ -89,6 +92,9 @@ fun SettingsScreen(
     onGoogleDriveSignInResult: (Intent?) -> Unit = {},
     onGoogleDrivePush: () -> Unit = {},
     onGoogleDrivePull: () -> Unit = {},
+    supabaseAiEmail: String = "",
+    onSupabaseAiLogin: (String, String) -> Unit = { _, _ -> },
+    onSupabaseAiLogout: () -> Unit = {},
     driveRestoreState: DriveRestoreState = DriveRestoreState(),
     backupMessage: String? = null,
     onDismissBackupMessage: () -> Unit = {},
@@ -104,6 +110,7 @@ fun SettingsScreen(
     var permanentDeleteTarget by remember { mutableStateOf<DeletedTarget?>(null) }
     var deleteAllDeletedConfirmOpen by remember { mutableStateOf(false) }
     var backupSettingsOpen by remember { mutableStateOf(false) }
+    var aiLoginOpen by remember { mutableStateOf(false) }
     var driveRestoreConfirmOpen by remember { mutableStateOf(false) }
     var releaseReadinessOpen by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
@@ -157,6 +164,7 @@ fun SettingsScreen(
                         onSecurityLockChanged(!preferences.securityLockEnabled)
                     },
                     onBackupSettingsClick = { backupSettingsOpen = true },
+                    onAiLoginClick = { aiLoginOpen = true },
                     onLockTimerClick = { lockTimerDialogOpen = true },
                     onRecentlyDeletedClick = { recentlyDeletedOpen = true },
                     onReleaseReadinessClick = { releaseReadinessOpen = true },
@@ -184,6 +192,21 @@ fun SettingsScreen(
             onGoogleDrivePushClick = onGoogleDrivePush,
             onGoogleDrivePullClick = { driveRestoreConfirmOpen = true },
             driveRestoreState = driveRestoreState,
+        )
+    }
+
+    if (aiLoginOpen) {
+        ChatGptAiLoginDialog(
+            currentEmail = supabaseAiEmail,
+            onDismiss = { aiLoginOpen = false },
+            onLogin = { email, password ->
+                aiLoginOpen = false
+                onSupabaseAiLogin(email, password)
+            },
+            onLogout = {
+                aiLoginOpen = false
+                onSupabaseAiLogout()
+            },
         )
     }
 
@@ -478,6 +501,7 @@ private fun SettingsGroupVault(
     storageLabel: String,
     onSecurityLockClick: () -> Unit,
     onBackupSettingsClick: () -> Unit,
+    onAiLoginClick: () -> Unit,
     onLockTimerClick: () -> Unit,
     onRecentlyDeletedClick: () -> Unit,
     onReleaseReadinessClick: () -> Unit,
@@ -493,12 +517,76 @@ private fun SettingsGroupVault(
             preferences.backupSummary(),
             onClick = onBackupSettingsClick,
         )
+        SettingsRow(Icons.Rounded.Psychology, "ChatGPT AI login", "Supabase account", onClick = onAiLoginClick)
         SettingsRow(Icons.Rounded.RestoreFromTrash, "Recently Deleted", "$recentlyDeletedCount item${if (recentlyDeletedCount == 1) "" else "s"}", onClick = onRecentlyDeletedClick)
         SettingsRow(Icons.Rounded.Lock, "Security lock", if (preferences.securityLockEnabled) "On" else "Off", onClick = onSecurityLockClick)
         SettingsRow(Icons.Rounded.Timer, "Auto-lock timer", preferences.securityLockTimeoutMs.displayLockTimeout(), onClick = onLockTimerClick)
         SettingsRow(Icons.Rounded.Verified, "Release readiness", "Checklist", onClick = onReleaseReadinessClick)
         SettingsRow(Icons.Rounded.Storage, "Storage", storageLabel)
     }
+}
+
+@Composable
+private fun ChatGptAiLoginDialog(
+    currentEmail: String,
+    onDismiss: () -> Unit,
+    onLogin: (String, String) -> Unit,
+    onLogout: () -> Unit,
+) {
+    var email by remember(currentEmail) { mutableStateOf(currentEmail) }
+    var password by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ChatGPT AI login") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "This only reconnects ChatGPT AI through Supabase. Google Drive backup stays separate.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VaultThemeTokens.colors.textSecondary,
+                )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (currentEmail.isNotBlank()) {
+                    Text(
+                        text = "Currently connected: $currentEmail",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VaultThemeTokens.colors.textSecondary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onLogin(email, password) }) {
+                Text("Login")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (currentEmail.isNotBlank()) {
+                    TextButton(onClick = onLogout) {
+                        Text("Logout")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        },
+    )
 }
 
 @Composable

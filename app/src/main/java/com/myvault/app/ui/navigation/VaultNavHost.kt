@@ -743,6 +743,7 @@ fun VaultNavHost(
             val storageLabel by viewModel.storageLabel.collectAsState()
             val recentlyDeleted by viewModel.recentlyDeleted.collectAsState()
             val driveRestoreState by viewModel.driveRestoreState.collectAsState()
+            val supabaseSession by viewModel.supabaseSession.collectAsState()
             var backupMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
             SettingsScreen(
                 preferences = preferences,
@@ -768,6 +769,9 @@ fun VaultNavHost(
                 onGoogleDriveSignInResult = { data -> viewModel.handleGoogleDriveSignInResult(data) { backupMessage = it } },
                 onGoogleDrivePush = { viewModel.pushGoogleDriveSync { backupMessage = it } },
                 onGoogleDrivePull = { viewModel.pullGoogleDriveSync { backupMessage = it } },
+                supabaseAiEmail = supabaseSession.email,
+                onSupabaseAiLogin = { email, password -> viewModel.signInSupabaseAi(email, password) { backupMessage = it } },
+                onSupabaseAiLogout = { viewModel.signOutSupabaseAi { backupMessage = it } },
                 driveRestoreState = driveRestoreState,
                 backupMessage = backupMessage,
                 onDismissBackupMessage = {
