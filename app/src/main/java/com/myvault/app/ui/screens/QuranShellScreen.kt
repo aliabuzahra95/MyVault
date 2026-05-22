@@ -454,7 +454,8 @@ private fun QuranReaderSurface(
                 onClose = onStopAudio,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .padding(horizontal = 14.dp)
+                    .padding(bottom = 86.dp)
                     .navigationBarsPadding(),
             )
         }
@@ -466,7 +467,7 @@ private fun QuranReaderSurface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 24.dp)
-                .padding(bottom = if (uiState.miniPlayer != null) 178.dp else 98.dp)
+                .padding(bottom = if (uiState.miniPlayer != null) 252.dp else 98.dp)
                 .navigationBarsPadding(),
         ) {
             Surface(
