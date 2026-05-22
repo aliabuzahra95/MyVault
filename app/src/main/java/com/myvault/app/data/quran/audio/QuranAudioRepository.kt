@@ -100,14 +100,19 @@ class QuranAudioRepository @Inject constructor(
         surahNumber: Int,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val current = currentDownloadState(reciter.id, surahNumber)
-        if (current is SurahDownloadState.Downloading || current is SurahDownloadState.Downloaded) {
+        if (
+            current is SurahDownloadState.Preparing ||
+            current is SurahDownloadState.Downloading ||
+            current is SurahDownloadState.Downloaded
+        ) {
             return@withContext Result.success(Unit)
         }
-        setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(0))
+        setDownloadState(reciter.id, surahNumber, SurahDownloadState.Preparing)
         runCatching {
             val metadata = getChapterAudio(reciter, surahNumber)
+            setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(1))
             downloadChapterAudio(metadata) { progress ->
-                setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(progress))
+                setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(progress.coerceIn(1, 100)))
             }
             writeCompletionMarker(reciter.id, surahNumber)
             persistChapterMetadata(metadata)
@@ -120,6 +125,18 @@ class QuranAudioRepository @Inject constructor(
                 SurahDownloadState.Failed(error.message ?: "Download failed."),
             )
         }
+    }
+
+    fun markQueued(
+        reciterId: Int,
+        surahNumber: Int,
+        position: Int,
+    ) {
+        val current = currentDownloadState(reciterId, surahNumber)
+        if (current is SurahDownloadState.Downloaded || current is SurahDownloadState.Downloading || current is SurahDownloadState.Preparing) {
+            return
+        }
+        setDownloadState(reciterId, surahNumber, SurahDownloadState.Queued(position))
     }
 
     private fun isChapterCached(metadata: ChapterAudioMetadata): Boolean {

@@ -22,6 +22,11 @@ data class TajweedAnnotation(
     val rule: String,
 )
 
+data class TafsirSourceUiModel(
+    val id: Int,
+    val name: String,
+)
+
 data class QuranReaderUiState(
     val selectedSurah: SurahInfo = quranCatalog.first(),
     val ayahs: List<QuranAyah> = emptyList(),
@@ -31,6 +36,8 @@ data class QuranReaderUiState(
     val translationEnabled: Boolean = true,
     val tajweedEnabled: Boolean = false,
     val expandedTafsirVerseKey: String? = null,
+    val availableTafsirSources: List<TafsirSourceUiModel> = emptyList(),
+    val selectedTafsirSourceId: Int = MUKHTASAR_TAFSIR_ID,
     val tafsirByVerse: Map<String, String> = emptyMap(),
     val loadingTafsirVerseKeys: Set<String> = emptySet(),
     val bookmarkedVerseKeys: Set<String> = emptySet(),
@@ -47,6 +54,10 @@ data class QuranReaderUiState(
     val audioDownloadStates: Map<String, SurahDownloadState> = emptyMap(),
     val loading: Boolean = true,
 )
+
+const val MUKHTASAR_TAFSIR_ID = -1
+
+fun tafsirCacheKey(verseKey: String, sourceId: Int): String = "$verseKey|$sourceId"
 
 data class QuranRecentLocation(
     val surahNumber: Int,

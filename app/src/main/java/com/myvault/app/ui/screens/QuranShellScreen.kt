@@ -93,6 +93,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
@@ -108,11 +109,14 @@ import com.myvault.app.R
 import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.SurahInfo
+import com.myvault.app.data.quran.TafsirSourceUiModel
 import com.myvault.app.data.quran.arabicTextSize
 import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
+import com.myvault.app.data.quran.audio.QuranAudioDownloadService
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
 import com.myvault.app.data.quran.audio.SurahDownloadState
 import com.myvault.app.data.quran.quranCatalog
+import com.myvault.app.data.quran.tafsirCacheKey
 import com.myvault.app.data.quran.translationTextSize
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.buildQuranArabicText
@@ -146,6 +150,7 @@ fun QuranShellScreen(
     onSetTajweedEnabled: (Boolean) -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
     onToggleTafsir: (String) -> Unit,
+    onSelectTafsirSource: (Int) -> Unit,
     onToggleBookmark: (String) -> Unit,
     onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
     onOpenBookmark: (String) -> Unit,
@@ -207,6 +212,7 @@ fun QuranShellScreen(
                 onSetTajweedEnabled = onSetTajweedEnabled,
                 onLastReadAyahChanged = onLastReadAyahChanged,
                 onToggleTafsir = onToggleTafsir,
+                onSelectTafsirSource = onSelectTafsirSource,
                 onToggleBookmark = onToggleBookmark,
                 onCreateReflectionNote = onCreateReflectionNote,
                 onOpenBookmark = onOpenBookmark,
@@ -254,6 +260,7 @@ private fun QuranReaderSurface(
     onSetTajweedEnabled: (Boolean) -> Unit,
     onLastReadAyahChanged: (Int, Int) -> Unit,
     onToggleTafsir: (String) -> Unit,
+    onSelectTafsirSource: (Int) -> Unit,
     onToggleBookmark: (String) -> Unit,
     onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
     onOpenBookmark: (String) -> Unit,
@@ -399,10 +406,13 @@ private fun QuranReaderSurface(
                         translation = ayah.translation,
                         translationTextSize = uiState.translationTextSize,
                         translationEnabled = uiState.translationEnabled,
-                        tafsir = uiState.tafsirByVerse[ayah.verseKey].orEmpty(),
+                        tafsir = uiState.tafsirByVerse[tafsirCacheKey(ayah.verseKey, uiState.selectedTafsirSourceId)].orEmpty(),
+                        tafsirSources = uiState.availableTafsirSources,
+                        selectedTafsirSourceId = uiState.selectedTafsirSourceId,
                         isTafsirExpanded = uiState.expandedTafsirVerseKey == ayah.verseKey,
-                        isTafsirLoading = ayah.verseKey in uiState.loadingTafsirVerseKeys,
+                        isTafsirLoading = tafsirCacheKey(ayah.verseKey, uiState.selectedTafsirSourceId) in uiState.loadingTafsirVerseKeys,
                         onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
+                        onSelectTafsirSource = onSelectTafsirSource,
                         onOpenActions = { ayahActionsTarget = ayah.verseKey },
                         onCreateReflectionNote = { reflectionTarget = ayah.verseKey },
                         isAudioPlaying = uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer?.isPlaying == true,
@@ -1146,9 +1156,12 @@ private fun AyahRow(
     translationTextSize: androidx.compose.ui.unit.TextUnit,
     translationEnabled: Boolean,
     tafsir: String,
+    tafsirSources: List<TafsirSourceUiModel>,
+    selectedTafsirSourceId: Int,
     isTafsirExpanded: Boolean,
     isTafsirLoading: Boolean,
     onToggleTafsir: () -> Unit,
+    onSelectTafsirSource: (Int) -> Unit,
     onOpenActions: () -> Unit,
     onCreateReflectionNote: () -> Unit,
     isAudioPlaying: Boolean,
@@ -1158,6 +1171,11 @@ private fun AyahRow(
     val colors = VaultThemeTokens.colors
     val cardShape = RoundedCornerShape(14.dp)
     val pillShape = RoundedCornerShape(9.dp)
+    val actionPillTextStyle = MaterialTheme.typography.labelSmall.copy(
+        fontSize = 10.5.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.sp,
+    )
     val renderedArabic = remember(ayah.verseKey, ayah.arabicText, ayah.tajweedAnnotations, tajweedEnabled, colors) {
         runCatching {
             buildQuranArabicText(
@@ -1269,8 +1287,23 @@ private fun AyahRow(
                 textAlign = TextAlign.Right,
             )
 
+            AnimatedVisibility(
+                visible = translationEnabled && translation.isNotBlank(),
+                enter = fadeIn(animationSpec = tween(durationMillis = 150)) + expandVertically(animationSpec = tween(durationMillis = 180)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 110)) + shrinkVertically(animationSpec = tween(durationMillis = 150)),
+            ) {
+                Text(
+                    text = translation,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = translationTextSize,
+                        lineHeight = (translationTextSize.value * 1.58f).sp,
+                    ),
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(bottom = 9.dp),
+                )
+            }
+
             Row(
-                modifier = Modifier.padding(top = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1288,7 +1321,7 @@ private fun AyahRow(
                 ) {
                     Text(
                         text = "Tafsir",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W600),
+                        style = actionPillTextStyle,
                         color = if (isTafsirExpanded) colors.accent else colors.textSecondary,
                     )
                 }
@@ -1306,7 +1339,7 @@ private fun AyahRow(
                 ) {
                     Text(
                         text = "Add reflection",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W600),
+                        style = actionPillTextStyle,
                         color = colors.textSecondary,
                     )
                 }
@@ -1338,22 +1371,6 @@ private fun AyahRow(
             }
 
             AnimatedVisibility(
-                visible = translationEnabled && translation.isNotBlank(),
-                enter = fadeIn(animationSpec = tween(durationMillis = 150)) + expandVertically(animationSpec = tween(durationMillis = 180)),
-                exit = fadeOut(animationSpec = tween(durationMillis = 110)) + shrinkVertically(animationSpec = tween(durationMillis = 150)),
-            ) {
-                Text(
-                    text = translation,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = translationTextSize,
-                        lineHeight = (translationTextSize.value * 1.58f).sp,
-                    ),
-                    color = colors.textSecondary,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 3.dp),
-                )
-            }
-
-            AnimatedVisibility(
                 visible = isTafsirExpanded,
                 enter = fadeIn(animationSpec = tween(durationMillis = 170)) + expandVertically(animationSpec = tween(durationMillis = 220)),
                 exit = fadeOut(animationSpec = tween(durationMillis = 130)) + shrinkVertically(animationSpec = tween(durationMillis = 180)),
@@ -1375,13 +1392,46 @@ private fun AyahRow(
                         ),
                         color = colors.textMuted,
                     )
+                    if (tafsirSources.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            contentPadding = PaddingValues(end = 4.dp),
+                        ) {
+                            items(tafsirSources, key = { it.id }) { source ->
+                                val selected = source.id == selectedTafsirSourceId
+                                Box(
+                                    modifier = Modifier
+                                        .clip(pillShape)
+                                        .background(if (selected) colors.accentSoft else colors.surface)
+                                        .border(
+                                            1.dp,
+                                            if (selected) colors.accentBorder else colors.border.copy(alpha = 0.78f),
+                                            pillShape,
+                                        )
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = { onSelectTafsirSource(source.id) },
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                ) {
+                                    Text(
+                                        text = source.name,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W700),
+                                        color = if (selected) colors.accent else colors.textSecondary,
+                                    )
+                                }
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                     SelectionContainer {
                         Text(
                             text = when {
                                 isTafsirLoading -> "Loading tafsir..."
                                 tafsir.isNotBlank() -> tafsir
-                                else -> "No tafsir is available for this ayah in the current abridged source."
+                                else -> "No tafsir is available for this ayah in the selected source."
                             },
                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 23.sp),
                             color = colors.textSecondary,
@@ -1428,6 +1478,7 @@ private fun QuranReciterPickerSheet(
 ) {
     if (!visible) return
     val colors = VaultThemeTokens.colors
+    val localContext = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val rowShape = RoundedCornerShape(16.dp)
 
@@ -1573,6 +1624,7 @@ private fun QuranAudioDownloadsSheet(
 ) {
     if (!visible) return
     val colors = VaultThemeTokens.colors
+    val localContext = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedReciter by remember { mutableStateOf<AudioReciterUiModel?>(null) }
 
@@ -1669,6 +1721,18 @@ private fun QuranAudioDownloadsSheet(
                 }
             } else {
                 val reciter = selectedReciter ?: return@Column
+                val missingSurahs = remember(reciter.id, downloadStates) {
+                    quranCatalog.filter { surah ->
+                        when (downloadStates["${reciter.id}:${surah.num}"]) {
+                            SurahDownloadState.Downloaded,
+                            SurahDownloadState.Preparing,
+                            is SurahDownloadState.Queued,
+                            is SurahDownloadState.Downloading,
+                            -> false
+                            else -> true
+                        }
+                    }.map { it.num }.toIntArray()
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1693,27 +1757,56 @@ private fun QuranAudioDownloadsSheet(
                                     color = colors.text,
                                 )
                                 Text(
-                                    text = "Tap any Surah to download it for offline playback.",
+                                    text = "Download one Surah, or queue every missing Surah in the background.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colors.textSecondary,
                                 )
                             }
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.elevated)
-                                    .border(1.dp, colors.border, RoundedCornerShape(10.dp))
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) { selectedReciter = null }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = "Change",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W700),
-                                    color = colors.textSecondary,
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.accentSoft)
+                                        .border(1.dp, colors.accentBorder, RoundedCornerShape(10.dp))
+                                        .clickable(
+                                            enabled = missingSurahs.isNotEmpty(),
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) {
+                                            QuranAudioDownloadService.startDownloads(
+                                                context = localContext.applicationContext,
+                                                reciter = reciter,
+                                                surahNumbers = missingSurahs,
+                                            )
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = "Download all",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W700),
+                                        color = if (missingSurahs.isEmpty()) colors.textMuted else colors.accent,
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.elevated)
+                                        .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) { selectedReciter = null }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = "Change",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W700),
+                                        color = colors.textSecondary,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1722,7 +1815,13 @@ private fun QuranAudioDownloadsSheet(
                         SurahDownloadRow(
                             surah = surah,
                             state = state,
-                            onDownload = { onDownload(reciter, surah.num) },
+                            onDownload = {
+                                QuranAudioDownloadService.startDownload(
+                                    context = localContext.applicationContext,
+                                    reciter = reciter,
+                                    surahNumber = surah.num,
+                                )
+                            },
                         )
                     }
                 }
@@ -1837,6 +1936,39 @@ private fun SurahDownloadRow(
         when (state) {
             SurahDownloadState.NotDownloaded -> DownloadStatusButton(onClick = onDownload) {
                 Icon(Icons.Rounded.Download, contentDescription = "Download Surah", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+            }
+            SurahDownloadState.Preparing -> {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        color = colors.accent,
+                        strokeWidth = 2.4.dp,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Text(
+                        text = "Preparing",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700),
+                        color = colors.accent,
+                    )
+                }
+            }
+            is SurahDownloadState.Queued -> {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colors.accentSoft)
+                        .border(1.dp, colors.accentBorder, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Queued ${state.position}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700),
+                        color = colors.accent,
+                    )
+                }
             }
             is SurahDownloadState.Downloading -> {
                 Box(contentAlignment = Alignment.Center) {

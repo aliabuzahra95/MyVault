@@ -8,6 +8,7 @@ import com.myvault.app.data.quran.QuranCatalogRepository
 import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.QuranTextRepository
+import com.myvault.app.data.quran.MUKHTASAR_TAFSIR_ID
 import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
 import com.myvault.app.data.quran.audio.AudioPickerAyah
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
@@ -17,6 +18,7 @@ import com.myvault.app.data.quran.audio.QuranAudioRepository
 import com.myvault.app.data.quran.audio.SurahDownloadState
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.NoteRepository
+import com.myvault.app.data.quran.tafsirCacheKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -59,6 +61,14 @@ class QuranReaderViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 audioPlaybackSpeed = preferences.quranAudioPlaybackSpeed.coerceIn(0.5f, 2f),
             )
+            launch {
+                val tafsirSources = runCatching { quranTextRepository.getAvailableTafsirSources() }
+                    .getOrDefault(emptyList())
+                _uiState.value = _uiState.value.copy(
+                    availableTafsirSources = tafsirSources,
+                    selectedTafsirSourceId = tafsirSources.firstOrNull()?.id ?: MUKHTASAR_TAFSIR_ID,
+                )
+            }
             launch {
                 val reciters = runCatching { quranAudioRepository.getSupportedReciters() }.getOrDefault(emptyList())
                 val selectedReciter = reciters.firstOrNull { it.id == preferences.quranAudioReciterId }
@@ -157,17 +167,32 @@ class QuranReaderViewModel @Inject constructor(
     fun toggleTafsir(verseKey: String) {
         val nextExpanded = if (_uiState.value.expandedTafsirVerseKey == verseKey) null else verseKey
         _uiState.value = _uiState.value.copy(expandedTafsirVerseKey = nextExpanded)
-        if (nextExpanded == null || verseKey in _uiState.value.tafsirByVerse || verseKey in _uiState.value.loadingTafsirVerseKeys) {
+        if (nextExpanded == null) {
+            return
+        }
+        loadTafsirIfNeeded(verseKey, _uiState.value.selectedTafsirSourceId)
+    }
+
+    fun selectTafsirSource(sourceId: Int) {
+        if (_uiState.value.selectedTafsirSourceId == sourceId) return
+        _uiState.value = _uiState.value.copy(selectedTafsirSourceId = sourceId)
+        val expandedVerse = _uiState.value.expandedTafsirVerseKey ?: return
+        loadTafsirIfNeeded(expandedVerse, sourceId)
+    }
+
+    private fun loadTafsirIfNeeded(verseKey: String, sourceId: Int) {
+        val cacheKey = tafsirCacheKey(verseKey, sourceId)
+        if (cacheKey in _uiState.value.tafsirByVerse || cacheKey in _uiState.value.loadingTafsirVerseKeys) {
             return
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
-                loadingTafsirVerseKeys = _uiState.value.loadingTafsirVerseKeys + verseKey,
+                loadingTafsirVerseKeys = _uiState.value.loadingTafsirVerseKeys + cacheKey,
             )
-            val tafsir = runCatching { quranTextRepository.getTafsir(verseKey) }.getOrDefault("")
+            val tafsir = runCatching { quranTextRepository.getTafsir(verseKey, sourceId) }.getOrDefault("")
             _uiState.value = _uiState.value.copy(
-                tafsirByVerse = if (tafsir.isNotBlank()) _uiState.value.tafsirByVerse + (verseKey to tafsir) else _uiState.value.tafsirByVerse,
-                loadingTafsirVerseKeys = _uiState.value.loadingTafsirVerseKeys - verseKey,
+                tafsirByVerse = if (tafsir.isNotBlank()) _uiState.value.tafsirByVerse + (cacheKey to tafsir) else _uiState.value.tafsirByVerse,
+                loadingTafsirVerseKeys = _uiState.value.loadingTafsirVerseKeys - cacheKey,
             )
         }
     }

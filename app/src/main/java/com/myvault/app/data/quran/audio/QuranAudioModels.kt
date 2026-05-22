@@ -19,6 +19,8 @@ data class AudioMiniPlayerUiState(
 
 sealed interface SurahDownloadState {
     data object NotDownloaded : SurahDownloadState
+    data object Preparing : SurahDownloadState
+    data class Queued(val position: Int) : SurahDownloadState
     data class Downloading(val progressPercent: Int) : SurahDownloadState
     data object Downloaded : SurahDownloadState
     data class Failed(val message: String) : SurahDownloadState

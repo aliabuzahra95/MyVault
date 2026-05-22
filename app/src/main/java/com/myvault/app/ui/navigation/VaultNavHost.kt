@@ -244,6 +244,7 @@ fun VaultNavHost(
                         onSetTajweedEnabled = quranViewModel::setTajweedEnabled,
                         onLastReadAyahChanged = quranViewModel::updateLastReadPosition,
                         onToggleTafsir = quranViewModel::toggleTafsir,
+                        onSelectTafsirSource = quranViewModel::selectTafsirSource,
                         onToggleBookmark = quranViewModel::toggleBookmark,
                         onCreateReflectionNote = { ayah, title, body ->
                             quranViewModel.createReflectionNoteForAyah(ayah, title, body) {
