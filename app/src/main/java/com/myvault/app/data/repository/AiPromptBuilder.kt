@@ -304,7 +304,7 @@ object AiPromptBuilder {
             <note>
             <title>$safeTitle</title>
             <body>
-            ${body.takeMiddleAware(6_000)}
+            ${body.scopedAroundSelection(selectedText, action.selectedTextContextBudget())}
             </body>
             </note>
 
@@ -850,9 +850,8 @@ object AiPromptBuilder {
                     NoteAiAction.Ask,
                     NoteAiAction.GeneralAsk,
                     -> 1_800
-                    NoteAiAction.StudyTutor,
-                    NoteAiAction.ExplainNote,
-                    -> 2_600
+                    NoteAiAction.StudyTutor -> 2_600
+                    NoteAiAction.ExplainNote -> 1_800
                     NoteAiAction.DeepAnalysis -> 3_000
                     NoteAiAction.IntelligentStructure -> 3_600
                     NoteAiAction.CleanFormat -> 2_800
@@ -864,9 +863,8 @@ object AiPromptBuilder {
                     NoteAiAction.Ask,
                     NoteAiAction.GeneralAsk,
                     -> 4_000
-                    NoteAiAction.StudyTutor,
-                    NoteAiAction.ExplainNote,
-                    -> 5_500
+                    NoteAiAction.StudyTutor -> 5_500
+                    NoteAiAction.ExplainNote -> 3_200
                     NoteAiAction.DeepAnalysis -> 7_000
                     NoteAiAction.IntelligentStructure -> 8_000
                     NoteAiAction.CleanFormat -> 5_500
@@ -880,9 +878,8 @@ object AiPromptBuilder {
                     NoteAiAction.Ask,
                     NoteAiAction.GeneralAsk,
                     -> 2_400
-                    NoteAiAction.StudyTutor,
-                    NoteAiAction.ExplainNote,
-                    -> 3_200
+                    NoteAiAction.StudyTutor -> 3_200
+                    NoteAiAction.ExplainNote -> 2_200
                     NoteAiAction.DeepAnalysis -> 3_600
                     NoteAiAction.IntelligentStructure -> 6_000
                     NoteAiAction.CleanFormat -> 4_000
@@ -894,9 +891,8 @@ object AiPromptBuilder {
                     NoteAiAction.Ask,
                     NoteAiAction.GeneralAsk,
                     -> 3_200
-                    NoteAiAction.StudyTutor,
-                    NoteAiAction.ExplainNote,
-                    -> 4_200
+                    NoteAiAction.StudyTutor -> 4_200
+                    NoteAiAction.ExplainNote -> 3_000
                     NoteAiAction.DeepAnalysis -> 5_000
                     NoteAiAction.IntelligentStructure -> 8_000
                     NoteAiAction.CleanFormat -> 5_500
@@ -954,8 +950,9 @@ object AiPromptBuilder {
     private fun String.scopedForAction(action: NoteAiAction): String =
         when (action) {
             NoteAiAction.QuickSummary -> takeMiddleAware(8_000)
-            NoteAiAction.DeepSummary,
             NoteAiAction.ExplainNote,
+            -> takeMiddleAware(7_000)
+            NoteAiAction.DeepSummary,
             NoteAiAction.FormatNote,
             NoteAiAction.CleanFormat,
             -> takeMiddleAware(12_000)
@@ -978,5 +975,49 @@ object AiPromptBuilder {
             append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
             append(clean.takeLast(tailLength).trimStart())
         }
+    }
+}
+
+private fun SelectedTextAiAction.selectedTextContextBudget(): Int =
+    when (this) {
+        SelectedTextAiAction.Simplify,
+        SelectedTextAiAction.Terminology,
+        SelectedTextAiAction.StudyQuestions,
+        -> 1_500
+        SelectedTextAiAction.Ask,
+        SelectedTextAiAction.Explain,
+        -> 2_500
+        SelectedTextAiAction.Expand,
+        SelectedTextAiAction.RelatedConcepts,
+        SelectedTextAiAction.ComparePositions,
+        SelectedTextAiAction.ObjectionResponse,
+        -> 3_500
+    }
+
+private fun String.scopedAroundSelection(selectedText: String, maxChars: Int): String {
+    val clean = trim()
+    if (clean.length <= maxChars) return clean
+    val selected = selectedText.trim().take(400)
+    val index = if (selected.isNotBlank()) clean.indexOf(selected, ignoreCase = true) else -1
+    if (index < 0) return clean.takeMiddleAwareForSelectedText(maxChars)
+    val sideBudget = ((maxChars - selected.length).coerceAtLeast(600)) / 2
+    val start = (index - sideBudget).coerceAtLeast(0)
+    val end = (index + selectedText.length + sideBudget).coerceAtMost(clean.length)
+    return buildString {
+        if (start > 0) append("[Earlier note context trimmed for speed.]\n\n")
+        append(clean.substring(start, end).trim())
+        if (end < clean.length) append("\n\n[Later note context trimmed for speed.]")
+    }
+}
+
+private fun String.takeMiddleAwareForSelectedText(maxChars: Int): String {
+    val clean = trim()
+    if (clean.length <= maxChars) return clean
+    val headLength = (maxChars * 0.62f).toInt()
+    val tailLength = maxChars - headLength
+    return buildString {
+        append(clean.take(headLength).trimEnd())
+        append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
+        append(clean.takeLast(tailLength).trimStart())
     }
 }

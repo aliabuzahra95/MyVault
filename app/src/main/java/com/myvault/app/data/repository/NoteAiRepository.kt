@@ -435,15 +435,15 @@ class NoteAiRepository @Inject constructor(
 
 private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
     val maxChars = when (action) {
-        NoteAiAction.QuickSummary -> 8_000
+        NoteAiAction.QuickSummary -> 5_000
+        NoteAiAction.ExplainNote -> 7_000
         NoteAiAction.DeepSummary,
-        NoteAiAction.ExplainNote,
         NoteAiAction.FormatNote,
         NoteAiAction.CleanFormat,
-        -> 12_000
+        -> 10_000
         NoteAiAction.Ask,
         NoteAiAction.GeneralAsk,
-        -> 14_000
+        -> 10_000
         NoteAiAction.StudyTutor,
         NoteAiAction.DeepAnalysis,
         NoteAiAction.IntelligentStructure,

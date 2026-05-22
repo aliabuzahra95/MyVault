@@ -305,6 +305,7 @@ class NoteViewModel @Inject constructor(
             val effectiveModel = model.fastForLightweight(routedAction)
             val userPrompt = if (question.isNotBlank()) question.trim() else userMessageFor(routedAction, question)
             val appendToConversation = !routedAction.isEditorOutputMode()
+            val requestWithVaultContext = question.withVaultContextIfUseful(routedAction, uiState.value)
             val history = _aiState.value.messages.toConversationHistory()
             if (appendToConversation) {
                 val userMessage = NoteAiChatMessage(
@@ -357,7 +358,7 @@ class NoteViewModel @Inject constructor(
                     model = effectiveModel,
                     title = title,
                     body = body,
-                    question = question,
+                    question = requestWithVaultContext,
                     history = if (appendToConversation) history else emptyList(),
                     onProgress = { progress ->
                         _aiState.update { it.copy(progressLabel = progress) }
@@ -441,6 +442,7 @@ class NoteViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            val effectiveModel = model.fastForSelectedText(action)
             _selectedTextAiState.update {
                 it.copy(
                     loading = true,
@@ -455,7 +457,7 @@ class NoteViewModel @Inject constructor(
                 noteAiRepository.generateForSelectedText(
                     action = action,
                     provider = provider,
-                    model = model,
+                    model = effectiveModel,
                     title = title,
                     body = body,
                     selectedText = selectedText,
@@ -628,6 +630,24 @@ private fun NoteAiModel.fastForLightweight(action: NoteAiAction): NoteAiModel =
             NoteAiAction.ExplainNote,
             NoteAiAction.FormatNote,
             NoteAiAction.CleanFormat,
+            NoteAiAction.IntelligentStructure,
+        )
+    ) {
+        NoteAiModel.Gemini25Flash
+    } else {
+        this
+    }
+
+private fun NoteAiModel.fastForSelectedText(action: SelectedTextAiAction): NoteAiModel =
+    if (
+        this == NoteAiModel.Gemini3Pro &&
+        action in setOf(
+            SelectedTextAiAction.Ask,
+            SelectedTextAiAction.Explain,
+            SelectedTextAiAction.Simplify,
+            SelectedTextAiAction.Terminology,
+            SelectedTextAiAction.RelatedConcepts,
+            SelectedTextAiAction.StudyQuestions,
         )
     ) {
         NoteAiModel.Gemini25Flash
@@ -660,11 +680,19 @@ private fun routeAiIntent(action: NoteAiAction, question: String): NoteAiAction 
         ) -> NoteAiAction.IntelligentStructure
 
         normalized.containsAny(
+            "quick summary",
+            "brief summary",
+            "short summary",
+            "summarise briefly",
+            "summarize briefly",
+            "recap",
+            "key points",
+        ) -> NoteAiAction.QuickSummary
+
+        normalized.containsAny(
             "summarise",
             "summarize",
             "summary",
-            "recap",
-            "key points",
         ) -> NoteAiAction.DeepSummary
 
         normalized.containsAny(
@@ -687,6 +715,10 @@ private fun routeAiIntent(action: NoteAiAction, question: String): NoteAiAction 
             "clarify",
             "what does",
             "what is meant",
+            "what does this mean",
+        ) -> NoteAiAction.ExplainNote
+
+        normalized.containsAny(
             "teach me",
             "help me understand",
         ) -> NoteAiAction.StudyTutor
@@ -705,6 +737,54 @@ private fun userMessageFor(action: NoteAiAction, question: String): String =
         -> question.trim()
         else -> action.displayName
     }
+
+private fun String.withVaultContextIfUseful(action: NoteAiAction, state: NoteUiState): String {
+    if (action.isEditorOutputMode()) return this
+    val normalized = lowercase()
+    val wantsContext = action in setOf(NoteAiAction.Ask, NoteAiAction.GeneralAsk, NoteAiAction.StudyTutor, NoteAiAction.DeepAnalysis) &&
+        normalized.containsAny(
+            "related",
+            "connect",
+            "connection",
+            "backlink",
+            "source",
+            "reference",
+            "pdf",
+            "annotation",
+            "tag",
+            "folder",
+            "where did i",
+            "where have i",
+            "my notes",
+            "vault",
+        )
+    if (!wantsContext) return this
+    val context = buildString {
+        if (state.folderPath.isNotEmpty()) appendLine("Folder path: ${state.folderPath.joinToString(" / ")}")
+        if (state.knowledgeTags.isNotEmpty()) appendLine("Tags: ${state.knowledgeTags.take(8).joinToString { it.name }}")
+        if (state.backlinks.isNotEmpty()) {
+            appendLine("Backlinks:")
+            state.backlinks.take(5).forEach { appendLine("- ${it.title}: ${it.preview.take(180)}") }
+        }
+        if (state.sourceReferences.isNotEmpty()) {
+            appendLine("Source references:")
+            state.sourceReferences.take(5).forEach { reference ->
+                appendLine("- ${reference.title} p.${reference.pageIndex + 1}: linked source/reference")
+            }
+        }
+    }.trim()
+    if (context.isBlank()) return this
+    return """
+        ${trim()}
+
+        Local MyVault context available for this note:
+        <vault_context>
+        $context
+        </vault_context>
+
+        Use this vault context only if it directly helps. Do not pretend it is exhaustive.
+    """.trimIndent()
+}
 
 private fun List<NoteAiChatMessage>.toConversationHistory(): List<NoteAiConversationTurn> =
     filter { it.role == NoteAiMessageRole.User || it.role == NoteAiMessageRole.Assistant }
