@@ -383,7 +383,6 @@ class QuranReaderViewModel @Inject constructor(
                             ),
                         )
                         startAudioProgressTicker()
-                        updateLastReadPosition(surah.num, ayah.ayahNumber)
                     },
                     onCompleted = {
                         _uiState.value = _uiState.value.copy(playingVerseKey = null, audioLoadingVerseKey = null)

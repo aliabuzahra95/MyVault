@@ -86,7 +86,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -124,8 +123,7 @@ import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
 import com.myvault.app.ui.theme.DarkVaultColors
 import com.myvault.app.ui.theme.VaultThemeTokens
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
@@ -292,6 +290,7 @@ private fun QuranReaderSurface(
     var reflectionTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
     var audioDownloadsOpen by rememberSaveable { mutableStateOf(false) }
+    var readingPositionSavedMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     BackHandler(enabled = readerOptionsOpen || ayahActionsTarget != null || reflectionTarget != null || bookmarksOpen || audioDownloadsOpen) {
@@ -313,16 +312,11 @@ private fun QuranReaderSurface(
         }
     }
 
-    LaunchedEffect(listState, uiState.selectedSurah.num, uiState.ayahs.size, readerHeaderItemCount) {
-        snapshotFlow { listState.firstVisibleItemIndex }
-            .mapNotNull { firstVisibleIndex ->
-                val ayahIndex = (firstVisibleIndex - readerHeaderItemCount).coerceAtLeast(0)
-                uiState.ayahs.getOrNull(ayahIndex)?.ayahNumber
-            }
-            .distinctUntilChanged()
-            .collect { ayahNumber ->
-                onLastReadAyahChanged(uiState.selectedSurah.num, ayahNumber)
-            }
+    LaunchedEffect(readingPositionSavedMessage) {
+        if (readingPositionSavedMessage != null) {
+            delay(1600L)
+            readingPositionSavedMessage = null
+        }
     }
 
     Box(modifier = modifier) {
@@ -415,6 +409,10 @@ private fun QuranReaderSurface(
                         onSelectTafsirSource = onSelectTafsirSource,
                         onOpenActions = { ayahActionsTarget = ayah.verseKey },
                         onCreateReflectionNote = { reflectionTarget = ayah.verseKey },
+                        onSaveReadingPosition = {
+                            onLastReadAyahChanged(uiState.selectedSurah.num, ayah.ayahNumber)
+                            readingPositionSavedMessage = "Saved as current reading position"
+                        },
                         isAudioPlaying = uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer?.isPlaying == true,
                         isAudioLoading = uiState.audioLoadingVerseKey == ayah.verseKey,
                         onPlayAudio = { onPlayAudioForAyah(ayah) },
@@ -459,6 +457,32 @@ private fun QuranReaderSurface(
                     .padding(horizontal = 14.dp, vertical = 12.dp)
                     .navigationBarsPadding(),
             )
+        }
+
+        AnimatedVisibility(
+            visible = readingPositionSavedMessage != null,
+            enter = fadeIn(animationSpec = tween(160)) + slideInVertically(animationSpec = tween(180)) { it / 2 },
+            exit = fadeOut(animationSpec = tween(180)) + slideOutVertically(animationSpec = tween(180)) { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 24.dp)
+                .padding(bottom = if (uiState.miniPlayer != null) 178.dp else 98.dp)
+                .navigationBarsPadding(),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = colors.elevated.copy(alpha = 0.96f),
+                border = BorderStroke(1.dp, colors.border.copy(alpha = 0.82f)),
+                tonalElevation = 0.dp,
+                shadowElevation = 8.dp,
+            ) {
+                Text(
+                    text = readingPositionSavedMessage.orEmpty(),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
+                )
+            }
         }
 
         if (readerOptionsOpen) {
@@ -1164,6 +1188,7 @@ private fun AyahRow(
     onSelectTafsirSource: (Int) -> Unit,
     onOpenActions: () -> Unit,
     onCreateReflectionNote: () -> Unit,
+    onSaveReadingPosition: () -> Unit,
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
     onPlayAudio: () -> Unit,
@@ -1211,6 +1236,7 @@ private fun AyahRow(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {},
+                onDoubleClick = onSaveReadingPosition,
                 onLongClick = onOpenActions,
             )
             .padding(vertical = 10.dp, horizontal = 14.dp),
