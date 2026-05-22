@@ -1,6 +1,7 @@
 package com.myvault.app.ui.navigation
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -191,7 +192,7 @@ fun VaultNavHost(
                             homeViewModel.setNoteFavourite(noteId, favourite)
                         },
                         onImportFileClick = { uri ->
-                            homeViewModel.importDocument(uri) { noteId ->
+                            homeViewModel.importDocument(uri, mode = FOLDER_MODE_STUDY) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
@@ -199,7 +200,7 @@ fun VaultNavHost(
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                         },
                         onOpenAttachmentsClick = {
-                            navController.navigate(VaultDestination.Attachments.route)
+                            navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_STUDY))
                         },
                         onThemeClick = {
                             settingsViewModel.setTheme(
@@ -364,7 +365,7 @@ fun VaultNavHost(
                             homeViewModel.setNoteFavourite(noteId, favourite)
                         },
                         onImportFileClick = { uri ->
-                            homeViewModel.importDocument(uri) { noteId ->
+                            homeViewModel.importDocument(uri, mode = FOLDER_MODE_PERSONAL) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
@@ -372,7 +373,7 @@ fun VaultNavHost(
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                         },
                         onOpenAttachmentsClick = {
-                            navController.navigate(VaultDestination.Attachments.route)
+                            navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_PERSONAL))
                         },
                         onThemeClick = {
                             settingsViewModel.setTheme(
@@ -668,7 +669,10 @@ fun VaultNavHost(
                 },
             )
         }
-        composable(VaultDestination.Attachments.route) {
+        composable(
+            route = VaultDestination.Attachments.route,
+            arguments = listOf(navArgument("mode") { type = NavType.StringType }),
+        ) {
             val viewModel: AttachmentsViewModel = hiltViewModel()
             val attachments by viewModel.attachments.collectAsState()
             AttachmentsScreen(
@@ -685,6 +689,7 @@ fun VaultNavHost(
             val preferences by viewModel.userPreferences.collectAsState()
             val storageLabel by viewModel.storageLabel.collectAsState()
             val recentlyDeleted by viewModel.recentlyDeleted.collectAsState()
+            val driveRestoreState by viewModel.driveRestoreState.collectAsState()
             var backupMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
             SettingsScreen(
                 preferences = preferences,
@@ -710,8 +715,12 @@ fun VaultNavHost(
                 onGoogleDriveSignInResult = { data -> viewModel.handleGoogleDriveSignInResult(data) { backupMessage = it } },
                 onGoogleDrivePush = { viewModel.pushGoogleDriveSync { backupMessage = it } },
                 onGoogleDrivePull = { viewModel.pullGoogleDriveSync { backupMessage = it } },
+                driveRestoreState = driveRestoreState,
                 backupMessage = backupMessage,
-                onDismissBackupMessage = { backupMessage = null },
+                onDismissBackupMessage = {
+                    backupMessage = null
+                    viewModel.dismissDriveRestoreMessage()
+                },
             )
         }
     }
@@ -760,6 +769,15 @@ private fun StudyLibraryPersonalShell(
             page = 0,
             animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
         )
+    }
+
+    BackHandler(enabled = workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
+        scope.launch {
+            pagerState.animateScrollToPage(
+                page = 0,
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            )
+        }
     }
 
     Box(

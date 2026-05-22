@@ -65,13 +65,15 @@ class HomeViewModel @Inject constructor(
 
     private val homeContent = combine(
         noteRepository.observePinnedCards(),
-        attachmentRepository.observeAllCards(),
+        attachmentRepository.observeCardsForMode(FOLDER_MODE_STUDY),
+        attachmentRepository.observeCardsForMode(FOLDER_MODE_PERSONAL),
         folderRepository.observeWorkspaceTree(FOLDER_MODE_STUDY),
         folderRepository.observeWorkspaceTree(FOLDER_MODE_PERSONAL),
-    ) { pinned, attachments, studyTree, personalTree ->
+    ) { pinned, studyAttachments, personalAttachments, studyTree, personalTree ->
         HomeContent(
             pinnedNotes = pinned,
-            attachments = attachments,
+            studyAttachments = studyAttachments,
+            personalAttachments = personalAttachments,
             studyTree = studyTree,
             personalTree = personalTree,
         )
@@ -122,10 +124,15 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun importDocument(uri: Uri, onImported: (String) -> Unit) {
+    fun importDocument(uri: Uri, mode: String = FOLDER_MODE_STUDY, onImported: (String) -> Unit) {
         viewModelScope.launch {
             val fileName = attachmentRepository.displayName(uri).ifBlank { "Imported file" }
-            val noteId = noteRepository.createNote(folderId = null, title = fileName.substringBeforeLast('.'))
+            val targetFolderId = if (mode == FOLDER_MODE_PERSONAL) {
+                folderRepository.ensureRootFolderForMode(name = "Inbox", mode = FOLDER_MODE_PERSONAL)
+            } else {
+                null
+            }
+            val noteId = noteRepository.createNote(folderId = targetFolderId, title = fileName.substringBeforeLast('.'))
             attachmentRepository.attachDocument(noteId, uri)
             val imported = parseRichImport(html = null, plainText = "Imported file: $fileName")
             noteRepository.saveRichText(
@@ -202,7 +209,8 @@ class HomeViewModel @Inject constructor(
 
 private data class HomeContent(
     val pinnedNotes: List<VaultNoteCardData>,
-    val attachments: List<AttachmentSample>,
+    val studyAttachments: List<AttachmentSample>,
+    val personalAttachments: List<AttachmentSample>,
     val studyTree: List<VaultTreeItem>,
     val personalTree: List<VaultTreeItem>,
 )
@@ -215,6 +223,7 @@ private fun HomeContent.toUiState(
     notePreviewLines: Int,
 ): HomeUiState {
     val tree = if (mode == FOLDER_MODE_PERSONAL) personalTree else studyTree
+    val attachments = if (mode == FOLDER_MODE_PERSONAL) personalAttachments else studyAttachments
     val visibleItems = tree.flatMap { it.flattenItems() }
     val visibleNoteIds = visibleItems.filter { it.type == VaultTreeItemType.Note }.map { it.id }.toSet()
     val visibleFolderIds = visibleItems.filter { it.type == VaultTreeItemType.Folder }.map { it.id }.toSet()

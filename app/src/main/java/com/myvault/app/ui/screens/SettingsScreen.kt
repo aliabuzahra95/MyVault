@@ -39,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,8 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.data.preferences.VaultUserPreferences
+import com.myvault.app.data.sync.DriveRestoreState
+import com.myvault.app.data.sync.DriveRestoreStage
 import com.myvault.app.ui.viewmodel.DeletedItemUiState
 import com.myvault.app.ui.viewmodel.RecentlyDeletedUiState
 import java.text.SimpleDateFormat
@@ -86,6 +89,7 @@ fun SettingsScreen(
     onGoogleDriveSignInResult: (Intent?) -> Unit = {},
     onGoogleDrivePush: () -> Unit = {},
     onGoogleDrivePull: () -> Unit = {},
+    driveRestoreState: DriveRestoreState = DriveRestoreState(),
     backupMessage: String? = null,
     onDismissBackupMessage: () -> Unit = {},
 ) {
@@ -179,6 +183,7 @@ fun SettingsScreen(
             },
             onGoogleDrivePushClick = onGoogleDrivePush,
             onGoogleDrivePullClick = { driveRestoreConfirmOpen = true },
+            driveRestoreState = driveRestoreState,
         )
     }
 
@@ -195,7 +200,6 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         driveRestoreConfirmOpen = false
-                        backupSettingsOpen = false
                         onGoogleDrivePull()
                     },
                 ) {
@@ -506,6 +510,7 @@ private fun BackupSettingsDialog(
     onGoogleDriveConnectClick: () -> Unit,
     onGoogleDrivePushClick: () -> Unit,
     onGoogleDrivePullClick: () -> Unit,
+    driveRestoreState: DriveRestoreState,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -533,6 +538,9 @@ private fun BackupSettingsDialog(
                 SettingsRow(Icons.Rounded.Storage, "Login", if (driveConnected) preferences.googleDriveAccountEmail else "Connect Google Drive", onClick = onGoogleDriveConnectClick)
                 SettingsRow(Icons.Rounded.Backup, "Push to Drive", if (driveConnected) "Incremental upload" else "Connect Drive first", onClick = onGoogleDrivePushClick)
                 SettingsRow(Icons.Rounded.Restore, "Restore from Drive", if (driveConnected) "Pull latest vault" else "Connect Drive first", onClick = onGoogleDrivePullClick)
+                if (driveRestoreState.active || driveRestoreState.isFinished) {
+                    DriveRestoreProgressCard(driveRestoreState)
+                }
                 SettingsRow(Icons.Rounded.Storage, "Last Drive update", preferences.lastGoogleDriveSyncAt.displayBackupTime())
             }
         },
@@ -542,6 +550,63 @@ private fun BackupSettingsDialog(
             }
         },
     )
+}
+
+@Composable
+private fun DriveRestoreProgressCard(state: DriveRestoreState) {
+    val colors = VaultThemeTokens.colors
+    val progress = state.progress
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = if (progress.stage == DriveRestoreStage.Complete) "Restore complete" else progress.stage.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.text,
+                )
+                progress.percent?.let {
+                    Text(
+                        text = "$it%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textSecondary,
+                    )
+                }
+            }
+            LinearProgressIndicator(
+                progress = { progress.percent?.div(100f) ?: if (state.active) 0.35f else 1f },
+                modifier = Modifier.fillMaxWidth(),
+                color = colors.accent,
+                trackColor = colors.border,
+            )
+            Text(
+                text = progress.message.ifBlank { state.message.orEmpty() },
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+            )
+            if (progress.total > 0) {
+                Text(
+                    text = "${progress.current.coerceAtMost(progress.total)} of ${progress.total} items",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
 }
 
 @Composable

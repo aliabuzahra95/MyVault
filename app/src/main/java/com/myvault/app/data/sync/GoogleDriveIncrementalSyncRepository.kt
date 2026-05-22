@@ -131,7 +131,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         }
     }
 
-    suspend fun pullLatestFromDrive(): DriveSyncResult = withContext(Dispatchers.IO) {
+    suspend fun pullLatestFromDrive(
+        onProgress: (DriveRestoreProgress) -> Unit = {},
+    ): DriveSyncResult = withContext(Dispatchers.IO) {
+        onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive restore"))
         val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
         val vault = drive.ensureMyVaultLayout()
         val manifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
@@ -145,8 +148,24 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         var reusedLocalFiles = 0
         try {
             val localAttachments = attachmentDao.getAllIncludingDeleted().associateBy { it.id }
+            onProgress(
+                DriveRestoreProgress(
+                    stage = DriveRestoreStage.Downloading,
+                    message = "Downloading changed vault files",
+                    current = 0,
+                    total = entries.size,
+                ),
+            )
             ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
-                entries.forEach { entry ->
+                entries.forEachIndexed { index, entry ->
+                    onProgress(
+                        DriveRestoreProgress(
+                            stage = DriveRestoreStage.Downloading,
+                            message = if (entry.kind == EntryKindFile) "Restoring file ${entry.fileName}" else "Restoring metadata ${entry.fileName}",
+                            current = index + 1,
+                            total = entries.size,
+                        ),
+                    )
                     zip.putNextEntry(ZipEntry(entry.backupEntry))
                     if (entry.kind == EntryKindFile) {
                         val attachmentId = entry.backupEntry.removePrefix("files/")
@@ -168,7 +187,11 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     zip.closeEntry()
                 }
             }
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Verifying, message = "Verifying restored package"))
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.RestoringFiles, message = "Rebuilding restored files"))
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.RestoringDatabase, message = "Restoring vault database"))
             val restored = backupRepository.restoreBackupFromFile(zipFile)
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Finalising, message = "Finalising restore"))
             val cloudVersion = manifest.optLong("cloudVersion", System.currentTimeMillis())
             preferences.markGoogleDriveSync(cloudVersion)
             DriveSyncResult.Success(
@@ -599,4 +622,35 @@ sealed interface DriveSyncResult {
     data class Conflict(val message: String) : DriveSyncResult
     data class Skipped(val message: String) : DriveSyncResult
     data class Failure(val message: String) : DriveSyncResult
+}
+
+enum class DriveRestoreStage(val label: String) {
+    Idle("Idle"),
+    Preparing("Preparing"),
+    Downloading("Downloading"),
+    Verifying("Verifying"),
+    RestoringDatabase("Restoring database"),
+    RestoringFiles("Restoring files"),
+    Finalising("Finalising"),
+    Complete("Complete"),
+    Failed("Failed"),
+}
+
+data class DriveRestoreProgress(
+    val stage: DriveRestoreStage = DriveRestoreStage.Idle,
+    val message: String = "",
+    val current: Int = 0,
+    val total: Int = 0,
+) {
+    val percent: Int?
+        get() = total.takeIf { it > 0 }?.let { ((current.toFloat() / it.toFloat()) * 100f).toInt().coerceIn(0, 100) }
+}
+
+data class DriveRestoreState(
+    val active: Boolean = false,
+    val progress: DriveRestoreProgress = DriveRestoreProgress(),
+    val message: String? = null,
+) {
+    val isFinished: Boolean
+        get() = progress.stage == DriveRestoreStage.Complete || progress.stage == DriveRestoreStage.Failed
 }

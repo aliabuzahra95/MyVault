@@ -239,7 +239,7 @@ class LibraryViewModel @Inject constructor(
                 .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
                 .filter { it.lastOpenedAt > 0L }
                 .sortedByDescending { it.lastOpenedAt }
-                .take(8),
+                .take(5),
             allFolders = libraryFolders
                 .filter { it.parentId == null }
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })

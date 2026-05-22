@@ -27,6 +27,8 @@ sealed class VaultDestination(val route: String, val label: String) {
             "attachment/$attachmentId?page=${pageIndex ?: -1}"
     }
     data object Search : VaultDestination("search", "Search")
-    data object Attachments : VaultDestination("attachments", "Attachments")
+    data object Attachments : VaultDestination("attachments/{mode}", "Attachments") {
+        fun route(mode: String) = "attachments/$mode"
+    }
     data object Settings : VaultDestination("settings", "Settings")
 }

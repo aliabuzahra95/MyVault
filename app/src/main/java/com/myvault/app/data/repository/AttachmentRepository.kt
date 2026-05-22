@@ -6,12 +6,14 @@ import android.provider.OpenableColumns
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
+import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.ui.screens.AttachmentSample
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +29,7 @@ class AttachmentRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val database: VaultDatabase,
     private val attachmentDao: AttachmentDao,
+    private val folderDao: FolderDao,
     private val noteDao: NoteDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
@@ -48,6 +51,34 @@ class AttachmentRepository @Inject constructor(
                 localPath = it.localPath,
             )
         }
+    }
+
+    fun observeCardsForMode(mode: String) = combine(
+        attachmentDao.observeAll(),
+        noteDao.observeAll(),
+        folderDao.observeAll(),
+    ) { attachments, notes, folders ->
+        val visibleFolderIds = folders.filter { it.mode == mode }.map { it.id }.toSet()
+        val visibleNotes = notes.filter { note ->
+            note.folderId in visibleFolderIds || (note.folderId == null && mode == FOLDER_MODE_STUDY)
+        }
+        val visibleNoteIds = visibleNotes.map { it.id }.toSet()
+        val noteTitles = visibleNotes.associate { it.id to it.title }
+        attachments
+            .filter { it.noteId in visibleNoteIds }
+            .map {
+                AttachmentSample(
+                    name = it.fileName,
+                    note = noteTitles[it.noteId] ?: "Untitled note",
+                    size = it.sizeLabel(),
+                    date = it.createdAt.toRelativeTime(),
+                    kind = it.kindLabel(),
+                    id = it.id,
+                    noteId = it.noteId,
+                    mimeType = it.mimeType,
+                    localPath = it.localPath,
+                )
+            }
     }
 
     fun observeAttachment(id: String) = attachmentDao.observeById(id)

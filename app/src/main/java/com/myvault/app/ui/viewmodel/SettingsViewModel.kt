@@ -11,7 +11,9 @@ import com.myvault.app.data.repository.StorageRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.sync.DriveSyncResult
+import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
+import com.myvault.app.data.sync.GoogleDriveRestoreController
 import com.myvault.app.ui.theme.VaultThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +32,7 @@ class SettingsViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
     private val folderRepository: FolderRepository,
     private val googleDriveSyncRepository: GoogleDriveIncrementalSyncRepository,
+    private val googleDriveRestoreController: GoogleDriveRestoreController,
 ) : ViewModel() {
     val userPreferences: StateFlow<VaultUserPreferences> =
         preferences.userPreferences.stateIn(
@@ -39,6 +42,7 @@ class SettingsViewModel @Inject constructor(
         )
     private val _storageLabel = MutableStateFlow("Calculating...")
     val storageLabel: StateFlow<String> = _storageLabel
+    val driveRestoreState: StateFlow<DriveRestoreState> = googleDriveRestoreController.state
     val recentlyDeleted: StateFlow<RecentlyDeletedUiState> =
         combine(
             noteRepository.observeDeletedNotes(),
@@ -146,11 +150,14 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun pullGoogleDriveSync(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            val result = googleDriveSyncRepository.pullLatestFromDrive()
+        googleDriveRestoreController.startRestore { result ->
             if (result is DriveSyncResult.Success) refreshStorage()
             onComplete(result.displayMessage())
         }
+    }
+
+    fun dismissDriveRestoreMessage() {
+        googleDriveRestoreController.dismissMessage()
     }
 
     fun checkGoogleDriveUpdates(onComplete: (String) -> Unit) {

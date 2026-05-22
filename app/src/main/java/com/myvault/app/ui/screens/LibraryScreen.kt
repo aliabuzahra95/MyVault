@@ -1636,7 +1636,7 @@ private fun RecentLibraryFilesRow(
             contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(files.take(8), key = { it.id }) { file ->
+            items(files.take(5), key = { it.id }) { file ->
                 RecentLibraryFileCard(
                     file = file,
                     onClick = { onAttachmentClick(file.id) },
@@ -1663,26 +1663,26 @@ private fun RecentLibraryFileCard(
     ) {
         Row(
             modifier = Modifier
-                .width(188.dp)
-                .padding(horizontal = 11.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .width(148.dp)
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
         ) {
             AttachmentThumbnail(
                 mimeType = file.mimeType,
                 localPath = file.localPath,
                 kind = file.kind,
-                size = 24.dp,
+                size = 22.dp,
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
                     text = file.name,
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W800),
                     color = colors.text,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(

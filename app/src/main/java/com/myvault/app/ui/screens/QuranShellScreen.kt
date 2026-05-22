@@ -14,6 +14,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -141,6 +142,10 @@ fun QuranShellScreen(
     var typeFilter by rememberSaveable { mutableStateOf("All") }
     var selectorOpen by rememberSaveable { mutableStateOf(false) }
 
+    BackHandler(enabled = selectorOpen) {
+        selectorOpen = false
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -227,6 +232,15 @@ private fun QuranReaderSurface(
     var reflectionTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
     val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    BackHandler(enabled = readerOptionsOpen || ayahActionsTarget != null || reflectionTarget != null || bookmarksOpen) {
+        when {
+            reflectionTarget != null -> reflectionTarget = null
+            ayahActionsTarget != null -> ayahActionsTarget = null
+            bookmarksOpen -> bookmarksOpen = false
+            readerOptionsOpen -> readerOptionsOpen = false
+        }
+    }
 
     LaunchedEffect(uiState.selectedSurah.num, uiState.ayahs.size, uiState.loading) {
         if (!uiState.loading && uiState.ayahs.isNotEmpty() && lastScrolledSurah != uiState.selectedSurah.num) {
@@ -1091,9 +1105,10 @@ private fun AyahRow(
                         .border(1.dp, if (isTafsirExpanded) colors.accentBorder else colors.border.copy(alpha = 0.7f), pillShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
+                            indication = LocalIndication.current,
                             onClick = onToggleTafsir,
                         )
+                        .heightIn(min = 29.dp)
                         .padding(vertical = 6.dp, horizontal = 13.dp),
                 ) {
                     Text(
@@ -1109,9 +1124,10 @@ private fun AyahRow(
                         .border(1.dp, colors.border.copy(alpha = 0.7f), pillShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
+                            indication = LocalIndication.current,
                             onClick = onCreateReflectionNote,
                         )
+                        .heightIn(min = 29.dp)
                         .padding(vertical = 6.dp, horizontal = 13.dp),
                 ) {
                     Text(
