@@ -140,20 +140,21 @@ class FolderRepository @Inject constructor(
     }
 
     suspend fun moveFolderToMode(folderId: String, mode: String) {
-        val folders = folderDao.getAll()
-        val folder = folders.firstOrNull { it.id == folderId } ?: return
-        val folderIds = descendantFolderIds(folderId, folders) + folderId
-        val now = System.currentTimeMillis()
-        if (folder.parentId != null && folder.parentId !in folderIds) {
+        database.withTransaction {
+            val folders = folderDao.getAll()
+            val folder = folders.firstOrNull { it.id == folderId } ?: return@withTransaction
+            val folderIds = descendantFolderIds(folderId, folders) + folderId
+            val oldParentId = folder.parentId
+            val now = System.currentTimeMillis()
             val orderIndex = folders
-                .filter { it.parentId == null && it.id != folderId && it.mode == mode }
+                .filter { it.parentId == null && it.id !in folderIds && it.mode == mode }
                 .maxOfOrNull { it.orderIndex }
                 ?.plus(1) ?: 0
             folderDao.updateParentAndOrder(folderId, null, orderIndex, now)
-            normalizeOrderIndexes(folder.parentId)
+            folderDao.updateMode(folderIds, mode, now)
+            if (oldParentId != null) normalizeOrderIndexes(oldParentId)
+            normalizeOrderIndexes(null)
         }
-        folderDao.updateMode(folderIds, mode, now)
-        normalizeOrderIndexes(null)
     }
 
     suspend fun deleteFolderTree(folderId: String) {

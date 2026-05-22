@@ -194,6 +194,10 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { noteRepository.moveNote(noteId, folderId) }
     }
 
+    fun moveNoteToMode(noteId: String, mode: String) {
+        viewModelScope.launch { noteRepository.moveNoteToMode(noteId, mode) }
+    }
+
     fun deleteNote(noteId: String) {
         viewModelScope.launch { noteRepository.deleteNote(noteId) }
     }

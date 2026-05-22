@@ -185,6 +185,9 @@ fun VaultNavHost(
                         onMoveNoteClick = { noteId, folderId ->
                             homeViewModel.moveNote(noteId, folderId)
                         },
+                        onMoveNoteToModeClick = { noteId, mode ->
+                            homeViewModel.moveNoteToMode(noteId, mode)
+                        },
                         onDeleteNoteClick = { noteId ->
                             homeViewModel.deleteNote(noteId)
                         },
@@ -407,6 +410,9 @@ fun VaultNavHost(
                         },
                         onMoveNoteClick = { noteId, folderId ->
                             homeViewModel.moveNote(noteId, folderId)
+                        },
+                        onMoveNoteToModeClick = { noteId, mode ->
+                            homeViewModel.moveNoteToMode(noteId, mode)
                         },
                         onDeleteNoteClick = { noteId ->
                             homeViewModel.deleteNote(noteId)

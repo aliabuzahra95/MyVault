@@ -15,6 +15,8 @@ import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.ui.components.EditorBlockType
@@ -170,6 +172,47 @@ class NoteRepository @Inject constructor(
 
     suspend fun moveNote(noteId: String, folderId: String?) {
         noteDao.updateFolder(noteId, folderId, System.currentTimeMillis())
+    }
+
+    suspend fun moveNoteToMode(noteId: String, mode: String) {
+        database.withTransaction {
+            val targetFolderId = when (mode) {
+                FOLDER_MODE_PERSONAL -> personalInboxFolderId()
+                FOLDER_MODE_STUDY -> null
+                else -> return@withTransaction
+            }
+            noteDao.updateFolder(noteId, targetFolderId, System.currentTimeMillis())
+        }
+    }
+
+    private suspend fun personalInboxFolderId(): String {
+        val folders = folderDao.getAll()
+        folders.firstOrNull {
+            it.parentId == null &&
+                it.mode == FOLDER_MODE_PERSONAL &&
+                it.name.equals("Inbox", ignoreCase = true)
+        }?.let { return it.id }
+
+        val now = System.currentTimeMillis()
+        val folderId = UUID.randomUUID().toString()
+        folderDao.upsertAll(
+            listOf(
+                FolderEntity(
+                    id = folderId,
+                    parentId = null,
+                    name = "Inbox",
+                    orderIndex = folders
+                        .filter { it.parentId == null && it.mode == FOLDER_MODE_PERSONAL }
+                        .maxOfOrNull { it.orderIndex }
+                        ?.plus(1) ?: 0,
+                    isFavourite = false,
+                    mode = FOLDER_MODE_PERSONAL,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            ),
+        )
+        return folderId
     }
 
     suspend fun setPinned(noteId: String, pinned: Boolean) {

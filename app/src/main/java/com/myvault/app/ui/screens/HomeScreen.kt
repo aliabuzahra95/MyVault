@@ -126,6 +126,7 @@ fun HomeScreen(
     onDeleteFolderClick: (folderId: String) -> Unit = {},
     onRenameNoteClick: (noteId: String, title: String) -> Unit = { _, _ -> },
     onMoveNoteClick: (noteId: String, folderId: String?) -> Unit = { _, _ -> },
+    onMoveNoteToModeClick: (noteId: String, mode: String) -> Unit = { _, _ -> },
     onDeleteNoteClick: (noteId: String) -> Unit = {},
     onSetNotePinnedClick: (noteId: String, pinned: Boolean) -> Unit = { _, _ -> },
     onSetNoteFavouriteClick: (noteId: String, favourite: Boolean) -> Unit = { _, _ -> },
@@ -485,7 +486,7 @@ fun HomeScreen(
     if (folderActionsOpen && selectedFolder != null) {
         val folder = selectedFolder
         val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
-        val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal" else "Study"
+        val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
         PremiumActionDialog(
             title = folder?.name.orEmpty(),
             onDismiss = { folderActionsOpen = false },
@@ -571,6 +572,8 @@ fun HomeScreen(
 
     if (noteActionsOpen && selectedNote != null) {
         val note = selectedNote
+        val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
+        val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
         PremiumActionDialog(
             title = note?.name.orEmpty(),
             onDismiss = { noteActionsOpen = false },
@@ -583,6 +586,10 @@ fun HomeScreen(
                 PremiumAction("Move", Icons.Rounded.Folder) {
                     noteActionsOpen = false
                     moveNoteDialogOpen = true
+                },
+                PremiumAction("Move to $oppositeModeLabel", Icons.Rounded.LocalOffer) {
+                    note?.let { onMoveNoteToModeClick(it.id, oppositeMode) }
+                    noteActionsOpen = false
                 },
                 PremiumAction(if (note?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
                     note?.let { onSetNotePinnedClick(it.id, !it.pinned) }
