@@ -36,6 +36,7 @@ import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.quran.QuranRecentLocation
 import com.myvault.app.data.quran.memorization.MemorizationRecord
+import com.myvault.app.data.quran.quranCatalog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -602,10 +603,74 @@ private fun validateBackupSettings(settings: JSONObject) {
     check(settings.optInt("schemaVersion", 1) == 1) { "Backup contains unsupported settings data." }
     settings.optString("theme").takeIf { it.isNotBlank() } ?: error("Backup settings are missing theme.")
     settings.optString("workspace").takeIf { it.isNotBlank() } ?: error("Backup settings are missing workspace.")
-    check(settings.optInt("quranLastReadSurah", 1) >= 1) { "Backup contains invalid Qur'an Surah position." }
-    check(settings.optInt("quranLastReadAyah", 1) >= 1) { "Backup contains invalid Qur'an ayah position." }
+    validateQuranPosition(
+        surahNumber = settings.optInt("quranLastReadSurah", 1),
+        ayahNumber = settings.optInt("quranLastReadAyah", 1),
+        message = "Backup contains invalid Qur'an reading position.",
+    )
     check(settings.optInt("quranArabicFontPercent", 100) in 70..140) { "Backup contains invalid Qur'an font size." }
     check(settings.optInt("quranTranslationFontPercent", 100) in 80..130) { "Backup contains invalid Qur'an translation font size." }
+    check(settings.optDouble("quranAudioPlaybackSpeed", 1.0) in 0.5..2.0) { "Backup contains invalid Qur'an audio speed." }
+    settings.optJSONArray("quranBookmarkedVerses")?.let { bookmarks ->
+        val seen = mutableSetOf<String>()
+        for (index in 0 until bookmarks.length()) {
+            val verseKey = bookmarks.optString(index)
+            check(seen.add(verseKey)) { "Backup contains duplicate Qur'an bookmarks." }
+            validateVerseKey(verseKey, "Backup contains invalid Qur'an bookmark data.")
+        }
+    }
+    settings.optJSONArray("quranRecentLocations")?.let { recents ->
+        val seen = mutableSetOf<String>()
+        for (index in 0 until recents.length()) {
+            val recent = recents.optJSONObject(index) ?: error("Backup contains invalid Qur'an recent reading data.")
+            val surahNumber = recent.optInt("surahNumber", 0)
+            val ayahNumber = recent.optInt("ayahNumber", 0)
+            validateQuranPosition(surahNumber, ayahNumber, "Backup contains invalid Qur'an recent reading data.")
+            check(recent.optLong("lastReadAt", 0L) >= 0L) { "Backup contains invalid Qur'an recent reading time." }
+            check(seen.add("$surahNumber:$ayahNumber")) { "Backup contains duplicate Qur'an recent reading entries." }
+        }
+    }
+    settings.optJSONArray("quranMemorizationRecords")?.let(::validateQuranMemorizationRecords)
+}
+
+private fun validateQuranMemorizationRecords(records: JSONArray) {
+    val seen = mutableSetOf<String>()
+    for (index in 0 until records.length()) {
+        val record = records.optJSONObject(index) ?: error("Backup contains invalid Qur'an memorisation data.")
+        val surahNumber = record.optInt("surahNumber", 0)
+        val ayahNumber = record.optInt("ayahNumber", 0)
+        val verseKey = record.optString("verseKey")
+        validateQuranPosition(surahNumber, ayahNumber, "Backup contains invalid Qur'an memorisation position.")
+        check(verseKey == "$surahNumber:$ayahNumber") {
+            "Backup contains mismatched Qur'an memorisation verse data."
+        }
+        check(seen.add(verseKey)) { "Backup contains duplicate Qur'an memorisation records." }
+        val startedAt = record.optLong("startedAt", -1L)
+        val lastReviewedAt = record.optLong("lastReviewedAt", -1L)
+        val updatedAt = record.optLong("updatedAt", -1L)
+        check(startedAt >= 0L && lastReviewedAt >= 0L && updatedAt >= 0L) {
+            "Backup contains invalid Qur'an memorisation timestamps."
+        }
+        check(record.optInt("reviewCount", 0) >= 0) {
+            "Backup contains invalid Qur'an memorisation review count."
+        }
+        if (!record.isNull("memorizedAt")) {
+            check(record.optLong("memorizedAt", 0L) > 0L) {
+                "Backup contains invalid Qur'an memorised timestamp."
+            }
+        }
+    }
+}
+
+private fun validateVerseKey(verseKey: String, message: String) {
+    val surahNumber = verseKey.substringBefore(':').toIntOrNull() ?: error(message)
+    val ayahNumber = verseKey.substringAfter(':').toIntOrNull() ?: error(message)
+    validateQuranPosition(surahNumber, ayahNumber, message)
+}
+
+private fun validateQuranPosition(surahNumber: Int, ayahNumber: Int, message: String) {
+    val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: error(message)
+    check(ayahNumber in 1..surah.ayat) { message }
 }
 
 private fun validateAttachmentEntryName(attachmentId: String) {
