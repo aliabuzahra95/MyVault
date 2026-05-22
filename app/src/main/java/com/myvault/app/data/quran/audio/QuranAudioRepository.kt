@@ -1,0 +1,333 @@
+package com.myvault.app.data.quran.audio
+
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class QuranAudioRepository @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+) {
+    suspend fun getSupportedReciters(): List<AudioReciterUiModel> = withContext(Dispatchers.IO) {
+        recitersMutex.withLock {
+            cachedReciters ?: fetchSupportedReciters().ifEmpty { fallbackReciters }.also { cachedReciters = it }
+        }
+    }
+
+    suspend fun getChapterAudio(
+        reciter: AudioReciterUiModel,
+        surahNumber: Int,
+    ): ChapterAudioMetadata = withContext(Dispatchers.IO) {
+        val cacheKey = "${reciter.id}:$surahNumber"
+        metadataMutex.withLock {
+            chapterMetadataCache[cacheKey]
+                ?: loadLocalChapterMetadata(reciter, surahNumber)
+                ?: fetchChapterAudio(reciter, surahNumber).also {
+                    chapterMetadataCache[cacheKey] = it
+                    persistChapterMetadata(it)
+                }
+        }
+    }
+
+    suspend fun ensurePlaybackFile(
+        metadata: ChapterAudioMetadata,
+        verseKey: String,
+    ): File = withContext(Dispatchers.IO) {
+        when (metadata.mode) {
+            PlaybackMode.FullSurah -> {
+                if (!metadata.localSurahFile.exists()) {
+                    val audioUrl = metadata.audioUrl ?: error("Missing surah audio URL.")
+                    downloadToFile(audioUrl, metadata.localSurahFile)
+                }
+                metadata.localSurahFile
+            }
+            PlaybackMode.VerseByVerse -> {
+                val file = verseAudioFile(metadata.reciter.id, metadata.surahNumber, verseKey)
+                if (!file.exists()) {
+                    val verseUrl = metadata.verseAudioUrls[verseKey] ?: error("Missing verse audio URL for $verseKey.")
+                    downloadToFile(verseUrl, file)
+                }
+                file
+            }
+        }
+    }
+
+    private fun fetchSupportedReciters(): List<AudioReciterUiModel> {
+        val json = getJson("$workerBaseUrl/proxy/content/api/v4/resources/recitations?language=en")
+        val recitations = json.optJSONArray("recitations") ?: return emptyList()
+        return desiredReciters.mapNotNull { desired ->
+            val matches = buildList {
+                for (index in 0 until recitations.length()) {
+                    val item = recitations.optJSONObject(index) ?: continue
+                    val searchableName = listOf(
+                        item.optString("reciter_name"),
+                        item.optJSONObject("translated_name")?.optString("name").orEmpty(),
+                        item.optString("style"),
+                    ).joinToString(" ")
+                    if (desired.matcher.containsMatchIn(searchableName)) add(item)
+                }
+            }
+            val selected = matches
+                .sortedWith(
+                    compareByDescending<JSONObject> { it.optString("style") == desired.preferredStyle }
+                        .thenBy { it.optInt("id") },
+                )
+                .firstOrNull()
+                ?: return@mapNotNull null
+            AudioReciterUiModel(id = selected.optInt("id"), name = desired.displayName)
+        }
+    }
+
+    private fun fetchChapterAudio(
+        reciter: AudioReciterUiModel,
+        surahNumber: Int,
+    ): ChapterAudioMetadata {
+        val timingsJson = getJson(
+            "$workerBaseUrl/proxy/content/api/v4/chapter_recitations/${reciter.id}/$surahNumber?segments=true",
+        )
+        val audioFile = timingsJson.optJSONObject("audio_file")
+        val fullAudioUrl = audioFile?.optString("audio_url").orEmpty()
+            .takeIf { it.isNotBlank() }
+            ?.let(::resolveAudioUrl)
+        val timestamps = parseTimestamps(audioFile)
+        val verseUrls = fetchVerseAudioUrls(reciter.id, surahNumber)
+
+        if (verseUrls.isNotEmpty()) {
+            return ChapterAudioMetadata(
+                reciter = reciter,
+                surahNumber = surahNumber,
+                mode = PlaybackMode.VerseByVerse,
+                audioUrl = fullAudioUrl,
+                timestamps = timestamps,
+                verseAudioUrls = verseUrls,
+                localSurahFile = surahAudioFile(reciter.id, surahNumber),
+            )
+        }
+        if (fullAudioUrl != null) {
+            return ChapterAudioMetadata(
+                reciter = reciter,
+                surahNumber = surahNumber,
+                mode = PlaybackMode.FullSurah,
+                audioUrl = fullAudioUrl,
+                timestamps = timestamps,
+                verseAudioUrls = emptyMap(),
+                localSurahFile = surahAudioFile(reciter.id, surahNumber),
+            )
+        }
+        error("No playable audio metadata found for ${reciter.name}.")
+    }
+
+    private fun fetchVerseAudioUrls(reciterId: Int, surahNumber: Int): Map<String, String> {
+        var page = 1
+        val urlsByVerse = linkedMapOf<String, String>()
+        while (true) {
+            val json = getJson(
+                "$workerBaseUrl/proxy/content/api/v4/verses/by_chapter/$surahNumber?language=en&audio=$reciterId&fields=verse_key&per_page=50&page=$page",
+            )
+            val verses = json.optJSONArray("verses") ?: break
+            if (verses.length() == 0) break
+            for (index in 0 until verses.length()) {
+                val item = verses.optJSONObject(index) ?: continue
+                val verseKey = item.optString("verse_key")
+                val audioUrl = item.optJSONObject("audio")?.optString("url").orEmpty()
+                if (verseKey.isNotBlank() && audioUrl.isNotBlank()) {
+                    urlsByVerse[verseKey] = resolveAudioUrl(audioUrl)
+                }
+            }
+            val nextPage = json.optJSONObject("pagination")?.optInt("next_page") ?: 0
+            if (nextPage <= 0 || nextPage == page) break
+            page = nextPage
+        }
+        return urlsByVerse
+    }
+
+    private fun parseTimestamps(audioFile: JSONObject?): Map<String, Long> {
+        val timestamps = audioFile?.optJSONArray("timestamps") ?: return emptyMap()
+        return buildMap {
+            for (index in 0 until timestamps.length()) {
+                val item = timestamps.optJSONObject(index) ?: continue
+                val verseKey = item.optString("verse_key")
+                if (verseKey.isNotBlank()) put(verseKey, item.optLong("timestamp_from"))
+            }
+        }
+    }
+
+    private fun getJson(url: String): JSONObject {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 20_000
+        connection.setRequestProperty("Accept", "application/json")
+        return try {
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (responseCode !in 200..299) error(body.ifBlank { "Audio request failed with code $responseCode." })
+            JSONObject(body)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun downloadToFile(url: String, destination: File) {
+        destination.parentFile?.mkdirs()
+        val tempFile = File(destination.parentFile, "${destination.name}.part")
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 20_000
+        connection.readTimeout = 60_000
+        try {
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                error(errorBody.ifBlank { "Audio download failed with code $responseCode." })
+            }
+            connection.inputStream.use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            moveFileAtomically(tempFile, destination)
+        } finally {
+            connection.disconnect()
+            if (tempFile.exists() && !destination.exists()) tempFile.delete()
+        }
+    }
+
+    private fun surahAudioFile(reciterId: Int, surahNumber: Int): File {
+        return File(File(context.filesDir, "quran_audio/$reciterId"), "surah_$surahNumber.mp3")
+    }
+
+    private fun verseAudioFile(reciterId: Int, surahNumber: Int, verseKey: String): File {
+        return File(File(context.filesDir, "quran_audio/$reciterId/surah_$surahNumber"), "${verseKey.replace(':', '_')}.mp3")
+    }
+
+    private fun chapterMetadataFile(reciterId: Int, surahNumber: Int): File {
+        return File(File(context.filesDir, "quran_audio/$reciterId"), "surah_$surahNumber.metadata.json")
+    }
+
+    private fun persistChapterMetadata(metadata: ChapterAudioMetadata) {
+        val file = chapterMetadataFile(metadata.reciter.id, metadata.surahNumber)
+        file.parentFile?.mkdirs()
+        val tempFile = File(file.parentFile, "${file.name}.tmp")
+        val json = JSONObject().apply {
+            put("reciterId", metadata.reciter.id)
+            put("reciterName", metadata.reciter.name)
+            put("surahNumber", metadata.surahNumber)
+            put("mode", metadata.mode.name)
+            put("audioUrl", metadata.audioUrl.orEmpty())
+            put("timestamps", JSONObject().apply {
+                metadata.timestamps.forEach { (verseKey, timestamp) -> put(verseKey, timestamp) }
+            })
+            put("verseAudioUrls", JSONObject().apply {
+                metadata.verseAudioUrls.forEach { (verseKey, audioUrl) -> put(verseKey, audioUrl) }
+            })
+        }
+        tempFile.writeText(json.toString())
+        moveFileAtomically(tempFile, file)
+    }
+
+    private fun loadLocalChapterMetadata(
+        reciter: AudioReciterUiModel,
+        surahNumber: Int,
+    ): ChapterAudioMetadata? {
+        val metadataFile = chapterMetadataFile(reciter.id, surahNumber)
+        if (!metadataFile.exists()) return null
+        return runCatching {
+            val json = JSONObject(metadataFile.readText())
+            ChapterAudioMetadata(
+                reciter = reciter,
+                surahNumber = surahNumber,
+                mode = PlaybackMode.valueOf(json.optString("mode", PlaybackMode.FullSurah.name)),
+                audioUrl = json.optString("audioUrl").takeIf { it.isNotBlank() },
+                timestamps = json.optJSONObject("timestamps").toLongMap(),
+                verseAudioUrls = json.optJSONObject("verseAudioUrls").toStringMap(),
+                localSurahFile = surahAudioFile(reciter.id, surahNumber),
+            )
+        }.getOrNull()
+    }
+
+    private fun moveFileAtomically(source: File, destination: File) {
+        destination.parentFile?.mkdirs()
+        if (source.absolutePath == destination.absolutePath) return
+        if (destination.exists()) destination.delete()
+        if (source.renameTo(destination)) return
+        source.copyTo(destination, overwrite = true)
+        if (!source.delete()) source.deleteOnExit()
+    }
+
+    private fun JSONObject?.toLongMap(): Map<String, Long> {
+        val source = this ?: return emptyMap()
+        return buildMap {
+            val keys = source.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                put(key, source.optLong(key))
+            }
+        }
+    }
+
+    private fun JSONObject?.toStringMap(): Map<String, String> {
+        val source = this ?: return emptyMap()
+        return buildMap {
+            val keys = source.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                put(key, source.optString(key))
+            }
+        }
+    }
+
+    private fun resolveAudioUrl(rawUrl: String): String {
+        return when {
+            rawUrl.startsWith("http://") || rawUrl.startsWith("https://") -> rawUrl
+            rawUrl.startsWith("//") -> "https:$rawUrl"
+            else -> "$verseAudioBaseUrl/$rawUrl"
+        }
+    }
+
+    private data class DesiredReciter(
+        val displayName: String,
+        val matcher: Regex,
+        val preferredStyle: String? = null,
+    )
+
+    private companion object {
+        const val workerBaseUrl = "https://quran-proxy.aliabuhassan1995-054.workers.dev"
+        const val verseAudioBaseUrl = "https://verses.quran.com"
+
+        val fallbackReciters = listOf(
+            AudioReciterUiModel(id = 7, name = "Mishary al-Afasy"),
+            AudioReciterUiModel(id = 3, name = "Abdur-Rahman as-Sudais"),
+        )
+
+        val desiredReciters = listOf(
+            DesiredReciter("Abdul Basit (Mujawwad)", Regex("abdul.?bas(et|it)", RegexOption.IGNORE_CASE), "Mujawwad"),
+            DesiredReciter("Abdul Basit (Murattal)", Regex("abdul.?bas(et|it)", RegexOption.IGNORE_CASE), "Murattal"),
+            DesiredReciter("Abdur-Rahman as-Sudais", Regex("sudais", RegexOption.IGNORE_CASE)),
+            DesiredReciter("Abu Bakr al-Shatri", Regex("shatri", RegexOption.IGNORE_CASE)),
+            DesiredReciter("Hani ar-Rifai", Regex("rifai", RegexOption.IGNORE_CASE)),
+            DesiredReciter("Husary", Regex("husary", RegexOption.IGNORE_CASE)),
+            DesiredReciter("Husary (Muallim)", Regex("husary", RegexOption.IGNORE_CASE), "Muallim"),
+            DesiredReciter("Mishary al-Afasy", Regex("mishari|mishary|afasy", RegexOption.IGNORE_CASE)),
+            DesiredReciter("Mohamed Siddiq al-Minshawi (Mujawwad)", Regex("minshawi", RegexOption.IGNORE_CASE), "Mujawwad"),
+            DesiredReciter("Mohamed Siddiq al-Minshawi (Murattal)", Regex("minshawi", RegexOption.IGNORE_CASE), "Murattal"),
+            DesiredReciter("Sa`ud ash-Shuraym", Regex("shuraym|shuraim", RegexOption.IGNORE_CASE)),
+            DesiredReciter("Mohamed al-Tablawi", Regex("tablawi", RegexOption.IGNORE_CASE)),
+        )
+
+        val recitersMutex = Mutex()
+        val metadataMutex = Mutex()
+        var cachedReciters: List<AudioReciterUiModel>? = null
+        val chapterMetadataCache = mutableMapOf<String, ChapterAudioMetadata>()
+    }
+}

@@ -51,8 +51,15 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,6 +106,8 @@ import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.SurahInfo
 import com.myvault.app.data.quran.arabicTextSize
+import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
+import com.myvault.app.data.quran.audio.AudioReciterUiModel
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.data.quran.translationTextSize
 import com.myvault.app.ui.components.IconBtn
@@ -110,6 +119,7 @@ import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
+import kotlin.math.roundToLong
 
 private val UthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
@@ -135,6 +145,16 @@ fun QuranShellScreen(
     onToggleBookmark: (String) -> Unit,
     onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
     onOpenBookmark: (String) -> Unit,
+    onOpenReciterPicker: (QuranAyah) -> Unit,
+    onDismissReciterPicker: () -> Unit,
+    onSelectAudioReciter: (AudioReciterUiModel) -> Unit,
+    onPlayAudioForAyah: (QuranAyah) -> Unit,
+    onToggleAudioPlayback: () -> Unit,
+    onStopAudio: () -> Unit,
+    onSeekAudioTo: (Long) -> Unit,
+    onSetAudioSpeed: (Float) -> Unit,
+    onSkipAudioBy: (Long) -> Unit,
+    onPlayAdjacentAudio: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -183,6 +203,16 @@ fun QuranShellScreen(
                 onToggleBookmark = onToggleBookmark,
                 onCreateReflectionNote = onCreateReflectionNote,
                 onOpenBookmark = onOpenBookmark,
+                onOpenReciterPicker = onOpenReciterPicker,
+                onDismissReciterPicker = onDismissReciterPicker,
+                onSelectAudioReciter = onSelectAudioReciter,
+                onPlayAudioForAyah = onPlayAudioForAyah,
+                onToggleAudioPlayback = onToggleAudioPlayback,
+                onStopAudio = onStopAudio,
+                onSeekAudioTo = onSeekAudioTo,
+                onSetAudioSpeed = onSetAudioSpeed,
+                onSkipAudioBy = onSkipAudioBy,
+                onPlayAdjacentAudio = onPlayAdjacentAudio,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -217,6 +247,16 @@ private fun QuranReaderSurface(
     onToggleBookmark: (String) -> Unit,
     onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
     onOpenBookmark: (String) -> Unit,
+    onOpenReciterPicker: (QuranAyah) -> Unit,
+    onDismissReciterPicker: () -> Unit,
+    onSelectAudioReciter: (AudioReciterUiModel) -> Unit,
+    onPlayAudioForAyah: (QuranAyah) -> Unit,
+    onToggleAudioPlayback: () -> Unit,
+    onStopAudio: () -> Unit,
+    onSeekAudioTo: (Long) -> Unit,
+    onSetAudioSpeed: (Float) -> Unit,
+    onSkipAudioBy: (Long) -> Unit,
+    onPlayAdjacentAudio: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -263,31 +303,30 @@ private fun QuranReaderSurface(
             }
     }
 
-    Column(
-        modifier = modifier,
-    ) {
-        QuranTopBar(
-            surah = uiState.selectedSurah,
-            onOpenSelector = onOpenSelector,
-            onOpenSettings = { readerOptionsOpen = true },
-            onOpenBookmarks = { bookmarksOpen = true },
-            onOpenSearch = onOpenSelector,
-        )
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            QuranTopBar(
+                surah = uiState.selectedSurah,
+                onOpenSelector = onOpenSelector,
+                onOpenSettings = { readerOptionsOpen = true },
+                onOpenBookmarks = { bookmarksOpen = true },
+                onOpenSearch = onOpenSelector,
+            )
 
-        if (uiState.loading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                state = listState,
-                contentPadding = PaddingValues(bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            if (uiState.loading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = if (uiState.miniPlayer != null) 214.dp else 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                 item(key = "quran_continue_${uiState.selectedSurah.num}") {
                     val resumeIndex = ((uiState.restoredAyah - 1).coerceAtLeast(0) + readerHeaderItemCount)
                         .coerceAtMost(uiState.ayahs.lastIndex + readerHeaderItemCount)
@@ -351,8 +390,21 @@ private fun QuranReaderSurface(
                         onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
                         onOpenActions = { ayahActionsTarget = ayah.verseKey },
                         onCreateReflectionNote = { reflectionTarget = ayah.verseKey },
+                        isAudioPlaying = uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer?.isPlaying == true,
+                        isAudioLoading = uiState.audioLoadingVerseKey == ayah.verseKey,
+                        onPlayAudio = { onPlayAudioForAyah(ayah) },
                     )
                 }
+                    if (uiState.audioStatusMessage != null) {
+                        item(key = "quran_audio_status") {
+                            Text(
+                                text = uiState.audioStatusMessage,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W700),
+                                color = if (uiState.audioStatusIsError) Color(0xFFE06666) else colors.textSecondary,
+                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
                 item("quran_bottom_pad") {
                     Spacer(
                         Modifier
@@ -361,6 +413,26 @@ private fun QuranReaderSurface(
                     )
                 }
             }
+        }
+        }
+
+        uiState.miniPlayer?.let { player ->
+            QuranAudioMiniPlayer(
+                surahName = uiState.selectedSurah.name,
+                player = player,
+                onTogglePlayback = onToggleAudioPlayback,
+                onSkipBack = { onSkipAudioBy(-10_000L) },
+                onSkipForward = { onSkipAudioBy(10_000L) },
+                onPreviousAyah = { onPlayAdjacentAudio(-1) },
+                onNextAyah = { onPlayAdjacentAudio(1) },
+                onSeekTo = onSeekAudioTo,
+                onSetSpeed = onSetAudioSpeed,
+                onClose = onStopAudio,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .navigationBarsPadding(),
+            )
         }
 
         if (readerOptionsOpen) {
@@ -442,6 +514,15 @@ private fun QuranReaderSurface(
                 bookmarksOpen = false
                 onOpenBookmark(verseKey)
             },
+        )
+
+        QuranReciterPickerSheet(
+            visible = uiState.reciterPickerAyah != null,
+            ayahNumber = uiState.reciterPickerAyah?.ayahNumber ?: 1,
+            reciters = uiState.availableReciters,
+            isLoading = uiState.availableReciters.isEmpty(),
+            onDismiss = onDismissReciterPicker,
+            onSelect = onSelectAudioReciter,
         )
     }
 }
@@ -978,6 +1059,9 @@ private fun AyahRow(
     onToggleTafsir: () -> Unit,
     onOpenActions: () -> Unit,
     onCreateReflectionNote: () -> Unit,
+    isAudioPlaying: Boolean,
+    isAudioLoading: Boolean,
+    onPlayAudio: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val cardShape = RoundedCornerShape(14.dp)
@@ -1064,6 +1148,39 @@ private fun AyahRow(
                     }
                 }
                 Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isAudioPlaying || isAudioLoading) colors.accentSoft else Color.Transparent)
+                        .border(
+                            1.dp,
+                            if (isAudioPlaying || isAudioLoading) colors.accentBorder else colors.border.copy(alpha = 0.7f),
+                            RoundedCornerShape(10.dp),
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onPlayAudio,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isAudioLoading) {
+                        CircularProgressIndicator(
+                            color = colors.accent,
+                            strokeWidth = 1.6.dp,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isAudioPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (isAudioPlaying) "Pause ayah audio" else "Play ayah audio",
+                            tint = if (isAudioPlaying) colors.accent else colors.textMuted,
+                            modifier = Modifier.size(17.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
                     contentDescription = "More",
@@ -1215,6 +1332,334 @@ private fun AyahRow(
             }
         }
     }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun QuranReciterPickerSheet(
+    visible: Boolean,
+    ayahNumber: Int,
+    reciters: List<AudioReciterUiModel>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (AudioReciterUiModel) -> Unit,
+) {
+    if (!visible) return
+    val colors = VaultThemeTokens.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val rowShape = RoundedCornerShape(16.dp)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.bg,
+        contentColor = colors.text,
+        scrimColor = colors.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp, bottom = 2.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.borderStrong),
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .heightIn(max = 480.dp)
+                .padding(bottom = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 15.dp)
+                    .padding(top = 6.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        text = "Play Ayah $ayahNumber",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                    )
+                    Text(
+                        text = "Choose a reciter",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
+                IconBtn(Icons.Rounded.Close, "Close reciters", onClick = onDismiss)
+            }
+
+            Text(
+                text = "RECITERS",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900, letterSpacing = 1.sp),
+                color = colors.textMuted,
+                modifier = Modifier.padding(horizontal = 15.dp, vertical = 4.dp),
+            )
+
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 8.dp),
+            ) {
+                when {
+                    isLoading -> item {
+                        Text(
+                            text = "Loading reciters...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
+                        )
+                    }
+                    reciters.isEmpty() -> item {
+                        Text(
+                            text = "No supported reciters are available right now.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
+                        )
+                    }
+                    else -> items(reciters, key = { it.id }) { reciter ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 15.dp)
+                                .clip(rowShape)
+                                .background(colors.surface)
+                                .border(1.dp, colors.border.copy(alpha = 0.78f), rowShape)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) { onSelect(reciter) }
+                                .padding(horizontal = 14.dp, vertical = 13.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Text(
+                                    text = reciter.name,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
+                                    color = colors.text,
+                                )
+                                Text(
+                                    text = "Starts playback from this ayah",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.accentSoft)
+                                    .border(1.dp, colors.accentBorder, RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = "Play with ${reciter.name}",
+                                    tint = colors.accent,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuranAudioMiniPlayer(
+    surahName: String,
+    player: AudioMiniPlayerUiState,
+    onTogglePlayback: () -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipForward: () -> Unit,
+    onPreviousAyah: () -> Unit,
+    onNextAyah: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onSetSpeed: (Float) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    val shape = RoundedCornerShape(22.dp)
+    val speedOptions = listOf(0.5f, 1f, 1.5f, 2f)
+    var sliderPosition by remember(player.progressMs, player.durationMs) {
+        mutableStateOf(player.progressMs.toFloat())
+    }
+
+    Box(
+        modifier = modifier
+            .shadow(10.dp, shape)
+            .clip(shape)
+            .background(colors.surface.copy(alpha = 0.98f))
+            .border(1.dp, colors.border.copy(alpha = 0.86f), shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = player.reciterName.ifBlank { "Qur'an audio" },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900, letterSpacing = 0.8.sp),
+                        color = colors.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "$surahName · Ayah ${player.ayahNumber}",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
+                        color = colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    speedOptions.forEach { speed ->
+                        val selected = player.playbackSpeed == speed
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (selected) colors.accentSoft else colors.elevated)
+                                .border(1.dp, if (selected) colors.accentBorder else colors.border, RoundedCornerShape(9.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) { onSetSpeed(speed) }
+                                .padding(horizontal = 7.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = if (speed == 1f) "1x" else "${speed}x",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W700),
+                                color = if (selected) colors.accent else colors.textSecondary,
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Rounded.Stop,
+                        contentDescription = "Close player",
+                        tint = colors.textMuted,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onClose,
+                            ),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(7.dp))
+
+            Slider(
+                value = sliderPosition.coerceIn(0f, player.durationMs.toFloat().coerceAtLeast(1f)),
+                onValueChange = { sliderPosition = it },
+                onValueChangeFinished = { onSeekTo(sliderPosition.roundToLong()) },
+                valueRange = 0f..player.durationMs.toFloat().coerceAtLeast(1f),
+                colors = SliderDefaults.colors(
+                    thumbColor = colors.accent,
+                    activeTrackColor = colors.accent,
+                    inactiveTrackColor = colors.borderStrong,
+                ),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(formatMillis(sliderPosition.roundToLong()), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
+                Text(formatMillis(player.durationMs), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
+            }
+
+            Spacer(Modifier.height(5.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AudioPlayerButton(icon = Icons.Rounded.SkipPrevious, onClick = onPreviousAyah)
+                AudioPlayerButton(icon = Icons.Rounded.Replay10, onClick = onSkipBack)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(colors.accentSoft)
+                        .border(1.dp, colors.accentBorder, RoundedCornerShape(17.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onTogglePlayback,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (player.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (player.isPlaying) "Pause" else "Play",
+                        tint = colors.accent,
+                        modifier = Modifier.size(23.dp),
+                    )
+                }
+                AudioPlayerButton(icon = Icons.Rounded.Forward10, onClick = onSkipForward)
+                AudioPlayerButton(icon = Icons.Rounded.SkipNext, onClick = onNextAyah)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioPlayerButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(13.dp))
+            .background(colors.elevated)
+            .border(1.dp, colors.border, RoundedCornerShape(13.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = colors.textSecondary,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+private fun formatMillis(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
 }
 
 @Composable

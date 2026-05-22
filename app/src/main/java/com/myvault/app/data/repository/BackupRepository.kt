@@ -686,6 +686,8 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranTranslationFontPercent", quranTranslationFontPercent)
         .put("quranTranslationEnabled", quranTranslationEnabled)
         .put("quranTajweedEnabled", quranTajweedEnabled)
+        .put("quranAudioReciterId", quranAudioReciterId)
+        .put("quranAudioPlaybackSpeed", quranAudioPlaybackSpeed.toDouble())
         .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
         .put("quranRecentLocations", quranRecentLocations.toJsonArray())
 
@@ -708,6 +710,8 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranTranslationFontPercent = optInt("quranTranslationFontPercent", 100).coerceIn(80, 130),
         quranTranslationEnabled = optBoolean("quranTranslationEnabled", true),
         quranTajweedEnabled = optBoolean("quranTajweedEnabled", false),
+        quranAudioReciterId = optInt("quranAudioReciterId", 0).coerceAtLeast(0),
+        quranAudioPlaybackSpeed = optDouble("quranAudioPlaybackSpeed", 1.0).toFloat().coerceIn(0.5f, 2f),
         quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
         quranRecentLocations = optJSONArray("quranRecentLocations").toQuranRecentLocations(),
     )

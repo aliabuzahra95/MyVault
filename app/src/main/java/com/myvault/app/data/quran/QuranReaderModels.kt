@@ -2,6 +2,9 @@ package com.myvault.app.data.quran
 
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
+import com.myvault.app.data.quran.audio.AudioPickerAyah
+import com.myvault.app.data.quran.audio.AudioReciterUiModel
 
 data class QuranAyah(
     val verseKey: String,
@@ -31,6 +34,15 @@ data class QuranReaderUiState(
     val loadingTafsirVerseKeys: Set<String> = emptySet(),
     val bookmarkedVerseKeys: Set<String> = emptySet(),
     val recentLocations: List<QuranRecentLocation> = emptyList(),
+    val availableReciters: List<AudioReciterUiModel> = emptyList(),
+    val reciterPickerAyah: AudioPickerAyah? = null,
+    val selectedAudioReciter: AudioReciterUiModel? = null,
+    val playingVerseKey: String? = null,
+    val audioLoadingVerseKey: String? = null,
+    val audioStatusMessage: String? = null,
+    val audioStatusIsError: Boolean = false,
+    val audioPlaybackSpeed: Float = 1f,
+    val miniPlayer: AudioMiniPlayerUiState? = null,
     val loading: Boolean = true,
 )
 

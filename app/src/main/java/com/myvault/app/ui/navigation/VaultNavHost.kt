@@ -251,6 +251,16 @@ fun VaultNavHost(
                             }
                         },
                         onOpenBookmark = quranViewModel::openBookmarkedAyah,
+                        onOpenReciterPicker = quranViewModel::openReciterPicker,
+                        onDismissReciterPicker = quranViewModel::dismissReciterPicker,
+                        onSelectAudioReciter = quranViewModel::playWithReciter,
+                        onPlayAudioForAyah = quranViewModel::playAudioForAyah,
+                        onToggleAudioPlayback = quranViewModel::toggleAudioPlayback,
+                        onStopAudio = quranViewModel::stopAudio,
+                        onSeekAudioTo = quranViewModel::seekAudioTo,
+                        onSetAudioSpeed = quranViewModel::setAudioPlaybackSpeed,
+                        onSkipAudioBy = quranViewModel::skipAudioBy,
+                        onPlayAdjacentAudio = quranViewModel::playAdjacentAudio,
                     )
                 },
                 libraryContent = {
