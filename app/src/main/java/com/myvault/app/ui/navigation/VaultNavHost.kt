@@ -22,6 +22,7 @@ import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocalLibrary
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Person
@@ -61,6 +62,7 @@ import com.myvault.app.ui.screens.FolderViewScreen
 import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
+import com.myvault.app.ui.screens.MemoriseShellScreen
 import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
@@ -265,6 +267,25 @@ fun VaultNavHost(
                         onChooseOtherReciter = quranViewModel::chooseOtherReciterForCurrentAudio,
                         onRefreshAudioDownloads = quranViewModel::refreshAudioDownloadStates,
                         onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
+                    )
+                },
+                memoriseContent = {
+                    MemoriseShellScreen(
+                        workspaceTitle = preferences.workspace.workspaceLabel(),
+                        workspaceOptions = WorkspaceLabels,
+                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onThemeClick = {
+                            settingsViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            settingsViewModel.pushGoogleDriveSync {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
                     )
                 },
                 libraryContent = {
@@ -758,6 +779,7 @@ private enum class VaultRootMode(val label: String, val icon: ImageVector) {
     Study("Study", Icons.Rounded.MenuBook),
     Library("Library", Icons.Rounded.LocalLibrary),
     Quran("Qur'an", Icons.Rounded.AutoStories),
+    Memorise("Memorise", Icons.Rounded.CheckCircle),
     Personal("Personal", Icons.Rounded.Person),
 }
 
@@ -766,13 +788,14 @@ private fun StudyLibraryPersonalShell(
     workspace: String,
     studyContent: @Composable () -> Unit,
     quranContent: @Composable () -> Unit,
+    memoriseContent: @Composable () -> Unit,
     libraryContent: @Composable () -> Unit,
     personalContent: @Composable () -> Unit,
 ) {
     val modes = if (workspace == WORKSPACE_PERSONAL) {
         listOf(VaultRootMode.Personal)
     } else {
-        listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran)
+        listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
     }
     val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
     val scope = rememberCoroutineScope()
@@ -812,6 +835,7 @@ private fun StudyLibraryPersonalShell(
             when (modes[page]) {
                 VaultRootMode.Study -> studyContent()
                 VaultRootMode.Quran -> quranContent()
+                VaultRootMode.Memorise -> memoriseContent()
                 VaultRootMode.Library -> libraryContent()
                 VaultRootMode.Personal -> personalContent()
             }
@@ -846,7 +870,10 @@ private fun FloatingBottomNav(
     val colors = VaultThemeTokens.colors
     Surface(
         modifier = modifier
-            .widthIn(min = 236.dp, max = 258.dp),
+            .widthIn(
+                min = if (modes.size > 3) 304.dp else 236.dp,
+                max = if (modes.size > 3) 342.dp else 258.dp,
+            ),
         color = colors.elevated.copy(alpha = 0.96f),
         contentColor = colors.textSecondary,
         shape = VaultShapes.pill,
@@ -901,7 +928,7 @@ private fun FloatingBottomNavItem(
         Column(
             modifier = Modifier
                 .scale(scale)
-                .padding(horizontal = 8.dp, vertical = 5.dp),
+                .padding(horizontal = if (label.length > 7) 6.dp else 8.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
