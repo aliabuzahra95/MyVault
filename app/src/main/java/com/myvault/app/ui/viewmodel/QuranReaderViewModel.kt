@@ -14,6 +14,7 @@ import com.myvault.app.data.quran.audio.AudioReciterUiModel
 import com.myvault.app.data.quran.audio.PlaybackMode
 import com.myvault.app.data.quran.audio.QuranAudioPlayer
 import com.myvault.app.data.quran.audio.QuranAudioRepository
+import com.myvault.app.data.quran.audio.SurahDownloadState
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -71,23 +72,12 @@ class QuranReaderViewModel @Inject constructor(
         viewModelScope.launch {
             quranAudioPlayer.playbackState.collect { playback ->
                 val current = _uiState.value
-                val verseKey = current.playingVerseKey
-                val ayahNumber = current.ayahs.firstOrNull { it.verseKey == verseKey }?.ayahNumber
-                _uiState.value = current.copy(
-                    miniPlayer = if (playback.hasActiveMedia && verseKey != null && ayahNumber != null) {
-                        AudioMiniPlayerUiState(
-                            verseKey = verseKey,
-                            ayahNumber = ayahNumber,
-                            reciterName = current.selectedAudioReciter?.name.orEmpty(),
-                            isPlaying = playback.isPlaying,
-                            playbackSpeed = current.audioPlaybackSpeed,
-                            progressMs = playback.currentPositionMs,
-                            durationMs = playback.durationMs,
-                        )
-                    } else {
-                        null
-                    },
-                )
+                _uiState.value = current.copy(miniPlayer = current.buildMiniPlayer(playback))
+            }
+        }
+        viewModelScope.launch {
+            quranAudioRepository.surahDownloadStates.collect { states ->
+                _uiState.value = _uiState.value.copy(audioDownloadStates = states)
             }
         }
     }
@@ -238,6 +228,12 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    fun chooseOtherReciterForCurrentAudio() {
+        val verseKey = _uiState.value.playingVerseKey ?: return
+        val ayah = _uiState.value.ayahs.firstOrNull { it.verseKey == verseKey } ?: return
+        openReciterPicker(ayah)
+    }
+
     fun toggleAudioPlayback() {
         if (quranAudioPlayer.isPlaying()) {
             quranAudioPlayer.pause()
@@ -345,11 +341,21 @@ class QuranReaderViewModel @Inject constructor(
                     speed = _uiState.value.audioPlaybackSpeed,
                     verseByVerse = metadata.mode == PlaybackMode.VerseByVerse,
                     onStarted = {
+                        val playbackState = quranAudioPlayer.playbackState.value
                         _uiState.value = _uiState.value.copy(
                             playingVerseKey = verseKey,
                             audioLoadingVerseKey = null,
                             audioStatusMessage = null,
                             audioStatusIsError = false,
+                            miniPlayer = AudioMiniPlayerUiState(
+                                verseKey = verseKey,
+                                ayahNumber = ayah.ayahNumber,
+                                reciterName = reciter.name,
+                                isPlaying = true,
+                                playbackSpeed = _uiState.value.audioPlaybackSpeed,
+                                progressMs = playbackState.currentPositionMs,
+                                durationMs = playbackState.durationMs,
+                            ),
                         )
                         startAudioProgressTicker()
                         updateLastReadPosition(surah.num, ayah.ayahNumber)
@@ -382,18 +388,25 @@ class QuranReaderViewModel @Inject constructor(
         audioProgressJob = viewModelScope.launch {
             while (quranAudioPlayer.hasActiveMedia()) {
                 val current = _uiState.value
-                current.miniPlayer?.let { player ->
-                    _uiState.value = current.copy(
-                        miniPlayer = player.copy(
-                            isPlaying = quranAudioPlayer.isPlaying(),
-                            progressMs = quranAudioPlayer.currentPositionMs(),
-                            durationMs = quranAudioPlayer.durationMs(),
-                            playbackSpeed = current.audioPlaybackSpeed,
-                        ),
-                    )
-                }
+                _uiState.value = current.copy(
+                    miniPlayer = current.buildMiniPlayer(quranAudioPlayer.playbackState.value),
+                )
                 kotlinx.coroutines.delay(500L)
             }
+        }
+    }
+
+    fun refreshAudioDownloadStates(reciter: AudioReciterUiModel) {
+        viewModelScope.launch {
+            com.myvault.app.data.quran.quranCatalog.forEach { surah ->
+                quranAudioRepository.refreshSurahDownloadState(reciter, surah.num)
+            }
+        }
+    }
+
+    fun downloadSurahAudio(reciter: AudioReciterUiModel, surahNumber: Int) {
+        viewModelScope.launch {
+            quranAudioRepository.downloadSurah(reciter, surahNumber)
         }
     }
 
@@ -456,6 +469,23 @@ class QuranReaderViewModel @Inject constructor(
         quranAudioPlayer.release()
         super.onCleared()
     }
+}
+
+private fun QuranReaderUiState.buildMiniPlayer(
+    playback: QuranAudioPlayer.PlaybackState,
+): AudioMiniPlayerUiState? {
+    val verseKey = playingVerseKey ?: return null
+    if (!playback.hasActiveMedia) return null
+    val ayahNumber = ayahs.firstOrNull { it.verseKey == verseKey }?.ayahNumber ?: return null
+    return AudioMiniPlayerUiState(
+        verseKey = verseKey,
+        ayahNumber = ayahNumber,
+        reciterName = selectedAudioReciter?.name.orEmpty(),
+        isPlaying = playback.isPlaying,
+        playbackSpeed = audioPlaybackSpeed,
+        progressMs = playback.currentPositionMs,
+        durationMs = playback.durationMs,
+    )
 }
 
 private fun List<com.myvault.app.data.quran.QuranRecentLocation>.updatedWith(

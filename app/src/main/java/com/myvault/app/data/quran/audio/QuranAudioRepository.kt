@@ -3,6 +3,10 @@ package com.myvault.app.data.quran.audio
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -17,6 +21,9 @@ import javax.inject.Singleton
 class QuranAudioRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
+    private val _surahDownloadStates = MutableStateFlow<Map<String, SurahDownloadState>>(emptyMap())
+    val surahDownloadStates: StateFlow<Map<String, SurahDownloadState>> = _surahDownloadStates.asStateFlow()
+
     suspend fun getSupportedReciters(): List<AudioReciterUiModel> = withContext(Dispatchers.IO) {
         recitersMutex.withLock {
             cachedReciters ?: fetchSupportedReciters().ifEmpty { fallbackReciters }.also { cachedReciters = it }
@@ -59,6 +66,94 @@ class QuranAudioRepository @Inject constructor(
                 file
             }
         }
+    }
+
+    fun currentDownloadState(reciterId: Int, surahNumber: Int): SurahDownloadState {
+        val key = downloadKey(reciterId, surahNumber)
+        return surahDownloadStates.value[key]
+            ?: if (completionMarkerFile(reciterId, surahNumber).exists()) {
+                SurahDownloadState.Downloaded
+            } else {
+                SurahDownloadState.NotDownloaded
+            }
+    }
+
+    suspend fun refreshSurahDownloadState(
+        reciter: AudioReciterUiModel,
+        surahNumber: Int,
+    ): SurahDownloadState = withContext(Dispatchers.IO) {
+        val existing = surahDownloadStates.value[downloadKey(reciter.id, surahNumber)]
+        if (existing is SurahDownloadState.Downloading) return@withContext existing
+        val metadata = loadLocalChapterMetadata(reciter, surahNumber)
+        val resolved = if (completionMarkerFile(reciter.id, surahNumber).exists() || metadata?.let(::isChapterCached) == true) {
+            writeCompletionMarker(reciter.id, surahNumber)
+            SurahDownloadState.Downloaded
+        } else {
+            SurahDownloadState.NotDownloaded
+        }
+        setDownloadState(reciter.id, surahNumber, resolved)
+        resolved
+    }
+
+    suspend fun downloadSurah(
+        reciter: AudioReciterUiModel,
+        surahNumber: Int,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val current = currentDownloadState(reciter.id, surahNumber)
+        if (current is SurahDownloadState.Downloading || current is SurahDownloadState.Downloaded) {
+            return@withContext Result.success(Unit)
+        }
+        setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(0))
+        runCatching {
+            val metadata = getChapterAudio(reciter, surahNumber)
+            downloadChapterAudio(metadata) { progress ->
+                setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(progress))
+            }
+            writeCompletionMarker(reciter.id, surahNumber)
+            persistChapterMetadata(metadata)
+            setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloaded)
+        }.onFailure { error ->
+            completionMarkerFile(reciter.id, surahNumber).delete()
+            setDownloadState(
+                reciter.id,
+                surahNumber,
+                SurahDownloadState.Failed(error.message ?: "Download failed."),
+            )
+        }
+    }
+
+    private fun isChapterCached(metadata: ChapterAudioMetadata): Boolean {
+        return when (metadata.mode) {
+            PlaybackMode.FullSurah -> metadata.localSurahFile.exists()
+            PlaybackMode.VerseByVerse -> metadata.verseAudioUrls.isNotEmpty() &&
+                metadata.verseAudioUrls.keys.all { verseKey ->
+                    verseAudioFile(metadata.reciter.id, metadata.surahNumber, verseKey).exists()
+                }
+        }
+    }
+
+    private fun downloadChapterAudio(
+        metadata: ChapterAudioMetadata,
+        onProgress: (Int) -> Unit,
+    ) {
+        completionMarkerFile(metadata.reciter.id, metadata.surahNumber).delete()
+        when (metadata.mode) {
+            PlaybackMode.FullSurah -> {
+                val audioUrl = metadata.audioUrl ?: error("Missing surah audio URL.")
+                downloadToFile(audioUrl, metadata.localSurahFile, onProgress)
+            }
+            PlaybackMode.VerseByVerse -> {
+                val totalFiles = metadata.verseAudioUrls.size.coerceAtLeast(1)
+                metadata.verseAudioUrls.entries.forEachIndexed { index, entry ->
+                    val destination = verseAudioFile(metadata.reciter.id, metadata.surahNumber, entry.key)
+                    downloadToFile(entry.value, destination) { fileProgress ->
+                        val overall = (((index + (fileProgress / 100f)) / totalFiles.toFloat()) * 100f).toInt()
+                        onProgress(overall.coerceIn(0, 100))
+                    }
+                }
+            }
+        }
+        onProgress(100)
     }
 
     private fun fetchSupportedReciters(): List<AudioReciterUiModel> {
@@ -178,7 +273,7 @@ class QuranAudioRepository @Inject constructor(
         }
     }
 
-    private fun downloadToFile(url: String, destination: File) {
+    private fun downloadToFile(url: String, destination: File, onProgress: (Int) -> Unit = {}) {
         destination.parentFile?.mkdirs()
         val tempFile = File(destination.parentFile, "${destination.name}.part")
         val connection = URL(url).openConnection() as HttpURLConnection
@@ -191,12 +286,24 @@ class QuranAudioRepository @Inject constructor(
                 val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 error(errorBody.ifBlank { "Audio download failed with code $responseCode." })
             }
+            val totalBytes = connection.contentLengthLong.takeIf { it > 0 } ?: -1L
             connection.inputStream.use { input ->
                 tempFile.outputStream().use { output ->
-                    input.copyTo(output)
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var downloadedBytes = 0L
+                    var read = input.read(buffer)
+                    while (read >= 0) {
+                        output.write(buffer, 0, read)
+                        downloadedBytes += read
+                        if (totalBytes > 0) {
+                            onProgress(((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100))
+                        }
+                        read = input.read(buffer)
+                    }
                 }
             }
             moveFileAtomically(tempFile, destination)
+            onProgress(100)
         } finally {
             connection.disconnect()
             if (tempFile.exists() && !destination.exists()) tempFile.delete()
@@ -213,6 +320,16 @@ class QuranAudioRepository @Inject constructor(
 
     private fun chapterMetadataFile(reciterId: Int, surahNumber: Int): File {
         return File(File(context.filesDir, "quran_audio/$reciterId"), "surah_$surahNumber.metadata.json")
+    }
+
+    private fun completionMarkerFile(reciterId: Int, surahNumber: Int): File {
+        return File(File(context.filesDir, "quran_audio/$reciterId"), "surah_$surahNumber.complete")
+    }
+
+    private fun writeCompletionMarker(reciterId: Int, surahNumber: Int) {
+        val marker = completionMarkerFile(reciterId, surahNumber)
+        marker.parentFile?.mkdirs()
+        marker.writeText("complete")
     }
 
     private fun persistChapterMetadata(metadata: ChapterAudioMetadata) {
@@ -294,6 +411,14 @@ class QuranAudioRepository @Inject constructor(
             else -> "$verseAudioBaseUrl/$rawUrl"
         }
     }
+
+    private fun setDownloadState(reciterId: Int, surahNumber: Int, state: SurahDownloadState) {
+        _surahDownloadStates.update { current ->
+            current + (downloadKey(reciterId, surahNumber) to state)
+        }
+    }
+
+    private fun downloadKey(reciterId: Int, surahNumber: Int): String = "$reciterId:$surahNumber"
 
     private data class DesiredReciter(
         val displayName: String,

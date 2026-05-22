@@ -17,6 +17,13 @@ data class AudioMiniPlayerUiState(
     val durationMs: Long,
 )
 
+sealed interface SurahDownloadState {
+    data object NotDownloaded : SurahDownloadState
+    data class Downloading(val progressPercent: Int) : SurahDownloadState
+    data object Downloaded : SurahDownloadState
+    data class Failed(val message: String) : SurahDownloadState
+}
+
 data class AudioPickerAyah(
     val verseKey: String,
     val ayahNumber: Int,

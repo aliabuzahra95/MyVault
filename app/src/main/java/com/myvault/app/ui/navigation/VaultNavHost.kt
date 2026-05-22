@@ -261,6 +261,9 @@ fun VaultNavHost(
                         onSetAudioSpeed = quranViewModel::setAudioPlaybackSpeed,
                         onSkipAudioBy = quranViewModel::skipAudioBy,
                         onPlayAdjacentAudio = quranViewModel::playAdjacentAudio,
+                        onChooseOtherReciter = quranViewModel::chooseOtherReciterForCurrentAudio,
+                        onRefreshAudioDownloads = quranViewModel::refreshAudioDownloadStates,
+                        onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
                     )
                 },
                 libraryContent = {

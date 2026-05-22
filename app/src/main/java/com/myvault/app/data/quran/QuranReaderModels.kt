@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.sp
 import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
 import com.myvault.app.data.quran.audio.AudioPickerAyah
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
+import com.myvault.app.data.quran.audio.SurahDownloadState
 
 data class QuranAyah(
     val verseKey: String,
@@ -43,6 +44,7 @@ data class QuranReaderUiState(
     val audioStatusIsError: Boolean = false,
     val audioPlaybackSpeed: Float = 1f,
     val miniPlayer: AudioMiniPlayerUiState? = null,
+    val audioDownloadStates: Map<String, SurahDownloadState> = emptyMap(),
     val loading: Boolean = true,
 )
 
