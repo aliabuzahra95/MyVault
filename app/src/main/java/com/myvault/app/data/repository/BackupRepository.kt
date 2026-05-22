@@ -35,6 +35,7 @@ import com.myvault.app.data.preferences.VaultBackupPreferences
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.quran.QuranRecentLocation
+import com.myvault.app.data.quran.memorization.MemorizationRecord
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -690,6 +691,7 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranAudioPlaybackSpeed", quranAudioPlaybackSpeed.toDouble())
         .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
         .put("quranRecentLocations", quranRecentLocations.toJsonArray())
+        .put("quranMemorizationRecords", quranMemorizationRecords.toMemorizationJsonArray())
 
 private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
     VaultBackupPreferences(
@@ -714,6 +716,7 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranAudioPlaybackSpeed = optDouble("quranAudioPlaybackSpeed", 1.0).toFloat().coerceIn(0.5f, 2f),
         quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
         quranRecentLocations = optJSONArray("quranRecentLocations").toQuranRecentLocations(),
+        quranMemorizationRecords = optJSONArray("quranMemorizationRecords").toMemorizationRecords(),
     )
 
 private fun List<QuranRecentLocation>.toJsonArray(): JSONArray =
@@ -743,6 +746,50 @@ private fun JSONArray?.toQuranRecentLocations(): List<QuranRecentLocation> {
             )
         }
     }.sortedByDescending { it.lastReadAt }.take(5)
+}
+
+private fun List<MemorizationRecord>.toMemorizationJsonArray(): JSONArray =
+    JSONArray(
+        map {
+            JSONObject()
+                .put("verseKey", it.verseKey)
+                .put("surahNumber", it.surahNumber)
+                .put("ayahNumber", it.ayahNumber)
+                .put("startedAt", it.startedAt)
+                .put("lastReviewedAt", it.lastReviewedAt)
+                .put("reviewCount", it.reviewCount)
+                .put("memorizedAt", it.memorizedAt ?: JSONObject.NULL)
+                .put("isRevision", it.isRevision)
+                .put("isWeak", it.isWeak)
+                .put("updatedAt", it.updatedAt)
+        },
+    )
+
+private fun JSONArray?.toMemorizationRecords(): List<MemorizationRecord> {
+    val array = this ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val surahNumber = item.optInt("surahNumber", 0)
+            val ayahNumber = item.optInt("ayahNumber", 0)
+            val verseKey = item.optString("verseKey").ifBlank { "$surahNumber:$ayahNumber" }
+            if (surahNumber <= 0 || ayahNumber <= 0 || !verseKey.contains(':')) continue
+            add(
+                MemorizationRecord(
+                    verseKey = verseKey,
+                    surahNumber = surahNumber,
+                    ayahNumber = ayahNumber,
+                    startedAt = item.optLong("startedAt", 0L).coerceAtLeast(0L),
+                    lastReviewedAt = item.optLong("lastReviewedAt", 0L).coerceAtLeast(0L),
+                    reviewCount = item.optInt("reviewCount", 0).coerceAtLeast(0),
+                    memorizedAt = if (item.isNull("memorizedAt")) null else item.optLong("memorizedAt", 0L).takeIf { it > 0L },
+                    isRevision = item.optBoolean("isRevision", false),
+                    isWeak = item.optBoolean("isWeak", false),
+                    updatedAt = item.optLong("updatedAt", 0L).coerceAtLeast(0L),
+                ),
+            )
+        }
+    }.sortedByDescending { it.updatedAt }
 }
 
 private fun ZipOutputStream.writeJson(name: String, json: Any) {

@@ -12,6 +12,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.data.quran.QuranRecentLocation
+import com.myvault.app.data.quran.memorization.MemorizationRecord
+import com.myvault.app.data.quran.memorization.toMemorizationRecordOrNull
+import com.myvault.app.data.quran.memorization.toPreferenceEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -46,6 +49,7 @@ data class VaultUserPreferences(
     val quranAudioPlaybackSpeed: Float = 1f,
     val quranBookmarkedVerses: Set<String> = emptySet(),
     val quranRecentLocations: List<QuranRecentLocation> = emptyList(),
+    val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
@@ -81,6 +85,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranAudioPlaybackSpeed = preferences[Keys.QuranAudioPlaybackSpeed] ?: 1f,
                 quranBookmarkedVerses = preferences[Keys.QuranBookmarkedVerses].orEmpty(),
                 quranRecentLocations = preferences[Keys.QuranRecentLocations].orEmpty().toQuranRecentLocations(),
+                quranMemorizationRecords = preferences[Keys.QuranMemorizationRecords].orEmpty()
+                    .mapNotNull { it.toMemorizationRecordOrNull() },
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
                 libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
@@ -247,6 +253,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
             preferences[Keys.QuranAudioPlaybackSpeed] = backup.quranAudioPlaybackSpeed.coerceIn(0.5f, 2f)
             preferences[Keys.QuranBookmarkedVerses] = backup.quranBookmarkedVerses
             preferences[Keys.QuranRecentLocations] = backup.quranRecentLocations.toPreferenceSet()
+            preferences[Keys.QuranMemorizationRecords] = backup.quranMemorizationRecords.map { it.toPreferenceEntry() }.toSet()
+        }
+    }
+
+    suspend fun setQuranMemorizationRecords(records: List<MemorizationRecord>) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranMemorizationRecords] = records.map { it.toPreferenceEntry() }.toSet()
         }
     }
 
@@ -302,6 +315,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranAudioPlaybackSpeed: Preferences.Key<Float> = floatPreferencesKey("quran_audio_playback_speed")
         val QuranBookmarkedVerses: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_bookmarked_verses")
         val QuranRecentLocations: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_recent_locations")
+        val QuranMemorizationRecords: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_memorization_records")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
@@ -333,6 +347,7 @@ data class VaultBackupPreferences(
     val quranAudioPlaybackSpeed: Float,
     val quranBookmarkedVerses: Set<String>,
     val quranRecentLocations: List<QuranRecentLocation>,
+    val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
 )
 
 private fun Set<String>.toQuranRecentLocations(): List<QuranRecentLocation> =

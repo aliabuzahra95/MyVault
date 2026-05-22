@@ -76,6 +76,7 @@ import com.myvault.app.ui.viewmodel.AttachmentViewerViewModel
 import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
 import com.myvault.app.ui.viewmodel.LibraryViewModel
+import com.myvault.app.ui.viewmodel.MemoriseViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
 import com.myvault.app.ui.viewmodel.QuranReaderViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
@@ -270,7 +271,10 @@ fun VaultNavHost(
                     )
                 },
                 memoriseContent = {
+                    val memoriseViewModel: MemoriseViewModel = hiltViewModel()
+                    val memoriseState by memoriseViewModel.uiState.collectAsState()
                     MemoriseShellScreen(
+                        uiState = memoriseState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
@@ -286,6 +290,14 @@ fun VaultNavHost(
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
+                        onSelectGroup = memoriseViewModel::selectGroup,
+                        onSelectSurah = memoriseViewModel::selectSurah,
+                        onSelectAyah = memoriseViewModel::selectAyah,
+                        onStartSelectedAyah = memoriseViewModel::startSelectedAyah,
+                        onMarkReviewed = memoriseViewModel::markReviewed,
+                        onToggleMemorized = memoriseViewModel::toggleMemorized,
+                        onToggleRevision = memoriseViewModel::toggleRevision,
+                        onToggleWeak = memoriseViewModel::toggleWeak,
                     )
                 },
                 libraryContent = {
