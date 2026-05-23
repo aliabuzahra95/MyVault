@@ -165,6 +165,9 @@ class LibraryViewModel @Inject constructor(
                     annotationNoteCount = items.count { !it.noteText.isNullOrBlank() },
                 )
             }
+        val fileItemsById = activeFiles.associate { file ->
+            file.id to file.toLibraryFileItem(progressByAttachment[file.id], annotationStatsByAttachment[file.id])
+        }
         val annotationItemsByFolder = annotations
             .filter { !it.noteText.isNullOrBlank() }
             .mapNotNull { annotation ->
@@ -178,7 +181,7 @@ class LibraryViewModel @Inject constructor(
             .filter { it.deletedAt == null }
             .groupBy { it.libraryFolderId }
             .mapValues { (_, files) ->
-                files.map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
+                files.mapNotNull { fileItemsById[it.id] }
                     .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenBy { it.name.lowercase() })
             }
         val fileCounts = activeFiles
@@ -195,10 +198,10 @@ class LibraryViewModel @Inject constructor(
             .map { it.toLibraryFolderItem(foldersByParent, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) }
 
         val currentFileItems = currentFiles
-            .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
+            .mapNotNull { fileItemsById[it.id] }
             .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta })
         val continueReadingItems = (if (folderId == null) allFiles else currentFiles)
-            .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
+            .mapNotNull { fileItemsById[it.id] }
         val currentFileIds = (if (folderId == null) allFiles else currentFiles).map { it.id }.toSet()
         val currentAnnotationIds = annotationItemsByFolder[folderId].orEmpty().map { it.id }.toSet()
 
@@ -208,7 +211,7 @@ class LibraryViewModel @Inject constructor(
             files = currentFileItems,
             pinnedFiles = allFiles
                 .filter { it.isPinned }
-                .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
+                .mapNotNull { fileItemsById[it.id] }
                 .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
             annotations = annotations
                 .filter {
@@ -236,7 +239,7 @@ class LibraryViewModel @Inject constructor(
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
             recentFiles = allFiles
-                .map { it.toLibraryFileItem(progressByAttachment[it.id], annotationStatsByAttachment[it.id]) }
+                .mapNotNull { fileItemsById[it.id] }
                 .filter { it.lastOpenedAt > 0L }
                 .sortedByDescending { it.lastOpenedAt }
                 .take(5),

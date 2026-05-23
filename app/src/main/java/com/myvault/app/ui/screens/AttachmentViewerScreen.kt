@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.Path
 import android.content.Context
-import android.util.Log
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -322,7 +321,6 @@ private fun PdfAttachmentViewer(
         if (view != null && startOffset != null && endOffset != null) {
             val start = view.toNormalizedPagePoint(startOffset.x, startOffset.y, clampToPage = false)
             val end = view.toNormalizedPagePoint(endOffset.x, endOffset.y, clampToPage = false)
-            Log.d("MyVaultPdfHighlight", "Release raw start=$startOffset end=$endOffset mappedStart=$start mappedEnd=$end")
             val pageIndex = start?.pageIndex ?: end?.pageIndex ?: view.findFocusPage(
                 view.currentXOffset,
                 view.currentYOffset,
@@ -344,7 +342,6 @@ private fun PdfAttachmentViewer(
                     )
 
                 if (normalizedStart == null || normalizedEnd == null) {
-                    Log.w("MyVaultPdfHighlight", "Release failed: normalized points null page=$pageIndex")
                     highlightSaveMessage = "Highlight not saved"
                     dragStart = null
                     dragEnd = null
@@ -353,7 +350,6 @@ private fun PdfAttachmentViewer(
 
                 val startPoint = normalizedStart.offset
                 val endPoint = normalizedEnd.offset
-                Log.d("MyVaultPdfHighlight", "Release page=$pageIndex normalizedStart=$startPoint normalizedEnd=$endPoint")
                 val rect = expandPdfHighlightRect(
                     left = minOf(startPoint.x, endPoint.x),
                     top = minOf(startPoint.y, endPoint.y),
@@ -361,10 +357,6 @@ private fun PdfAttachmentViewer(
                     bottom = maxOf(startPoint.y, endPoint.y),
                 )
                 if (rect != null) {
-                    Log.d(
-                        "MyVaultPdfHighlight",
-                        "Insert call page=$pageIndex rect=${rect.left},${rect.top},${rect.right},${rect.bottom} width=${rect.right - rect.left} height=${rect.bottom - rect.top}",
-                    )
                     onAddHighlight(
                         attachment.libraryFolderId,
                         pageIndex,
@@ -374,20 +366,16 @@ private fun PdfAttachmentViewer(
                         rect.bottom,
                         highlightColor,
                     ) { saved ->
-                        Log.d("MyVaultPdfHighlight", "Insert callback saved=$saved")
                         highlightSaveMessage = if (saved) "Highlight saved" else "Highlight not saved"
                         if (saved) view.invalidate()
                     }
                 } else {
-                    Log.w("MyVaultPdfHighlight", "Release failed: rect too small after expansion")
                     highlightSaveMessage = "Highlight not saved"
                 }
             } else {
-                Log.w("MyVaultPdfHighlight", "Release failed: invalid page index $pageIndex")
                 highlightSaveMessage = "Highlight not saved"
             }
         } else {
-            Log.w("MyVaultPdfHighlight", "Release failed: missing view/start/end view=${view != null} start=$startOffset end=$endOffset")
             highlightSaveMessage = "Highlight not saved"
         }
         dragStart = null
@@ -604,11 +592,7 @@ private fun PdfAttachmentViewer(
         }
     }
 
-    LaunchedEffect(annotations, pdfView) {
-        Log.d(
-            "MyVaultPdfHighlight",
-            "Annotations Flow emitted count=${annotations.size} pages=${annotations.groupingBy { it.pageIndex }.eachCount()}",
-        )
+    LaunchedEffect(annotations) {
         pdfView?.invalidate()
     }
 

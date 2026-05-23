@@ -167,11 +167,19 @@ fun MemoriseShellScreen(
                             modifier = Modifier.padding(top = 2.dp),
                         )
                     }
-                    items(memorizedSurahs, key = { "surah-${it.surah.num}" }) { item ->
+                    items(
+                        items = memorizedSurahs,
+                        key = { "surah-${it.surah.num}" },
+                        contentType = { "memorized-surah" },
+                    ) { item ->
                         MemoriseSurahRow(item = item)
                     }
                 }
-                items(dashboardItems, key = { it.record.verseKey }) { item ->
+                items(
+                    items = dashboardItems,
+                    key = { it.record.verseKey },
+                    contentType = { "memorized-ayah" },
+                ) { item ->
                     MemoriseRecordRow(
                         item = item,
                         onReviewed = { onMarkReviewed(item.record.verseKey) },
@@ -549,7 +557,11 @@ private fun MemoriseStartSheet(
                     )
                 }
                 if (showSurahs) {
-                    items(quranCatalog, key = { it.num }) { surah ->
+                    items(
+                        items = quranCatalog,
+                        key = { it.num },
+                        contentType = { "surah-selector" },
+                    ) { surah ->
                         MemoriseSelectorCard(
                             title = "${surah.num}. ${surah.name}",
                             subtitle = "${surah.arabic} • ${surah.ayat} ayat",
@@ -564,7 +576,11 @@ private fun MemoriseStartSheet(
                     item {
                         Text("Choose ayah", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900, letterSpacing = 1.sp), color = colors.textMuted, modifier = Modifier.padding(top = 6.dp))
                     }
-                    items((1..selectedSurah.ayat).toList(), key = { it }) { ayah ->
+                    items(
+                        items = (1..selectedSurah.ayat).toList(),
+                        key = { it },
+                        contentType = { "ayah-selector" },
+                    ) { ayah ->
                         MemoriseSelectorCard(
                             title = "Ayah $ayah",
                             subtitle = "${selectedSurah.name} ${selectedSurah.num}:$ayah",

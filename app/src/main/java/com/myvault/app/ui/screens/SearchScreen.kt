@@ -76,7 +76,11 @@ fun SearchScreen(
                 } else if (uiState.notes.isEmpty()) {
                     item { EmptySearchMessage("No matching notes") }
                 } else {
-                    items(uiState.notes, key = { it.id }) { result ->
+                    items(
+                        items = uiState.notes,
+                        key = { it.id },
+                        contentType = { "search-note" },
+                    ) { result ->
                         SearchResultCard(
                             result = result,
                             query = query,
@@ -93,7 +97,11 @@ fun SearchScreen(
                 } else if (uiState.folders.isEmpty()) {
                     item { EmptySearchMessage("No matching folders") }
                 } else {
-                    items(uiState.folders, key = { it.id }) { folder -> FolderResultRow(name = folder.name, parent = folder.parentId ?: "Workspace") }
+                    items(
+                        items = uiState.folders,
+                        key = { it.id },
+                        contentType = { "search-folder" },
+                    ) { folder -> FolderResultRow(name = folder.name, parent = folder.parentId ?: "Workspace") }
                 }
             }
         }

@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -46,14 +47,14 @@ fun SearchResultCard(
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
         ) {
             Text(
-                text = highlightedText(result.title, query),
+                text = remember(result.title, query, colors) { highlightedText(result.title, query, colors.accent, colors.accentSoft) },
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
                 color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = highlightedText(result.snippet, query),
+                text = remember(result.snippet, query, colors) { highlightedText(result.snippet, query, colors.accent, colors.accentSoft) },
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 maxLines = 3,
@@ -67,9 +68,12 @@ fun SearchResultCard(
     }
 }
 
-@Composable
-private fun highlightedText(text: String, query: String): AnnotatedString {
-    val colors = VaultThemeTokens.colors
+private fun highlightedText(
+    text: String,
+    query: String,
+    accent: androidx.compose.ui.graphics.Color,
+    accentSoft: androidx.compose.ui.graphics.Color,
+): AnnotatedString {
     if (query.isBlank()) return AnnotatedString(text)
     val start = text.indexOf(query, ignoreCase = true)
     if (start < 0) return AnnotatedString(text)
@@ -78,8 +82,8 @@ private fun highlightedText(text: String, query: String): AnnotatedString {
         append(text)
         addStyle(
             style = SpanStyle(
-                color = colors.accent,
-                background = colors.accentSoft,
+                color = accent,
+                background = accentSoft,
                 fontWeight = FontWeight.W600,
             ),
             start = start,

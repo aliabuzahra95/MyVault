@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -42,7 +44,7 @@ data class HomeUiState(
     val notePreviewLines: Int = 0,
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     seeder: DatabaseSeeder,
@@ -53,7 +55,11 @@ class HomeViewModel @Inject constructor(
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
-    private val searchResults = searchQuery.flatMapLatest { query ->
+    private val debouncedSearchQuery = searchQuery
+        .debounce(180)
+        .distinctUntilChanged()
+
+    private val searchResults = debouncedSearchQuery.flatMapLatest { query ->
         combine(
             searchRepository.searchNotes(query),
             searchRepository.searchFolders(query),

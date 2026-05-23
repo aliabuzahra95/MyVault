@@ -421,6 +421,7 @@ private fun QuranReaderSurface(
                 items(
                     items = uiState.ayahs,
                     key = { it.verseKey },
+                    contentType = { "quran-ayah" },
                 ) { ayah ->
                     val memorizationRecord = memorizationRecordsByVerse[ayah.verseKey]
                     AyahRow(
