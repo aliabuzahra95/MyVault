@@ -33,12 +33,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +88,7 @@ import com.myvault.app.ui.viewmodel.NoteViewModel
 import com.myvault.app.ui.viewmodel.QuranReaderViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @Composable
@@ -95,6 +99,7 @@ fun VaultNavHost(
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
@@ -148,6 +153,16 @@ fun VaultNavHost(
             }
             StudyLibraryPersonalShell(
                 workspace = preferences.workspace,
+                selectedRootModeName = if (preferences.workspace == WORKSPACE_PERSONAL) {
+                    VaultRootMode.Personal.name
+                } else {
+                    selectedIslamicRootMode
+                },
+                onRootModeChanged = { mode ->
+                    if (mode != VaultRootMode.Personal) {
+                        selectedIslamicRootMode = mode.name
+                    }
+                },
                 rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
                 onQuickNoteMode = { mode ->
                     homeViewModel.createNote(folderId = null, mode = mode) { noteId ->
@@ -834,6 +849,8 @@ private enum class VaultRootMode(val label: String, val icon: ImageVector) {
 @Composable
 private fun StudyLibraryPersonalShell(
     workspace: String,
+    selectedRootModeName: String,
+    onRootModeChanged: (VaultRootMode) -> Unit,
     rootBackHandlerEnabled: Boolean,
     onQuickNoteMode: (String) -> Unit,
     studyContent: @Composable () -> Unit,
@@ -849,19 +866,28 @@ private fun StudyLibraryPersonalShell(
             listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
         }
     }
-    val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
+    val requestedPage = remember(modes, selectedRootModeName) {
+        modes.indexOfFirst { it.name == selectedRootModeName }.takeIf { it >= 0 } ?: 0
+    }
+    val pagerState = rememberPagerState(initialPage = requestedPage) { modes.size }
     val scope = rememberCoroutineScope()
     val colors = VaultThemeTokens.colors
 
-    LaunchedEffect(workspace) {
-        pagerState.animateScrollToPage(
-            page = 0,
-            animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
-        )
+    LaunchedEffect(modes, requestedPage) {
+        if (pagerState.currentPage != requestedPage) {
+            pagerState.scrollToPage(requestedPage)
+        }
+    }
+
+    LaunchedEffect(pagerState, modes) {
+        snapshotFlow { pagerState.settledPage.coerceIn(0, modes.lastIndex) }
+            .distinctUntilChanged()
+            .collect { page -> onRootModeChanged(modes[page]) }
     }
 
     BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
         scope.launch {
+            onRootModeChanged(VaultRootMode.Study)
             pagerState.animateScrollToPage(
                 page = 0,
                 animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
@@ -897,6 +923,7 @@ private fun StudyLibraryPersonalShell(
             modes = modes,
             selectedIndex = pagerState.currentPage.coerceIn(0, modes.lastIndex),
             onModeSelected = { index ->
+                onRootModeChanged(modes[index])
                 scope.launch {
                     pagerState.animateScrollToPage(
                         page = index,
