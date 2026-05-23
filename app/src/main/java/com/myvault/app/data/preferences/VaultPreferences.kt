@@ -45,6 +45,7 @@ data class VaultUserPreferences(
     val quranTranslationFontPercent: Int = 100,
     val quranTranslationEnabled: Boolean = true,
     val quranTajweedEnabled: Boolean = false,
+    val quranTafsirSourceId: Int = -1,
     val quranAudioReciterId: Int = 0,
     val quranAudioPlaybackSpeed: Float = 1f,
     val quranBookmarkedVerses: Set<String> = emptySet(),
@@ -81,6 +82,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranTranslationFontPercent = preferences[Keys.QuranTranslationFontPercent] ?: 100,
                 quranTranslationEnabled = preferences[Keys.QuranTranslationEnabled] ?: true,
                 quranTajweedEnabled = preferences[Keys.QuranTajweedEnabled] ?: false,
+                quranTafsirSourceId = preferences[Keys.QuranTafsirSourceId] ?: -1,
                 quranAudioReciterId = preferences[Keys.QuranAudioReciterId] ?: 0,
                 quranAudioPlaybackSpeed = preferences[Keys.QuranAudioPlaybackSpeed] ?: 1f,
                 quranBookmarkedVerses = preferences[Keys.QuranBookmarkedVerses].orEmpty(),
@@ -212,6 +214,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setQuranTafsirSourceId(sourceId: Int) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranTafsirSourceId] = sourceId
+        }
+    }
+
     suspend fun setQuranAudioReciterId(reciterId: Int) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.QuranAudioReciterId] = reciterId.coerceAtLeast(0)
@@ -249,11 +257,17 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
             preferences[Keys.QuranTranslationFontPercent] = backup.quranTranslationFontPercent.coerceIn(80, 130)
             preferences[Keys.QuranTranslationEnabled] = backup.quranTranslationEnabled
             preferences[Keys.QuranTajweedEnabled] = backup.quranTajweedEnabled
+            preferences[Keys.QuranTafsirSourceId] = backup.quranTafsirSourceId
             preferences[Keys.QuranAudioReciterId] = backup.quranAudioReciterId.coerceAtLeast(0)
             preferences[Keys.QuranAudioPlaybackSpeed] = backup.quranAudioPlaybackSpeed.coerceIn(0.5f, 2f)
             preferences[Keys.QuranBookmarkedVerses] = backup.quranBookmarkedVerses
             preferences[Keys.QuranRecentLocations] = backup.quranRecentLocations.toPreferenceSet()
             preferences[Keys.QuranMemorizationRecords] = backup.quranMemorizationRecords.map { it.toPreferenceEntry() }.toSet()
+            preferences[Keys.ExpandedFolderIds] = backup.expandedFolderIds
+            preferences[Keys.LibraryViewMode] = backup.libraryViewMode
+            preferences[Keys.LibraryViewModesByLocation] = backup.libraryViewModesByLocation
+                .map { (key, value) -> "$key=$value" }
+                .toSet()
         }
     }
 
@@ -311,6 +325,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranTranslationFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_translation_font_percent")
         val QuranTranslationEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_translation_enabled")
         val QuranTajweedEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_tajweed_enabled")
+        val QuranTafsirSourceId: Preferences.Key<Int> = intPreferencesKey("quran_tafsir_source_id")
         val QuranAudioReciterId: Preferences.Key<Int> = intPreferencesKey("quran_audio_reciter_id")
         val QuranAudioPlaybackSpeed: Preferences.Key<Float> = floatPreferencesKey("quran_audio_playback_speed")
         val QuranBookmarkedVerses: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_bookmarked_verses")
@@ -343,11 +358,15 @@ data class VaultBackupPreferences(
     val quranTranslationFontPercent: Int,
     val quranTranslationEnabled: Boolean,
     val quranTajweedEnabled: Boolean,
+    val quranTafsirSourceId: Int = -1,
     val quranAudioReciterId: Int,
     val quranAudioPlaybackSpeed: Float,
     val quranBookmarkedVerses: Set<String>,
     val quranRecentLocations: List<QuranRecentLocation>,
     val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
+    val expandedFolderIds: Set<String> = emptySet(),
+    val libraryViewMode: String = "list",
+    val libraryViewModesByLocation: Map<String, String> = emptyMap(),
 )
 
 private fun Set<String>.toQuranRecentLocations(): List<QuranRecentLocation> =

@@ -67,9 +67,13 @@ class QuranReaderViewModel @Inject constructor(
             launch {
                 val tafsirSources = runCatching { quranTextRepository.getAvailableTafsirSources() }
                     .getOrDefault(emptyList())
+                val selectedSourceId = preferences.quranTafsirSourceId
+                    .takeIf { sourceId -> tafsirSources.any { it.id == sourceId } }
+                    ?: tafsirSources.firstOrNull()?.id
+                    ?: MUKHTASAR_TAFSIR_ID
                 _uiState.value = _uiState.value.copy(
                     availableTafsirSources = tafsirSources,
-                    selectedTafsirSourceId = tafsirSources.firstOrNull()?.id ?: MUKHTASAR_TAFSIR_ID,
+                    selectedTafsirSourceId = selectedSourceId,
                 )
             }
             launch {
@@ -186,6 +190,9 @@ class QuranReaderViewModel @Inject constructor(
     fun selectTafsirSource(sourceId: Int) {
         if (_uiState.value.selectedTafsirSourceId == sourceId) return
         _uiState.value = _uiState.value.copy(selectedTafsirSourceId = sourceId)
+        viewModelScope.launch {
+            vaultPreferences.setQuranTafsirSourceId(sourceId)
+        }
         val expandedVerse = _uiState.value.expandedTafsirVerseKey ?: return
         loadTafsirIfNeeded(expandedVerse, sourceId)
     }

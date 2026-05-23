@@ -611,6 +611,31 @@ private fun validateBackupSettings(settings: JSONObject) {
     check(settings.optInt("quranArabicFontPercent", 100) in 70..140) { "Backup contains invalid Qur'an font size." }
     check(settings.optInt("quranTranslationFontPercent", 100) in 80..130) { "Backup contains invalid Qur'an translation font size." }
     check(settings.optDouble("quranAudioPlaybackSpeed", 1.0) in 0.5..2.0) { "Backup contains invalid Qur'an audio speed." }
+    check(settings.optString("libraryViewMode", "list") in setOf("list", "grid", "icons")) {
+        "Backup contains invalid Library display mode."
+    }
+    settings.optJSONObject("libraryViewModesByLocation")?.let { modes ->
+        val keys = modes.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            check(key.isNotBlank() && !key.contains("/") && !key.contains("..")) {
+                "Backup contains invalid Library display scope."
+            }
+            check(modes.optString(key) in setOf("list", "grid", "icons")) {
+                "Backup contains invalid Library folder display mode."
+            }
+        }
+    }
+    settings.optJSONArray("expandedFolderIds")?.let { folderIds ->
+        val seen = mutableSetOf<String>()
+        for (index in 0 until folderIds.length()) {
+            val folderId = folderIds.optString(index)
+            check(folderId.isNotBlank() && !folderId.contains("/") && !folderId.contains("..")) {
+                "Backup contains invalid expanded folder state."
+            }
+            check(seen.add(folderId)) { "Backup contains duplicate expanded folder state." }
+        }
+    }
     settings.optJSONArray("quranBookmarkedVerses")?.let { bookmarks ->
         val seen = mutableSetOf<String>()
         for (index in 0 until bookmarks.length()) {
@@ -752,11 +777,15 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranTranslationFontPercent", quranTranslationFontPercent)
         .put("quranTranslationEnabled", quranTranslationEnabled)
         .put("quranTajweedEnabled", quranTajweedEnabled)
+        .put("quranTafsirSourceId", quranTafsirSourceId)
         .put("quranAudioReciterId", quranAudioReciterId)
         .put("quranAudioPlaybackSpeed", quranAudioPlaybackSpeed.toDouble())
         .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
         .put("quranRecentLocations", quranRecentLocations.toJsonArray())
         .put("quranMemorizationRecords", quranMemorizationRecords.toMemorizationJsonArray())
+        .put("expandedFolderIds", JSONArray(expandedFolderIds.sorted()))
+        .put("libraryViewMode", libraryViewMode)
+        .put("libraryViewModesByLocation", libraryViewModesByLocation.toJsonObject())
 
 private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
     VaultBackupPreferences(
@@ -777,11 +806,17 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranTranslationFontPercent = optInt("quranTranslationFontPercent", 100).coerceIn(80, 130),
         quranTranslationEnabled = optBoolean("quranTranslationEnabled", true),
         quranTajweedEnabled = optBoolean("quranTajweedEnabled", false),
+        quranTafsirSourceId = optInt("quranTafsirSourceId", -1),
         quranAudioReciterId = optInt("quranAudioReciterId", 0).coerceAtLeast(0),
         quranAudioPlaybackSpeed = optDouble("quranAudioPlaybackSpeed", 1.0).toFloat().coerceIn(0.5f, 2f),
         quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
         quranRecentLocations = optJSONArray("quranRecentLocations").toQuranRecentLocations(),
         quranMemorizationRecords = optJSONArray("quranMemorizationRecords").toMemorizationRecords(),
+        expandedFolderIds = optJSONArray("expandedFolderIds").toStringSet(),
+        libraryViewMode = optString("libraryViewMode").takeIf { it in setOf("list", "grid", "icons") } ?: "list",
+        libraryViewModesByLocation = optJSONObject("libraryViewModesByLocation").toStringMap(
+            allowedValues = setOf("list", "grid", "icons"),
+        ),
     )
 
 private fun List<QuranRecentLocation>.toJsonArray(): JSONArray =
@@ -829,6 +864,27 @@ private fun List<MemorizationRecord>.toMemorizationJsonArray(): JSONArray =
                 .put("updatedAt", it.updatedAt)
         },
     )
+
+private fun Map<String, String>.toJsonObject(): JSONObject =
+    JSONObject().also { json ->
+        entries.sortedBy { it.key }.forEach { (key, value) ->
+            json.put(key, value)
+        }
+    }
+
+private fun JSONObject?.toStringMap(allowedValues: Set<String>): Map<String, String> {
+    val json = this ?: return emptyMap()
+    return buildMap {
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = json.optString(key)
+            if (key.isNotBlank() && value in allowedValues) {
+                put(key, value)
+            }
+        }
+    }
+}
 
 private fun JSONArray?.toMemorizationRecords(): List<MemorizationRecord> {
     val array = this ?: return emptyList()
