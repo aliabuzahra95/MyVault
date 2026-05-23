@@ -132,11 +132,10 @@ fun ReadingScreen(
     val exportPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         uri?.let(onExportPdf)
     }
-    val breadcrumbItems = remember(uiState.folderPath, note?.title) {
+    val breadcrumbItems = remember(uiState.folderPath) {
         buildList {
             add("My Vault")
             addAll(uiState.folderPath)
-            add(note?.title?.takeIf { it.isNotBlank() } ?: "Untitled note")
         }
     }
 

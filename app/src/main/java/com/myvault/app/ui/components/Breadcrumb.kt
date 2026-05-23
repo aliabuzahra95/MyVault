@@ -2,6 +2,8 @@ package com.myvault.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -10,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultSpacing
@@ -29,6 +32,9 @@ fun Breadcrumb(
         items.forEachIndexed { index, item ->
             Text(
                 text = item,
+                modifier = Modifier.widthIn(max = 140.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelMedium,
                 color = if (index == items.lastIndex) colors.textSecondary else colors.textMuted,
             )
@@ -36,7 +42,9 @@ fun Breadcrumb(
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowRight,
                     contentDescription = null,
-                    modifier = Modifier.align(Alignment.CenterVertically).then(Modifier),
+                    modifier = Modifier
+                        .align(Alignment.CenterVertically)
+                        .size(18.dp),
                     tint = colors.textMuted,
                 )
             }
