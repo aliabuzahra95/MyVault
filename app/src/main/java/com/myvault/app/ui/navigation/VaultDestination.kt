@@ -10,8 +10,8 @@ sealed class VaultDestination(val route: String, val label: String) {
     data object LibraryFolder : VaultDestination("library-folder/{libraryFolderId}", "Library Folder") {
         fun route(folderId: String) = "library-folder/$folderId"
     }
-    data object Editor : VaultDestination("editor/{noteId}", "Editor") {
-        fun route(noteId: String) = "editor/$noteId"
+    data object Editor : VaultDestination("editor/{noteId}?quickFocus={quickFocus}", "Editor") {
+        fun route(noteId: String, quickFocus: Boolean = false) = "editor/$noteId?quickFocus=$quickFocus"
     }
     data object Reading : VaultDestination("reading/{noteId}", "Reading") {
         fun route(noteId: String) = "reading/$noteId"

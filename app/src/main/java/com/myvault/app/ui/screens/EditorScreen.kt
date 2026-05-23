@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -147,10 +148,12 @@ fun EditorScreen(
     onUpdateTableCell: (tableId: String, row: Int, column: Int, text: String) -> Unit = { _, _, _, _ -> },
     onDeleteTable: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
+    autoFocusBody: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val editorScope = rememberCoroutineScope()
     val bodyFocusRequester = remember { FocusRequester() }
     val noteId = uiState.note?.id
@@ -330,6 +333,14 @@ fun EditorScreen(
             )
             redoHistory = emptyList()
             editorReady = true
+        }
+    }
+
+    LaunchedEffect(noteId, editorReady, autoFocusBody) {
+        if (noteId != null && editorReady && autoFocusBody) {
+            delay(120)
+            bodyFocusRequester.requestFocus()
+            keyboardController?.show()
         }
     }
 

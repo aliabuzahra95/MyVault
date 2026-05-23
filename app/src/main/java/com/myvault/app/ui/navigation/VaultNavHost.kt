@@ -7,7 +7,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -147,6 +149,11 @@ fun VaultNavHost(
             StudyLibraryPersonalShell(
                 workspace = preferences.workspace,
                 rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
+                onQuickNoteMode = { mode ->
+                    homeViewModel.createNote(folderId = null, mode = mode) { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                    }
+                },
                 studyContent = {
                     HomeScreen(
                         uiState = studyState,
@@ -542,8 +549,14 @@ fun VaultNavHost(
         }
         composable(
             route = VaultDestination.Editor.route,
-            arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
-        ) {
+            arguments = listOf(
+                navArgument("noteId") { type = NavType.StringType },
+                navArgument("quickFocus") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+            ),
+        ) { backStackEntry ->
             val context = LocalContext.current
             val viewModel: NoteViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
@@ -590,6 +603,7 @@ fun VaultNavHost(
                 onUpdateTableCell = viewModel::updateTableCell,
                 onDeleteTable = viewModel::deleteTable,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
+                autoFocusBody = backStackEntry.arguments?.getBoolean("quickFocus") == true,
             )
         }
         composable(
@@ -821,6 +835,7 @@ private enum class VaultRootMode(val label: String, val icon: ImageVector) {
 private fun StudyLibraryPersonalShell(
     workspace: String,
     rootBackHandlerEnabled: Boolean,
+    onQuickNoteMode: (String) -> Unit,
     studyContent: @Composable () -> Unit,
     quranContent: @Composable () -> Unit,
     memoriseContent: @Composable () -> Unit,
@@ -889,6 +904,13 @@ private fun StudyLibraryPersonalShell(
                     )
                 }
             },
+            onModeDoubleTapped = { mode ->
+                when (mode) {
+                    VaultRootMode.Study -> onQuickNoteMode(FOLDER_MODE_STUDY)
+                    VaultRootMode.Personal -> onQuickNoteMode(FOLDER_MODE_PERSONAL)
+                    else -> Unit
+                }
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(vertical = VaultSpacing.lg),
@@ -902,6 +924,7 @@ private fun FloatingBottomNav(
     modes: List<VaultRootMode>,
     selectedIndex: Int,
     onModeSelected: (Int) -> Unit,
+    onModeDoubleTapped: (VaultRootMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -929,18 +952,21 @@ private fun FloatingBottomNav(
                     icon = mode.icon,
                     selected = selectedIndex == index,
                     onClick = { onModeSelected(index) },
+                    onDoubleClick = { onModeDoubleTapped(mode) },
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FloatingBottomNavItem(
     label: String,
     icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
+    onDoubleClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val contentColor by animateColorAsState(
@@ -955,7 +981,10 @@ private fun FloatingBottomNavItem(
     )
 
     Surface(
-        onClick = onClick,
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onDoubleClick = onDoubleClick,
+        ),
         color = androidx.compose.ui.graphics.Color.Transparent,
         contentColor = contentColor,
         shape = VaultShapes.pill,
