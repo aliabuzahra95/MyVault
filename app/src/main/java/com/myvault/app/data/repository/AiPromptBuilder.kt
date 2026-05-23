@@ -135,7 +135,7 @@ object AiPromptBuilder {
         Study response modes: Ask About This Note, Explain This Note, Study Tutor, Deep Analysis, General Ask.
 
         Editor output modes create content that may be inserted into or replace the note. They must return simple HTML only. No commentary, no explanation, no markdown asterisks, no code fences.
-        Editor output modes: Intelligent Structure, Organise and Structure, Format Note, Clean Note.
+        Editor output modes: Structure Only, Intelligent Structure, Organise and Structure, Format Note, Clean Note.
 
         CHAT ANSWER PLAIN TEXT RULES
 
@@ -150,7 +150,7 @@ object AiPromptBuilder {
 
         CONTEXT POLICY
 
-        Note-bound modes use only the note: Quick Summary, Basic Summary, Intelligent Structure, Format Note, and Organise and Structure unless told to add explanation.
+        Note-bound modes use only the note: Quick Summary, Basic Summary, Structure Only, Intelligent Structure, Format Note, and Organise and Structure unless told to add explanation.
         Study-intelligence modes use the note as the anchor but may use wider relevant knowledge: Study Tutor, Deep Analysis, Ask About This Note, Explain This Note, General Ask.
 
         For study-intelligence modes: the note is the anchor, not the prison. You may use wider relevant knowledge to explain concepts, define terms, clarify background, show implications, explain disagreements, identify assumptions, provide objections and responses, and teach what the note is trying to capture.
@@ -558,6 +558,8 @@ object AiPromptBuilder {
 
             NoteAiAction.IntelligentStructure -> intelligentStructureInstructions()
 
+            NoteAiAction.StructureOnly -> structureOnlyInstructions()
+
             NoteAiAction.CleanFormat -> editorOutputInstructions(
                 purpose = "Rewrite the current note into a cleaner, better organised study note.",
                 rewriteStrength = "Improve headings, grouping, flow, clarity, readability, and study usefulness. You may restructure more substantially while preserving meaning.",
@@ -665,6 +667,54 @@ object AiPromptBuilder {
         <span data-color="blue">...</span>
     """.trimIndent()
 
+    private fun structureOnlyInstructions(): String = """
+        Purpose: Format and organise the note without changing the user's wording.
+
+        Absolute preservation rules:
+        - Do not add a single word that is not already in the note.
+        - Do not remove a single word from the note.
+        - Do not rewrite, paraphrase, explain, summarise, simplify, expand, correct, or translate any sentence.
+        - Do not speak to the user.
+        - Do not add second-person wording such as "you", "your", or "remember".
+        - Do not add new terms, definitions, examples, conclusions, takeaways, objections, or responses.
+        - Preserve every Arabic word, Qur'anic ayah, Hadith wording, scholar quote, punctuation, and technical term exactly as provided.
+        - The only permitted changes are structural HTML formatting, paragraph breaks, heading tags applied to existing headings/text, list tags around existing list items, blockquote tags around existing quoted material, and light emphasis/colour spans around existing text.
+
+        Structure:
+        - Use the existing wording to identify natural sections.
+        - If a heading is needed, it must be made from words already present in the note.
+        - Prefer preserving the original order of the note.
+        - You may move whole existing paragraphs or list items only when doing so clearly organises the note without changing wording.
+        - Do not merge sentences in a way that changes wording.
+        - Do not split a sentence by inserting new words.
+
+        Rich formatting:
+        - Use <h1>, <h2>, or <h3> only around existing note text.
+        - Use <p> for paragraphs.
+        - Use <ul>, <ol>, and <li> only for existing list-like lines.
+        - Use <strong>, <em>, and <u> only around existing words.
+        - Use <blockquote> only around existing quoted material.
+        - Use colour spans only around existing words.
+
+        Colour coding:
+        - Use colour only when the category is obvious from the note.
+        - Qur'anic verses / Qur'anic ayat may be red: <span data-color="red">...</span>
+        - Quotes of scholars may be blue: <span data-color="blue">...</span>
+        - If unsure, do not colour it.
+
+        Final self-check before answering:
+        - The visible words in your output, after removing HTML tags, must be the same words from the note.
+        - If you are tempted to add explanation, do not.
+        - Return only simple HTML.
+
+        Allowed HTML tags only:
+        <h1>, <h2>, <h3>, <p>, <strong>, <em>, <u>, <ul>, <ol>, <li>, <blockquote>, <br>, <span>
+
+        Allowed colour spans only:
+        <span data-color="red">...</span>
+        <span data-color="blue">...</span>
+    """.trimIndent()
+
     private fun selectedTextInstructions(action: SelectedTextAiAction): String =
         when (action) {
             SelectedTextAiAction.Ask -> """
@@ -733,6 +783,7 @@ object AiPromptBuilder {
         when (action) {
             NoteAiAction.CleanFormat,
             NoteAiAction.FormatNote,
+            NoteAiAction.StructureOnly,
             NoteAiAction.IntelligentStructure,
             -> AiOutputType.EditorOutputHtml
 
@@ -780,6 +831,7 @@ object AiPromptBuilder {
                     NoteAiAction.DeepAnalysis,
                     -> 0.35f
                     NoteAiAction.IntelligentStructure,
+                    NoteAiAction.StructureOnly,
                     NoteAiAction.CleanFormat,
                     NoteAiAction.FormatNote,
                     -> 0.18f
@@ -792,6 +844,7 @@ object AiPromptBuilder {
                     NoteAiAction.DeepAnalysis,
                     -> 0.4f
                     NoteAiAction.IntelligentStructure,
+                    NoteAiAction.StructureOnly,
                     NoteAiAction.CleanFormat,
                     NoteAiAction.FormatNote,
                     -> 0.2f
@@ -807,6 +860,7 @@ object AiPromptBuilder {
                 NoteAiAction.DeepAnalysis,
                 -> 0.4f
                 NoteAiAction.IntelligentStructure,
+                NoteAiAction.StructureOnly,
                 NoteAiAction.CleanFormat,
                 NoteAiAction.FormatNote,
                 -> 0.18f
@@ -819,6 +873,7 @@ object AiPromptBuilder {
                 NoteAiAction.DeepAnalysis,
                 -> 0.38f
                 NoteAiAction.IntelligentStructure,
+                NoteAiAction.StructureOnly,
                 NoteAiAction.CleanFormat,
                 NoteAiAction.FormatNote,
                 -> 0.18f
@@ -837,6 +892,7 @@ object AiPromptBuilder {
             NoteAiAction.ExplainNote -> 0.4f
             NoteAiAction.GeneralAsk -> 0.55f
             NoteAiAction.IntelligentStructure -> 0.25f
+            NoteAiAction.StructureOnly -> 0.08f
             NoteAiAction.CleanFormat -> 0.2f
             NoteAiAction.FormatNote -> 0.15f
         }
@@ -854,6 +910,7 @@ object AiPromptBuilder {
                     NoteAiAction.ExplainNote -> 1_800
                     NoteAiAction.DeepAnalysis -> 3_000
                     NoteAiAction.IntelligentStructure -> 3_600
+                    NoteAiAction.StructureOnly -> 4_000
                     NoteAiAction.CleanFormat -> 2_800
                     NoteAiAction.FormatNote -> 2_200
                 }
@@ -867,6 +924,7 @@ object AiPromptBuilder {
                     NoteAiAction.ExplainNote -> 3_200
                     NoteAiAction.DeepAnalysis -> 7_000
                     NoteAiAction.IntelligentStructure -> 8_000
+                    NoteAiAction.StructureOnly -> 8_000
                     NoteAiAction.CleanFormat -> 5_500
                     NoteAiAction.FormatNote -> 4_000
                 }
@@ -882,6 +940,7 @@ object AiPromptBuilder {
                     NoteAiAction.ExplainNote -> 2_200
                     NoteAiAction.DeepAnalysis -> 3_600
                     NoteAiAction.IntelligentStructure -> 6_000
+                    NoteAiAction.StructureOnly -> 6_500
                     NoteAiAction.CleanFormat -> 4_000
                     NoteAiAction.FormatNote -> 3_200
                 }
@@ -895,6 +954,7 @@ object AiPromptBuilder {
                     NoteAiAction.ExplainNote -> 3_000
                     NoteAiAction.DeepAnalysis -> 5_000
                     NoteAiAction.IntelligentStructure -> 8_000
+                    NoteAiAction.StructureOnly -> 8_000
                     NoteAiAction.CleanFormat -> 5_500
                     NoteAiAction.FormatNote -> 4_200
                 }
@@ -944,6 +1004,7 @@ object AiPromptBuilder {
             NoteAiAction.DeepSummary,
             NoteAiAction.ExplainNote,
             NoteAiAction.FormatNote,
+            NoteAiAction.StructureOnly,
             NoteAiAction.CleanFormat,
         )
 
@@ -955,6 +1016,7 @@ object AiPromptBuilder {
             NoteAiAction.DeepSummary,
             NoteAiAction.FormatNote,
             NoteAiAction.CleanFormat,
+            NoteAiAction.StructureOnly,
             -> takeMiddleAware(12_000)
             NoteAiAction.Ask,
             NoteAiAction.GeneralAsk,

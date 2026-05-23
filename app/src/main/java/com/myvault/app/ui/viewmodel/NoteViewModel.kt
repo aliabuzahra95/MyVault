@@ -612,14 +612,17 @@ private const val AiHistoryMessageLimit = 20
 private const val AiChunkProgressThreshold = 7_000
 
 private fun loadingLabelFor(action: NoteAiAction, body: String): String =
-    if (action == NoteAiAction.IntelligentStructure) {
+    if (action == NoteAiAction.IntelligentStructure || action == NoteAiAction.StructureOnly) {
         if (body.length > AiChunkProgressThreshold) "Structuring part 1..." else "Structuring note..."
     } else {
         "Thinking..."
     }
 
 private fun NoteAiAction.isEditorOutputMode(): Boolean =
-    this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
+    this == NoteAiAction.IntelligentStructure ||
+        this == NoteAiAction.StructureOnly ||
+        this == NoteAiAction.CleanFormat ||
+        this == NoteAiAction.FormatNote
 
 private fun NoteAiModel.fastForLightweight(action: NoteAiAction): NoteAiModel =
     if (
@@ -630,6 +633,7 @@ private fun NoteAiModel.fastForLightweight(action: NoteAiAction): NoteAiModel =
             NoteAiAction.ExplainNote,
             NoteAiAction.FormatNote,
             NoteAiAction.CleanFormat,
+            NoteAiAction.StructureOnly,
             NoteAiAction.IntelligentStructure,
         )
     ) {
@@ -661,15 +665,21 @@ private fun routeAiIntent(action: NoteAiAction, question: String): NoteAiAction 
     if (normalized.isBlank()) return action
     return when {
         normalized.containsAny(
+            "intelligent structure",
+            "deep structure",
+            "restructure with ai",
+            "improve the wording",
+        ) -> NoteAiAction.IntelligentStructure
+
+        normalized.containsAny(
             "organise",
             "organize",
             "structure this",
             "structure the note",
-            "intelligent structure",
             "restructure",
             "tidy this note",
             "clean up this note",
-        ) -> NoteAiAction.IntelligentStructure
+        ) -> NoteAiAction.StructureOnly
 
         normalized.containsAny(
             "format this",
@@ -677,7 +687,7 @@ private fun routeAiIntent(action: NoteAiAction, question: String): NoteAiAction 
             "make this cleaner",
             "make it cleaner",
             "cleaner format",
-        ) -> NoteAiAction.IntelligentStructure
+        ) -> NoteAiAction.StructureOnly
 
         normalized.containsAny(
             "quick summary",

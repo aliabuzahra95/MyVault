@@ -30,6 +30,7 @@ enum class NoteAiAction {
     Ask,
     ExplainNote,
     GeneralAsk,
+    StructureOnly,
     IntelligentStructure,
     CleanFormat,
     FormatNote,
@@ -44,6 +45,7 @@ val NoteAiAction.displayName: String
         NoteAiAction.Ask -> "Ask About This Note"
         NoteAiAction.ExplainNote -> "Explain This Note"
         NoteAiAction.GeneralAsk -> "General Ask"
+        NoteAiAction.StructureOnly -> "Structure Only"
         NoteAiAction.IntelligentStructure -> "Intelligent Structure"
         NoteAiAction.CleanFormat -> "Format / Organise Note"
         NoteAiAction.FormatNote -> "Format Note"
@@ -141,8 +143,8 @@ class NoteAiRepository @Inject constructor(
         if ((action == NoteAiAction.Ask || action == NoteAiAction.GeneralAsk) && question.isBlank()) {
             error("Type a question first.")
         }
-        val generated = if (action == NoteAiAction.IntelligentStructure && body.length > IntelligentStructureChunkSize) {
-            generateIntelligentStructureInChunks(provider, model, title, body, question, onProgress)
+        val generated = if (action in StructuredEditorActions && body.length > IntelligentStructureChunkSize) {
+            generateIntelligentStructureInChunks(action, provider, model, title, body, question, onProgress)
         } else {
             generateOnce(action, provider, model, title, body, question, history)
         }
@@ -204,6 +206,7 @@ class NoteAiRepository @Inject constructor(
         }
 
     private suspend fun generateIntelligentStructureInChunks(
+        action: NoteAiAction,
         provider: NoteAiProvider,
         model: NoteAiModel,
         title: String,
@@ -214,7 +217,7 @@ class NoteAiRepository @Inject constructor(
         val chunks = body.chunkForAi()
         onProgress?.invoke("Creating structure plan...")
         val structuralPlan = generatePrompt(
-            action = NoteAiAction.IntelligentStructure,
+            action = action,
             provider = provider,
             model = model,
             promptRequest = AiPromptBuilder.buildIntelligentStructurePlan(title = title, body = body, provider = provider, model = model),
@@ -250,11 +253,11 @@ class NoteAiRepository @Inject constructor(
                 Avoid repeated Introduction, Overview, Main Topic, or duplicate top-level headings.
                 Do not include a generic <h1> for every chunk.
                 Preserve continuity with the previous chunk.
-                User request: ${question.ifBlank { "Intelligently structure this note." }}
+                User request: ${question.ifBlank { action.defaultStructureRequest() }}
             """.trimIndent()
             val processed = runCatching {
                 generateOnce(
-                    action = NoteAiAction.IntelligentStructure,
+                    action = action,
                     provider = provider,
                     model = model,
                     title = "$title - part ${index + 1} of ${chunks.size}",
@@ -446,6 +449,7 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
         -> 10_000
         NoteAiAction.StudyTutor,
         NoteAiAction.DeepAnalysis,
+        NoteAiAction.StructureOnly,
         NoteAiAction.IntelligentStructure,
         -> 18_000
     }
@@ -508,6 +512,7 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
             NoteAiAction.Ask -> "ask"
             NoteAiAction.ExplainNote -> "explain_note"
             NoteAiAction.GeneralAsk -> "general_ask"
+            NoteAiAction.StructureOnly -> "format_note"
             NoteAiAction.IntelligentStructure -> "organise"
             NoteAiAction.CleanFormat -> "organise"
             NoteAiAction.FormatNote -> "format_note"
@@ -538,6 +543,13 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
 }
 
 private const val IntelligentStructureChunkSize = 7_000
+private val StructuredEditorActions = setOf(NoteAiAction.IntelligentStructure, NoteAiAction.StructureOnly)
+
+private fun NoteAiAction.defaultStructureRequest(): String =
+    when (this) {
+        NoteAiAction.StructureOnly -> "Structure and format this note without adding, removing, or rewriting any words."
+        else -> "Intelligently structure this note."
+    }
 
 private fun String.chunkForAi(): List<String> {
     if (length <= IntelligentStructureChunkSize) return listOf(this)
@@ -652,7 +664,7 @@ private fun String.normaliseHeading(): String =
     lowercase().replace(Regex("\\s+"), " ").trim()
 
 private fun String.cleanForAction(action: NoteAiAction): String {
-    if (action == NoteAiAction.IntelligentStructure) return normalizeIntelligentStructureColors().trim()
+    if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().trim()
     if (action == NoteAiAction.CleanFormat || action == NoteAiAction.FormatNote) return trim()
     return stripChatMarkdown().trim()
 }

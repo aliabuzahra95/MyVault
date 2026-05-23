@@ -46,6 +46,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -1006,8 +1007,12 @@ fun EditorScreen(
             onDismiss = {
                 intelligentStructureOpen = false
             },
-            onRun = {
-                onRunAiTool(NoteAiAction.IntelligentStructure, aiState.provider, aiState.model, title.text, bodyValue.text, "Intelligently structure this note.")
+            onRun = { action ->
+                val request = when (action) {
+                    NoteAiAction.StructureOnly -> "Structure and format this note without adding, removing, or rewriting any words."
+                    else -> "Intelligently structure this note."
+                }
+                onRunAiTool(action, aiState.provider, aiState.model, title.text, bodyValue.text, request)
             },
             onCopy = {
                 clipboardManager.setText(AnnotatedString(aiState.result))
@@ -1232,7 +1237,7 @@ private fun IntelligentStructureSheet(
     onProviderSelected: (NoteAiProvider) -> Unit,
     onModelSelected: (NoteAiModel) -> Unit,
     onDismiss: () -> Unit,
-    onRun: () -> Unit,
+    onRun: (NoteAiAction) -> Unit,
     onCopy: () -> Unit,
     onInsertBelow: () -> Unit,
     onReplace: () -> Unit,
@@ -1335,12 +1340,23 @@ private fun IntelligentStructureSheet(
                     verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
                     Text(
-                        text = "This is a note transformation tool, not chat. It creates a preview first, then you choose Replace, Insert, Copy, or Cancel.",
+                        text = "Choose strict structure when you want formatting only. Choose intelligent structure when you want the current stronger restructuring mode.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.textSecondary,
                     )
-                    Button(onClick = onRun, enabled = !aiState.loading, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (aiState.loading) aiState.progressLabel ?: "Structuring..." else "Run Intelligent Structure")
+                    Button(
+                        onClick = { onRun(NoteAiAction.StructureOnly) },
+                        enabled = !aiState.loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (aiState.loading && aiState.action == NoteAiAction.StructureOnly) aiState.progressLabel ?: "Structuring..." else "Run Structure Only")
+                    }
+                    OutlinedButton(
+                        onClick = { onRun(NoteAiAction.IntelligentStructure) },
+                        enabled = !aiState.loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (aiState.loading && aiState.action == NoteAiAction.IntelligentStructure) aiState.progressLabel ?: "Structuring..." else "Run Intelligent Structure")
                     }
                 }
             }
@@ -1386,7 +1402,7 @@ private fun IntelligentStructureSheet(
                         }
                         else -> {
                             Text(
-                                text = "Run Intelligent Structure when you want AI to reorganise the whole note into a cleaner study format.",
+                                text = "Run Structure Only to preserve the note's exact wording, or Intelligent Structure for stronger AI restructuring.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colors.textMuted,
                             )
