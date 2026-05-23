@@ -49,6 +49,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
@@ -90,6 +91,8 @@ fun VaultNavHost(
     onPendingOpenNoteConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
@@ -143,6 +146,7 @@ fun VaultNavHost(
             }
             StudyLibraryPersonalShell(
                 workspace = preferences.workspace,
+                rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
                 studyContent = {
                     HomeScreen(
                         uiState = studyState,
@@ -816,6 +820,7 @@ private enum class VaultRootMode(val label: String, val icon: ImageVector) {
 @Composable
 private fun StudyLibraryPersonalShell(
     workspace: String,
+    rootBackHandlerEnabled: Boolean,
     studyContent: @Composable () -> Unit,
     quranContent: @Composable () -> Unit,
     memoriseContent: @Composable () -> Unit,
@@ -840,7 +845,7 @@ private fun StudyLibraryPersonalShell(
         )
     }
 
-    BackHandler(enabled = workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
+    BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
         scope.launch {
             pagerState.animateScrollToPage(
                 page = 0,

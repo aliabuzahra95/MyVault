@@ -129,13 +129,22 @@ import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
 import com.myvault.app.ui.theme.DarkVaultColors
 import com.myvault.app.ui.theme.VaultThemeTokens
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import kotlin.math.ceil
 import kotlin.math.roundToLong
 
 private val UthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
+)
+
+private data class QuranAyahSelectorResult(
+    val surah: SurahInfo,
+    val ayahNumber: Int,
+    val arabicText: String,
 )
 
 @Composable
@@ -260,6 +269,10 @@ fun QuranShellScreen(
             onDismiss = { selectorOpen = false },
             onSelect = { surah ->
                 onSelectSurah(surah.num)
+                selectorOpen = false
+            },
+            onSelectAyah = { verseKey ->
+                onOpenBookmark(verseKey)
                 selectorOpen = false
             },
         )
@@ -3169,12 +3182,27 @@ private fun QuranSurahSelectorOverlay(
     onTypeFilterChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onSelect: (SurahInfo) -> Unit,
+    onSelectAyah: (String) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    val context = LocalContext.current
     val dismissInteraction = remember { MutableInteractionSource() }
     val panelInteraction = remember { MutableInteractionSource() }
     val listState: LazyListState = rememberLazyListState()
     val panelShape = RoundedCornerShape(24.dp)
+    var ayahSearchIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(visible) {
+        if (visible && ayahSearchIndex.isEmpty()) {
+            ayahSearchIndex = withContext(Dispatchers.IO) {
+                JSONObject(
+                    context.assets.open("qpc_hafs.json").bufferedReader().use { it.readText() },
+                ).toAyahSearchIndex()
+            }
+        }
+    }
+    val ayahResults = remember(search, typeFilter, ayahSearchIndex) {
+        buildQuranAyahSelectorResults(search, typeFilter, ayahSearchIndex)
+    }
     val filtered = remember(search, typeFilter) {
         quranCatalog.filter { surah ->
             val q = search.trim().lowercase()
@@ -3276,6 +3304,22 @@ private fun QuranSurahSelectorOverlay(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    if (ayahResults.isNotEmpty()) {
+                        item(key = "ayah_results_label") {
+                            JuzDivider(juzNumber = 0, label = "Ayah results")
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        items(
+                            items = ayahResults,
+                            key = { "${it.surah.num}:${it.ayahNumber}" },
+                            contentType = { "ayah-search-result" },
+                        ) { result ->
+                            QuranAyahSearchResultRow(
+                                result = result,
+                                onClick = { onSelectAyah("${result.surah.num}:${result.ayahNumber}") },
+                            )
+                        }
+                    }
                     juzGroups.forEach { (juz, surahs) ->
                         item(key = "juz_$juz") {
                             JuzDivider(juzNumber = juz)
@@ -3402,7 +3446,10 @@ private fun QuranFilterPill(
 }
 
 @Composable
-private fun JuzDivider(juzNumber: Int) {
+private fun JuzDivider(
+    juzNumber: Int,
+    label: String = "Juz $juzNumber",
+) {
     val colors = VaultThemeTokens.colors
     Row(
         modifier = Modifier
@@ -3412,7 +3459,7 @@ private fun JuzDivider(juzNumber: Int) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "Juz $juzNumber",
+            text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700, letterSpacing = 0.3.sp),
             color = colors.textMuted,
         )
@@ -3524,3 +3571,126 @@ private fun SurahRow(
         }
     }
 }
+
+@Composable
+private fun QuranAyahSearchResultRow(
+    result: QuranAyahSelectorResult,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.72f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(colors.accentSoft)
+                    .border(1.dp, colors.accentBorder, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "${result.surah.num}:${result.ayahNumber}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900),
+                    color = colors.accent,
+                    maxLines = 1,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = result.surah.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = result.surah.arabic,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = UthmaniHafsFamily,
+                            textDirection = TextDirection.ContentOrRtl,
+                            fontWeight = FontWeight.W400,
+                        ),
+                        color = colors.textMuted,
+                    )
+                }
+                Text(
+                    text = result.arabicText,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = UthmaniHafsFamily,
+                        textDirection = TextDirection.Rtl,
+                        lineHeight = 27.sp,
+                    ),
+                    color = colors.textSecondary,
+                    textAlign = TextAlign.Right,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+private fun buildQuranAyahSelectorResults(
+    query: String,
+    typeFilter: String,
+    ayahSearchIndex: Map<String, String>,
+): List<QuranAyahSelectorResult> {
+    if (ayahSearchIndex.isEmpty()) return emptyList()
+    val numbers = Regex("\\d+").findAll(query).mapNotNull { it.value.toIntOrNull() }.toList()
+    if (numbers.size < 2) return emptyList()
+    val surahNumber = numbers[0]
+    val ayahNumber = numbers[1]
+    val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: return emptyList()
+    if (typeFilter != "All" && surah.type != typeFilter) return emptyList()
+    if (ayahNumber !in 1..surah.ayat) return emptyList()
+    val verseKey = "$surahNumber:$ayahNumber"
+    val text = ayahSearchIndex[verseKey].orEmpty()
+    if (text.isBlank()) return emptyList()
+    return listOf(QuranAyahSelectorResult(surah = surah, ayahNumber = ayahNumber, arabicText = text))
+}
+
+private fun JSONObject.toAyahSearchIndex(): Map<String, String> =
+    buildMap {
+        val keys = keys()
+        while (keys.hasNext()) {
+            val verseKey = keys.next()
+            val text = optJSONObject(verseKey)
+                ?.optString("text")
+                .orEmpty()
+                .stripQuranTrailingVerseMarker()
+                .trim()
+            if (text.isNotBlank()) put(verseKey, text)
+        }
+    }
+
+private fun String.stripQuranTrailingVerseMarker(): String =
+    replace(Regex("\\s*[۝۞]?\\s*[\\u0660-\\u0669٠-٩]+\\s*$"), "").trim()
