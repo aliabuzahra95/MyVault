@@ -73,6 +73,38 @@ class MemoriseViewModel @Inject constructor(
         }
     }
 
+    fun markSelectedSurahMemorized() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val now = System.currentTimeMillis()
+            val existingByVerse = state.records.associateBy { it.verseKey }
+            val surahRecords = (1..state.selectedSurah.ayat).map { ayah ->
+                val verseKey = "${state.selectedSurah.num}:$ayah"
+                val existing = existingByVerse[verseKey]
+                existing?.copy(
+                    lastReviewedAt = now,
+                    reviewCount = if (existing.reviewCount == 0) 1 else existing.reviewCount,
+                    memorizedAt = existing.memorizedAt ?: now,
+                    updatedAt = now,
+                ) ?: MemorizationRecord(
+                    verseKey = verseKey,
+                    surahNumber = state.selectedSurah.num,
+                    ayahNumber = ayah,
+                    startedAt = now,
+                    lastReviewedAt = now,
+                    reviewCount = 1,
+                    memorizedAt = now,
+                    isRevision = false,
+                    isWeak = false,
+                    updatedAt = now,
+                )
+            }
+            val updated = (state.records.filterNot { it.surahNumber == state.selectedSurah.num } + surahRecords)
+                .sortedByDescending { it.updatedAt }
+            vaultPreferences.setQuranMemorizationRecords(updated)
+        }
+    }
+
     fun markReviewed(verseKey: String) {
         val (surah, ayah) = parseVerseKey(verseKey) ?: return
         upsertRecord(surah, ayah) { existing, now ->

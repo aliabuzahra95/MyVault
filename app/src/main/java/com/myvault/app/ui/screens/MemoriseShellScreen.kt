@@ -59,6 +59,7 @@ import com.myvault.app.data.quran.memorization.MemorizationDashboardGroup
 import com.myvault.app.data.quran.memorization.MemorizationDashboardItem
 import com.myvault.app.data.quran.memorization.MemorizationOverview
 import com.myvault.app.data.quran.memorization.MemorizationUiState
+import com.myvault.app.data.quran.memorization.MemorizedSurahDashboardItem
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.VaultTopBar
@@ -80,6 +81,7 @@ fun MemoriseShellScreen(
     onSelectSurah: (Int) -> Unit,
     onSelectAyah: (Int) -> Unit,
     onStartSelectedAyah: () -> Unit,
+    onMarkSelectedSurahMemorized: () -> Unit,
     onMarkReviewed: (String) -> Unit,
     onToggleMemorized: (String) -> Unit,
     onToggleRevision: (String) -> Unit,
@@ -88,6 +90,11 @@ fun MemoriseShellScreen(
 ) {
     val colors = VaultThemeTokens.colors
     var startSheetOpen by rememberSaveable { mutableStateOf(false) }
+    val showSurahRows = uiState.selectedGroup == MemorizationDashboardGroup.All ||
+        uiState.selectedGroup == MemorizationDashboardGroup.Memorised ||
+        uiState.selectedGroup == MemorizationDashboardGroup.Surahs
+    val memorizedSurahs = if (showSurahRows) uiState.memorizedSurahs else emptyList()
+    val dashboardItems = uiState.dashboardItems
 
     Column(
         modifier = modifier
@@ -146,12 +153,25 @@ fun MemoriseShellScreen(
                 )
             }
 
-            if (uiState.dashboardItems.isEmpty()) {
+            if (memorizedSurahs.isEmpty() && dashboardItems.isEmpty()) {
                 item {
                     MemoriseEmptyState(onStart = { startSheetOpen = true })
                 }
             } else {
-                items(uiState.dashboardItems, key = { it.record.verseKey }) { item ->
+                if (memorizedSurahs.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Memorised Surahs",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900, letterSpacing = 1.sp),
+                            color = colors.textMuted,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    items(memorizedSurahs, key = { "surah-${it.surah.num}" }) { item ->
+                        MemoriseSurahRow(item = item)
+                    }
+                }
+                items(dashboardItems, key = { it.record.verseKey }) { item ->
                     MemoriseRecordRow(
                         item = item,
                         onReviewed = { onMarkReviewed(item.record.verseKey) },
@@ -173,6 +193,10 @@ fun MemoriseShellScreen(
         onSelectAyah = onSelectAyah,
         onStart = {
             onStartSelectedAyah()
+            startSheetOpen = false
+        },
+        onMarkSurah = {
+            onMarkSelectedSurahMemorized()
             startSheetOpen = false
         },
     )
@@ -354,6 +378,43 @@ private fun MemoriseRecordRow(
 }
 
 @Composable
+private fun MemoriseSurahRow(item: MemorizedSurahDashboardItem) {
+    val colors = VaultThemeTokens.colors
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surface)
+            .border(1.dp, colors.border.copy(alpha = 0.78f), shape)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(colors.accentSoft)
+                .border(1.dp, colors.accentBorder, RoundedCornerShape(11.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.accent, modifier = Modifier.size(17.dp))
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(item.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W900), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(
+            text = item.surah.arabic,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W900),
+            color = colors.textMuted,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
 private fun MemoriseEmptyState(onStart: () -> Unit) {
     val colors = VaultThemeTokens.colors
     Surface(
@@ -421,6 +482,7 @@ private fun MemoriseStartSheet(
     onSelectSurah: (Int) -> Unit,
     onSelectAyah: (Int) -> Unit,
     onStart: () -> Unit,
+    onMarkSurah: () -> Unit,
 ) {
     if (!visible) return
     val colors = VaultThemeTokens.colors
@@ -518,6 +580,7 @@ private fun MemoriseStartSheet(
                             .padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
+                        MemoriseSmallButton("Mark surah", false, onMarkSurah)
                         MemoriseSmallButton("Start ayah", true, onStart)
                     }
                 }

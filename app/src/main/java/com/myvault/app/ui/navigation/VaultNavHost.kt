@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -303,6 +304,7 @@ fun VaultNavHost(
                         onSelectSurah = memoriseViewModel::selectSurah,
                         onSelectAyah = memoriseViewModel::selectAyah,
                         onStartSelectedAyah = memoriseViewModel::startSelectedAyah,
+                        onMarkSelectedSurahMemorized = memoriseViewModel::markSelectedSurahMemorized,
                         onMarkReviewed = memoriseViewModel::markReviewed,
                         onToggleMemorized = memoriseViewModel::toggleMemorized,
                         onToggleRevision = memoriseViewModel::toggleRevision,
@@ -820,10 +822,12 @@ private fun StudyLibraryPersonalShell(
     libraryContent: @Composable () -> Unit,
     personalContent: @Composable () -> Unit,
 ) {
-    val modes = if (workspace == WORKSPACE_PERSONAL) {
-        listOf(VaultRootMode.Personal)
-    } else {
-        listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
+    val modes = remember(workspace) {
+        if (workspace == WORKSPACE_PERSONAL) {
+            listOf(VaultRootMode.Personal)
+        } else {
+            listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
+        }
     }
     val pagerState = rememberPagerState(initialPage = VaultRootMode.Study.ordinal) { modes.size }
     val scope = rememberCoroutineScope()
@@ -832,7 +836,7 @@ private fun StudyLibraryPersonalShell(
     LaunchedEffect(workspace) {
         pagerState.animateScrollToPage(
             page = 0,
-            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
         )
     }
 
@@ -840,7 +844,7 @@ private fun StudyLibraryPersonalShell(
         scope.launch {
             pagerState.animateScrollToPage(
                 page = 0,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
             )
         }
     }
@@ -854,10 +858,10 @@ private fun StudyLibraryPersonalShell(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { page -> modes[page].name },
-            beyondViewportPageCount = 1,
+            beyondViewportPageCount = 0,
             flingBehavior = PagerDefaults.flingBehavior(
                 state = pagerState,
-                snapPositionalThreshold = 0.22f,
+                snapPositionalThreshold = 0.18f,
             ),
         ) { page ->
             when (modes[page]) {
@@ -876,7 +880,7 @@ private fun StudyLibraryPersonalShell(
                 scope.launch {
                     pagerState.animateScrollToPage(
                         page = index,
-                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
                     )
                 }
             },

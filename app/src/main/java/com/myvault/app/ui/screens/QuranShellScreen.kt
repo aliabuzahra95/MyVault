@@ -1356,7 +1356,7 @@ private fun AyahRow(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                if (isMemorizationActive) {
+                if (isMemorizationActive && !isMemorized) {
                     Text(
                         text = memorizationConcealAmount?.badgeLabel ?: "Memorising",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.W700),
@@ -1601,11 +1601,15 @@ private fun AyahRow(
                             selected = isMemorizationWeak,
                             onClick = onToggleWeakMemorization,
                         )
-                        QuranMemorizationButton(
-                            label = if (isMemorized) "Memorised" else "Mark memorised",
-                            selected = isMemorized,
-                            onClick = onToggleMemorized,
-                        )
+                        if (isMemorized) {
+                            QuranMemorizationIconButton(onClick = onToggleMemorized)
+                        } else {
+                            QuranMemorizationButton(
+                                label = "Mark memorised",
+                                selected = false,
+                                onClick = onToggleMemorized,
+                            )
+                        }
                     }
 
                     Row(
@@ -1756,6 +1760,31 @@ private fun AyahRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuranMemorizationIconButton(onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(colors.accentSoft)
+            .border(1.dp, colors.accentBorder, CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = "Unmark memorised",
+            tint = colors.accent,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 

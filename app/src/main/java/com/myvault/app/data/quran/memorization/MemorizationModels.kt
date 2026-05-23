@@ -45,6 +45,15 @@ data class MemorizationDashboardItem(
     }
 }
 
+data class MemorizedSurahDashboardItem(
+    val surah: SurahInfo,
+    val memorizedCount: Int,
+    val completedAt: Long,
+) {
+    val title: String = "${surah.name} complete"
+    val subtitle: String = "$memorizedCount ayahs memorised"
+}
+
 enum class MemorizationDashboardGroup(val label: String) {
     All("All"),
     Started("Started"),
@@ -81,41 +90,31 @@ data class MemorizationUiState(
     val selectedSurah: SurahInfo = quranCatalog.first(),
     val selectedAyah: Int = 1,
 ) {
+    val memorizedSurahs: List<MemorizedSurahDashboardItem>
+        get() = buildMemorizedSurahs(records)
+
     val overview: MemorizationOverview
         get() {
-            val memorizedSurahs = records
-                .filter { it.isMemorized }
-                .groupBy { it.surahNumber }
-                .count { (surahNumber, surahRecords) ->
-                    val surah = quranCatalog.firstOrNull { it.num == surahNumber }
-                    surah != null && surahRecords.map { it.ayahNumber }.toSet().size >= surah.ayat
-                }
+            val memorizedSurahCount = memorizedSurahs.size
             return MemorizationOverview(
                 startedCount = records.size,
                 memorizedCount = records.count { it.isMemorized },
                 revisionCount = records.count { it.isRevision },
                 difficultCount = records.count { it.isWeak },
-                memorizedSurahCount = memorizedSurahs,
+                memorizedSurahCount = memorizedSurahCount,
             )
         }
 
     val dashboardItems: List<MemorizationDashboardItem>
         get() {
-            val fullyMemorizedSurahs = records
-                .filter { it.isMemorized }
-                .groupBy { it.surahNumber }
-                .filter { (surahNumber, surahRecords) ->
-                    val surah = quranCatalog.firstOrNull { it.num == surahNumber }
-                    surah != null && surahRecords.map { it.ayahNumber }.toSet().size >= surah.ayat
-                }
-                .keys
+            val fullyMemorizedSurahs = memorizedSurahs.map { it.surah.num }.toSet()
             return records
             .filter { record ->
                 when (selectedGroup) {
-                    MemorizationDashboardGroup.All -> true
+                    MemorizationDashboardGroup.All -> record.surahNumber !in fullyMemorizedSurahs || !record.isMemorized
                     MemorizationDashboardGroup.Started -> !record.isMemorized
-                    MemorizationDashboardGroup.Memorised -> record.isMemorized
-                    MemorizationDashboardGroup.Surahs -> record.surahNumber in fullyMemorizedSurahs
+                    MemorizationDashboardGroup.Memorised -> record.isMemorized && record.surahNumber !in fullyMemorizedSurahs
+                    MemorizationDashboardGroup.Surahs -> false
                     MemorizationDashboardGroup.Revision -> record.isRevision
                     MemorizationDashboardGroup.Difficult -> record.isWeak
                 }
@@ -138,6 +137,22 @@ data class MemorizationUiState(
                 }
             }
 }
+
+private fun buildMemorizedSurahs(records: List<MemorizationRecord>): List<MemorizedSurahDashboardItem> =
+    records
+        .filter { it.isMemorized }
+        .groupBy { it.surahNumber }
+        .mapNotNull { (surahNumber, surahRecords) ->
+            val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: return@mapNotNull null
+            val memorizedAyahs = surahRecords.map { it.ayahNumber }.toSet()
+            if (memorizedAyahs.size < surah.ayat) return@mapNotNull null
+            MemorizedSurahDashboardItem(
+                surah = surah,
+                memorizedCount = surah.ayat,
+                completedAt = surahRecords.maxOfOrNull { it.memorizedAt ?: it.updatedAt } ?: 0L,
+            )
+        }
+        .sortedByDescending { it.completedAt }
 
 fun MemorizationRecord.toPreferenceEntry(): String = listOf(
     verseKey,
