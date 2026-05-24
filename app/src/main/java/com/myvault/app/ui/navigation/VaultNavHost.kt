@@ -578,11 +578,13 @@ fun VaultNavHost(
             val uiState by viewModel.uiState.collectAsState()
             val aiState by viewModel.aiState.collectAsState()
             val selectedTextAiState by viewModel.selectedTextAiState.collectAsState()
+            val narrationState by viewModel.narrationState.collectAsState()
             val preferences by settingsViewModel.userPreferences.collectAsState()
             EditorScreen(
                 uiState = uiState,
                 aiState = aiState,
                 selectedTextAiState = selectedTextAiState,
+                narrationState = narrationState,
                 onBackClick = { navController.popBackStack() },
                 onTitleChange = viewModel::updateTitle,
                 onContentChange = viewModel::saveRichText,
@@ -601,6 +603,10 @@ fun VaultNavHost(
                         navController.navigate(VaultDestination.AskAi.route(noteId, selectedText))
                     }
                 },
+                onListenClick = viewModel::startNarration,
+                onNarrationToggle = viewModel::toggleNarrationPlayback,
+                onNarrationStop = viewModel::stopNarration,
+                onNarrationSpeedChange = viewModel::setNarrationSpeed,
                 onAttachDocument = viewModel::attachDocument,
                 onAttachmentClick = { attachmentId ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))

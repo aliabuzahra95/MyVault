@@ -15,9 +15,15 @@ android {
     val supabaseAnonKey = providers.gradleProperty("MYVAULT_SUPABASE_ANON_KEY").orElse("").get()
     val syncProxyUrl = providers.gradleProperty("MYVAULT_SYNC_PROXY_URL").orElse("").get()
     val syncProxyToken = providers.gradleProperty("MYVAULT_SYNC_PROXY_TOKEN").orElse("").get()
+    fun String.escapedForBuildConfig(): String = replace("\\", "\\\\").replace("\"", "\\\"")
+
     val firebaseApiKey = providers.gradleProperty("MYVAULT_FIREBASE_API_KEY").orElse("").get()
     val firebaseAppId = providers.gradleProperty("MYVAULT_FIREBASE_APP_ID").orElse("").get()
     val firebaseProjectId = providers.gradleProperty("MYVAULT_FIREBASE_PROJECT_ID").orElse("").get()
+    val openAiApiKey = providers.gradleProperty("MYVAULT_OPENAI_API_KEY")
+        .orElse(providers.environmentVariable("OPENAI_API_KEY"))
+        .orElse("")
+        .get()
 
     defaultConfig {
         applicationId = "com.myvault.app"
@@ -32,6 +38,7 @@ android {
         buildConfigField("String", "FIREBASE_API_KEY", "\"$firebaseApiKey\"")
         buildConfigField("String", "FIREBASE_APP_ID", "\"$firebaseAppId\"")
         buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$firebaseProjectId\"")
+        buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
     }
 
     buildFeatures {

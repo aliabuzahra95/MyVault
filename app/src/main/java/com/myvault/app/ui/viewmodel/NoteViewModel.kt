@@ -9,6 +9,10 @@ import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.narration.NarrationConfig
+import com.myvault.app.data.narration.NarrationPlayerManager
+import com.myvault.app.data.narration.NoteNarrationTextPreparer
+import com.myvault.app.data.narration.TtsRepository
 import com.myvault.app.data.repository.AiConversationRepository
 import com.myvault.app.data.repository.AiConversationSummary
 import com.myvault.app.data.repository.AttachmentRepository
@@ -35,9 +39,11 @@ import com.myvault.app.ui.screens.toJsonArrayString
 import com.myvault.app.ui.screens.toNoteLinksJsonArrayString
 import com.myvault.app.ui.screens.parseVaultRichTextDocument
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -77,13 +83,16 @@ data class NoteTableUiState(
 
 data class NoteAiUiState(
     val loading: Boolean = false,
+    val isStreaming: Boolean = false,
     val action: NoteAiAction? = null,
     val provider: NoteAiProvider = NoteAiProvider.ChatGPT,
-    val model: NoteAiModel = NoteAiModel.Gemini3Pro,
+    val model: NoteAiModel = NoteAiModel.Gemini25Flash,
     val result: String = "",
+    val streamedText: String = "",
     val error: String? = null,
     val question: String = "",
     val progressLabel: String? = null,
+    val canContinue: Boolean = false,
     val messages: List<NoteAiChatMessage> = emptyList(),
     val activeConversationId: String? = null,
     val conversationHistory: List<AiConversationSummary> = emptyList(),
@@ -133,6 +142,9 @@ class NoteViewModel @Inject constructor(
     private val noteAiRepository: NoteAiRepository,
     private val aiConversationRepository: AiConversationRepository,
     private val knowledgeRepository: KnowledgeRepository,
+    private val ttsRepository: TtsRepository,
+    private val noteNarrationTextPreparer: NoteNarrationTextPreparer,
+    private val narrationPlayerManager: NarrationPlayerManager,
     aiSessionStore: NoteAiSessionStore,
 ) : ViewModel() {
     private val noteId: String = savedStateHandle.get<String>("noteId").orEmpty()
@@ -192,6 +204,9 @@ class NoteViewModel @Inject constructor(
     val aiState: StateFlow<NoteAiUiState> = _aiState
     private val _selectedTextAiState = MutableStateFlow(SelectedTextAiUiState())
     val selectedTextAiState: StateFlow<SelectedTextAiUiState> = _selectedTextAiState
+    val narrationState: StateFlow<com.myvault.app.data.narration.NarrationUiState> = narrationPlayerManager.state
+    private var aiGenerationJob: Job? = null
+    private var narrationJob: Job? = null
 
     init {
         viewModelScope.launch { seeder.seedIfNeeded() }
@@ -234,6 +249,59 @@ class NoteViewModel @Inject constructor(
 
     fun saveRichText(text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) {
         viewModelScope.launch { noteRepository.saveRichText(noteId, text, styleMarks.toJsonArrayString(), noteLinks.toNoteLinksJsonArrayString()) }
+    }
+
+
+    fun startNarration(title: String, body: String) {
+        if (narrationState.value.status == com.myvault.app.data.narration.NarrationPlaybackStatus.Preparing ||
+            narrationState.value.status == com.myvault.app.data.narration.NarrationPlaybackStatus.Generating
+        ) {
+            return
+        }
+        narrationJob?.cancel()
+        narrationJob = viewModelScope.launch {
+            val noteTitle = title.trim().ifBlank { "Untitled note" }
+            val narrationText = noteNarrationTextPreparer.prepare(noteTitle, body)
+            if (narrationText.isBlank()) {
+                narrationPlayerManager.showError(noteId, noteTitle, "This note is empty.")
+                return@launch
+            }
+            narrationPlayerManager.markPreparing(noteId, noteTitle)
+            runCatching {
+                ttsRepository.getOrCreateNarration(
+                    noteId = noteId,
+                    noteTitle = noteTitle,
+                    narrationText = narrationText,
+                    voice = NarrationConfig.DEFAULT_VOICE,
+                    speed = narrationState.value.speed,
+                    onChunkGenerating = { current, total ->
+                        narrationPlayerManager.markGenerating(noteId, noteTitle, current, total)
+                    },
+                )
+            }.onSuccess { session ->
+                narrationPlayerManager.play(session)
+            }.onFailure { error ->
+                narrationPlayerManager.showError(
+                    noteId = noteId,
+                    noteTitle = noteTitle,
+                    message = error.message?.takeIf { it.isNotBlank() } ?: "Couldn’t generate narration.",
+                )
+            }
+        }
+    }
+
+    fun toggleNarrationPlayback() {
+        narrationPlayerManager.toggle()
+    }
+
+    fun stopNarration() {
+        narrationJob?.cancel()
+        narrationJob = null
+        narrationPlayerManager.stop()
+    }
+
+    fun setNarrationSpeed(speed: Float) {
+        narrationPlayerManager.setSpeed(speed)
     }
 
     fun createTable(rows: Int, columns: Int) {
@@ -300,13 +368,15 @@ class NoteViewModel @Inject constructor(
             _aiState.update { it.copy(error = "Type a question first.") }
             return
         }
-        viewModelScope.launch {
+        aiGenerationJob?.cancel()
+        aiGenerationJob = viewModelScope.launch {
             val routedAction = routeAiIntent(action, question)
             val effectiveModel = model.fastForLightweight(routedAction)
             val userPrompt = if (question.isNotBlank()) question.trim() else userMessageFor(routedAction, question)
             val appendToConversation = !routedAction.isEditorOutputMode()
             val requestWithVaultContext = question.withVaultContextIfUseful(routedAction, uiState.value)
             val history = _aiState.value.messages.toConversationHistory()
+
             if (appendToConversation) {
                 val userMessage = NoteAiChatMessage(
                     noteId = noteId,
@@ -319,11 +389,14 @@ class NoteViewModel @Inject constructor(
                 _aiState.update {
                     it.copy(
                         loading = true,
+                        isStreaming = provider == NoteAiProvider.Gemini,
                         action = routedAction,
                         provider = provider,
                         model = effectiveModel,
                         error = null,
                         result = "",
+                        streamedText = "",
+                        canContinue = false,
                         progressLabel = loadingLabelFor(routedAction, body),
                         question = if (routedAction.isEditorOutputMode() || question.isNotBlank()) "" else it.question,
                         messages = it.messages + userMessage,
@@ -331,26 +404,132 @@ class NoteViewModel @Inject constructor(
                 }
                 val conversationId = aiConversationRepository.saveMessage(userMessage, _aiState.value.activeConversationId)
                 val summaries = aiConversationRepository.conversationSummaries(noteId)
-                _aiState.update {
-                    it.copy(
-                        activeConversationId = conversationId,
-                        conversationHistory = summaries,
-                    )
-                }
+                _aiState.update { it.copy(activeConversationId = conversationId, conversationHistory = summaries) }
             } else {
                 _aiState.update {
                     it.copy(
                         loading = true,
+                        isStreaming = false,
                         action = routedAction,
                         provider = provider,
                         model = effectiveModel,
                         error = null,
                         result = "",
+                        streamedText = "",
+                        canContinue = false,
                         progressLabel = loadingLabelFor(routedAction, body),
                         question = "",
                     )
                 }
             }
+
+            if (appendToConversation && provider == NoteAiProvider.Gemini) {
+                var fullResponse = ""
+                runCatching {
+                    noteAiRepository.generateStreaming(
+                        action = routedAction,
+                        provider = provider,
+                        model = effectiveModel,
+                        title = title,
+                        body = body,
+                        question = requestWithVaultContext,
+                        history = history,
+                        onProgress = { progress -> _aiState.update { it.copy(progressLabel = progress) } },
+                    ).collect { chunk ->
+                        fullResponse += chunk
+                        _aiState.update {
+                            it.copy(
+                                loading = true,
+                                isStreaming = true,
+                                streamedText = fullResponse,
+                                result = fullResponse,
+                                progressLabel = null,
+                            )
+                        }
+                    }
+                    fullResponse
+                }.onSuccess { result ->
+                    val cleaned = result.trim()
+                    val pausedForLimit = cleaned.contains("output limit", ignoreCase = true) || cleaned.contains("Tap Continue", ignoreCase = true)
+                    val assistantMessage = NoteAiChatMessage(
+                        noteId = noteId,
+                        role = NoteAiMessageRole.Assistant,
+                        content = cleaned,
+                        action = routedAction,
+                        provider = provider,
+                        model = effectiveModel,
+                    )
+                    val conversationId = _aiState.value.activeConversationId
+                    aiConversationRepository.saveMessage(assistantMessage, conversationId)
+                    refreshAiConversationHistory()
+                    _aiState.update {
+                        it.copy(
+                            loading = false,
+                            isStreaming = false,
+                            action = routedAction,
+                            provider = provider,
+                            model = effectiveModel,
+                            result = cleaned,
+                            streamedText = "",
+                            error = null,
+                            canContinue = pausedForLimit,
+                            progressLabel = null,
+                            messages = it.messages + assistantMessage,
+                        )
+                    }
+                }.onFailure { error ->
+                    val partial = _aiState.value.streamedText.trim()
+                    val message = error.message ?: "AI request failed."
+                    if (partial.isNotBlank()) {
+                        val assistantMessage = NoteAiChatMessage(
+                            noteId = noteId,
+                            role = NoteAiMessageRole.Assistant,
+                            content = partial,
+                            action = routedAction,
+                            provider = provider,
+                            model = effectiveModel,
+                        )
+                        val conversationId = _aiState.value.activeConversationId
+                        aiConversationRepository.saveMessage(assistantMessage, conversationId)
+                        refreshAiConversationHistory()
+                        _aiState.update {
+                            it.copy(
+                                loading = false,
+                                isStreaming = false,
+                                result = partial,
+                                streamedText = "",
+                                error = message,
+                                canContinue = true,
+                                progressLabel = null,
+                                messages = it.messages + assistantMessage,
+                            )
+                        }
+                    } else {
+                        val errorMessage = NoteAiChatMessage(
+                            noteId = noteId,
+                            role = NoteAiMessageRole.Error,
+                            content = message,
+                            action = routedAction,
+                            provider = provider,
+                            model = effectiveModel,
+                        )
+                        val conversationId = _aiState.value.activeConversationId
+                        aiConversationRepository.saveMessage(errorMessage, conversationId)
+                        refreshAiConversationHistory()
+                        _aiState.update {
+                            it.copy(
+                                loading = false,
+                                isStreaming = false,
+                                error = message,
+                                progressLabel = null,
+                                messages = it.messages + errorMessage,
+                            )
+                        }
+                    }
+                }
+                return@launch
+            }
+
             runCatching {
                 noteAiRepository.generate(
                     action = routedAction,
@@ -360,9 +539,7 @@ class NoteViewModel @Inject constructor(
                     body = body,
                     question = requestWithVaultContext,
                     history = if (appendToConversation) history else emptyList(),
-                    onProgress = { progress ->
-                        _aiState.update { it.copy(progressLabel = progress) }
-                    },
+                    onProgress = { progress -> _aiState.update { it.copy(progressLabel = progress) } },
                 )
             }.onSuccess { result ->
                 _aiState.update {
@@ -382,16 +559,30 @@ class NoteViewModel @Inject constructor(
                         }
                         it.copy(
                             loading = false,
+                            isStreaming = false,
                             action = routedAction,
                             provider = provider,
                             model = effectiveModel,
                             result = result,
+                            streamedText = "",
                             error = null,
+                            canContinue = false,
                             progressLabel = null,
                             messages = it.messages + assistantMessage,
                         )
                     } else {
-                        it.copy(loading = false, action = routedAction, provider = provider, model = effectiveModel, result = result, error = null, progressLabel = null)
+                        it.copy(
+                            loading = false,
+                            isStreaming = false,
+                            action = routedAction,
+                            provider = provider,
+                            model = effectiveModel,
+                            result = result,
+                            streamedText = "",
+                            error = null,
+                            canContinue = false,
+                            progressLabel = null,
+                        )
                     }
                 }
             }.onFailure { error ->
@@ -413,6 +604,7 @@ class NoteViewModel @Inject constructor(
                         }
                         it.copy(
                             loading = false,
+                            isStreaming = false,
                             action = routedAction,
                             provider = provider,
                             model = effectiveModel,
@@ -421,12 +613,37 @@ class NoteViewModel @Inject constructor(
                             messages = it.messages + errorMessage,
                         )
                     } else {
-                        it.copy(loading = false, action = routedAction, provider = provider, model = effectiveModel, error = message, progressLabel = null)
+                        it.copy(
+                            loading = false,
+                            isStreaming = false,
+                            action = routedAction,
+                            provider = provider,
+                            model = effectiveModel,
+                            error = message,
+                            progressLabel = null,
+                        )
                     }
                 }
             }
         }
     }
+
+    fun cancelAiGeneration() {
+        aiGenerationJob?.cancel()
+        aiGenerationJob = null
+        val partial = _aiState.value.streamedText.trim()
+        _aiState.update {
+            it.copy(
+                loading = false,
+                isStreaming = false,
+                result = partial.ifBlank { it.result },
+                streamedText = "",
+                progressLabel = null,
+                canContinue = partial.isNotBlank(),
+            )
+        }
+    }
+
 
     fun runSelectedTextAi(
         action: SelectedTextAiAction,
@@ -551,12 +768,12 @@ class NoteViewModel @Inject constructor(
     }
 
     fun clearAiResult() {
-        _aiState.update { it.copy(result = "", error = null, action = null) }
+        _aiState.update { it.copy(result = "", streamedText = "", error = null, action = null, canContinue = false) }
     }
 
     fun clearAiConversation() {
         val currentConversationId = _aiState.value.activeConversationId
-        _aiState.update { it.copy(messages = emptyList(), result = "", error = null, action = null, activeConversationId = null) }
+        _aiState.update { it.copy(messages = emptyList(), result = "", streamedText = "", error = null, action = null, canContinue = false, activeConversationId = null) }
         viewModelScope.launch {
             if (currentConversationId != null) {
                 aiConversationRepository.clearConversation(currentConversationId)
@@ -605,6 +822,12 @@ class NoteViewModel @Inject constructor(
 
     private suspend fun refreshAiConversationHistory() {
         _aiState.update { it.copy(conversationHistory = aiConversationRepository.conversationSummaries(noteId)) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        narrationJob?.cancel()
+        narrationPlayerManager.stopForNote(noteId)
     }
 }
 

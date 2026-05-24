@@ -38,6 +38,10 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -86,6 +90,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.narration.NarrationConfig
+import com.myvault.app.data.narration.NarrationPlaybackStatus
+import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.ui.components.AttachmentThumbnail
@@ -123,6 +130,7 @@ fun EditorScreen(
     uiState: NoteUiState,
     aiState: NoteAiUiState,
     selectedTextAiState: SelectedTextAiUiState = SelectedTextAiUiState(),
+    narrationState: NarrationUiState = NarrationUiState(),
     onBackClick: () -> Unit,
     onTitleChange: (String) -> Unit,
     onContentChange: (text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) -> Unit,
@@ -137,6 +145,10 @@ fun EditorScreen(
     onAiModelSelected: (NoteAiModel) -> Unit = {},
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: (selectedText: String?) -> Unit = {},
+    onListenClick: (title: String, body: String) -> Unit = { _, _ -> },
+    onNarrationToggle: () -> Unit = {},
+    onNarrationStop: () -> Unit = {},
+    onNarrationSpeedChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
     onAttachDocument: (Uri) -> Unit,
     onAttachmentClick: (String) -> Unit = {},
@@ -177,6 +189,7 @@ fun EditorScreen(
     var intelligentStructureOpen by remember { mutableStateOf(false) }
     var selectedTextTarget by remember { mutableStateOf<SelectedTextTarget?>(null) }
     var replaceAiDialogOpen by remember { mutableStateOf(false) }
+    var structureOnlyNotice by remember { mutableStateOf<String?>(null) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var bodyFocused by remember { mutableStateOf(false) }
     var undoHistory by remember(noteId) { mutableStateOf<List<EditorHistorySnapshot>>(emptyList()) }
@@ -470,6 +483,30 @@ fun EditorScreen(
         bodyFocusRequester.requestFocus()
     }
 
+    fun runStructureOnlyLocally() {
+        val current = sanitizeVaultTextFieldValue(bodyValue)
+        val formattedHtml = current.text.toLocalStructureOnlyHtml()
+        if (formattedHtml.isBlank()) {
+            structureOnlyNotice = "Add note text first."
+            return
+        }
+        val imported = parseRichImport(html = formattedHtml, plainText = null).document
+        val cleanBody = sanitizeVaultTextFieldValue(TextFieldValue(imported.text, selection = TextRange(imported.text.length)))
+        val cleanMarks = sanitizeVaultStyleMarks(imported.styleMarks, imported.text.length)
+        val cleanLinks = sanitizeVaultNoteLinks(imported.noteLinks, imported.text.length)
+
+        bodyValue = cleanBody
+        styleMarks = cleanMarks
+        noteLinks = cleanLinks
+        pendingInlineStyles = emptySet()
+        lastSavedText = cleanBody.text
+        lastSavedMarks = cleanMarks
+        lastSavedLinks = cleanLinks
+        onContentChange(cleanBody.text, cleanMarks, cleanLinks)
+        structureOnlyNotice = "Structure applied."
+        bodyFocusRequester.requestFocus()
+    }
+
     fun insertSelectedTextAiResultBelow(result: String, target: SelectedTextTarget?) {
         val trimmed = result.trim()
         if (trimmed.isBlank()) return
@@ -638,6 +675,12 @@ fun EditorScreen(
                         icon = Icons.Rounded.AutoAwesome,
                         contentDescription = "Intelligent Structure",
                         onClick = { intelligentStructureOpen = true },
+                    )
+                    IconBtn(
+                        icon = Icons.Rounded.VolumeUp,
+                        contentDescription = "Listen to note",
+                        active = narrationState.isActive,
+                        onClick = { onListenClick(title.text, bodyValue.text) },
                     )
                     IconBtn(
                         icon = Icons.Rounded.PushPin,
@@ -886,6 +929,19 @@ fun EditorScreen(
                     }
                 }
             }
+
+            if (narrationState.isActive) {
+                NarrationMiniPlayer(
+                    state = narrationState,
+                    onToggle = onNarrationToggle,
+                    onStop = onNarrationStop,
+                    onSpeedChange = onNarrationSpeedChange,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = VaultSpacing.screen)
+                        .padding(bottom = if (bodyFocused) VaultSpacing.sm else 52.dp),
+                )
+            }
         }
     }
 
@@ -1006,11 +1062,15 @@ fun EditorScreen(
             onModelSelected = onAiModelSelected,
             onDismiss = {
                 intelligentStructureOpen = false
+                structureOnlyNotice = null
             },
+            structureOnlyNotice = structureOnlyNotice,
             onRun = { action ->
+                structureOnlyNotice = null
                 val request = when (action) {
-                    NoteAiAction.StructureOnly -> "Structure and format this note without adding, removing, or rewriting any words."
-                    else -> "Intelligently structure this note."
+                    NoteAiAction.StructureOnly -> "Structure this note very carefully. Preserve the exact wording. Do not add, remove, paraphrase, summarise, or rewrite any words. Only organise the existing content with headings, subheadings, paragraphs, lists, bold, emphasis, and blockquotes where appropriate."
+                    NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
+                    else -> action.displayName
                 }
                 onRunAiTool(action, aiState.provider, aiState.model, title.text, bodyValue.text, request)
             },
@@ -1139,6 +1199,139 @@ private fun InlineTextColorToolbar(
     }
 }
 
+
+@Composable
+private fun NarrationMiniPlayer(
+    state: NarrationUiState,
+    onToggle: () -> Unit,
+    onStop: () -> Unit,
+    onSpeedChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    val isBusy = state.status == NarrationPlaybackStatus.Preparing || state.status == NarrationPlaybackStatus.Generating
+    val isPlaying = state.status == NarrationPlaybackStatus.Playing
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = colors.elevated.copy(alpha = 0.96f),
+        contentColor = colors.text,
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.border),
+        shadowElevation = 10.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+        ) {
+            Surface(
+                modifier = Modifier.size(34.dp),
+                color = colors.accentSoft,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (isBusy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.accent,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.VolumeUp,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                            tint = colors.accent,
+                        )
+                    }
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Listen Mode",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                    maxLines = 1,
+                )
+                Text(
+                    text = state.error ?: state.label.ifBlank { state.noteTitle.ifBlank { "Note narration" } },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (state.error != null) colors.warning else colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            NarrationSpeedSelector(
+                selectedSpeed = state.speed,
+                enabled = !isBusy,
+                onSpeedChange = onSpeedChange,
+            )
+            Surface(
+                onClick = onToggle,
+                enabled = !isBusy && state.status != NarrationPlaybackStatus.Error,
+                modifier = Modifier.size(34.dp),
+                color = colors.surface,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, colors.border),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause narration" else "Play narration",
+                        modifier = Modifier.size(18.dp),
+                        tint = colors.textSecondary,
+                    )
+                }
+            }
+            Surface(
+                onClick = onStop,
+                modifier = Modifier.size(34.dp),
+                color = colors.surface,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, colors.border),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Stop,
+                        contentDescription = "Stop narration",
+                        modifier = Modifier.size(17.dp),
+                        tint = colors.textSecondary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NarrationSpeedSelector(
+    selectedSpeed: Float,
+    enabled: Boolean,
+    onSpeedChange: (Float) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        NarrationConfig.SpeedOptions.forEach { speed ->
+            val selected = selectedSpeed == speed
+            Surface(
+                onClick = { if (enabled) onSpeedChange(speed) },
+                enabled = enabled,
+                color = if (selected) colors.accentSoft else colors.surface,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
+            ) {
+                Text(
+                    text = if (speed == 1f) "1x" else "${speed}x",
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                    color = if (selected) colors.accent else colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
 private fun activeStylesForToolbar(
     value: TextFieldValue,
     marks: List<VaultStyleMark>,
@@ -1237,6 +1430,7 @@ private fun IntelligentStructureSheet(
     onProviderSelected: (NoteAiProvider) -> Unit,
     onModelSelected: (NoteAiModel) -> Unit,
     onDismiss: () -> Unit,
+    structureOnlyNotice: String? = null,
     onRun: (NoteAiAction) -> Unit,
     onCopy: () -> Unit,
     onInsertBelow: () -> Unit,
@@ -1340,10 +1534,17 @@ private fun IntelligentStructureSheet(
                     verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
                     Text(
-                        text = "Choose strict structure when you want formatting only. Choose intelligent structure when you want the current stronger restructuring mode.",
+                        text = "Choose Structure Only when you want AI to organise the note strongly without changing the wording. Choose Intelligent Structure when you want stronger restructuring.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.textSecondary,
                     )
+                    if (structureOnlyNotice != null) {
+                        Text(
+                            text = structureOnlyNotice,
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
+                            color = colors.accent,
+                        )
+                    }
                     Button(
                         onClick = { onRun(NoteAiAction.StructureOnly) },
                         enabled = !aiState.loading,
@@ -2163,6 +2364,92 @@ private fun TextFieldValue.selectedTextOrNull(): String? {
     return safeValue.text.substring(start, end).takeIf { it.isNotBlank() }
 }
 
+
+private fun String.toLocalStructureOnlyHtml(): String {
+    val clean = trim()
+    if (clean.isBlank()) return ""
+
+    val existingHtml = Regex("""</?(p|h1|h2|h3|ul|ol|li|blockquote)\b""", RegexOption.IGNORE_CASE)
+    if (existingHtml.containsMatchIn(clean)) return clean
+
+    val paragraphs = clean
+        .lines()
+        .map { it.trim() }
+
+    val output = StringBuilder()
+    var inUnorderedList = false
+    var inOrderedList = false
+
+    fun closeLists() {
+        if (inUnorderedList) {
+            output.append("</ul>\n")
+            inUnorderedList = false
+        }
+        if (inOrderedList) {
+            output.append("</ol>\n")
+            inOrderedList = false
+        }
+    }
+
+    fun looksLikeHeading(line: String): Boolean {
+        if (line.length > 90) return false
+        if (line.endsWith(".") || line.endsWith(",") || line.endsWith("،") || line.endsWith(";") || line.endsWith("؛")) return false
+        if (line.startsWith("-") || line.startsWith("•") || line.startsWith("*")) return false
+        return true
+    }
+
+    paragraphs.forEach { line ->
+        if (line.isBlank()) {
+            closeLists()
+            return@forEach
+        }
+
+        val bullet = Regex("""^[-•*]\s+(.+)$""").matchEntire(line)
+        val numbered = Regex("""^\d+[.)]\s+(.+)$""").matchEntire(line)
+
+        when {
+            bullet != null -> {
+                if (inOrderedList) {
+                    output.append("</ol>\n")
+                    inOrderedList = false
+                }
+                if (!inUnorderedList) {
+                    output.append("<ul>\n")
+                    inUnorderedList = true
+                }
+                output.append("<li>").append(bullet.groupValues[1].escapeVaultHtml()).append("</li>\n")
+            }
+            numbered != null -> {
+                if (inUnorderedList) {
+                    output.append("</ul>\n")
+                    inUnorderedList = false
+                }
+                if (!inOrderedList) {
+                    output.append("<ol>\n")
+                    inOrderedList = true
+                }
+                output.append("<li>").append(numbered.groupValues[1].escapeVaultHtml()).append("</li>\n")
+            }
+            looksLikeHeading(line) -> {
+                closeLists()
+                output.append("<h2>").append(line.escapeVaultHtml()).append("</h2>\n")
+            }
+            else -> {
+                closeLists()
+                output.append("<p>").append(line.escapeVaultHtml()).append("</p>\n")
+            }
+        }
+    }
+
+    closeLists()
+    return output.toString().trim()
+}
+
+private fun String.escapeVaultHtml(): String =
+    replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+
 private fun TextFieldValue.insertText(textToInsert: String): TextFieldValue {
     val safeValue = sanitizeVaultTextFieldValue(this)
     val start = minOf(safeValue.selection.start, safeValue.selection.end).coerceIn(0, safeValue.text.length)
@@ -2173,7 +2460,7 @@ private fun TextFieldValue.insertText(textToInsert: String): TextFieldValue {
 }
 
 private fun NoteAiAction?.isEditorOutputMode(): Boolean =
-    this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
+    this == NoteAiAction.StructureOnly || this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
 
 private fun TextFieldValue.currentLineStartsWith(prefix: String): Boolean {
     val line = currentLine()
