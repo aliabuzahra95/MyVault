@@ -77,7 +77,12 @@ class NarrationPlayerManager @Inject constructor() {
             applyPlaybackSpeed(it)
             if (!it.isPlaying) it.start()
             updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
-        } ?: activeSession?.let { play(it) }
+            return
+        }
+        val session = activeSession ?: return
+        activeFiles = session.files
+        activeChunkIndex = 0
+        playChunk(0)
     }
 
     fun stop() {

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -69,8 +70,12 @@ import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.Breadcrumb
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.narration.NarrationConfig
+import com.myvault.app.data.narration.NarrationPlaybackStatus
+import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.toRelativeTime
@@ -93,6 +98,7 @@ import java.io.File
 fun ReadingScreen(
     uiState: NoteUiState,
     aiState: NoteAiUiState = NoteAiUiState(),
+    narrationState: NarrationUiState = NarrationUiState(),
     onBackClick: () -> Unit,
     onEditClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -105,6 +111,10 @@ fun ReadingScreen(
     onAiModelSelected: (NoteAiModel) -> Unit = {},
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: () -> Unit = {},
+    onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
+    onNarrationPrimaryAction: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
+    onNarrationStop: () -> Unit = {},
+    onNarrationSpeedChange: (Float) -> Unit = {},
     onDeleteNote: () -> Unit = {},
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
@@ -126,6 +136,7 @@ fun ReadingScreen(
     var removeTagDialogOpen by remember { mutableStateOf(false) }
     var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
     var tagDraft by remember { mutableStateOf("") }
+    var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
     val exportTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let(onExportText)
     }
@@ -153,12 +164,38 @@ fun ReadingScreen(
                 Icon(Icons.Rounded.Edit, "Edit", modifier = Modifier.size(20.dp))
             }
         },
+        bottomBar = {
+            if (narrationState.isActive) {
+                NarrationMiniPlayer(
+                    state = narrationState,
+                    selectedVoice = selectedNarrationVoice,
+                    onVoiceChange = { voice ->
+                        selectedNarrationVoice = voice
+                        onListenClick(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, voice)
+                    },
+                    onPrimaryAction = {
+                        when (narrationState.status) {
+                            NarrationPlaybackStatus.Playing, NarrationPlaybackStatus.Paused, NarrationPlaybackStatus.Stopped -> {
+                                onNarrationPrimaryAction(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, selectedNarrationVoice)
+                            }
+                            NarrationPlaybackStatus.Error -> {
+                                onListenClick(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, selectedNarrationVoice)
+                            }
+                            else -> Unit
+                        }
+                    },
+                    onStop = onNarrationStop,
+                    onSpeedChange = onNarrationSpeedChange,
+                    modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
+                )
+            }
+        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(bottom = 96.dp),
+            contentPadding = PaddingValues(bottom = if (narrationState.isActive) 156.dp else 96.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
             item {
@@ -167,6 +204,12 @@ fun ReadingScreen(
                         icon = Icons.Rounded.AutoAwesome,
                         contentDescription = "Ask AI",
                         onClick = onAskAiClick,
+                    )
+                    IconBtn(
+                        icon = Icons.Rounded.PlayArrow,
+                        contentDescription = "Listen",
+                        active = narrationState.isActive,
+                        onClick = { onListenClick(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, selectedNarrationVoice) },
                     )
                     IconBtn(
                         icon = Icons.Rounded.PushPin,

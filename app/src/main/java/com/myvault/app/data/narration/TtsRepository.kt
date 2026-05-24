@@ -78,6 +78,7 @@ class TtsRepository @Inject constructor(
             .put("model", NarrationConfig.MODEL)
             .put("voice", voice)
             .put("input", input)
+            .put("instructions", "Read this study note naturally and calmly as long-form narration. Preserve Arabic and Islamic terms as written. Do not summarize or add commentary.")
             .put("response_format", NarrationConfig.RESPONSE_FORMAT)
             .toString()
         connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }

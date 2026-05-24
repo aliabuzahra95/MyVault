@@ -38,10 +38,6 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -90,9 +86,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.data.local.entity.AttachmentEntity
-import com.myvault.app.data.narration.NarrationConfig
-import com.myvault.app.data.narration.NarrationPlaybackStatus
-import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.ui.components.AttachmentThumbnail
@@ -130,7 +123,6 @@ fun EditorScreen(
     uiState: NoteUiState,
     aiState: NoteAiUiState,
     selectedTextAiState: SelectedTextAiUiState = SelectedTextAiUiState(),
-    narrationState: NarrationUiState = NarrationUiState(),
     onBackClick: () -> Unit,
     onTitleChange: (String) -> Unit,
     onContentChange: (text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) -> Unit,
@@ -145,10 +137,6 @@ fun EditorScreen(
     onAiModelSelected: (NoteAiModel) -> Unit = {},
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: (selectedText: String?) -> Unit = {},
-    onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
-    onNarrationToggle: () -> Unit = {},
-    onNarrationStop: () -> Unit = {},
-    onNarrationSpeedChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
     onAttachDocument: (Uri) -> Unit,
     onAttachmentClick: (String) -> Unit = {},
@@ -190,7 +178,6 @@ fun EditorScreen(
     var selectedTextTarget by remember { mutableStateOf<SelectedTextTarget?>(null) }
     var replaceAiDialogOpen by remember { mutableStateOf(false) }
     var structureOnlyNotice by remember { mutableStateOf<String?>(null) }
-    var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var bodyFocused by remember { mutableStateOf(false) }
     var undoHistory by remember(noteId) { mutableStateOf<List<EditorHistorySnapshot>>(emptyList()) }
@@ -678,12 +665,6 @@ fun EditorScreen(
                         onClick = { intelligentStructureOpen = true },
                     )
                     IconBtn(
-                        icon = Icons.Rounded.VolumeUp,
-                        contentDescription = "Listen to note",
-                        active = narrationState.isActive,
-                        onClick = { onListenClick(title.text, bodyValue.text, selectedNarrationVoice) },
-                    )
-                    IconBtn(
                         icon = Icons.Rounded.PushPin,
                         contentDescription = if (isPinned) "Unpin" else "Pin",
                         active = isPinned,
@@ -929,24 +910,6 @@ fun EditorScreen(
                         )
                     }
                 }
-            }
-
-            if (narrationState.isActive) {
-                NarrationMiniPlayer(
-                    state = narrationState,
-                    onToggle = onNarrationToggle,
-                    onStop = onNarrationStop,
-                    selectedVoice = selectedNarrationVoice,
-                    onVoiceChange = { voice ->
-                        selectedNarrationVoice = voice
-                        onListenClick(title.text, bodyValue.text, voice)
-                    },
-                    onSpeedChange = onNarrationSpeedChange,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = VaultSpacing.screen)
-                        .padding(bottom = if (bodyFocused) VaultSpacing.sm else 52.dp),
-                )
             }
         }
     }
@@ -1200,174 +1163,6 @@ private fun InlineTextColorToolbar(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun NarrationMiniPlayer(
-    state: NarrationUiState,
-    onToggle: () -> Unit,
-    onStop: () -> Unit,
-    selectedVoice: String,
-    onVoiceChange: (String) -> Unit,
-    onSpeedChange: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    val isBusy = state.status == NarrationPlaybackStatus.Preparing || state.status == NarrationPlaybackStatus.Generating
-    val isPlaying = state.status == NarrationPlaybackStatus.Playing
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = colors.elevated.copy(alpha = 0.96f),
-        contentColor = colors.text,
-        shape = VaultShapes.lg,
-        border = BorderStroke(1.dp, colors.border),
-        shadowElevation = 10.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-        ) {
-            Surface(
-                modifier = Modifier.size(34.dp),
-                color = colors.accentSoft,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, colors.accentBorder),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (isBusy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = colors.accent,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Rounded.VolumeUp,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                            tint = colors.accent,
-                        )
-                    }
-                }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Listen Mode",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                    color = colors.text,
-                    maxLines = 1,
-                )
-                Text(
-                    text = state.error ?: state.label.ifBlank { state.noteTitle.ifBlank { "Note narration" } },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (state.error != null) colors.warning else colors.textMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            NarrationVoiceSelector(
-                selectedVoice = selectedVoice,
-                enabled = !isBusy,
-                onVoiceChange = onVoiceChange,
-            )
-            NarrationSpeedSelector(
-                selectedSpeed = state.speed,
-                enabled = !isBusy,
-                onSpeedChange = onSpeedChange,
-            )
-            Surface(
-                onClick = onToggle,
-                enabled = !isBusy && state.status != NarrationPlaybackStatus.Error,
-                modifier = Modifier.size(34.dp),
-                color = colors.surface,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause narration" else "Play narration",
-                        modifier = Modifier.size(18.dp),
-                        tint = colors.textSecondary,
-                    )
-                }
-            }
-            Surface(
-                onClick = onStop,
-                modifier = Modifier.size(34.dp),
-                color = colors.surface,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Rounded.Stop,
-                        contentDescription = "Stop narration",
-                        modifier = Modifier.size(17.dp),
-                        tint = colors.textSecondary,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NarrationVoiceSelector(
-    selectedVoice: String,
-    enabled: Boolean,
-    onVoiceChange: (String) -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        NarrationConfig.VoiceOptions.forEach { voice ->
-            val selected = selectedVoice.equals(voice, ignoreCase = true)
-            Surface(
-                onClick = { if (enabled && !selected) onVoiceChange(voice) },
-                enabled = enabled,
-                color = if (selected) colors.accentSoft else colors.surface,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
-            ) {
-                Text(
-                    text = voice.replaceFirstChar { it.uppercase() },
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
-                    color = if (selected) colors.accent else colors.textMuted,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun NarrationSpeedSelector(
-    selectedSpeed: Float,
-    enabled: Boolean,
-    onSpeedChange: (Float) -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        NarrationConfig.SpeedOptions.forEach { speed ->
-            val selected = selectedSpeed == speed
-            Surface(
-                onClick = { if (enabled) onSpeedChange(speed) },
-                enabled = enabled,
-                color = if (selected) colors.accentSoft else colors.surface,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
-            ) {
-                Text(
-                    text = if (speed == 1f) "1x" else "${speed}x",
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
-                    color = if (selected) colors.accent else colors.textMuted,
-                )
             }
         }
     }
