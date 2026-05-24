@@ -4,9 +4,10 @@ import java.io.File
 
 object NarrationConfig {
     const val MODEL = "gpt-4o-mini-tts"
-    const val DEFAULT_VOICE = "alloy"
+    const val DEFAULT_VOICE = "cedar"
     const val RESPONSE_FORMAT = "mp3"
     const val MAX_CHARS_PER_CHUNK = 3_500
+    val VoiceOptions = listOf("cedar", "marin")
     val SpeedOptions = listOf(0.75f, 1f, 1.25f, 1.5f)
 }
 

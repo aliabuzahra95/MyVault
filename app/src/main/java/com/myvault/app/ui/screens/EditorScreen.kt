@@ -145,7 +145,7 @@ fun EditorScreen(
     onAiModelSelected: (NoteAiModel) -> Unit = {},
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: (selectedText: String?) -> Unit = {},
-    onListenClick: (title: String, body: String) -> Unit = { _, _ -> },
+    onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
     onNarrationToggle: () -> Unit = {},
     onNarrationStop: () -> Unit = {},
     onNarrationSpeedChange: (Float) -> Unit = {},
@@ -190,6 +190,7 @@ fun EditorScreen(
     var selectedTextTarget by remember { mutableStateOf<SelectedTextTarget?>(null) }
     var replaceAiDialogOpen by remember { mutableStateOf(false) }
     var structureOnlyNotice by remember { mutableStateOf<String?>(null) }
+    var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var bodyFocused by remember { mutableStateOf(false) }
     var undoHistory by remember(noteId) { mutableStateOf<List<EditorHistorySnapshot>>(emptyList()) }
@@ -680,7 +681,7 @@ fun EditorScreen(
                         icon = Icons.Rounded.VolumeUp,
                         contentDescription = "Listen to note",
                         active = narrationState.isActive,
-                        onClick = { onListenClick(title.text, bodyValue.text) },
+                        onClick = { onListenClick(title.text, bodyValue.text, selectedNarrationVoice) },
                     )
                     IconBtn(
                         icon = Icons.Rounded.PushPin,
@@ -935,6 +936,11 @@ fun EditorScreen(
                     state = narrationState,
                     onToggle = onNarrationToggle,
                     onStop = onNarrationStop,
+                    selectedVoice = selectedNarrationVoice,
+                    onVoiceChange = { voice ->
+                        selectedNarrationVoice = voice
+                        onListenClick(title.text, bodyValue.text, voice)
+                    },
                     onSpeedChange = onNarrationSpeedChange,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -1205,6 +1211,8 @@ private fun NarrationMiniPlayer(
     state: NarrationUiState,
     onToggle: () -> Unit,
     onStop: () -> Unit,
+    selectedVoice: String,
+    onVoiceChange: (String) -> Unit,
     onSpeedChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1262,6 +1270,11 @@ private fun NarrationMiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            NarrationVoiceSelector(
+                selectedVoice = selectedVoice,
+                enabled = !isBusy,
+                onVoiceChange = onVoiceChange,
+            )
             NarrationSpeedSelector(
                 selectedSpeed = state.speed,
                 enabled = !isBusy,
@@ -1299,6 +1312,34 @@ private fun NarrationMiniPlayer(
                         tint = colors.textSecondary,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NarrationVoiceSelector(
+    selectedVoice: String,
+    enabled: Boolean,
+    onVoiceChange: (String) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        NarrationConfig.VoiceOptions.forEach { voice ->
+            val selected = selectedVoice.equals(voice, ignoreCase = true)
+            Surface(
+                onClick = { if (enabled && !selected) onVoiceChange(voice) },
+                enabled = enabled,
+                color = if (selected) colors.accentSoft else colors.surface,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
+            ) {
+                Text(
+                    text = voice.replaceFirstChar { it.uppercase() },
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                    color = if (selected) colors.accent else colors.textMuted,
+                )
             }
         }
     }

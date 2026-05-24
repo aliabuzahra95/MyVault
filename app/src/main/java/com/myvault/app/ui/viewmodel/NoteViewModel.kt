@@ -252,7 +252,7 @@ class NoteViewModel @Inject constructor(
     }
 
 
-    fun startNarration(title: String, body: String) {
+    fun startNarration(title: String, body: String, voice: String = NarrationConfig.DEFAULT_VOICE) {
         if (narrationState.value.status == com.myvault.app.data.narration.NarrationPlaybackStatus.Preparing ||
             narrationState.value.status == com.myvault.app.data.narration.NarrationPlaybackStatus.Generating
         ) {
@@ -272,7 +272,7 @@ class NoteViewModel @Inject constructor(
                     noteId = noteId,
                     noteTitle = noteTitle,
                     narrationText = narrationText,
-                    voice = NarrationConfig.DEFAULT_VOICE,
+                    voice = voice.ifBlank { NarrationConfig.DEFAULT_VOICE },
                     speed = narrationState.value.speed,
                     onChunkGenerating = { current, total ->
                         narrationPlayerManager.markGenerating(noteId, noteTitle, current, total)

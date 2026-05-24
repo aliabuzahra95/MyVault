@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,6 +13,13 @@ android {
     namespace = "com.myvault.app"
     compileSdk = 36
 
+    val localPropertiesFile = rootProject.file("local.properties")
+    val localProperties = Properties().apply {
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use { load(it) }
+        }
+    }
+
     val supabaseUrl = providers.gradleProperty("MYVAULT_SUPABASE_URL").orElse("").get()
     val supabaseAnonKey = providers.gradleProperty("MYVAULT_SUPABASE_ANON_KEY").orElse("").get()
     val syncProxyUrl = providers.gradleProperty("MYVAULT_SYNC_PROXY_URL").orElse("").get()
@@ -22,7 +31,7 @@ android {
     val firebaseProjectId = providers.gradleProperty("MYVAULT_FIREBASE_PROJECT_ID").orElse("").get()
     val openAiApiKey = providers.gradleProperty("MYVAULT_OPENAI_API_KEY")
         .orElse(providers.environmentVariable("OPENAI_API_KEY"))
-        .orElse("")
+        .orElse(localProperties.getProperty("MYVAULT_OPENAI_API_KEY") ?: "")
         .get()
 
     defaultConfig {
