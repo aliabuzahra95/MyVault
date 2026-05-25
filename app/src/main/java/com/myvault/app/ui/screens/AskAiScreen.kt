@@ -86,8 +86,9 @@ fun AskAiScreen(
     val noteBody = uiState.richText.text.ifBlank { uiState.note?.bodyPlainText.orEmpty() }
     val hasSelectedText = !selectedText.isNullOrBlank()
     val aiBusy = aiState.loading || aiState.isStreaming
+    val streamScrollBucket = aiState.streamedText.length / 320
 
-    LaunchedEffect(aiState.messages.size, aiBusy, aiState.isStreaming, aiState.streamedText, aiState.error) {
+    LaunchedEffect(aiState.messages.size, aiBusy, aiState.isStreaming, streamScrollBucket, aiState.error) {
         conversationScrollState.animateScrollTo(conversationScrollState.maxValue)
     }
 

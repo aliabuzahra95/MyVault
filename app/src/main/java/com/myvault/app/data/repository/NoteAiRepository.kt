@@ -174,7 +174,7 @@ class NoteAiRepository @Inject constructor(
         }
         // Editor-output actions must remain one-shot for now because they return full HTML that is
         // applied back into the editor. Normal chat actions stream progressively.
-        if (provider != NoteAiProvider.Gemini || action.isEditorOutputModeForStreaming()) {
+        if (action.isEditorOutputModeForStreaming()) {
             emit(
                 generate(
                     action = action,
@@ -190,7 +190,6 @@ class NoteAiRepository @Inject constructor(
             return@flow
         }
 
-        ensureFirebaseReady()
         onProgress?.invoke("Thinking...")
         val promptRequest = AiPromptBuilder.build(
             action = action,
@@ -198,11 +197,21 @@ class NoteAiRepository @Inject constructor(
             body = body,
             question = question,
             history = history,
-            provider = NoteAiProvider.Gemini,
+            provider = provider,
             model = model,
         )
-        generateWithGeminiPromptStream(model, promptRequest).collect { chunk ->
-            emit(chunk)
+        when (provider) {
+            NoteAiProvider.Gemini -> {
+                ensureFirebaseReady()
+                generateWithGeminiPromptStream(model, promptRequest).collect { chunk ->
+                    emit(chunk)
+                }
+            }
+            NoteAiProvider.ChatGPT -> {
+                generateWithChatGptPromptStream(action, model, promptRequest, title, body, question).collect { chunk ->
+                    emit(chunk)
+                }
+            }
         }
     }.flowOn(Dispatchers.IO)
 
@@ -550,6 +559,95 @@ class NoteAiRepository @Inject constructor(
     }
 }
 
+    private fun generateWithChatGptPromptStream(
+        action: NoteAiAction,
+        model: NoteAiModel,
+        promptRequest: AiPromptRequest,
+        title: String,
+        body: String,
+        question: String,
+    ): Flow<String> = flow {
+        if (!SupabaseConfig.isConfigured) {
+            error("Supabase is not configured yet.")
+        }
+        val session = authenticatedSupabaseSession()
+        if (!session.isSignedIn) {
+            error("Sign in to your Supabase account first, then try ChatGPT again.")
+        }
+
+        val connection = URL("${SupabaseConfig.url}/functions/v1/myvault-ai").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 120_000
+            connection.doOutput = true
+            connection.setRequestProperty("apikey", SupabaseConfig.anonKey)
+            connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "text/event-stream")
+
+            val bodyJson = JSONObject()
+                .put("action", action.toFunctionAction())
+                .put("model", model.toFunctionModel())
+                .put("title", title)
+                .put("body", body.scopedForAiFunctionPayload(action))
+                .put("question", question)
+                .put("systemInstruction", promptRequest.systemInstruction)
+                .put("prompt", promptRequest.prompt)
+                .put("temperature", promptRequest.temperature.toDouble())
+                .put("maxOutputTokens", promptRequest.maxOutputTokens)
+                .put("stream", true)
+                .toString()
+
+            connection.outputStream.use { it.write(bodyJson.toByteArray(Charsets.UTF_8)) }
+
+            if (connection.responseCode !in 200..299) {
+                val responseText = connection.errorStream?.bufferedReader()?.readText().orEmpty()
+                val json = runCatching { JSONObject(responseText.ifBlank { "{}" }) }.getOrNull()
+                error(json?.optString("error")?.ifBlank { null } ?: "ChatGPT request failed. HTTP ${connection.responseCode}.")
+            }
+
+            var emittedAnyText = false
+            val dataBuffer = StringBuilder()
+            suspend fun emitEventData(data: String) {
+                if (data.isBlank() || data == "[DONE]") return
+                val event = runCatching { JSONObject(data) }.getOrNull() ?: return
+                if (event.optString("type") == "error") {
+                    error(event.optJSONObject("error")?.optString("message").orEmpty().ifBlank { "ChatGPT streaming failed." })
+                }
+                val delta = event.extractOpenAiTextDelta()
+                if (delta.isNotBlank()) {
+                    emittedAnyText = true
+                    emit(delta)
+                }
+            }
+
+            connection.inputStream.bufferedReader().use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    when {
+                        line.isBlank() -> {
+                            emitEventData(dataBuffer.toString().trim())
+                            dataBuffer.clear()
+                        }
+                        line.startsWith("data:") -> {
+                            if (dataBuffer.isNotEmpty()) dataBuffer.append('\n')
+                            dataBuffer.append(line.removePrefix("data:").trim())
+                        }
+                    }
+                }
+            }
+            emitEventData(dataBuffer.toString().trim())
+            if (!emittedAnyText) {
+                error("ChatGPT did not stream any text. Please try again.")
+            }
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.message ?: "ChatGPT streaming request failed.")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
 private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
     val maxChars = when (action) {
         NoteAiAction.QuickSummary -> 5_000
@@ -576,6 +674,17 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
         append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
         append(clean.takeLast(tailLength).trimStart())
     }
+}
+
+private fun JSONObject.extractOpenAiTextDelta(): String {
+    val type = optString("type")
+    if (type == "response.output_text.delta") {
+        return optString("delta")
+    }
+    if (has("delta")) {
+        return optString("delta")
+    }
+    return ""
 }
 
     private suspend fun authenticatedSupabaseSession(): SupabaseSession {

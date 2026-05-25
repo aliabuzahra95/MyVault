@@ -17,6 +17,7 @@ type AiRequest = {
   prompt?: string;
   temperature?: number;
   maxOutputTokens?: number;
+  stream?: boolean;
 };
 
 Deno.serve(async (request) => {
@@ -69,6 +70,11 @@ Deno.serve(async (request) => {
       input: prompt,
       max_output_tokens: clampMaxOutputTokens(requestedMaxOutputTokens, action, modelKind),
     };
+    const wantsStream = payload.stream === true;
+    if (wantsStream) {
+      requestBody.stream = true;
+      requestBody.stream_options = { include_obfuscation: false };
+    }
 
     if (isGpt5Family(model)) {
       requestBody.reasoning = { effort: reasoningEffortFor(action, modelKind) };
@@ -88,10 +94,24 @@ Deno.serve(async (request) => {
       body: JSON.stringify(requestBody),
     });
 
-    const data = await response.json();
     if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
       return json({ error: data?.error?.message ?? "OpenAI request failed." }, response.status);
     }
+
+    if (wantsStream) {
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    }
+
+    const data = await response.json();
 
     return json({
       text: extractText(data),

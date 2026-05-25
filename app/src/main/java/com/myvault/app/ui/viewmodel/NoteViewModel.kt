@@ -390,7 +390,7 @@ class NoteViewModel @Inject constructor(
                 }
             }
 
-            if (appendToConversation && provider == NoteAiProvider.Gemini) {
+            if (appendToConversation && !routedAction.isEditorOutputMode()) {
                 var fullResponse = ""
                 runCatching {
                     noteAiRepository.generateStreaming(
