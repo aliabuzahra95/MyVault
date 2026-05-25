@@ -37,7 +37,7 @@ private fun String.parseHtmlImport(): RichImportResult {
     if (contains(Regex("<(ul|ol|li)\\b", RegexOption.IGNORE_CASE))) {
         Log.d(
             "MyVaultStructureOnly",
-            "rich-import-list-normalized beforeLists=true afterBullets=${listNormalizedHtml.contains("•")} afterNumbered=${Regex("(?m)>\\s*\\d+\\.\\s").containsMatchIn(listNormalizedHtml)}",
+            "rich-import-list-normalized beforeLists=true afterBullets=${listNormalizedHtml.contains("•")} afterNumbered=${Regex("\\b\\d+\\.\\s").containsMatchIn(listNormalizedHtml)}",
         )
     }
     val spanned = HtmlCompat.fromHtml(listNormalizedHtml, HtmlCompat.FROM_HTML_MODE_LEGACY)
@@ -94,9 +94,9 @@ private fun String.normalizeListsForVaultImport(): String {
             val itemHtml = itemMatch.groupValues[1].trim()
             if (itemHtml.isBlank()) null else {
                 val prefix = if (ordered) "${++orderedIndex}. " else "• "
-                "<p>$prefix$itemHtml</p>"
+                "$prefix$itemHtml"
             }
-        }.joinToString("\n")
+        }.joinToString("<br>")
         items.ifBlank { listMatch.value }
     }
 }
