@@ -34,7 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -138,9 +138,9 @@ fun VaultNavHost(
         composable(VaultDestination.Home.route) {
             val homeViewModel: HomeViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val studyState by homeViewModel.uiState.collectAsState()
-            val personalState by homeViewModel.personalUiState.collectAsState()
-            val preferences by settingsViewModel.userPreferences.collectAsState()
+            val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
+            val personalState by homeViewModel.personalUiState.collectAsStateWithLifecycle()
+            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             val context = LocalContext.current
             val openNote: (String) -> Unit = { noteId ->
                 navController.navigate(
@@ -252,7 +252,7 @@ fun VaultNavHost(
                 },
                 quranContent = {
                     val quranViewModel: QuranReaderViewModel = hiltViewModel()
-                    val quranState by quranViewModel.uiState.collectAsState()
+                    val quranState by quranViewModel.uiState.collectAsStateWithLifecycle()
                     QuranShellScreen(
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
@@ -308,7 +308,7 @@ fun VaultNavHost(
                 },
                 memoriseContent = {
                     val memoriseViewModel: MemoriseViewModel = hiltViewModel()
-                    val memoriseState by memoriseViewModel.uiState.collectAsState()
+                    val memoriseState by memoriseViewModel.uiState.collectAsStateWithLifecycle()
                     MemoriseShellScreen(
                         uiState = memoriseState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
@@ -339,7 +339,7 @@ fun VaultNavHost(
                 },
                 libraryContent = {
                     val libraryViewModel: LibraryViewModel = hiltViewModel()
-                    val libraryState by libraryViewModel.uiState.collectAsState()
+                    val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
                     LibraryScreen(
                         uiState = libraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
@@ -484,7 +484,7 @@ fun VaultNavHost(
             arguments = listOf(navArgument("libraryFolderId") { type = NavType.StringType }),
         ) {
             val viewModel: LibraryViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             LibraryFolderScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
@@ -533,8 +533,8 @@ fun VaultNavHost(
         ) {
             val viewModel: FolderViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
-            val preferences by settingsViewModel.userPreferences.collectAsState()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             FolderViewScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
@@ -575,10 +575,10 @@ fun VaultNavHost(
             val context = LocalContext.current
             val viewModel: NoteViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
-            val aiState by viewModel.aiState.collectAsState()
-            val selectedTextAiState by viewModel.selectedTextAiState.collectAsState()
-            val preferences by settingsViewModel.userPreferences.collectAsState()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val aiState by viewModel.aiState.collectAsStateWithLifecycle()
+            val selectedTextAiState by viewModel.selectedTextAiState.collectAsStateWithLifecycle()
+            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             EditorScreen(
                 uiState = uiState,
                 aiState = aiState,
@@ -628,10 +628,10 @@ fun VaultNavHost(
             val context = LocalContext.current
             val viewModel: NoteViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
-            val aiState by viewModel.aiState.collectAsState()
-            val narrationState by viewModel.narrationState.collectAsState()
-            val preferences by settingsViewModel.userPreferences.collectAsState()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val aiState by viewModel.aiState.collectAsStateWithLifecycle()
+            val narrationState by viewModel.narrationState.collectAsStateWithLifecycle()
+            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             ReadingScreen(
                 uiState = uiState,
                 aiState = aiState,
@@ -700,8 +700,8 @@ fun VaultNavHost(
             ),
         ) { backStackEntry ->
             val viewModel: NoteViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
-            val aiState by viewModel.aiState.collectAsState()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val aiState by viewModel.aiState.collectAsStateWithLifecycle()
             val selectedText = backStackEntry.arguments?.getString("selectedText").orEmpty()
             AskAiScreen(
                 uiState = uiState,
@@ -720,8 +720,8 @@ fun VaultNavHost(
         composable(VaultDestination.Search.route) {
             val viewModel: SearchViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
-            val preferences by settingsViewModel.userPreferences.collectAsState()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             SearchScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
@@ -749,9 +749,9 @@ fun VaultNavHost(
         ) {
             val context = LocalContext.current
             val viewModel: AttachmentViewerViewModel = hiltViewModel()
-            val attachment by viewModel.attachment.collectAsState()
-            val pdfProgress by viewModel.pdfProgress.collectAsState()
-            val pdfAnnotations by viewModel.pdfAnnotations.collectAsState()
+            val attachment by viewModel.attachment.collectAsStateWithLifecycle()
+            val pdfProgress by viewModel.pdfProgress.collectAsStateWithLifecycle()
+            val pdfAnnotations by viewModel.pdfAnnotations.collectAsStateWithLifecycle()
             AttachmentViewerScreen(
                 attachment = attachment,
                 pdfProgress = pdfProgress,
@@ -776,7 +776,7 @@ fun VaultNavHost(
             arguments = listOf(navArgument("mode") { type = NavType.StringType }),
         ) {
             val viewModel: AttachmentsViewModel = hiltViewModel()
-            val attachments by viewModel.attachments.collectAsState()
+            val attachments by viewModel.attachments.collectAsStateWithLifecycle()
             AttachmentsScreen(
                 attachments = attachments,
                 onBackClick = { navController.popBackStack() },
@@ -788,11 +788,11 @@ fun VaultNavHost(
         }
         composable(VaultDestination.Settings.route) {
             val viewModel: SettingsViewModel = hiltViewModel()
-            val preferences by viewModel.userPreferences.collectAsState()
-            val storageLabel by viewModel.storageLabel.collectAsState()
-            val recentlyDeleted by viewModel.recentlyDeleted.collectAsState()
-            val driveRestoreState by viewModel.driveRestoreState.collectAsState()
-            val supabaseSession by viewModel.supabaseSession.collectAsState()
+            val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+            val storageLabel by viewModel.storageLabel.collectAsStateWithLifecycle()
+            val recentlyDeleted by viewModel.recentlyDeleted.collectAsStateWithLifecycle()
+            val driveRestoreState by viewModel.driveRestoreState.collectAsStateWithLifecycle()
+            val supabaseSession by viewModel.supabaseSession.collectAsStateWithLifecycle()
             var backupMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
             SettingsScreen(
                 preferences = preferences,
