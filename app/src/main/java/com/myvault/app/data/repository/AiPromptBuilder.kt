@@ -68,7 +68,7 @@ object AiPromptBuilder {
         Do not include commentary, markdown, code fences, explanations, or prefaces.
         Build polished study-note structure with clear hierarchy, semantic grouping, readable paragraph flow, consistent lists, and useful blockquotes.
         Preserve the user's meaning and wording unless the selected mode explicitly asks you to improve clarity.
-        Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">.
+        Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">, <span dir="rtl">, <span dir="ltr">.
         Prefer compact <ul> bullet lists over repeated short standalone paragraphs when the content is grouped, comparative, evidential, categorical, explanatory, or revision-oriented.
         Use <ol> only for true ordered sequences: steps, chronology, explicit First/Second/Third structures, syllogisms, or premise-to-conclusion chains.
         Avoid unsupported tags, CSS, deeply nested spans, inline styling inside headings, malformed HTML, markdown syntax, giant dense paragraphs, and stretched line/blank-line/line formatting.
@@ -149,7 +149,7 @@ object AiPromptBuilder {
             - Keep it short.
             - Plain text only.
 
-            ${noteContextFor(safeTitle, body.takeMiddleAware(10_000))}
+            ${noteContextFor(safeTitle, body)}
         """.trimIndent()
 
         return AiPromptRequest(
@@ -351,38 +351,45 @@ object AiPromptBuilder {
             NoteAiAction.StructureOnly -> """
                 Structure this note into polished, editor-safe HTML for premium study-note readability.
 
-                Core rule:
-                Preserve the wording and meaning of the body content as exactly as possible while aggressively improving organisation, hierarchy, spacing, scanability, academic presentation, and efficient visual density.
+                Absolute preservation rule:
+                Every meaningful original sentence, phrase, point, example, quote, Arabic phrase, transliteration, definition, evidence, and repeated wording must remain present in the output. Do not delete, summarise, shorten, merge away, deduplicate, paraphrase, or compress away content. Your job is to wrap and organise the existing content, not to rewrite it.
+
+                Formatting goal:
+                Improve organisation, hierarchy, scanability, and study-note readability while preserving the original body wording as closely as possible.
 
                 You should:
-                - create strong headings/subheadings from existing phrases, terms, or concepts already present in the note
+                - create headings/subheadings from existing phrases, terms, or concepts already present in the note
                 - group related paragraphs into coherent sections
-                - use compact <ul> lists as the default for grouped concepts, assumptions, distinctions, categories, objections, evidences, consequences, examples, and repeated points
-                - use compact <ol> lists only for true ordered material: explicit steps, chronology, First/Second/Third structures, syllogisms, procedures, or premise-to-conclusion chains
+                - use compact <ul> lists as the default for grouped concepts, assumptions, distinctions, categories, objections, evidences, consequences, examples, and related study points
+                - use <ol> only when the original content is genuinely ordered: explicit steps, chronology, first/second/third structures, procedures, or clear premise-to-conclusion chains
+                - prefer <ul> over <ol> when unsure
                 - use nested <ul> lists for sub-points when a point branches into smaller related points
-                - convert Universal / Particular / Conclusion or Major premise / Minor premise / Conclusion into <ol> only when they clearly form a syllogism
-                - treat labels like Example, Definition, Assumption, Critique, Response, Implication, Observation, and Key Point as subheadings or strong labels, not numbered items
-                - treat short standalone lines under one topic as likely list items, not separate paragraphs
-                - create definition-style blocks where the note defines a term or principle
-                - create example/evidence sections where the note contains examples or proofs
-                - use <strong> for important existing terms
-                - use <em> sparingly for emphasis
-                - use <blockquote> for obvious quotations, cited passages, definitions, or important conclusions already present in the note
-                - split giant dense prose into readable paragraphs only where actual prose is needed
-                - keep related list items close together and compress formatting where isolated paragraphs would make the note unnecessarily long
-                - preserve Arabic, Qur'anic text, transliteration, names, quotations, evidences, and technical terms exactly
-                - preserve Arabic spelling, diacritics, punctuation, and word order exactly; never translate or paraphrase Arabic
+                - treat labels like Example, Definition, Assumption, Critique, Response, Implication, Observation, Evidence, and Key Point as subheadings or strong labels, not numbered items
+                - keep natural prose as prose when sentences clearly flow together
+                - convert obvious grouped short points into compact bullet lists
+                - keep related list items directly stacked without blank paragraphs between them
+                - use <strong> for important existing terms only where helpful
+                - use <em> sparingly
+                - use <blockquote> only for obvious quotations, cited passages, or important statements already present in the note
+                - preserve Arabic, Qur'anic text, transliteration, names, quotations, evidences, technical terms, spelling, diacritics, punctuation, and word order exactly
+                - preserve mixed Arabic/English text without translating or transliterating it
 
                 Do not:
+                - remove content under any circumstance
                 - paraphrase, summarise, simplify, or rewrite theology/arguments
                 - add new arguments, explanations, examples, references, conclusions, names, schools, labels, or framing
-                - remove meaningful content
-                - write in second person unless the note already does
+                - replace the user's wording with your own wording
+                - delete repeated wording merely because it seems redundant
+                - create numbered lists for unrelated concepts, categories, definitions, examples, objections, explanations, or normal grouped study points
                 - leave obvious grouped items as line / blank space / line / blank space paragraphs
-                - create one paragraph per short line unless it is genuinely connected prose
-                - use numbered lists for unrelated concepts, categories, definitions, examples, objections, or explanations
+                - wrap every short sentence as a separate paragraph when it belongs in a compact list
 
-                Return only clean HTML. No explanation.
+                Output rules:
+                - Return only clean editor-safe HTML.
+                - No markdown.
+                - No code fences.
+                - No explanation.
+                - Do not include <html>, <body>, <section>, <article>, CSS, or unsupported styles.
             """.trimIndent()
         }
 
@@ -444,7 +451,7 @@ object AiPromptBuilder {
             NoteAiAction.Ask -> "Answer my question about this note."
             NoteAiAction.ExplainNote -> "Explain this note clearly."
             NoteAiAction.GeneralAsk -> "Answer my question."
-            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve body wording and meaning as exactly as possible. Use compact bullet lists by default for grouped points, and use numbered lists only for true sequences, steps, or premise-to-conclusion chains."
+            NoteAiAction.StructureOnly -> "Structure this note into clean editor-safe HTML. Preserve every meaningful word, sentence, point, example, quote, Arabic phrase, and repeated wording. Use compact bullet lists by default for grouped study points. Use numbered lists only for genuinely ordered sequences. Do not delete, summarise, shorten, or paraphrase any content."
             NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
             NoteAiAction.CleanFormat -> "Clean and organise this note."
             NoteAiAction.FormatNote -> "Format this note."
@@ -482,7 +489,7 @@ object AiPromptBuilder {
 
     private fun temperatureFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Float =
         when (action) {
-            NoteAiAction.StructureOnly -> 0.12f
+            NoteAiAction.StructureOnly -> 0.05f
             NoteAiAction.CleanFormat,
             NoteAiAction.FormatNote,
             -> 0.18f
@@ -509,7 +516,7 @@ object AiPromptBuilder {
             NoteAiAction.IntelligentStructure -> 4_500
             NoteAiAction.CleanFormat -> 3_000
             NoteAiAction.FormatNote -> 2_400
-            NoteAiAction.StructureOnly -> 4_500
+            NoteAiAction.StructureOnly -> 9_000
         }
         val multiplier = when {
             model.isDeepModel -> 1.25f

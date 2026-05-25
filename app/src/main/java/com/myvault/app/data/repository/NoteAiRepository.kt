@@ -156,13 +156,18 @@ class NoteAiRepository @Inject constructor(
             generateOnce(action, provider, model, title, body, question, history)
         }
         val cleaned = generated.cleanForAction(action)
+        val preserved = if (action == NoteAiAction.StructureOnly) {
+            cleaned.ensureStructureOnlyPreservesContent(originalBody = body)
+        } else {
+            cleaned
+        }
         traceStructureOnlyStage(
             action = action,
             stage = "03-cleaned-html-after-sanitizer",
-            content = cleaned,
+            content = preserved,
             context = context,
         )
-        return cleaned
+        return preserved
     }
 
 
@@ -684,7 +689,7 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
         NoteAiAction.DeepAnalysis,
         NoteAiAction.IntelligentStructure,
         -> 18_000
-        NoteAiAction.StructureOnly -> 0
+        NoteAiAction.StructureOnly -> Int.MAX_VALUE
     }
     val clean = trim()
     if (clean.length <= maxChars) return clean
@@ -931,6 +936,62 @@ private fun String.cleanForAction(action: NoteAiAction): String {
     return stripChatMarkdown().trim()
 }
 
+
+private fun String.ensureStructureOnlyPreservesContent(originalBody: String): String {
+    val originalPlain = originalBody.toPlainComparableText()
+    val outputPlain = toPlainComparableText()
+
+    if (originalPlain.isBlank()) return this
+    if (outputPlain.isBlank()) return originalBody.toStructureOnlyHtml()
+
+    val originalWords = originalPlain.wordCountForPreservation()
+    val outputWords = outputPlain.wordCountForPreservation()
+    val originalChars = originalPlain.length
+    val outputChars = outputPlain.length
+    val missingArabicSegments = originalPlain.significantArabicSegments()
+        .filterNot { segment -> outputPlain.contains(segment) }
+
+    val wordRatio = if (originalWords == 0) 1.0 else outputWords.toDouble() / originalWords.toDouble()
+    val charRatio = if (originalChars == 0) 1.0 else outputChars.toDouble() / originalChars.toDouble()
+
+    // StructureOnly is formatting, not summarising. If the model/post-processing omitted a
+    // substantial amount of text, never apply the shortened result. Fall back to a conservative
+    // local HTML wrapper so the editor never loses content.
+    if (wordRatio < 0.96 || charRatio < 0.92 || missingArabicSegments.isNotEmpty()) {
+        Log.w(
+            "MyVaultStructureOnly",
+            "Rejected unsafe StructureOnly output originalWords=$originalWords outputWords=$outputWords originalChars=$originalChars outputChars=$outputChars wordRatio=$wordRatio charRatio=$charRatio missingArabic=${missingArabicSegments.size}",
+        )
+        return originalBody.toStructureOnlyHtml()
+            .normalizeEditorHtmlSafety()
+            .normalizeListHtmlSafety()
+            .trim()
+    }
+
+    return this
+}
+
+private fun String.toPlainComparableText(): String =
+    replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|li|h[1-3]|blockquote)>"), "\n")
+        .stripHtmlTags()
+        .decodeCommonHtmlEntities()
+        .replace(Regex("[\\u200E\\u200F\\u202A-\\u202E]"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+private fun String.wordCountForPreservation(): Int =
+    split(Regex("\\s+")).count { it.isNotBlank() }
+
+private fun String.significantArabicSegments(): List<String> =
+    Regex("[\\u0600-\\u06FF][\\u0600-\\u06FF\\s\\u064B-\\u065F\\u0670\\u06D6-\\u06ED،؛؟ـ-]{2,}")
+        .findAll(this)
+        .map { match -> match.value.replace(Regex("\\s+"), " ").trim() }
+        .filter { it.length >= 3 }
+        .distinct()
+        .take(60)
+        .toList()
+
 private fun traceStructureOnlyPrompt(action: NoteAiAction, promptRequest: AiPromptRequest, context: Context) {
     if (action != NoteAiAction.StructureOnly || !BuildConfig.DEBUG) return
     traceStructureOnlyStage(
@@ -971,7 +1032,7 @@ private fun traceStructureOnlyStage(action: NoteAiAction, stage: String, content
 }
 
 private fun String.cleanEditorHtmlOutput(preferDenseLists: Boolean = false): String {
-    val clean = trim()
+    val cleaned = trim()
         .replace(Regex("(?i)^```html\\s*"), "")
         .replace(Regex("(?i)^```\\s*"), "")
         .replace(Regex("```$"), "")
@@ -981,12 +1042,23 @@ private fun String.cleanEditorHtmlOutput(preferDenseLists: Boolean = false): Str
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
         .normalizeEditorHtmlSafety()
-        .let { if (preferDenseLists) it.compactObviousParagraphLists() else it }
-    return if (clean.contains(Regex("<(h1|h2|h3|p|ul|ol|li|blockquote|span|strong|em)\\b", RegexOption.IGNORE_CASE))) {
-        clean
+        .normalizeListHtmlSafety()
+
+    val hasEditorHtml = cleaned.contains(
+        Regex("<(h1|h2|h3|p|ul|ol|li|blockquote|span|strong|em)\\b", RegexOption.IGNORE_CASE),
+    )
+
+    // Important: if the model already returned HTML, do not run semantic paragraph-to-list
+    // reconstruction here. That older post-processing could accidentally drop text outside
+    // recognised block tags and could reinterpret model semantics incorrectly. StructureOnly
+    // must preserve content; the model performs semantic structure, this layer only cleans.
+    return if (hasEditorHtml) {
+        cleaned
     } else {
-        clean.toStructureOnlyHtml().normalizeEditorHtmlSafety()
-            .let { if (preferDenseLists) it.compactObviousParagraphLists() else it }
+        cleaned.toStructureOnlyHtml()
+            .normalizeEditorHtmlSafety()
+            .normalizeListHtmlSafety()
+            .trim()
     }
 }
 
@@ -1016,7 +1088,13 @@ private fun String.normalizeEditorHtmlSafety(): String {
     }
 
     output = output
-        .replace(Regex("(?i)<span(?![^>]*data-color\\s*=\\s*['\"]?(?:red|blue)['\"]?)[^>]*>"), "")
+        .replace(Regex("(?i)<span[^>]*data-color\\s*=\\s*['\"]?(red|blue)['\"]?[^>]*>")) { match ->
+            """<span data-color="${match.groupValues[1].lowercase()}">"""
+        }
+        .replace(Regex("(?i)<span[^>]*dir\\s*=\\s*['\"]?(rtl|ltr)['\"]?[^>]*>")) { match ->
+            """<span dir="${match.groupValues[1].lowercase()}">"""
+        }
+        .replace(Regex("(?i)<span(?!\\s+(?:data-color|dir)=)[^>]*>"), "")
         .replace(Regex("(?i)</span>"), "</span>")
         .replace(Regex("(?i)<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.DOT_MATCHES_ALL)), "")
         .replace(Regex("(?i)</?(div|section|article|font|body|html)[^>]*>"), "")
@@ -1024,6 +1102,54 @@ private fun String.normalizeEditorHtmlSafety(): String {
         .trim()
 
     return output
+}
+
+
+private fun String.normalizeListHtmlSafety(): String {
+    var output = this
+
+    // Keep list items compact and prevent stray line-breaks/paragraphs inside lists from
+    // turning into visual gaps or bullet leakage in the editor.
+    output = output
+        .replace(Regex("(?i)</li>\\s*<br\\s*/?>\\s*<li>"), "</li>\n<li>")
+        .replace(Regex("(?i)</li>\\s*<p>\\s*</p>\\s*<li>"), "</li>\n<li>")
+        .replace(Regex("(?i)<li>\\s*<p>(.*?)</p>\\s*</li>", setOf(RegexOption.DOT_MATCHES_ALL)), "<li>$1</li>")
+        .replace(Regex("(?i)<p>\\s*</p>"), "")
+        .replace(Regex("(?i)<br\\s*/?>\\s*(?=</?(ul|ol|li)\\b)"), "")
+        .replace(Regex("(?i)(</ul>|</ol>)\\s*(<ul>|<ol>)"), "$1\n$2")
+
+    // Avoid ordered-list misuse leaking from either model output or markdown conversion.
+    // StructureOnly's study-note style should default to bullets unless the order is explicit.
+    output = Regex(
+        "<ol\\b[^>]*>(.*?)</ol>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+    ).replace(output) { match ->
+        val inner = match.groupValues[1]
+        val plainItems = Regex("<li\\b[^>]*>(.*?)</li>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .findAll(inner)
+            .map { it.groupValues[1].stripHtmlTags().decodeCommonHtmlEntities().trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+        if (plainItems.isExplicitOrderedTextList()) {
+            match.value
+        } else {
+            "<ul>$inner</ul>"
+        }
+    }
+
+    return output
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+
+private fun List<String>.isExplicitOrderedTextList(): Boolean {
+    if (isEmpty()) return false
+    val labels = map { it.orderedSequenceLabel() }
+    if (labels.any { it == null }) return false
+    val cleanLabels = labels.filterNotNull().toSet()
+    return cleanLabels.any { it in ExplicitOrdinalLabels } ||
+        cleanLabels.all { it in SyllogismLabels } ||
+        cleanLabels.all { it in PremiseConclusionLabels }
 }
 
 private data class EditorHtmlBlock(
