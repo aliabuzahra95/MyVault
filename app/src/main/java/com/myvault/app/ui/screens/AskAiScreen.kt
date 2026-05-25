@@ -610,5 +610,5 @@ private fun AskAiChip(
 private fun NoteAiModel.chipLabel(provider: NoteAiProvider): String =
     when (this) {
         NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini · Fast" else "Gemini 2.5 · Fast"
-        NoteAiModel.Gemini3Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full · Best" else "Gemini 2.5 Pro · Deep"
+        NoteAiModel.Gemini25Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full · Best" else "Gemini 2.5 Pro · Deep"
     }

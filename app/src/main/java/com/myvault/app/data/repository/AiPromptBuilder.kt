@@ -554,7 +554,7 @@ object AiPromptBuilder {
             PromptMode.NormalChat -> takeMiddleAware(8_000)
             PromptMode.FastNoteAction -> takeMiddleAware(7_000)
             PromptMode.DeepAnalysis -> takeMiddleAware(12_000)
-            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) takeMiddleAware(18_000) else takeMiddleAware(14_000)
+            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) this else takeMiddleAware(14_000)
             PromptMode.LocalOnly -> takeMiddleAware(12_000)
         }
 

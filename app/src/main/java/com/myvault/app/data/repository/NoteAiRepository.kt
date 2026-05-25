@@ -60,7 +60,7 @@ enum class NoteAiModel(
     val isDeepModel: Boolean,
 ) {
     Gemini25Flash("Gemini 2.5 Flash", "gemini-2.5-flash", isFastModel = true, isDeepModel = false),
-    Gemini3Pro("Gemini 2.5 Pro", "gemini-2.5-pro", isFastModel = false, isDeepModel = true),
+    Gemini25Pro("Gemini 2.5 Pro", "gemini-2.5-pro", isFastModel = false, isDeepModel = true),
 }
 
 enum class NoteAiProvider(
@@ -745,7 +745,7 @@ private fun JSONObject.extractOpenAiTextDelta(): String {
     private fun NoteAiModel.toFunctionModel(): String =
         when (this) {
             NoteAiModel.Gemini25Flash -> "fast"
-            NoteAiModel.Gemini3Pro -> "smart"
+            NoteAiModel.Gemini25Pro -> "smart"
         }
 
     private fun ensureFirebaseReady() {
@@ -766,7 +766,7 @@ private fun NoteAiAction.isEditorOutputModeForStreaming(): Boolean =
 private fun NoteAiModel.safeGeminiModelNames(): List<String> =
     when (this) {
         NoteAiModel.Gemini25Flash -> listOf("gemini-2.5-flash")
-        NoteAiModel.Gemini3Pro -> listOf("gemini-2.5-pro", "gemini-2.5-flash")
+        NoteAiModel.Gemini25Pro -> listOf("gemini-2.5-pro", "gemini-2.5-flash")
     }
 
 private const val IntelligentStructureChunkSize = 7_000
@@ -1008,10 +1008,11 @@ private fun String.compactObviousParagraphLists(): String {
             compactRun += blocks[runCursor]
             runCursor++
         }
+        val previousBlock = output.lastMeaningfulBlock(blocks, index)
         if (
-            compactRun.size >= 3 &&
+            compactRun.size >= 2 &&
             (compactRun.any { it.content.stripHtmlTags().decodeCommonHtmlEntities().trim().hasOrderedListLabel() } ||
-                compactRun.all { it.isTerseStudyPoint() })
+                compactRun.all { it.isTerseStudyPoint() && (compactRun.size >= 3 || previousBlock?.isSectionBoundary() == true) })
         ) {
             output.append(compactRun.toHtmlList(ordered = compactRun.shouldUseOrderedList())).append('\n')
             index = runCursor
@@ -1032,7 +1033,7 @@ private fun String.compactObviousParagraphLists(): String {
         }
 
         if (listItems.size >= 2) {
-            output.append(block.html).append('\n')
+            output.append(block.toIntroParagraphHtml()).append('\n')
             output.append(listItems.toHtmlList(ordered = listItems.shouldUseOrderedList())).append('\n')
             index = cursor
         } else {
@@ -1046,6 +1047,19 @@ private fun String.compactObviousParagraphLists(): String {
         .trim()
 }
 
+private fun StringBuilder.lastMeaningfulBlock(blocks: List<EditorHtmlBlock>, currentIndex: Int): EditorHtmlBlock? =
+    blocks.take(currentIndex).lastOrNull { it.tag != "p" || it.content.stripHtmlTags().decodeCommonHtmlEntities().isNotBlank() }
+
+private fun EditorHtmlBlock.isSectionBoundary(): Boolean =
+    tag.startsWith("h") || tag == "blockquote" || looksLikeListIntroducer()
+
+private fun EditorHtmlBlock.toIntroParagraphHtml(): String {
+    val plain = content.stripHtmlTags().decodeCommonHtmlEntities().trim()
+    if (!plain.endsWith(":")) return html
+    if (content.contains(Regex("<strong\\b", RegexOption.IGNORE_CASE))) return html
+    return "<p><strong>${content.trim()}</strong></p>"
+}
+
 private fun EditorHtmlBlock.looksLikeListIntroducer(): Boolean {
     val text = content.stripHtmlTags().decodeCommonHtmlEntities().trim().lowercase()
     if (text.isBlank()) return false
@@ -1054,18 +1068,33 @@ private fun EditorHtmlBlock.looksLikeListIntroducer(): Boolean {
         "includes",
         "include",
         "such as",
+        "namely",
         "particularly",
+        "especially",
         "assumes",
         "assume",
+        "assumption",
         "examples",
         "reasons",
         "consequences",
+        "categories",
+        "types",
+        "forms",
+        "stages",
+        "steps",
+        "premises",
         "consists of",
+        "composed of",
         "breaks down into",
         "comprises",
         "made up of",
         "divided into",
         "the following",
+        "these are",
+        "they are",
+        "he argues",
+        "this proves",
+        "this shows",
     ).any { marker -> text.contains(marker) }
 }
 
@@ -1089,7 +1118,7 @@ private fun List<EditorHtmlBlock>.shouldUseOrderedList(): Boolean =
 
 private fun String.hasOrderedListLabel(): Boolean =
     Regex(
-        "^(universal|particular|conclusion|premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally)\\s*[:：-]",
+        "^(universal|particular|conclusion|premise|major premise|minor premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally|genus|differentia|definition|example)\\s*[:：-]",
         RegexOption.IGNORE_CASE,
     ).containsMatchIn(this)
 
@@ -1107,7 +1136,7 @@ private fun List<EditorHtmlBlock>.toHtmlList(ordered: Boolean): String {
 private fun String.normalizeListItemLabel(): String =
     replace(
         Regex(
-            "^((?:universal|particular|conclusion|premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally)\\s*[:：-])\\s*(.+)$",
+            "^((?:universal|particular|conclusion|premise|major premise|minor premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally|genus|differentia|definition|example)\\s*[:：-])\\s*(.+)$",
             RegexOption.IGNORE_CASE,
         ),
     ) { match ->
