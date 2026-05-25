@@ -303,11 +303,12 @@ class NoteAiRepository @Inject constructor(
                 ${previousContext.ifBlank { "No previous headings yet." }}
                 </previous_headings>
 
-                Preserve this chunk's original order and meaning.
-                Maintain consistent heading hierarchy, formatting style, and colour usage.
+                Preserve this chunk's original order, wording, and meaning.
+                Maintain consistent heading hierarchy, formatting style, and colour usage with earlier chunks.
                 Avoid repeated Introduction, Overview, Main Topic, or duplicate top-level headings.
                 Do not include a generic <h1> for every chunk.
-                Preserve continuity with the previous chunk.
+                If this chunk continues a prior section, continue that structure instead of restarting.
+                Use extracted phrases/concepts already present in this chunk for headings.
                 User request: ${question.ifBlank { action.defaultStructureRequest() }}
             """.trimIndent()
             val processed = runCatching {
@@ -780,12 +781,28 @@ private fun String.normaliseHeading(): String =
     lowercase().replace(Regex("\\s+"), " ").trim()
 
 private fun String.cleanForAction(action: NoteAiAction): String {
-    if (action == NoteAiAction.StructureOnly) return trim()
-    if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().trim()
+    if (action == NoteAiAction.StructureOnly) return cleanEditorHtmlOutput().trim()
+    if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().cleanEditorHtmlOutput().trim()
     if (action == NoteAiAction.CleanFormat || action == NoteAiAction.FormatNote) return trim()
     return stripChatMarkdown().trim()
 }
 
+private fun String.cleanEditorHtmlOutput(): String {
+    val clean = trim()
+        .replace(Regex("(?i)^```html\\s*"), "")
+        .replace(Regex("(?i)^```\\s*"), "")
+        .replace(Regex("```$"), "")
+        .replace(Regex("(?m)^\\s*#{1,6}\\s+(.+)$"), "<h2>$1</h2>")
+        .replace(Regex("\\*\\*([^\\n*]+?)\\*\\*"), "<strong>$1</strong>")
+        .replace(Regex("__([^\\n_]+?)__"), "<strong>$1</strong>")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
+    return if (clean.contains(Regex("<(h1|h2|h3|p|ul|ol|li|blockquote|span|strong|em)\\b", RegexOption.IGNORE_CASE))) {
+        clean
+    } else {
+        clean.toStructureOnlyHtml()
+    }
+}
 
 private fun String.toStructureOnlyHtml(): String {
     val clean = trim()

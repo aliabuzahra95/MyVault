@@ -66,8 +66,10 @@ object AiPromptBuilder {
 
         Return simple clean HTML only.
         Do not include commentary, markdown, code fences, explanations, or prefaces.
+        Build polished study-note structure with clear hierarchy, readable paragraph flow, consistent lists, and useful blockquotes.
         Preserve the user's meaning and wording unless the selected mode explicitly asks you to improve clarity.
         Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">.
+        Avoid unsupported tags, CSS, deeply nested spans, malformed HTML, markdown syntax, and giant dense paragraphs.
         Use red only for Qur'anic verses when clearly identifiable.
         Use blue only for scholar quotations when clearly identifiable.
     """.trimIndent()
@@ -288,7 +290,8 @@ object AiPromptBuilder {
                 No explanation before or after.
                 No code fences.
                 Use only editor-safe HTML tags.
-                Preserve the note's meaning and wording according to the selected mode.
+                Use a clean heading hierarchy, readable paragraphs, proper lists, and blockquotes for obvious quotations.
+                Avoid unsupported tags, CSS, markdown remnants, malformed nesting, and inconsistent heading jumps.
             """.trimIndent()
         }
 
@@ -337,29 +340,26 @@ object AiPromptBuilder {
                 Remove obvious clutter only if it is formatting noise.
             """.trimIndent()
             NoteAiAction.StructureOnly -> """
-                Structure this note into clean editor-safe HTML with excellent organisation.
+                Structure this note into polished, editor-safe HTML for premium study-note readability.
 
-                HARD RULES:
-                - Preserve the user's wording as exactly as possible.
-                - Every meaningful sentence, claim, quote, Arabic term, transliteration, and argument must remain present.
-                - Do not change the user's words except for HTML escaping and moving existing words into headings/lists.
-                - Do not paraphrase.
-                - Do not summarise.
-                - Do not add new arguments, explanations, examples, references, or conclusions.
-                - Do not remove any meaningful content.
-                - Do not write in second person unless the note already does.
-                - Do not add terms, names, schools, labels, or theological framing that is not already in the note.
-                - Preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly.
-                - Only change presentation/structure.
+                Core rule:
+                Preserve the wording and meaning of the body content as exactly as possible while strongly improving organisation, hierarchy, spacing, and scanability.
 
-                You may:
-                - create clear headings and subheadings from existing wording
-                - group related lines into sections
-                - turn existing lists into <ul>/<ol>
+                You should:
+                - create strong headings/subheadings from existing phrases, terms, or concepts already present in the note
+                - group related paragraphs into coherent sections
+                - convert inline enumerations or repeated points into clean <ul>/<ol> lists
                 - use <strong> for important existing terms
                 - use <em> sparingly for emphasis
                 - use <blockquote> for obvious quotations or cited passages
-                - use paragraphs for normal prose
+                - split giant dense paragraphs into readable paragraphs without changing sentence wording
+                - preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly
+
+                Do not:
+                - paraphrase, summarise, simplify, or rewrite theology/arguments
+                - add new arguments, explanations, examples, references, conclusions, names, schools, labels, or framing
+                - remove meaningful content
+                - write in second person unless the note already does
 
                 Return only clean HTML. No explanation.
             """.trimIndent()

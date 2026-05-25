@@ -314,7 +314,7 @@ fun AskAiScreen(
                 ) {
                     if (aiState.messages.isEmpty() && !aiBusy) {
                         Text(
-                            text = "Ask naturally about this note. Suggestions draft the prompt first, then you can edit and send.",
+                            text = "Ask naturally about this note. Use the prompt box below for custom questions.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = colors.textMuted,
                         )
@@ -558,29 +558,19 @@ private fun AskAiSuggestionGrid(
     selectedTextMode: Boolean,
     onSuggestionClick: (AiSuggestion) -> Unit,
 ) {
+    val visibleSuggestions = remember { listOf(AiSuggestion.Explain, AiSuggestion.Simplify) }
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        AiSuggestion.entries.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                row.forEach { suggestion ->
-                    AskAiChip(
-                        label = suggestion.displayName,
-                        active = false,
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSuggestionClick(suggestion) },
-                    )
-                }
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            visibleSuggestions.forEach { suggestion ->
+                AskAiChip(
+                    label = suggestion.displayName,
+                    active = false,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onSuggestionClick(suggestion) },
+                )
             }
         }
-        Text(
-            text = if (selectedTextMode) {
-                "Suggestions focus on the selected text."
-            } else {
-                "Suggestions prefill only. Edit the prompt, then press Send."
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = VaultThemeTokens.colors.textMuted,
-        )
     }
 }
 
