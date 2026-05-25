@@ -19,6 +19,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -41,6 +49,8 @@ fun NarrationMiniPlayer(
     onPrimaryAction: () -> Unit,
     onStop: () -> Unit,
     onSpeedChange: (Float) -> Unit,
+    onSeek: (Long) -> Unit,
+    onProgressTick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -52,6 +62,18 @@ fun NarrationMiniPlayer(
         state.totalChunks > 1 && state.status == NarrationPlaybackStatus.Generating -> "${state.label}"
         state.label.isNotBlank() -> state.label
         else -> state.noteTitle.ifBlank { "Note narration" }
+    }
+    val canSeek = state.totalDurationMs > 0L && state.status != NarrationPlaybackStatus.Error
+    var isDragging by remember { mutableStateOf(false) }
+    var dragPosition by remember { mutableStateOf(0f) }
+    val sliderPosition = if (isDragging) dragPosition else state.totalPositionMs.toFloat()
+    val sliderMax = state.totalDurationMs.coerceAtLeast(1L).toFloat()
+
+    LaunchedEffect(state.status) {
+        while (state.status == NarrationPlaybackStatus.Playing || state.status == NarrationPlaybackStatus.Paused) {
+            onProgressTick()
+            delay(700L)
+        }
     }
 
     Surface(
@@ -143,6 +165,43 @@ fun NarrationMiniPlayer(
                     }
                 }
             }
+            if (canSeek) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Slider(
+                        value = sliderPosition.coerceIn(0f, sliderMax),
+                        onValueChange = { value ->
+                            isDragging = true
+                            dragPosition = value
+                        },
+                        onValueChangeFinished = {
+                            isDragging = false
+                            onSeek(dragPosition.toLong())
+                        },
+                        valueRange = 0f..sliderMax,
+                        colors = SliderDefaults.colors(
+                            thumbColor = colors.accent,
+                            activeTrackColor = colors.accent,
+                            inactiveTrackColor = colors.border,
+                        ),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatNarrationTime(sliderPosition.toLong()),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                        )
+                        Text(
+                            text = formatNarrationTime(state.totalDurationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                        )
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -169,6 +228,13 @@ fun NarrationMiniPlayer(
             }
         }
     }
+}
+
+private fun formatNarrationTime(ms: Long): String {
+    val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
 
 @Composable

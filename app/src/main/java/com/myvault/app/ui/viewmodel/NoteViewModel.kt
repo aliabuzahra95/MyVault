@@ -314,6 +314,14 @@ class NoteViewModel @Inject constructor(
         narrationPlayerManager.setSpeed(speed)
     }
 
+    fun seekNarration(positionMs: Long) {
+        narrationPlayerManager.seekTo(positionMs)
+    }
+
+    fun refreshNarrationProgress() {
+        narrationPlayerManager.refreshProgress()
+    }
+
     fun createTable(rows: Int, columns: Int) {
         viewModelScope.launch { noteRepository.createTable(noteId, rows, columns) }
     }

@@ -1,6 +1,7 @@
 package com.myvault.app.data.narration
 
 import android.media.AudioAttributes
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import javax.inject.Singleton
 class NarrationPlayerManager @Inject constructor() {
     private var mediaPlayer: MediaPlayer? = null
     private var activeFiles: List<File> = emptyList()
+    private var activeDurationsMs: List<Long> = emptyList()
     private var expectedChunks: Int = 0
     private var activeChunkIndex: Int = 0
     private var activeSession: NarrationSession? = null
@@ -57,6 +59,7 @@ class NarrationPlayerManager @Inject constructor() {
         stopInternal(resetState = FalseResetState)
         activeSession = session
         activeFiles = session.files
+        activeDurationsMs = session.files.map(::readDurationMs)
         expectedChunks = session.files.size
         streamingGeneration = false
         waitingForNextChunk = false
@@ -73,6 +76,7 @@ class NarrationPlayerManager @Inject constructor() {
         stopInternal(resetState = FalseResetState)
         activeSession = session
         activeFiles = session.files
+        activeDurationsMs = session.files.map(::readDurationMs)
         expectedChunks = totalChunks.coerceAtLeast(session.files.size)
         streamingGeneration = true
         waitingForNextChunk = false
@@ -90,11 +94,14 @@ class NarrationPlayerManager @Inject constructor() {
         if (current?.cacheKey != session.cacheKey) return
         activeSession = session
         activeFiles = session.files
+        activeDurationsMs = session.files.map(::readDurationMs)
         expectedChunks = totalChunks.coerceAtLeast(session.files.size)
         _state.update { state ->
             state.copy(
                 totalChunks = expectedChunks,
                 currentChunk = (activeChunkIndex + 1).coerceAtMost(expectedChunks),
+                totalPositionMs = globalPositionMs(),
+                totalDurationMs = activeDurationsMs.sum(),
                 error = null,
             )
         }
@@ -108,8 +115,10 @@ class NarrationPlayerManager @Inject constructor() {
         if (activeSession?.cacheKey != session.cacheKey) return
         activeSession = session
         activeFiles = session.files
+        activeDurationsMs = session.files.map(::readDurationMs)
         expectedChunks = session.files.size
         streamingGeneration = false
+        updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
         if (waitingForNextChunk && activeChunkIndex + 1 < activeFiles.size) {
             waitingForNextChunk = false
             playChunk(activeChunkIndex + 1)
@@ -139,6 +148,7 @@ class NarrationPlayerManager @Inject constructor() {
         }
         val session = activeSession ?: return
         if (activeFiles.isEmpty()) activeFiles = session.files
+        if (activeDurationsMs.isEmpty()) activeDurationsMs = activeFiles.map(::readDurationMs)
         activeChunkIndex = activeChunkIndex.coerceAtMost((activeFiles.size - 1).coerceAtLeast(0))
         playChunk(activeChunkIndex)
     }
@@ -157,6 +167,37 @@ class NarrationPlayerManager @Inject constructor() {
         _state.update { it.copy(speed = speed) }
     }
 
+    fun seekTo(totalPositionMs: Long) {
+        if (activeFiles.isEmpty()) return
+        if (activeDurationsMs.size != activeFiles.size) activeDurationsMs = activeFiles.map(::readDurationMs)
+        val generatedDuration = activeDurationsMs.sum().takeIf { it > 0L } ?: return
+        val target = totalPositionMs.coerceIn(0L, (generatedDuration - 250L).coerceAtLeast(0L))
+        var accumulated = 0L
+        var targetChunk = 0
+        activeDurationsMs.forEachIndexed { index, duration ->
+            if (target < accumulated + duration || index == activeDurationsMs.lastIndex) {
+                targetChunk = index
+                return@forEachIndexed
+            }
+            accumulated += duration
+        }
+        val chunkOffset = (target - accumulated).coerceAtLeast(0L)
+        val player = mediaPlayer
+        if (targetChunk == activeChunkIndex && player != null) {
+            seekPlayer(player, chunkOffset)
+            updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
+        } else {
+            playChunk(targetChunk, startPositionMs = chunkOffset)
+        }
+    }
+
+    fun refreshProgress() {
+        val status = _state.value.status
+        if (status == NarrationPlaybackStatus.Playing || status == NarrationPlaybackStatus.Paused || status == NarrationPlaybackStatus.Preparing) {
+            updatePlaybackState(status, _state.value.label)
+        }
+    }
+
     fun showError(noteId: String?, noteTitle: String, message: String) {
         stopInternal(resetState = FalseResetState)
         _state.value = NarrationUiState(
@@ -169,7 +210,7 @@ class NarrationPlayerManager @Inject constructor() {
         )
     }
 
-    private fun playChunk(index: Int) {
+    private fun playChunk(index: Int, startPositionMs: Long = 0L) {
         val session = activeSession ?: return
         val file = activeFiles.getOrNull(index) ?: run {
             if (streamingGeneration) {
@@ -178,12 +219,15 @@ class NarrationPlayerManager @Inject constructor() {
                     status = NarrationPlaybackStatus.Generating,
                     label = "Preparing next part...",
                     totalChunks = expectedChunks,
+                    totalPositionMs = globalPositionMs(),
+                    totalDurationMs = activeDurationsMs.sum(),
                 )
             } else {
                 stop()
             }
             return
         }
+        releaseCurrentPlayer()
         requestCounter += 1
         val requestId = requestCounter
         activeChunkIndex = index
@@ -197,6 +241,8 @@ class NarrationPlayerManager @Inject constructor() {
             speed = speed,
             currentChunk = index + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
+            totalPositionMs = globalPositionMs(startPositionMs),
+            totalDurationMs = activeDurationsMs.sum(),
         )
         runCatching {
             player.setAudioAttributes(
@@ -211,6 +257,7 @@ class NarrationPlayerManager @Inject constructor() {
                     it.release()
                     return@setOnPreparedListener
                 }
+                if (startPositionMs > 0L) seekPlayer(it, startPositionMs)
                 applyPlaybackSpeed(it)
                 it.start()
                 updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
@@ -226,6 +273,8 @@ class NarrationPlayerManager @Inject constructor() {
                         status = NarrationPlaybackStatus.Generating,
                         label = "Preparing next part...",
                         totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
+                        totalPositionMs = globalPositionMs(),
+                        totalDurationMs = activeDurationsMs.sum(),
                     )
                 } else {
                     _state.value = NarrationUiState(
@@ -236,6 +285,8 @@ class NarrationPlayerManager @Inject constructor() {
                         speed = speed,
                         currentChunk = activeFiles.size,
                         totalChunks = activeFiles.size,
+                        totalPositionMs = activeDurationsMs.sum(),
+                        totalDurationMs = activeDurationsMs.sum(),
                     )
                 }
             }
@@ -252,6 +303,10 @@ class NarrationPlayerManager @Inject constructor() {
     private fun updatePlaybackState(status: NarrationPlaybackStatus, label: String) {
         val player = mediaPlayer
         val session = activeSession
+        val chunkPosition = player?.currentPosition?.toLong() ?: 0L
+        val chunkDuration = player?.duration?.takeIf { it > 0 }?.toLong()
+            ?: activeDurationsMs.getOrNull(activeChunkIndex)
+            ?: 0L
         _state.value = _state.value.copy(
             status = status,
             noteId = session?.noteId ?: _state.value.noteId,
@@ -261,8 +316,10 @@ class NarrationPlayerManager @Inject constructor() {
             speed = speed,
             currentChunk = activeChunkIndex + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
-            currentPositionMs = player?.currentPosition?.toLong() ?: 0L,
-            durationMs = player?.duration?.takeIf { it > 0 }?.toLong() ?: 0L,
+            currentPositionMs = chunkPosition,
+            durationMs = chunkDuration,
+            totalPositionMs = globalPositionMs(chunkPosition),
+            totalDurationMs = activeDurationsMs.sum().takeIf { it > 0L } ?: chunkDuration,
         )
     }
 
@@ -272,11 +329,37 @@ class NarrationPlayerManager @Inject constructor() {
         }
     }
 
+    private fun seekPlayer(player: MediaPlayer, positionMs: Long) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            player.seekTo(positionMs, MediaPlayer.SEEK_CLOSEST)
+        } else {
+            @Suppress("DEPRECATION")
+            player.seekTo(positionMs.toInt())
+        }
+    }
+
+    private fun globalPositionMs(chunkPositionMs: Long = mediaPlayer?.currentPosition?.toLong() ?: 0L): Long =
+        activeDurationsMs.take(activeChunkIndex).sum() + chunkPositionMs
+
+    private fun readDurationMs(file: File): Long {
+        if (!file.exists() || file.length() <= 0L) return 0L
+        return runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                retriever.release()
+            }
+        }.getOrDefault(0L)
+    }
+
     private fun isCurrentRequest(player: MediaPlayer, requestId: Long): Boolean = player === mediaPlayer && requestId == requestCounter
 
     private fun stopInternal(resetState: Boolean) {
         releaseCurrentPlayer()
         activeFiles = emptyList()
+        activeDurationsMs = emptyList()
         expectedChunks = 0
         activeChunkIndex = 0
         activeSession = null

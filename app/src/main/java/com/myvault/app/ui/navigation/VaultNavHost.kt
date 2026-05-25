@@ -661,6 +661,8 @@ fun VaultNavHost(
                 onNarrationPrimaryAction = { _, _, _ -> viewModel.toggleNarrationPlayback() },
                 onNarrationStop = viewModel::stopNarration,
                 onNarrationSpeedChange = viewModel::setNarrationSpeed,
+                onNarrationSeek = viewModel::seekNarration,
+                onNarrationProgressTick = viewModel::refreshNarrationProgress,
                 onDeleteNote = {
                     viewModel.deleteNote {
                         navController.popBackStack(VaultDestination.Home.route, false)

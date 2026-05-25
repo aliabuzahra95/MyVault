@@ -115,6 +115,8 @@ fun ReadingScreen(
     onNarrationPrimaryAction: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
     onNarrationStop: () -> Unit = {},
     onNarrationSpeedChange: (Float) -> Unit = {},
+    onNarrationSeek: (Long) -> Unit = {},
+    onNarrationProgressTick: () -> Unit = {},
     onDeleteNote: () -> Unit = {},
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
@@ -186,6 +188,8 @@ fun ReadingScreen(
                     },
                     onStop = onNarrationStop,
                     onSpeedChange = onNarrationSpeedChange,
+                    onSeek = onNarrationSeek,
+                    onProgressTick = onNarrationProgressTick,
                     modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
                 )
             }
@@ -195,7 +199,7 @@ fun ReadingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(bottom = if (narrationState.isActive) 156.dp else 96.dp),
+            contentPadding = PaddingValues(bottom = if (narrationState.isActive) 190.dp else 96.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
             item {

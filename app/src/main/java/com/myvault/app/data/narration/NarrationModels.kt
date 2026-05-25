@@ -33,6 +33,8 @@ data class NarrationUiState(
     val totalChunks: Int = 0,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,
+    val totalPositionMs: Long = 0L,
+    val totalDurationMs: Long = 0L,
 ) {
     val isActive: Boolean
         get() = status != NarrationPlaybackStatus.Idle
