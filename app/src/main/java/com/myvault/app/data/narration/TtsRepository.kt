@@ -2,13 +2,16 @@ package com.myvault.app.data.narration
 
 import com.myvault.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.coroutineContext
 
 @Singleton
 class TtsRepository @Inject constructor(
@@ -23,14 +26,42 @@ class TtsRepository @Inject constructor(
         speed: Float = 1f,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
     ): NarrationSession = withContext(Dispatchers.IO) {
+        val generatedFiles = mutableListOf<File>()
+        generateNarrationProgressively(
+            noteId = noteId,
+            noteTitle = noteTitle,
+            narrationText = narrationText,
+            voice = voice,
+            speed = speed,
+            onChunkGenerating = onChunkGenerating,
+            onChunkReady = { session, _, _ ->
+                generatedFiles.clear()
+                generatedFiles += session.files
+            },
+        )
+    }
+
+    suspend fun generateNarrationProgressively(
+        noteId: String,
+        noteTitle: String,
+        narrationText: String,
+        voice: String = NarrationConfig.DEFAULT_VOICE,
+        speed: Float = 1f,
+        onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
+        onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
+    ): NarrationSession = withContext(Dispatchers.IO) {
         val cleanText = narrationText.trim()
         if (cleanText.isBlank()) error("This note is empty.")
         val contentHash = cacheManager.contentHash(cleanText)
         val clampedSpeed = speed.coerceIn(0.75f, 1.5f)
+        val normalizedVoice = voice.ifBlank { NarrationConfig.DEFAULT_VOICE }
         // Speed is handled by MediaPlayer playback params so the same generated MP3 can be reused
         // across playback speeds without paying for another TTS request.
-        val cacheKey = cacheManager.cacheKey(noteId, contentHash, NarrationConfig.MODEL, voice, 1f)
-        cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, NarrationConfig.MODEL, voice, clampedSpeed, contentHash)?.let { return@withContext it }
+        val cacheKey = cacheManager.cacheKey(noteId, contentHash, NarrationConfig.MODEL, normalizedVoice, 1f)
+        cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash)?.let {
+            onChunkReady(it, true, it.files.size)
+            return@withContext it
+        }
 
         val apiKey = BuildConfig.OPENAI_API_KEY.trim()
         if (apiKey.isBlank()) {
@@ -43,10 +74,22 @@ class TtsRepository @Inject constructor(
         val generatedFiles = mutableListOf<File>()
         runCatching {
             chunks.forEachIndexed { index, chunk ->
+                coroutineContext.ensureActive()
                 onChunkGenerating(index + 1, chunks.size)
                 val target = cacheManager.chunkFile(cacheKey, index)
-                requestSpeech(apiKey, chunk, voice, target)
+                requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
                 generatedFiles += target
+                val partialSession = NarrationSession(
+                    cacheKey = cacheKey,
+                    noteId = noteId,
+                    noteTitle = noteTitle,
+                    model = NarrationConfig.MODEL,
+                    voice = normalizedVoice,
+                    speed = clampedSpeed,
+                    contentHash = contentHash,
+                    files = generatedFiles.toList(),
+                )
+                onChunkReady(partialSession, index == chunks.lastIndex, chunks.size)
             }
         }.onFailure { error ->
             cacheManager.clearSession(cacheKey)
@@ -57,51 +100,88 @@ class TtsRepository @Inject constructor(
             noteId = noteId,
             noteTitle = noteTitle,
             model = NarrationConfig.MODEL,
-            voice = voice,
+            voice = normalizedVoice,
             speed = clampedSpeed,
             contentHash = contentHash,
             files = generatedFiles.toList(),
         ).also(cacheManager::writeManifest)
     }
 
-    private fun requestSpeech(apiKey: String, input: String, voice: String, target: File) {
+    private fun requestSpeechWithRetry(apiKey: String, input: String, voice: String, target: File, partNumber: Int) {
+        var lastError: Throwable? = null
+        repeat(MaxAttempts) { attempt ->
+            val temp = File(target.parentFile, "${target.name}.tmp")
+            temp.delete()
+            runCatching {
+                requestSpeechOnce(apiKey, input, voice, temp)
+                if (temp.length() < MinValidMp3Bytes) {
+                    error("OpenAI returned an empty narration audio file for part $partNumber.")
+                }
+                if (target.exists()) target.delete()
+                if (!temp.renameTo(target)) {
+                    temp.copyTo(target, overwrite = true)
+                    temp.delete()
+                }
+                return
+            }.onFailure { error ->
+                lastError = error
+                temp.delete()
+                if (attempt == MaxAttempts - 1) throw error
+            }
+        }
+        throw lastError ?: IllegalStateException("Couldn’t generate narration part $partNumber.")
+    }
+
+    private fun requestSpeechOnce(apiKey: String, input: String, voice: String, target: File) {
         val connection = (URL("https://api.openai.com/v1/audio/speech").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 30_000
-            readTimeout = 180_000
+            readTimeout = 120_000
             doOutput = true
             setRequestProperty("Authorization", "Bearer $apiKey")
-            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "audio/mpeg")
+            setRequestProperty("Accept-Encoding", "identity")
+            setRequestProperty("Connection", "close")
         }
-        val payload = JSONObject()
-            .put("model", NarrationConfig.MODEL)
-            .put("voice", voice)
-            .put("input", input)
-            .put("instructions", "Read this study note naturally and calmly as long-form narration. Preserve Arabic and Islamic terms as written. Do not summarize or add commentary.")
-            .put("response_format", NarrationConfig.RESPONSE_FORMAT)
-            .toString()
-        connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        val code = connection.responseCode
-        if (code !in 200..299) {
-            val body = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            val message = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()
-                ?.takeIf { it.isNotBlank() }
-                ?: "OpenAI narration request failed ($code)."
-            error(message)
+        try {
+            val payload = JSONObject()
+                .put("model", NarrationConfig.MODEL)
+                .put("voice", voice)
+                .put("input", input)
+                .put("response_format", NarrationConfig.RESPONSE_FORMAT)
+                .toString()
+            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val body = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val message = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "OpenAI narration request failed ($code)."
+                error(message)
+            }
+            connection.inputStream.use { inputStream ->
+                FileOutputStream(target).use { output ->
+                    val buffer = ByteArray(BufferSize)
+                    var written = 0L
+                    while (true) {
+                        val read = inputStream.read(buffer)
+                        if (read == -1) break
+                        output.write(buffer, 0, read)
+                        written += read
+                    }
+                    output.fd.sync()
+                    if (written <= 0L) error("OpenAI returned empty narration audio.")
+                }
+            }
+        } finally {
+            connection.disconnect()
         }
-        val temp = File(target.parentFile, "${target.name}.tmp")
-        connection.inputStream.use { inputStream ->
-            temp.outputStream().use { output -> inputStream.copyTo(output) }
-        }
-        if (temp.length() <= 0L) {
-            temp.delete()
-            error("OpenAI returned empty narration audio.")
-        }
-        if (target.exists()) target.delete()
-        if (!temp.renameTo(target)) {
-            temp.copyTo(target, overwrite = true)
-            temp.delete()
-        }
+    }
+
+    private companion object {
+        const val MaxAttempts = 2
+        const val MinValidMp3Bytes = 512L
+        const val BufferSize = 32 * 1024
     }
 }

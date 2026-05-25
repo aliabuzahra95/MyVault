@@ -15,10 +15,13 @@ import javax.inject.Singleton
 class NarrationPlayerManager @Inject constructor() {
     private var mediaPlayer: MediaPlayer? = null
     private var activeFiles: List<File> = emptyList()
+    private var expectedChunks: Int = 0
     private var activeChunkIndex: Int = 0
     private var activeSession: NarrationSession? = null
     private var requestCounter = 0L
     private var speed = 1f
+    private var streamingGeneration = false
+    private var waitingForNextChunk = false
 
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
@@ -34,6 +37,11 @@ class NarrationPlayerManager @Inject constructor() {
     }
 
     fun markGenerating(noteId: String, noteTitle: String, current: Int, total: Int) {
+        val status = _state.value.status
+        if (status == NarrationPlaybackStatus.Playing || status == NarrationPlaybackStatus.Paused) {
+            _state.update { it.copy(totalChunks = total.takeIf { value -> value > 0 } ?: it.totalChunks) }
+            return
+        }
         _state.value = NarrationUiState(
             status = NarrationPlaybackStatus.Generating,
             noteId = noteId,
@@ -49,6 +57,9 @@ class NarrationPlayerManager @Inject constructor() {
         stopInternal(resetState = FalseResetState)
         activeSession = session
         activeFiles = session.files
+        expectedChunks = session.files.size
+        streamingGeneration = false
+        waitingForNextChunk = false
         activeChunkIndex = 0
         speed = session.speed
         if (activeFiles.isEmpty()) {
@@ -56,6 +67,53 @@ class NarrationPlayerManager @Inject constructor() {
             return
         }
         playChunk(0)
+    }
+
+    fun startStreaming(session: NarrationSession, totalChunks: Int) {
+        stopInternal(resetState = FalseResetState)
+        activeSession = session
+        activeFiles = session.files
+        expectedChunks = totalChunks.coerceAtLeast(session.files.size)
+        streamingGeneration = true
+        waitingForNextChunk = false
+        activeChunkIndex = 0
+        speed = session.speed
+        if (activeFiles.isEmpty()) {
+            markGenerating(session.noteId, session.noteTitle, 1, expectedChunks)
+            return
+        }
+        playChunk(0)
+    }
+
+    fun appendStreamingChunk(session: NarrationSession, totalChunks: Int) {
+        val current = activeSession
+        if (current?.cacheKey != session.cacheKey) return
+        activeSession = session
+        activeFiles = session.files
+        expectedChunks = totalChunks.coerceAtLeast(session.files.size)
+        _state.update { state ->
+            state.copy(
+                totalChunks = expectedChunks,
+                currentChunk = (activeChunkIndex + 1).coerceAtMost(expectedChunks),
+                error = null,
+            )
+        }
+        if (waitingForNextChunk && activeChunkIndex + 1 < activeFiles.size) {
+            waitingForNextChunk = false
+            playChunk(activeChunkIndex + 1)
+        }
+    }
+
+    fun finishStreaming(session: NarrationSession) {
+        if (activeSession?.cacheKey != session.cacheKey) return
+        activeSession = session
+        activeFiles = session.files
+        expectedChunks = session.files.size
+        streamingGeneration = false
+        if (waitingForNextChunk && activeChunkIndex + 1 < activeFiles.size) {
+            waitingForNextChunk = false
+            playChunk(activeChunkIndex + 1)
+        }
     }
 
     fun toggle() {
@@ -80,9 +138,9 @@ class NarrationPlayerManager @Inject constructor() {
             return
         }
         val session = activeSession ?: return
-        activeFiles = session.files
-        activeChunkIndex = 0
-        playChunk(0)
+        if (activeFiles.isEmpty()) activeFiles = session.files
+        activeChunkIndex = activeChunkIndex.coerceAtMost((activeFiles.size - 1).coerceAtLeast(0))
+        playChunk(activeChunkIndex)
     }
 
     fun stop() {
@@ -114,7 +172,16 @@ class NarrationPlayerManager @Inject constructor() {
     private fun playChunk(index: Int) {
         val session = activeSession ?: return
         val file = activeFiles.getOrNull(index) ?: run {
-            stop()
+            if (streamingGeneration) {
+                waitingForNextChunk = true
+                _state.value = _state.value.copy(
+                    status = NarrationPlaybackStatus.Generating,
+                    label = "Preparing next part...",
+                    totalChunks = expectedChunks,
+                )
+            } else {
+                stop()
+            }
             return
         }
         requestCounter += 1
@@ -129,7 +196,7 @@ class NarrationPlayerManager @Inject constructor() {
             label = "Loading narration...",
             speed = speed,
             currentChunk = index + 1,
-            totalChunks = activeFiles.size,
+            totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
         )
         runCatching {
             player.setAudioAttributes(
@@ -153,6 +220,13 @@ class NarrationPlayerManager @Inject constructor() {
                 releaseCurrentPlayer()
                 if (activeChunkIndex + 1 < activeFiles.size) {
                     playChunk(activeChunkIndex + 1)
+                } else if (streamingGeneration) {
+                    waitingForNextChunk = true
+                    _state.value = _state.value.copy(
+                        status = NarrationPlaybackStatus.Generating,
+                        label = "Preparing next part...",
+                        totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
+                    )
                 } else {
                     _state.value = NarrationUiState(
                         status = NarrationPlaybackStatus.Stopped,
@@ -186,7 +260,7 @@ class NarrationPlayerManager @Inject constructor() {
             error = null,
             speed = speed,
             currentChunk = activeChunkIndex + 1,
-            totalChunks = activeFiles.size,
+            totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
             currentPositionMs = player?.currentPosition?.toLong() ?: 0L,
             durationMs = player?.duration?.takeIf { it > 0 }?.toLong() ?: 0L,
         )
@@ -203,8 +277,11 @@ class NarrationPlayerManager @Inject constructor() {
     private fun stopInternal(resetState: Boolean) {
         releaseCurrentPlayer()
         activeFiles = emptyList()
+        expectedChunks = 0
         activeChunkIndex = 0
         activeSession = null
+        streamingGeneration = false
+        waitingForNextChunk = false
         if (resetState) _state.value = NarrationUiState(speed = speed)
     }
 

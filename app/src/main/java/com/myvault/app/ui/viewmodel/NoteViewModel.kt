@@ -39,6 +39,7 @@ import com.myvault.app.ui.screens.toJsonArrayString
 import com.myvault.app.ui.screens.toNoteLinksJsonArrayString
 import com.myvault.app.ui.screens.parseVaultRichTextDocument
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -267,8 +268,9 @@ class NoteViewModel @Inject constructor(
                 return@launch
             }
             narrationPlayerManager.markPreparing(noteId, noteTitle)
+            var playbackStarted = false
             runCatching {
-                ttsRepository.getOrCreateNarration(
+                ttsRepository.generateNarrationProgressively(
                     noteId = noteId,
                     noteTitle = noteTitle,
                     narrationText = narrationText,
@@ -277,10 +279,18 @@ class NoteViewModel @Inject constructor(
                     onChunkGenerating = { current, total ->
                         narrationPlayerManager.markGenerating(noteId, noteTitle, current, total)
                     },
+                    onChunkReady = { session, isComplete, totalChunks ->
+                        if (!playbackStarted) {
+                            playbackStarted = true
+                            narrationPlayerManager.startStreaming(session, totalChunks = totalChunks)
+                        } else {
+                            narrationPlayerManager.appendStreamingChunk(session, totalChunks = totalChunks)
+                        }
+                        if (isComplete) narrationPlayerManager.finishStreaming(session)
+                    },
                 )
-            }.onSuccess { session ->
-                narrationPlayerManager.play(session)
             }.onFailure { error ->
+                if (error is CancellationException) return@launch
                 narrationPlayerManager.showError(
                     noteId = noteId,
                     noteTitle = noteTitle,
