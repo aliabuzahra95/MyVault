@@ -69,8 +69,10 @@ object AiPromptBuilder {
         Build polished study-note structure with clear hierarchy, semantic grouping, readable paragraph flow, consistent lists, and useful blockquotes.
         Preserve the user's meaning and wording unless the selected mode explicitly asks you to improve clarity.
         Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">.
-        Prefer compact semantic lists over repeated short standalone paragraphs when the content is grouped, sequential, comparative, evidential, or revision-oriented.
+        Prefer compact <ul> bullet lists over repeated short standalone paragraphs when the content is grouped, comparative, evidential, categorical, explanatory, or revision-oriented.
+        Use <ol> only for true ordered sequences: steps, chronology, explicit First/Second/Third structures, syllogisms, or premise-to-conclusion chains.
         Avoid unsupported tags, CSS, deeply nested spans, inline styling inside headings, malformed HTML, markdown syntax, giant dense paragraphs, and stretched line/blank-line/line formatting.
+        Preserve Arabic, Qur'anic text, transliterations, names, and technical terms exactly. Never translate, remove, or paraphrase Arabic text.
         Use red only for Qur'anic verses when clearly identifiable.
         Use blue only for scholar quotations when clearly identifiable.
     """.trimIndent()
@@ -292,10 +294,12 @@ object AiPromptBuilder {
                 No code fences.
                 Use only editor-safe HTML tags.
                 Use a clean heading hierarchy, readable paragraphs, proper lists, and blockquotes for obvious quotations.
-                Infer the format from the content itself: bullets for grouped concepts, numbered lists for sequences/stages, subheadings for topic transitions, and blockquotes for definitions, quoted passages, or important conclusions.
-                Prefer <ul> or <ol> whenever related points would otherwise become several short paragraphs.
+                Infer the format from the content itself: bullets for grouped concepts, subheadings for topic transitions, and blockquotes for definitions, quoted passages, or important conclusions.
+                Use <ul> as the default list type for grouped study-note content.
+                Use <ol> only for actual steps, chronology, explicit First/Second/Third structures, syllogisms, procedures, or premise-to-conclusion chains.
                 If a paragraph introduces points with words like includes, such as, particularly, assumes, examples, reasons, consequences, consists of, or breaks down into, format the following related points as a compact list.
                 Keep related sentences together when they form one idea; do not mechanically turn every sentence into its own paragraph.
+                Preserve Arabic text exactly as written. Do not translate, transliterate, normalize, remove diacritics, or rewrite Arabic.
                 Avoid unsupported tags, CSS, markdown remnants, malformed nesting, inline spans inside headings, inconsistent heading jumps, and excessive blank vertical space.
             """.trimIndent()
         }
@@ -353,10 +357,11 @@ object AiPromptBuilder {
                 You should:
                 - create strong headings/subheadings from existing phrases, terms, or concepts already present in the note
                 - group related paragraphs into coherent sections
-                - strongly prefer compact <ul> lists for grouped concepts, assumptions, distinctions, categories, objections, evidences, consequences, examples, and repeated points
-                - strongly prefer compact <ol> lists for sequences, logical progressions, stages, syllogisms, arguments, premises/conclusions, methods, or ordered flows
+                - use compact <ul> lists as the default for grouped concepts, assumptions, distinctions, categories, objections, evidences, consequences, examples, and repeated points
+                - use compact <ol> lists only for true ordered material: explicit steps, chronology, First/Second/Third structures, syllogisms, procedures, or premise-to-conclusion chains
                 - use nested <ul> lists for sub-points when a point branches into smaller related points
-                - convert obvious label groups into lists, e.g. Universal / Particular / Conclusion, Claim / Evidence / Response, Objection / Answer
+                - convert Universal / Particular / Conclusion or Major premise / Minor premise / Conclusion into <ol> only when they clearly form a syllogism
+                - treat labels like Example, Definition, Assumption, Critique, Response, Implication, Observation, and Key Point as subheadings or strong labels, not numbered items
                 - treat short standalone lines under one topic as likely list items, not separate paragraphs
                 - create definition-style blocks where the note defines a term or principle
                 - create example/evidence sections where the note contains examples or proofs
@@ -365,7 +370,8 @@ object AiPromptBuilder {
                 - use <blockquote> for obvious quotations, cited passages, definitions, or important conclusions already present in the note
                 - split giant dense prose into readable paragraphs only where actual prose is needed
                 - keep related list items close together and compress formatting where isolated paragraphs would make the note unnecessarily long
-                - preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly
+                - preserve Arabic, Qur'anic text, transliteration, names, quotations, evidences, and technical terms exactly
+                - preserve Arabic spelling, diacritics, punctuation, and word order exactly; never translate or paraphrase Arabic
 
                 Do not:
                 - paraphrase, summarise, simplify, or rewrite theology/arguments
@@ -374,6 +380,7 @@ object AiPromptBuilder {
                 - write in second person unless the note already does
                 - leave obvious grouped items as line / blank space / line / blank space paragraphs
                 - create one paragraph per short line unless it is genuinely connected prose
+                - use numbered lists for unrelated concepts, categories, definitions, examples, objections, or explanations
 
                 Return only clean HTML. No explanation.
             """.trimIndent()
@@ -437,7 +444,7 @@ object AiPromptBuilder {
             NoteAiAction.Ask -> "Answer my question about this note."
             NoteAiAction.ExplainNote -> "Explain this note clearly."
             NoteAiAction.GeneralAsk -> "Answer my question."
-            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve body wording and meaning as exactly as possible, but strongly prefer compact bullet/numbered lists for grouped points, arguments, categories, examples, and revision-friendly structure."
+            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve body wording and meaning as exactly as possible. Use compact bullet lists by default for grouped points, and use numbered lists only for true sequences, steps, or premise-to-conclusion chains."
             NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
             NoteAiAction.CleanFormat -> "Clean and organise this note."
             NoteAiAction.FormatNote -> "Format this note."

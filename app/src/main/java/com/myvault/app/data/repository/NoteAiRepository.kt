@@ -1070,7 +1070,7 @@ private fun String.compactObviousParagraphLists(): String {
         val previousBlock = output.lastMeaningfulBlock(blocks, index)
         if (
             compactRun.size >= 2 &&
-            (compactRun.any { it.content.stripHtmlTags().decodeCommonHtmlEntities().trim().hasOrderedListLabel() } ||
+            (compactRun.isExplicitOrderedSequence() ||
                 compactRun.all { it.isTerseStudyPoint() && (compactRun.size >= 3 || previousBlock?.isSectionBoundary() == true) })
         ) {
             output.append(compactRun.toHtmlList(ordered = compactRun.shouldUseOrderedList())).append('\n')
@@ -1160,6 +1160,7 @@ private fun EditorHtmlBlock.looksLikeListIntroducer(): Boolean {
 private fun EditorHtmlBlock.isCompactListCandidate(): Boolean {
     val text = content.stripHtmlTags().decodeCommonHtmlEntities().trim()
     if (text.isBlank()) return false
+    if (text.isMicroHeadingLabel()) return false
     if (text.length > 220) return false
     if (text.count { it == '.' || it == '?' || it == '!' || it == '؟' } > 1) return false
     return true
@@ -1173,13 +1174,32 @@ private fun EditorHtmlBlock.isTerseStudyPoint(): Boolean {
 }
 
 private fun List<EditorHtmlBlock>.shouldUseOrderedList(): Boolean =
-    all { it.content.stripHtmlTags().decodeCommonHtmlEntities().trim().hasOrderedListLabel() }
+    isExplicitOrderedSequence()
 
-private fun String.hasOrderedListLabel(): Boolean =
+private fun List<EditorHtmlBlock>.isExplicitOrderedSequence(): Boolean {
+    val labels = map { it.content.stripHtmlTags().decodeCommonHtmlEntities().trim().orderedSequenceLabel() }
+    if (labels.any { it == null }) return false
+    val cleanLabels = labels.filterNotNull().toSet()
+    return cleanLabels.any { it in ExplicitOrdinalLabels } ||
+        cleanLabels.all { it in SyllogismLabels } ||
+        cleanLabels.all { it in PremiseConclusionLabels }
+}
+
+private fun String.orderedSequenceLabel(): String? =
     Regex(
-        "^(universal|particular|conclusion|premise|major premise|minor premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally|genus|differentia|definition|example)\\s*[:：-]",
+        "^(universal|particular|conclusion|premise|major premise|minor premise|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally)\\s*[:：-]",
         RegexOption.IGNORE_CASE,
-    ).containsMatchIn(this)
+    ).find(this)?.groupValues?.getOrNull(1)?.lowercase()
+
+private fun String.isMicroHeadingLabel(): Boolean {
+    val clean = trim().trimEnd(':', '：')
+    return clean.matches(
+        Regex(
+            "^(example|definition|assumption|critique|response|implication|observation|key point|note|summary|benefit|evidence)$",
+            RegexOption.IGNORE_CASE,
+        ),
+    )
+}
 
 private fun List<EditorHtmlBlock>.toHtmlList(ordered: Boolean): String {
     val tag = if (ordered) "ol" else "ul"
@@ -1195,12 +1215,30 @@ private fun List<EditorHtmlBlock>.toHtmlList(ordered: Boolean): String {
 private fun String.normalizeListItemLabel(): String =
     replace(
         Regex(
-            "^((?:universal|particular|conclusion|premise|major premise|minor premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally|genus|differentia|definition|example)\\s*[:：-])\\s*(.+)$",
+            "^((?:universal|particular|conclusion|premise|major premise|minor premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally|genus|differentia|definition|example|assumption|critique|implication|observation|key point)\\s*[:：-])\\s*(.+)$",
             RegexOption.IGNORE_CASE,
         ),
     ) { match ->
         "<strong>${match.groupValues[1].trim()}</strong> ${match.groupValues[2].trim()}"
     }
+
+private val ExplicitOrdinalLabels = setOf(
+    "step",
+    "stage",
+    "first",
+    "second",
+    "third",
+    "fourth",
+    "fifth",
+    "firstly",
+    "secondly",
+    "thirdly",
+    "finally",
+)
+
+private val SyllogismLabels = setOf("universal", "particular", "conclusion")
+
+private val PremiseConclusionLabels = setOf("premise", "major premise", "minor premise", "conclusion")
 
 private fun String.toStructureOnlyHtml(): String {
     val clean = trim()
