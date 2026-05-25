@@ -905,13 +905,13 @@ private fun String.normaliseHeading(): String =
     lowercase().replace(Regex("\\s+"), " ").trim()
 
 private fun String.cleanForAction(action: NoteAiAction): String {
-    if (action == NoteAiAction.StructureOnly) return cleanEditorHtmlOutput().trim()
+    if (action == NoteAiAction.StructureOnly) return cleanEditorHtmlOutput(preferDenseLists = true).trim()
     if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().cleanEditorHtmlOutput().trim()
     if (action == NoteAiAction.CleanFormat || action == NoteAiAction.FormatNote) return trim()
     return stripChatMarkdown().trim()
 }
 
-private fun String.cleanEditorHtmlOutput(): String {
+private fun String.cleanEditorHtmlOutput(preferDenseLists: Boolean = false): String {
     val clean = trim()
         .replace(Regex("(?i)^```html\\s*"), "")
         .replace(Regex("(?i)^```\\s*"), "")
@@ -922,10 +922,12 @@ private fun String.cleanEditorHtmlOutput(): String {
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
         .normalizeEditorHtmlSafety()
+        .let { if (preferDenseLists) it.compactObviousParagraphLists() else it }
     return if (clean.contains(Regex("<(h1|h2|h3|p|ul|ol|li|blockquote|span|strong|em)\\b", RegexOption.IGNORE_CASE))) {
         clean
     } else {
         clean.toStructureOnlyHtml().normalizeEditorHtmlSafety()
+            .let { if (preferDenseLists) it.compactObviousParagraphLists() else it }
     }
 }
 
@@ -964,6 +966,153 @@ private fun String.normalizeEditorHtmlSafety(): String {
 
     return output
 }
+
+private data class EditorHtmlBlock(
+    val tag: String,
+    val html: String,
+    val content: String,
+)
+
+private fun String.compactObviousParagraphLists(): String {
+    val blockRegex = Regex(
+        "<(h[1-3]|p|ul|ol|blockquote)\\b[^>]*>.*?</\\1>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+    )
+    val matches = blockRegex.findAll(this).toList()
+    if (matches.isEmpty()) return this
+
+    val blocks = matches.map { match ->
+        EditorHtmlBlock(
+            tag = match.groupValues[1].lowercase(),
+            html = match.value,
+            content = match.value
+                .replace(Regex("^<${match.groupValues[1]}\\b[^>]*>", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("</${match.groupValues[1]}>$", RegexOption.IGNORE_CASE), "")
+                .trim(),
+        )
+    }
+
+    val output = StringBuilder()
+    var index = 0
+    while (index < blocks.size) {
+        val block = blocks[index]
+        if (block.tag != "p") {
+            output.append(block.html).append('\n')
+            index++
+            continue
+        }
+
+        val compactRun = mutableListOf<EditorHtmlBlock>()
+        var runCursor = index
+        while (runCursor < blocks.size && blocks[runCursor].tag == "p" && blocks[runCursor].isCompactListCandidate()) {
+            compactRun += blocks[runCursor]
+            runCursor++
+        }
+        if (
+            compactRun.size >= 3 &&
+            (compactRun.any { it.content.stripHtmlTags().decodeCommonHtmlEntities().trim().hasOrderedListLabel() } ||
+                compactRun.all { it.isTerseStudyPoint() })
+        ) {
+            output.append(compactRun.toHtmlList(ordered = compactRun.shouldUseOrderedList())).append('\n')
+            index = runCursor
+            continue
+        }
+
+        if (!block.looksLikeListIntroducer()) {
+            output.append(block.html).append('\n')
+            index++
+            continue
+        }
+
+        val listItems = mutableListOf<EditorHtmlBlock>()
+        var cursor = index + 1
+        while (cursor < blocks.size && blocks[cursor].tag == "p" && blocks[cursor].isCompactListCandidate()) {
+            listItems += blocks[cursor]
+            cursor++
+        }
+
+        if (listItems.size >= 2) {
+            output.append(block.html).append('\n')
+            output.append(listItems.toHtmlList(ordered = listItems.shouldUseOrderedList())).append('\n')
+            index = cursor
+        } else {
+            output.append(block.html).append('\n')
+            index++
+        }
+    }
+
+    return output.toString()
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
+}
+
+private fun EditorHtmlBlock.looksLikeListIntroducer(): Boolean {
+    val text = content.stripHtmlTags().decodeCommonHtmlEntities().trim().lowercase()
+    if (text.isBlank()) return false
+    if (text.endsWith(":")) return true
+    return listOf(
+        "includes",
+        "include",
+        "such as",
+        "particularly",
+        "assumes",
+        "assume",
+        "examples",
+        "reasons",
+        "consequences",
+        "consists of",
+        "breaks down into",
+        "comprises",
+        "made up of",
+        "divided into",
+        "the following",
+    ).any { marker -> text.contains(marker) }
+}
+
+private fun EditorHtmlBlock.isCompactListCandidate(): Boolean {
+    val text = content.stripHtmlTags().decodeCommonHtmlEntities().trim()
+    if (text.isBlank()) return false
+    if (text.length > 220) return false
+    if (text.count { it == '.' || it == '?' || it == '!' || it == '؟' } > 1) return false
+    return true
+}
+
+private fun EditorHtmlBlock.isTerseStudyPoint(): Boolean {
+    val text = content.stripHtmlTags().decodeCommonHtmlEntities().trim()
+    if (text.isBlank()) return false
+    if (text.endsWith(":")) return false
+    return text.split(Regex("\\s+")).size <= 10
+}
+
+private fun List<EditorHtmlBlock>.shouldUseOrderedList(): Boolean =
+    all { it.content.stripHtmlTags().decodeCommonHtmlEntities().trim().hasOrderedListLabel() }
+
+private fun String.hasOrderedListLabel(): Boolean =
+    Regex(
+        "^(universal|particular|conclusion|premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally)\\s*[:：-]",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(this)
+
+private fun List<EditorHtmlBlock>.toHtmlList(ordered: Boolean): String {
+    val tag = if (ordered) "ol" else "ul"
+    return buildString {
+        append("<").append(tag).append(">\n")
+        this@toHtmlList.forEach { block ->
+            append("<li>").append(block.content.trim().normalizeListItemLabel()).append("</li>\n")
+        }
+        append("</").append(tag).append(">")
+    }
+}
+
+private fun String.normalizeListItemLabel(): String =
+    replace(
+        Regex(
+            "^((?:universal|particular|conclusion|premise|claim|evidence|response|objection|answer|reason|step|stage|first|second|third|fourth|fifth|firstly|secondly|thirdly|finally)\\s*[:：-])\\s*(.+)$",
+            RegexOption.IGNORE_CASE,
+        ),
+    ) { match ->
+        "<strong>${match.groupValues[1].trim()}</strong> ${match.groupValues[2].trim()}"
+    }
 
 private fun String.toStructureOnlyHtml(): String {
     val clean = trim()

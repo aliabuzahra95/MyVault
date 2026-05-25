@@ -69,7 +69,8 @@ object AiPromptBuilder {
         Build polished study-note structure with clear hierarchy, semantic grouping, readable paragraph flow, consistent lists, and useful blockquotes.
         Preserve the user's meaning and wording unless the selected mode explicitly asks you to improve clarity.
         Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">.
-        Avoid unsupported tags, CSS, deeply nested spans, inline styling inside headings, malformed HTML, markdown syntax, and giant dense paragraphs.
+        Prefer compact semantic lists over repeated short standalone paragraphs when the content is grouped, sequential, comparative, evidential, or revision-oriented.
+        Avoid unsupported tags, CSS, deeply nested spans, inline styling inside headings, malformed HTML, markdown syntax, giant dense paragraphs, and stretched line/blank-line/line formatting.
         Use red only for Qur'anic verses when clearly identifiable.
         Use blue only for scholar quotations when clearly identifiable.
     """.trimIndent()
@@ -292,8 +293,10 @@ object AiPromptBuilder {
                 Use only editor-safe HTML tags.
                 Use a clean heading hierarchy, readable paragraphs, proper lists, and blockquotes for obvious quotations.
                 Infer the format from the content itself: bullets for grouped concepts, numbered lists for sequences/stages, subheadings for topic transitions, and blockquotes for definitions, quoted passages, or important conclusions.
+                Prefer <ul> or <ol> whenever related points would otherwise become several short paragraphs.
+                If a paragraph introduces points with words like includes, such as, particularly, assumes, examples, reasons, consequences, consists of, or breaks down into, format the following related points as a compact list.
                 Keep related sentences together when they form one idea; do not mechanically turn every sentence into its own paragraph.
-                Avoid unsupported tags, CSS, markdown remnants, malformed nesting, inline spans inside headings, and inconsistent heading jumps.
+                Avoid unsupported tags, CSS, markdown remnants, malformed nesting, inline spans inside headings, inconsistent heading jumps, and excessive blank vertical space.
             """.trimIndent()
         }
 
@@ -350,15 +353,18 @@ object AiPromptBuilder {
                 You should:
                 - create strong headings/subheadings from existing phrases, terms, or concepts already present in the note
                 - group related paragraphs into coherent sections
-                - convert grouped concepts, assumptions, distinctions, objections, evidences, and repeated points into clean <ul> lists
-                - convert sequences, logical progressions, stages, arguments, or ordered flows into clean <ol> lists
+                - strongly prefer compact <ul> lists for grouped concepts, assumptions, distinctions, categories, objections, evidences, consequences, examples, and repeated points
+                - strongly prefer compact <ol> lists for sequences, logical progressions, stages, syllogisms, arguments, premises/conclusions, methods, or ordered flows
+                - use nested <ul> lists for sub-points when a point branches into smaller related points
+                - convert obvious label groups into lists, e.g. Universal / Particular / Conclusion, Claim / Evidence / Response, Objection / Answer
+                - treat short standalone lines under one topic as likely list items, not separate paragraphs
                 - create definition-style blocks where the note defines a term or principle
                 - create example/evidence sections where the note contains examples or proofs
                 - use <strong> for important existing terms
                 - use <em> sparingly for emphasis
                 - use <blockquote> for obvious quotations, cited passages, definitions, or important conclusions already present in the note
-                - split giant dense paragraphs into readable paragraphs without changing sentence wording, but avoid excessive vertical spacing between closely related sentences
-                - compress formatting where too many isolated paragraphs would make the note unnecessarily long
+                - split giant dense prose into readable paragraphs only where actual prose is needed
+                - keep related list items close together and compress formatting where isolated paragraphs would make the note unnecessarily long
                 - preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly
 
                 Do not:
@@ -366,6 +372,8 @@ object AiPromptBuilder {
                 - add new arguments, explanations, examples, references, conclusions, names, schools, labels, or framing
                 - remove meaningful content
                 - write in second person unless the note already does
+                - leave obvious grouped items as line / blank space / line / blank space paragraphs
+                - create one paragraph per short line unless it is genuinely connected prose
 
                 Return only clean HTML. No explanation.
             """.trimIndent()
@@ -429,7 +437,7 @@ object AiPromptBuilder {
             NoteAiAction.Ask -> "Answer my question about this note."
             NoteAiAction.ExplainNote -> "Explain this note clearly."
             NoteAiAction.GeneralAsk -> "Answer my question."
-            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve body wording and meaning as exactly as possible, but strongly improve hierarchy, semantic grouping, lists, blockquotes, spacing, and scanability."
+            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve body wording and meaning as exactly as possible, but strongly prefer compact bullet/numbered lists for grouped points, arguments, categories, examples, and revision-friendly structure."
             NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
             NoteAiAction.CleanFormat -> "Clean and organise this note."
             NoteAiAction.FormatNote -> "Format this note."
