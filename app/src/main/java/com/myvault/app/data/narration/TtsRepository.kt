@@ -1,7 +1,8 @@
 package com.myvault.app.data.narration
 
-import android.util.Log
 import com.myvault.app.BuildConfig
+import com.myvault.app.data.openai.OpenAiFeature
+import com.myvault.app.data.openai.OpenAiRequestGuard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -63,21 +64,23 @@ class TtsRepository @Inject constructor(
         // across playback speeds without paying for another TTS request.
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, NarrationConfig.MODEL, normalizedVoice, 1f)
         cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash)?.let {
-            logOpenAiRequest(
-                endpoint = SpeechEndpoint,
+            OpenAiRequestGuard.logCacheDecision(
+                featureName = OpenAiFeature.ListenMode,
+                endpointUrl = SpeechEndpoint,
                 model = NarrationConfig.MODEL,
                 noteId = noteId,
-                charCount = cleanText.length,
+                characterCount = cleanText.length,
                 cacheStatus = "hit:session",
             )
             onChunkReady(it, true, it.files.size)
             return@withContext it
         }
-        logOpenAiRequest(
-            endpoint = SpeechEndpoint,
+        OpenAiRequestGuard.logCacheDecision(
+            featureName = OpenAiFeature.ListenMode,
+            endpointUrl = SpeechEndpoint,
             model = NarrationConfig.MODEL,
             noteId = noteId,
-            charCount = cleanText.length,
+            characterCount = cleanText.length,
             cacheStatus = "miss:session",
         )
 
@@ -95,19 +98,21 @@ class TtsRepository @Inject constructor(
                 onChunkGenerating(index + 1, chunks.size)
                 val target = cacheManager.chunkFile(cacheKey, index)
                 if (target.exists() && target.length() >= MinValidMp3Bytes) {
-                    logOpenAiRequest(
-                        endpoint = SpeechEndpoint,
+                    OpenAiRequestGuard.logCacheDecision(
+                        featureName = OpenAiFeature.ListenMode,
+                        endpointUrl = SpeechEndpoint,
                         model = NarrationConfig.MODEL,
                         noteId = noteId,
-                        charCount = chunk.length,
+                        characterCount = chunk.length,
                         cacheStatus = "hit:chunk-${index + 1}",
                     )
                 } else {
-                    logOpenAiRequest(
-                        endpoint = SpeechEndpoint,
+                    OpenAiRequestGuard.validateAndLogRequest(
+                        featureName = OpenAiFeature.ListenMode,
+                        endpointUrl = SpeechEndpoint,
                         model = NarrationConfig.MODEL,
                         noteId = noteId,
-                        charCount = chunk.length,
+                        characterCount = chunk.length,
                         cacheStatus = "miss:chunk-${index + 1}",
                     )
                     requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
@@ -212,15 +217,7 @@ class TtsRepository @Inject constructor(
         }
     }
 
-    private fun logOpenAiRequest(endpoint: String, model: String, noteId: String, charCount: Int, cacheStatus: String) {
-        Log.i(
-            LogTag,
-            "OpenAI request endpoint=$endpoint model=$model chars=$charCount noteId=$noteId cache=$cacheStatus timestamp=${System.currentTimeMillis()}",
-        )
-    }
-
     private companion object {
-        const val LogTag = "MyVaultListenMode"
         const val SpeechEndpoint = "https://api.openai.com/v1/audio/speech"
         const val MaxAttempts = 2
         const val MinValidMp3Bytes = 512L

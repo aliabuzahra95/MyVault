@@ -77,7 +77,9 @@ Deno.serve(async (request) => {
       requestBody.temperature = typeof payload.temperature === "number" ? payload.temperature : temperatureFor(action, modelKind);
     }
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const openAiEndpoint = "https://api.openai.com/v1/responses";
+    guardOpenAiRequest({ endpoint: openAiEndpoint, model, feature: "NoteAiSupabaseFunction" });
+    const response = await fetch(openAiEndpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${openAiKey}`,
@@ -314,3 +316,25 @@ function json(body: unknown, status = 200): Response {
     },
   });
 }
+
+function guardOpenAiRequest(request: { endpoint: string; model: string; feature: string }) {
+  const endpoint = request.endpoint.toLowerCase();
+  const model = request.model.toLowerCase();
+  const forbiddenEndpointParts = ["realtime", "transcriptions", "translations"];
+  const forbiddenModelParts = ["realtime", "whisper"];
+  const endpointHit = forbiddenEndpointParts.find((part) => endpoint.includes(part));
+  if (endpointHit) {
+    throw new Error(`Blocked forbidden OpenAI endpoint for ${request.feature}: ${endpointHit}`);
+  }
+  const modelHit = forbiddenModelParts.find((part) => model.includes(part));
+  if (modelHit) {
+    throw new Error(`Blocked forbidden OpenAI model for ${request.feature}: ${modelHit}`);
+  }
+  console.info("OpenAI request", {
+    endpoint: request.endpoint,
+    model: request.model,
+    feature: request.feature,
+    timestamp: Date.now(),
+  });
+}
+
