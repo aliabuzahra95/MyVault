@@ -254,11 +254,21 @@ class NoteViewModel @Inject constructor(
 
 
     fun startNarration(title: String, body: String, voice: String = NarrationConfig.DEFAULT_VOICE) {
-        if (narrationState.value.status == com.myvault.app.data.narration.NarrationPlaybackStatus.Preparing ||
-            narrationState.value.status == com.myvault.app.data.narration.NarrationPlaybackStatus.Generating
-        ) {
-            return
+        val currentNarration = narrationState.value
+        if (currentNarration.noteId == noteId) {
+            when (currentNarration.status) {
+                com.myvault.app.data.narration.NarrationPlaybackStatus.Playing,
+                com.myvault.app.data.narration.NarrationPlaybackStatus.Paused,
+                com.myvault.app.data.narration.NarrationPlaybackStatus.Stopped -> {
+                    narrationPlayerManager.toggle()
+                    return
+                }
+                com.myvault.app.data.narration.NarrationPlaybackStatus.Preparing,
+                com.myvault.app.data.narration.NarrationPlaybackStatus.Generating -> return
+                else -> Unit
+            }
         }
+        if (narrationJob?.isActive == true) return
         narrationJob?.cancel()
         narrationJob = viewModelScope.launch {
             val noteTitle = title.trim().ifBlank { "Untitled note" }

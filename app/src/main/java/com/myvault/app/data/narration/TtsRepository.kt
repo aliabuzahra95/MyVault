@@ -1,5 +1,6 @@
 package com.myvault.app.data.narration
 
+import android.util.Log
 import com.myvault.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -52,6 +53,9 @@ class TtsRepository @Inject constructor(
     ): NarrationSession = withContext(Dispatchers.IO) {
         val cleanText = narrationText.trim()
         if (cleanText.isBlank()) error("This note is empty.")
+        if (cleanText.length > NarrationConfig.MAX_TOTAL_CHARS) {
+            error("This note is too long for Listen Mode. Please shorten it below ${NarrationConfig.MAX_TOTAL_CHARS} characters before generating narration.")
+        }
         val contentHash = cacheManager.contentHash(cleanText)
         val clampedSpeed = speed.coerceIn(0.75f, 1.5f)
         val normalizedVoice = voice.ifBlank { NarrationConfig.DEFAULT_VOICE }
@@ -59,9 +63,23 @@ class TtsRepository @Inject constructor(
         // across playback speeds without paying for another TTS request.
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, NarrationConfig.MODEL, normalizedVoice, 1f)
         cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash)?.let {
+            logOpenAiRequest(
+                endpoint = SpeechEndpoint,
+                model = NarrationConfig.MODEL,
+                noteId = noteId,
+                charCount = cleanText.length,
+                cacheStatus = "hit:session",
+            )
             onChunkReady(it, true, it.files.size)
             return@withContext it
         }
+        logOpenAiRequest(
+            endpoint = SpeechEndpoint,
+            model = NarrationConfig.MODEL,
+            noteId = noteId,
+            charCount = cleanText.length,
+            cacheStatus = "miss:session",
+        )
 
         val apiKey = BuildConfig.OPENAI_API_KEY.trim()
         if (apiKey.isBlank()) {
@@ -70,14 +88,30 @@ class TtsRepository @Inject constructor(
 
         val chunks = textPreparer.splitIntoChunks(cleanText)
         if (chunks.isEmpty()) error("This note is empty.")
-        cacheManager.clearSession(cacheKey)
         val generatedFiles = mutableListOf<File>()
         runCatching {
             chunks.forEachIndexed { index, chunk ->
                 coroutineContext.ensureActive()
                 onChunkGenerating(index + 1, chunks.size)
                 val target = cacheManager.chunkFile(cacheKey, index)
-                requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
+                if (target.exists() && target.length() >= MinValidMp3Bytes) {
+                    logOpenAiRequest(
+                        endpoint = SpeechEndpoint,
+                        model = NarrationConfig.MODEL,
+                        noteId = noteId,
+                        charCount = chunk.length,
+                        cacheStatus = "hit:chunk-${index + 1}",
+                    )
+                } else {
+                    logOpenAiRequest(
+                        endpoint = SpeechEndpoint,
+                        model = NarrationConfig.MODEL,
+                        noteId = noteId,
+                        charCount = chunk.length,
+                        cacheStatus = "miss:chunk-${index + 1}",
+                    )
+                    requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
+                }
                 generatedFiles += target
                 val partialSession = NarrationSession(
                     cacheKey = cacheKey,
@@ -92,7 +126,6 @@ class TtsRepository @Inject constructor(
                 onChunkReady(partialSession, index == chunks.lastIndex, chunks.size)
             }
         }.onFailure { error ->
-            cacheManager.clearSession(cacheKey)
             throw error
         }
         NarrationSession(
@@ -133,7 +166,7 @@ class TtsRepository @Inject constructor(
     }
 
     private fun requestSpeechOnce(apiKey: String, input: String, voice: String, target: File) {
-        val connection = (URL("https://api.openai.com/v1/audio/speech").openConnection() as HttpURLConnection).apply {
+        val connection = (URL(SpeechEndpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 30_000
             readTimeout = 120_000
@@ -179,7 +212,16 @@ class TtsRepository @Inject constructor(
         }
     }
 
+    private fun logOpenAiRequest(endpoint: String, model: String, noteId: String, charCount: Int, cacheStatus: String) {
+        Log.i(
+            LogTag,
+            "OpenAI request endpoint=$endpoint model=$model chars=$charCount noteId=$noteId cache=$cacheStatus timestamp=${System.currentTimeMillis()}",
+        )
+    }
+
     private companion object {
+        const val LogTag = "MyVaultListenMode"
+        const val SpeechEndpoint = "https://api.openai.com/v1/audio/speech"
         const val MaxAttempts = 2
         const val MinValidMp3Bytes = 512L
         const val BufferSize = 32 * 1024
