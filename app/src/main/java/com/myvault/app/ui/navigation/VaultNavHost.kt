@@ -2,11 +2,16 @@ package com.myvault.app.ui.navigation
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -59,8 +64,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
+import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
+import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
 import com.myvault.app.ui.screens.AskAiScreen
@@ -84,6 +91,7 @@ import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
 import com.myvault.app.ui.viewmodel.LibraryViewModel
 import com.myvault.app.ui.viewmodel.MemoriseViewModel
+import com.myvault.app.ui.viewmodel.NarrationViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
 import com.myvault.app.ui.viewmodel.QuranReaderViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
@@ -100,6 +108,8 @@ fun VaultNavHost(
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
+    val narrationViewModel: NarrationViewModel = hiltViewModel()
+    val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
@@ -107,34 +117,35 @@ fun VaultNavHost(
         onPendingOpenNoteConsumed()
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = VaultDestination.Home.route,
-        enterTransition = {
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-            )
-        },
-        exitTransition = {
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-            )
-        },
-        popEnterTransition = {
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-            )
-        },
-        popExitTransition = {
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-            )
-        },
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavHost(
+            navController = navController,
+            startDestination = VaultDestination.Home.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                )
+            },
+        ) {
         composable(VaultDestination.Home.route) {
             val homeViewModel: HomeViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
@@ -658,11 +669,6 @@ fun VaultNavHost(
                     }
                 },
                 onListenClick = viewModel::startNarration,
-                onNarrationPrimaryAction = { _, _, _ -> viewModel.toggleNarrationPlayback() },
-                onNarrationStop = viewModel::stopNarration,
-                onNarrationSpeedChange = viewModel::setNarrationSpeed,
-                onNarrationSeek = viewModel::seekNarration,
-                onNarrationProgressTick = viewModel::refreshNarrationProgress,
                 onDeleteNote = {
                     viewModel.deleteNote {
                         navController.popBackStack(VaultDestination.Home.route, false)
@@ -827,6 +833,43 @@ fun VaultNavHost(
                     backupMessage = null
                     viewModel.dismissDriveRestoreMessage()
                 },
+            )
+        }
+        }
+        AnimatedVisibility(
+            visible = narrationState.isActive,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(
+                    horizontal = VaultSpacing.screen,
+                    vertical = if (currentRoute == VaultDestination.Home.route) 88.dp else VaultSpacing.md,
+                ),
+            enter = fadeIn(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)) +
+                slideInVertically(
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    initialOffsetY = { it / 2 },
+                ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)) +
+                slideOutVertically(
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    targetOffsetY = { it / 2 },
+                ),
+        ) {
+            NarrationMiniPlayer(
+                state = narrationState,
+                selectedVoice = narrationState.voice,
+                onVoiceChange = narrationViewModel::restartWithVoice,
+                onPrimaryAction = {
+                    if (narrationState.status != NarrationPlaybackStatus.Preparing &&
+                        narrationState.status != NarrationPlaybackStatus.Generating
+                    ) {
+                        narrationViewModel.togglePlayback()
+                    }
+                },
+                onStop = narrationViewModel::stop,
+                onSpeedChange = narrationViewModel::setSpeed,
+                onSeek = narrationViewModel::seekTo,
+                onProgressTick = narrationViewModel::refreshProgress,
             )
         }
     }

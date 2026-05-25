@@ -70,11 +70,9 @@ import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.Breadcrumb
 import com.myvault.app.ui.components.IconBtn
-import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.narration.NarrationConfig
-import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
@@ -112,11 +110,6 @@ fun ReadingScreen(
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: () -> Unit = {},
     onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
-    onNarrationPrimaryAction: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
-    onNarrationStop: () -> Unit = {},
-    onNarrationSpeedChange: (Float) -> Unit = {},
-    onNarrationSeek: (Long) -> Unit = {},
-    onNarrationProgressTick: () -> Unit = {},
     onDeleteNote: () -> Unit = {},
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
@@ -166,40 +159,12 @@ fun ReadingScreen(
                 Icon(Icons.Rounded.Edit, "Edit", modifier = Modifier.size(20.dp))
             }
         },
-        bottomBar = {
-            if (narrationState.isActive) {
-                NarrationMiniPlayer(
-                    state = narrationState,
-                    selectedVoice = selectedNarrationVoice,
-                    onVoiceChange = { voice ->
-                        selectedNarrationVoice = voice
-                        onListenClick(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, voice)
-                    },
-                    onPrimaryAction = {
-                        when (narrationState.status) {
-                            NarrationPlaybackStatus.Playing, NarrationPlaybackStatus.Paused, NarrationPlaybackStatus.Stopped -> {
-                                onNarrationPrimaryAction(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, selectedNarrationVoice)
-                            }
-                            NarrationPlaybackStatus.Error -> {
-                                onListenClick(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, selectedNarrationVoice)
-                            }
-                            else -> Unit
-                        }
-                    },
-                    onStop = onNarrationStop,
-                    onSpeedChange = onNarrationSpeedChange,
-                    onSeek = onNarrationSeek,
-                    onProgressTick = onNarrationProgressTick,
-                    modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
-                )
-            }
-        },
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(bottom = if (narrationState.isActive) 190.dp else 96.dp),
+            contentPadding = PaddingValues(bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
             item {

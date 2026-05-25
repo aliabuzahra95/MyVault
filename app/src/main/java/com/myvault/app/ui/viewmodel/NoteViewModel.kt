@@ -10,9 +10,7 @@ import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.narration.NarrationConfig
-import com.myvault.app.data.narration.NarrationPlayerManager
-import com.myvault.app.data.narration.NoteNarrationTextPreparer
-import com.myvault.app.data.narration.TtsRepository
+import com.myvault.app.data.narration.NarrationController
 import com.myvault.app.data.repository.AiConversationRepository
 import com.myvault.app.data.repository.AiConversationSummary
 import com.myvault.app.data.repository.AttachmentRepository
@@ -39,7 +37,6 @@ import com.myvault.app.ui.screens.toJsonArrayString
 import com.myvault.app.ui.screens.toNoteLinksJsonArrayString
 import com.myvault.app.ui.screens.parseVaultRichTextDocument
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -143,9 +140,7 @@ class NoteViewModel @Inject constructor(
     private val noteAiRepository: NoteAiRepository,
     private val aiConversationRepository: AiConversationRepository,
     private val knowledgeRepository: KnowledgeRepository,
-    private val ttsRepository: TtsRepository,
-    private val noteNarrationTextPreparer: NoteNarrationTextPreparer,
-    private val narrationPlayerManager: NarrationPlayerManager,
+    private val narrationController: NarrationController,
     aiSessionStore: NoteAiSessionStore,
 ) : ViewModel() {
     private val noteId: String = savedStateHandle.get<String>("noteId").orEmpty()
@@ -205,9 +200,8 @@ class NoteViewModel @Inject constructor(
     val aiState: StateFlow<NoteAiUiState> = _aiState
     private val _selectedTextAiState = MutableStateFlow(SelectedTextAiUiState())
     val selectedTextAiState: StateFlow<SelectedTextAiUiState> = _selectedTextAiState
-    val narrationState: StateFlow<com.myvault.app.data.narration.NarrationUiState> = narrationPlayerManager.state
+    val narrationState: StateFlow<com.myvault.app.data.narration.NarrationUiState> = narrationController.state
     private var aiGenerationJob: Job? = null
-    private var narrationJob: Job? = null
 
     init {
         viewModelScope.launch { seeder.seedIfNeeded() }
@@ -254,82 +248,27 @@ class NoteViewModel @Inject constructor(
 
 
     fun startNarration(title: String, body: String, voice: String = NarrationConfig.DEFAULT_VOICE) {
-        val currentNarration = narrationState.value
-        if (currentNarration.noteId == noteId) {
-            when (currentNarration.status) {
-                com.myvault.app.data.narration.NarrationPlaybackStatus.Playing,
-                com.myvault.app.data.narration.NarrationPlaybackStatus.Paused,
-                com.myvault.app.data.narration.NarrationPlaybackStatus.Stopped -> {
-                    narrationPlayerManager.toggle()
-                    return
-                }
-                com.myvault.app.data.narration.NarrationPlaybackStatus.Preparing,
-                com.myvault.app.data.narration.NarrationPlaybackStatus.Generating -> return
-                else -> Unit
-            }
-        }
-        if (narrationJob?.isActive == true) return
-        narrationJob?.cancel()
-        narrationJob = viewModelScope.launch {
-            val noteTitle = title.trim().ifBlank { "Untitled note" }
-            val narrationText = noteNarrationTextPreparer.prepare(noteTitle, body)
-            if (narrationText.isBlank()) {
-                narrationPlayerManager.showError(noteId, noteTitle, "This note is empty.")
-                return@launch
-            }
-            narrationPlayerManager.markPreparing(noteId, noteTitle)
-            var playbackStarted = false
-            runCatching {
-                ttsRepository.generateNarrationProgressively(
-                    noteId = noteId,
-                    noteTitle = noteTitle,
-                    narrationText = narrationText,
-                    voice = voice.ifBlank { NarrationConfig.DEFAULT_VOICE },
-                    speed = narrationState.value.speed,
-                    onChunkGenerating = { current, total ->
-                        narrationPlayerManager.markGenerating(noteId, noteTitle, current, total)
-                    },
-                    onChunkReady = { session, isComplete, totalChunks ->
-                        if (!playbackStarted) {
-                            playbackStarted = true
-                            narrationPlayerManager.startStreaming(session, totalChunks = totalChunks)
-                        } else {
-                            narrationPlayerManager.appendStreamingChunk(session, totalChunks = totalChunks)
-                        }
-                        if (isComplete) narrationPlayerManager.finishStreaming(session)
-                    },
-                )
-            }.onFailure { error ->
-                if (error is CancellationException) return@launch
-                narrationPlayerManager.showError(
-                    noteId = noteId,
-                    noteTitle = noteTitle,
-                    message = error.message?.takeIf { it.isNotBlank() } ?: "Couldn’t generate narration.",
-                )
-            }
-        }
+        narrationController.start(noteId, title, body, voice)
     }
 
     fun toggleNarrationPlayback() {
-        narrationPlayerManager.toggle()
+        narrationController.toggle()
     }
 
     fun stopNarration() {
-        narrationJob?.cancel()
-        narrationJob = null
-        narrationPlayerManager.stop()
+        narrationController.stop()
     }
 
     fun setNarrationSpeed(speed: Float) {
-        narrationPlayerManager.setSpeed(speed)
+        narrationController.setSpeed(speed)
     }
 
     fun seekNarration(positionMs: Long) {
-        narrationPlayerManager.seekTo(positionMs)
+        narrationController.seekTo(positionMs)
     }
 
     fun refreshNarrationProgress() {
-        narrationPlayerManager.refreshProgress()
+        narrationController.refreshProgress()
     }
 
     fun createTable(rows: Int, columns: Int) {
@@ -852,11 +791,6 @@ class NoteViewModel @Inject constructor(
         _aiState.update { it.copy(conversationHistory = aiConversationRepository.conversationSummaries(noteId)) }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        narrationJob?.cancel()
-        narrationPlayerManager.stopForNote(noteId)
-    }
 }
 
 private const val AiHistoryMessageLimit = 20

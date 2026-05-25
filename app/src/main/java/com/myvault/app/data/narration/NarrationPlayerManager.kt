@@ -29,17 +29,18 @@ class NarrationPlayerManager @Inject constructor() {
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
 
-    fun markPreparing(noteId: String, noteTitle: String) {
+    fun markPreparing(noteId: String, noteTitle: String, voice: String = NarrationConfig.DEFAULT_VOICE) {
         _state.value = NarrationUiState(
             status = NarrationPlaybackStatus.Preparing,
             noteId = noteId,
             noteTitle = noteTitle,
             label = "Preparing narration...",
             speed = speed,
+            voice = voice,
         )
     }
 
-    fun markGenerating(noteId: String, noteTitle: String, current: Int, total: Int) {
+    fun markGenerating(noteId: String, noteTitle: String, current: Int, total: Int, voice: String = NarrationConfig.DEFAULT_VOICE) {
         val status = _state.value.status
         if (status == NarrationPlaybackStatus.Playing || status == NarrationPlaybackStatus.Paused) {
             _state.update { it.copy(totalChunks = total.takeIf { value -> value > 0 } ?: it.totalChunks) }
@@ -51,6 +52,7 @@ class NarrationPlayerManager @Inject constructor() {
             noteTitle = noteTitle,
             label = if (total > 1) "Generating narration $current of $total..." else "Generating narration...",
             speed = speed,
+            voice = voice,
             currentChunk = current,
             totalChunks = total,
         )
@@ -242,6 +244,7 @@ class NarrationPlayerManager @Inject constructor() {
             noteTitle = session.noteTitle,
             label = "Loading narration...",
             speed = speed,
+            voice = session.voice,
             currentChunk = index + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
             totalPositionMs = pendingSeekMs ?: globalPositionMs(startPositionMs),
@@ -286,6 +289,7 @@ class NarrationPlayerManager @Inject constructor() {
                         noteTitle = session.noteTitle,
                         label = "Narration finished",
                         speed = speed,
+                        voice = session.voice,
                         currentChunk = activeFiles.size,
                         totalChunks = activeFiles.size,
                         totalPositionMs = activeDurationsMs.sum(),
@@ -317,6 +321,7 @@ class NarrationPlayerManager @Inject constructor() {
             label = label,
             error = null,
             speed = speed,
+            voice = session?.voice ?: _state.value.voice,
             currentChunk = activeChunkIndex + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
             currentPositionMs = chunkPosition,
