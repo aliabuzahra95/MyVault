@@ -12,150 +12,74 @@ private enum class AiOutputType {
     EditorOutputHtml,
 }
 
+/**
+ * MyVault AI prompt builder.
+ *
+ * Design goal:
+ * - Normal chat must feel fast, natural, and adaptive.
+ * - Deep theological/academic prompting must only be used for genuinely deep modes.
+ * - Editor actions must return clean HTML only.
+ * - StructureOnly is AI-powered and must preserve exact wording while improving structure.
+ */
 object AiPromptBuilder {
-    private val BaseSystemInstruction = """
-        You are My Vault Islamic Study AI, a specialist study assistant built into a private Islamic notes app.
+    private val NormalChatSystemInstruction = """
+        You are MyVault AI, an intelligent Islamic study assistant inside a private notes app.
 
-        Your role is to help the user:
-        - understand Islamic theology deeply
-        - analyse Aqeedah notes
-        - study Asma wa Sifaat
-        - understand Ibn Taymiyyah's arguments
-        - compare Athari, Ashari, Maturidi, Mu'tazili, Jahmi, Karrami, and kalam positions
-        - clarify Arabic terminology
-        - map arguments logically
-        - explain objections and responses
-        - organise complex theological notes
-        - preserve academic integrity
-
-        You are not merely a summariser.
-        You are not merely a formatter.
-        You are not a generic chatbot.
-        You are a study tutor, theological analyst, and careful explainer.
-
-        Outside Islamic topics, remain My Vault AI: a direct, structured, intellectually serious assistant for the current note.
+        Answer naturally, clearly, and helpfully.
+        Use the current note context when relevant, but do not force every answer to become a long academic essay.
+        Adapt the length to the user's request: brief questions get brief answers, deep requests get deeper answers.
+        Be academically honest: do not invent quotations, references, book citations, or scholar attributions.
+        When unsure, say so plainly.
+        Default language is English unless the user clearly asks otherwise.
     """.trimIndent()
 
-    private val UserContext = """
-        USER CONTEXT
+    private val FastNoteSystemInstruction = """
+        You are MyVault AI, a fast note assistant for a private Islamic study vault.
 
-        The user is especially interested in:
-        - Athari Aqeedah
-        - Asma wa Sifaat
-        - Ibn Taymiyyah
-        - Ibn al-Qayyim
-        - classical Salafi/Athari scholarship
-        - Hanbali theological debates
-        - arguments against ta'til, ta'wil, tafwid, tashbih accusations, and kalam premises
-        - understanding Ashari and Maturidi arguments accurately
-        - disagreements between theological schools
-        - the intellectual structure behind theological claims
-        - Arabic theological terminology
-        - how arguments are built, objected to, and answered
-
-        The user leans Athari/Salafi, but wants serious academic honesty. Do not flatter the user's view. Do not distort opposing views. Do not simplify complex disputes into slogans.
+        Help the user understand, summarise, explain, simplify, or study the current note.
+        Be clear and useful without unnecessary rigidity.
+        Preserve Arabic terms when they matter and explain them in English.
+        Do not fabricate quotations or references.
+        Do not over-structure the answer unless structure improves clarity.
     """.trimIndent()
 
-    private val AcademicIntegrityRules = """
-        ACADEMIC INTEGRITY RULES
+    private val DeepAnalysisSystemInstruction = """
+        You are MyVault AI, a careful Islamic studies and theology analysis assistant.
 
-        Always follow these rules:
-        1. Do not invent quotations.
-        2. Do not fabricate references.
-        3. Do not attribute a claim to Ibn Taymiyyah, al-Ashari, al-Baqillani, al-Juwayni, al-Ghazali, al-Razi, Ibn Furak, Ibn Qudamah, Ahmad ibn Hanbal, al-Dhahabi, Ibn Kathir, Ibn al-Qayyim, or any scholar unless it is present in the note, widely known and you are confident, or clearly marked as a general attribution/common scholarly framing.
-        4. If unsure, say: "The note suggests...", "A possible way to understand this is...", or "I cannot confirm the exact attribution from the note alone...".
-        5. Distinguish clearly between what the note directly says, wider explanation, inference, possible objection, and possible response.
-        6. Do not present contested theological positions as if all Muslims agreed on them.
-        7. Do not strawman Ashari, Maturidi, Mu'tazili, Athari, or other positions.
-        8. When explaining disagreements, represent each school as its serious scholars would represent it.
-        9. If discussing sects or theological groups, use precise wording and avoid emotional polemics unless the note itself is polemical and the user asks for that angle.
-        10. Maintain respect for Islamic subject matter.
+        Use this deeper mode for advanced analysis, theological comparison, objections/responses, and serious study.
+        Represent Athari, Ashari, Maturidi, Mu'tazili, Jahmi, Karrami, and other positions accurately when relevant.
+        Do not strawman opposing views.
+        Distinguish between:
+        - what the note directly says
+        - wider explanation
+        - inference
+        - possible objection
+        - possible response
+        - uncertainty
+
+        Do not invent quotations, references, page numbers, or attributions.
+        Preserve Arabic technical terms when precision matters, and explain them clearly in English.
     """.trimIndent()
 
-    private val TheologicalStyle = """
-        THEOLOGICAL STYLE
+    private val EditorHtmlSystemInstruction = """
+        You are MyVault AI, an editor inside a private notes app.
 
-        When the note concerns Aqeedah or Asma wa Sifaat, explain concepts through:
-        - Qur'anic/scriptural basis where relevant
-        - linguistic meaning
-        - technical theological meaning
-        - rational/logical structure
-        - historical school disagreement
-        - Athari framing
-        - Ashari/Maturidi framing when relevant
-        - objections and responses
-        - implications for broader theology
-
-        Be especially careful with: Allah's Attributes, speech of Allah, istiwa, nuzul, yad, wajh, ayn, divine action, created/uncreated speech, muhdath vs makhluq, qidam/qadeem, temporality, causation, hulul al-hawadith, ta'wil, tafwid, tashbih, tajsim, ta'til, bila kayf, ithbat, tanzih, kamal and naqs, necessary/existent/perfection arguments, and kalam premises.
+        Return simple clean HTML only.
+        Do not include commentary, markdown, code fences, explanations, or prefaces.
+        Preserve the user's meaning and wording unless the selected mode explicitly asks you to improve clarity.
+        Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">.
+        Use red only for Qur'anic verses when clearly identifiable.
+        Use blue only for scholar quotations when clearly identifiable.
     """.trimIndent()
 
-    private val TeachingStyle = """
-        TEACHING STYLE
+    private val SelectedTextSystemInstruction = """
+        You are MyVault AI, helping with selected text from a private note.
 
-        Teach like a serious mentor:
-        1. Start by identifying the main issue.
-        2. Define important terms.
-        3. Explain the argument step by step.
-        4. Show why the issue matters.
-        5. Separate the positions of different schools.
-        6. Explain objections.
-        7. Explain responses.
-        8. Give a clear final takeaway.
-        9. When helpful, add revision questions.
-
-        The user benefits from clear structure, step-by-step explanation, intellectual depth, precise terminology, careful distinction between positions, Arabic terms with English explanations, and not being overwhelmed with irrelevant tangents.
-
-        Avoid generic summaries, vague explanations, excessive disclaimers, patronising tone, shallow "both sides say..." framing without analysis, random modern comparisons unless useful, and irrelevant interfaith comparisons unless asked.
-    """.trimIndent()
-
-    private val LanguageRules = """
-        LANGUAGE RULES
-
-        Default language: English.
-        When Arabic terms appear, preserve the Arabic, provide transliteration when helpful, explain the meaning in English, and do not replace technical Arabic terms with loose English if precision is needed.
-
-        Examples:
-        - إثبات = ithbat / affirmation
-        - تنزيه = tanzih / declaring Allah transcendent above imperfection
-        - تعطيل = ta'til / negation or stripping of attributes
-        - تأويل = ta'wil / interpretive redirection
-        - تفويض = tafwid / consigning meaning/how, depending on school usage
-        - بلا كيف = bila kayf / without asking or specifying how
-        - كمال = kamal / perfection
-        - نقص = naqs / deficiency
-        - حادث = hadith / originated
-        - مخلوق = makhluq / created
-        - قديم = qadeem / eternal/pre-eternal
-    """.trimIndent()
-
-    private val ContextPolicy = """
-        OUTPUT MODE DISTINCTION
-
-        Study response modes return a readable plain text answer to the user. They are not intended to replace the note and should not output raw HTML or raw Markdown unless explicitly requested.
-        Study response modes: Ask About This Note, Explain This Note, Study Tutor, Deep Analysis, General Ask.
-
-        Editor output modes create content that may be inserted into or replace the note. They must return simple HTML only. No commentary, no explanation, no markdown asterisks, no code fences.
-        Editor output modes: Structure Only, Intelligent Structure, Organise and Structure, Format Note, Clean Note.
-
-        CHAT ANSWER PLAIN TEXT RULES
-
-        For study response modes:
-        - Do not output raw Markdown formatting.
-        - Do not use visible asterisks for bold or italic.
-        - Do not use ### headings.
-        - Do not use Markdown tables.
-        - Do not use code fences unless the user specifically asks for code.
-        - Use simple plain text headings such as "Main idea:", "Explanation:", and "Final takeaway:".
-        - Bullets are allowed using simple hyphens only.
-
-        CONTEXT POLICY
-
-        Note-bound modes use only the note: Quick Summary, Basic Summary, Structure Only, Intelligent Structure, Format Note, and Organise and Structure unless told to add explanation.
-        Study-intelligence modes use the note as the anchor but may use wider relevant knowledge: Study Tutor, Deep Analysis, Ask About This Note, Explain This Note, General Ask.
-
-        For study-intelligence modes: the note is the anchor, not the prison. You may use wider relevant knowledge to explain concepts, define terms, clarify background, show implications, explain disagreements, identify assumptions, provide objections and responses, and teach what the note is trying to capture.
-
-        But clearly distinguish note content from wider explanation, do not invent sources, do not claim certainty where uncertain, and do not contradict the note unless explicitly analysing possible error.
+        Focus primarily on the selected text.
+        Use surrounding note context only when it helps.
+        Answer naturally and directly.
+        Preserve Arabic terms where relevant.
+        Do not invent quotations, references, or scholar attributions.
     """.trimIndent()
 
     fun build(
@@ -168,40 +92,30 @@ object AiPromptBuilder {
         model: NoteAiModel = NoteAiModel.Gemini25Flash,
     ): AiPromptRequest {
         val safeTitle = title.ifBlank { "Untitled note" }
-        val safeQuestion = question.ifBlank { "No question provided." }
-        val systemInstruction = systemInstructionFor(action)
-        val safeBody = body.scopedForAction(action)
-        val safeHistory = if (action.isLightweightAction()) emptyList() else history.takeLast(4)
-        val noteContext = """
-            <note>
-            <title>$safeTitle</title>
-            <body>
-            $safeBody
-            </body>
-            </note>
-        """.trimIndent()
-        val modeName = action.displayName
+        val safeQuestion = question.ifBlank { action.defaultUserRequest() }
         val outputType = outputTypeFor(action)
-        val prompt = """
-            $systemInstruction
+        val systemInstruction = systemInstructionFor(action)
+        val noteContext = noteContextFor(safeTitle, body.scopedForAction(action))
+        val safeHistory = historyFor(action, history)
 
-            Selected mode: $modeName
+        val prompt = """
+            Mode: ${action.displayName}
             Output type: ${outputType.name}
 
             ${outputInstructions(outputType)}
 
             ${modeInstructions(action)}
 
-            Note context:
+            Current note:
             $noteContext
 
-            Recent current-note conversation:
-            ${safeHistory.toPromptHistory(maxCharsPerTurn = 1_500)}
+            Recent conversation:
+            ${safeHistory.toPromptHistory(maxCharsPerTurn = historyCharBudgetFor(action))}
 
-            User question/request:
-            <question>
+            User request:
+            <request>
             $safeQuestion
-            </question>
+            </request>
         """.trimIndent()
 
         return AiPromptRequest(
@@ -219,44 +133,25 @@ object AiPromptBuilder {
         model: NoteAiModel = NoteAiModel.Gemini25Flash,
     ): AiPromptRequest {
         val safeTitle = title.ifBlank { "Untitled note" }
-        val safeBody = body.takeMiddleAware(16_000)
         val prompt = """
-            $editorSystemInstruction
-
-            Internal planning task for Intelligent Structure.
-
-            Create a lightweight structural plan for the full note below.
-            This plan is internal context only and will not be shown to the user.
+            Create a concise internal structure plan for this note.
+            This plan is not shown to the user.
 
             Rules:
             - Do not rewrite the note.
-            - Do not summarise away content.
-            - Identify the overall topic.
-            - Identify major themes and natural section boundaries.
-            - Suggest a consistent heading hierarchy.
-            - Suggest colour coding only for Qur'anic verses and scholar quotes when obvious.
-            - Use red for Qur'anic verses.
-            - Use blue for scholar quotes.
-            - Note any sacred texts, Hadith, scholar quotes, or Arabic terms that must be preserved carefully.
-            - Keep the plan concise but useful.
+            - Identify the topic, major sections, and natural heading hierarchy.
+            - Mention any Qur'anic verses or scholar quotes that need careful preservation.
+            - Keep it short.
             - Plain text only.
 
-            <note>
-            <title>$safeTitle</title>
-            <body>
-            $safeBody
-            </body>
-            </note>
+            ${noteContextFor(safeTitle, body.takeMiddleAware(10_000))}
         """.trimIndent()
 
         return AiPromptRequest(
-            systemInstruction = editorSystemInstruction,
+            systemInstruction = EditorHtmlSystemInstruction,
             prompt = prompt,
-            temperature = if (provider == NoteAiProvider.ChatGPT && model == NoteAiModel.Gemini3Pro) 0.2f else 0.18f,
-            maxOutputTokens = when (provider) {
-                NoteAiProvider.ChatGPT -> if (model == NoteAiModel.Gemini3Pro) 2_200 else 1_400
-                NoteAiProvider.Gemini -> if (model == NoteAiModel.Gemini3Pro) 1_800 else 1_200
-            },
+            temperature = 0.15f,
+            maxOutputTokens = 900,
         )
     }
 
@@ -271,36 +166,16 @@ object AiPromptBuilder {
         model: NoteAiModel = NoteAiModel.Gemini25Flash,
     ): AiPromptRequest {
         val safeTitle = title.ifBlank { "Untitled note" }
-        val safeQuestion = question.ifBlank { "Discuss this selected text." }
-        val systemInstruction = selectedTextSystemInstruction
+        val safeQuestion = question.ifBlank { action.defaultSelectedTextRequest() }
         val prompt = """
-            $systemInstruction
-
-            Selected-text AI mode: ${action.displayName}
+            Selected text mode: ${action.displayName}
             Output type: ${AiOutputType.ChatAnswerPlainText.name}
 
             ${outputInstructions(AiOutputType.ChatAnswerPlainText)}
 
-            SELECTED TEXT CONTEXT RULES
-
-            You are My Vault AI, an Islamic study assistant inside a private notes app.
-            The user selected a piece of text from a note.
-            Focus primarily on the selected text.
-            Use the surrounding note only when it helps clarify context.
-            Be precise, academically honest, and useful.
-
-            For Islamic/theology content:
-            - Preserve Arabic terms.
-            - Explain terminology clearly.
-            - Distinguish direct selected-text content from wider explanation.
-            - Do not invent quotations.
-            - Do not fabricate citations.
-            - Represent Athari, Ashari, Maturidi, Mu'tazili, and other positions accurately.
-            - Do not strawman opposing schools.
-
             ${selectedTextInstructions(action)}
 
-            Current note:
+            Current note context:
             <note>
             <title>$safeTitle</title>
             <body>
@@ -314,16 +189,16 @@ object AiPromptBuilder {
             </selected_text>
 
             User request:
-            <question>
+            <request>
             $safeQuestion
-            </question>
+            </request>
 
-            Recent current-note conversation:
-            ${history.takeLast(2).toPromptHistory(maxCharsPerTurn = 1_200)}
+            Recent conversation:
+            ${history.takeLast(2).toPromptHistory(maxCharsPerTurn = 900)}
         """.trimIndent()
 
         return AiPromptRequest(
-            systemInstruction = systemInstruction,
+            systemInstruction = SelectedTextSystemInstruction,
             prompt = prompt,
             temperature = selectedTextTemperatureFor(action, provider, model),
             maxOutputTokens = selectedTextMaxOutputTokensFor(action, provider, model),
@@ -333,19 +208,19 @@ object AiPromptBuilder {
     fun buildSuggestionPrefill(suggestion: AiSuggestion, selectedTextMode: Boolean = false): String =
         when (suggestion) {
             AiSuggestion.Explain -> if (selectedTextMode) {
-                "Explain this selected text clearly, including the key terms and why it matters."
+                "Explain this selected text clearly."
             } else {
-                "Explain this note clearly, including the key terms and why it matters."
+                "Explain this note clearly."
             }
             AiSuggestion.Simplify -> if (selectedTextMode) {
-                "Explain this selected text in simpler language without losing the technical meaning."
+                "Simplify this selected text without losing the technical meaning."
             } else {
-                "Explain this note in simpler language without losing the important meaning."
+                "Simplify this note without losing the important meaning."
             }
             AiSuggestion.Terminology -> if (selectedTextMode) {
-                "Explain the terminology used in this selected text, including Arabic terms where relevant."
+                "Explain the terminology in this selected text."
             } else {
-                "Explain the terminology used in this note, including Arabic terms where relevant."
+                "Explain the terminology in this note."
             }
             AiSuggestion.Compare -> "Compare this position with..."
             AiSuggestion.RelatedConcepts -> if (selectedTextMode) {
@@ -380,586 +255,240 @@ object AiPromptBuilder {
         """.trimIndent()
     }
 
-    private val fullSystemInstruction: String
-        get() = listOf(
-            BaseSystemInstruction,
-            UserContext,
-            AcademicIntegrityRules,
-            TheologicalStyle,
-            TeachingStyle,
-            LanguageRules,
-            ContextPolicy,
-        ).joinToString("\n\n")
-
-    private val lightweightSystemInstruction: String
-        get() = listOf(
-            BaseSystemInstruction,
-            AcademicIntegrityRules,
-            LanguageRules,
-            ContextPolicy,
-        ).joinToString("\n\n")
-
-    private val editorSystemInstruction: String
-        get() = listOf(
-            BaseSystemInstruction,
-            AcademicIntegrityRules,
-            LanguageRules,
-            ContextPolicy,
-        ).joinToString("\n\n")
-
-    private val selectedTextSystemInstruction: String
-        get() = listOf(
-            BaseSystemInstruction,
-            AcademicIntegrityRules,
-            LanguageRules,
-            ContextPolicy,
-        ).joinToString("\n\n")
-
     private fun systemInstructionFor(action: NoteAiAction): String =
-        if (action.isLightweightAction()) lightweightSystemInstruction else fullSystemInstruction
-
-    private fun List<NoteAiConversationTurn>.toPromptHistory(maxCharsPerTurn: Int = 4_000): String {
-        if (isEmpty()) return "<history>No previous conversation in this note AI session.</history>"
-        return joinToString(separator = "\n\n", prefix = "<history>\n", postfix = "\n</history>") { turn ->
-            val role = when (turn.role) {
-                NoteAiChatRole.User -> "user"
-                NoteAiChatRole.Assistant -> "assistant"
-            }
-            "<message role=\"$role\">\n${turn.content.take(maxCharsPerTurn)}\n</message>"
-        }
-    }
-
-    private fun modeInstructions(action: NoteAiAction): String =
-        when (action) {
-            NoteAiAction.QuickSummary -> """
-                Purpose: Give a brief summary of the current note.
-                Rules:
-                - Use only the note.
-                - Keep it concise.
-                - Use 5-8 bullet points maximum.
-                - No wider explanation unless absolutely necessary to make the note intelligible.
-                - No markdown formatting symbols intended for editor insertion.
-
-                Output structure:
-                Main idea:
-                Key points:
-                Final takeaway:
-            """.trimIndent()
-
-            NoteAiAction.DeepSummary -> """
-                Purpose: Give a detailed but still note-grounded summary.
-                Rules:
-                - Use the note as the primary source.
-                - Do not add unrelated external material.
-                - Extract the main idea, key points, definitions, arguments, objections, responses, conclusion, and revision points when present.
-
-                Output structure:
-                Main Idea
-                Key Concepts
-                Argument Flow
-                Objections / Responses
-                Important Details
-                Final Takeaway
-                Revision Points
-            """.trimIndent()
-
-            NoteAiAction.StudyTutor -> """
-                Purpose: Teach the note deeply.
-                Rules:
-                - Use the note as the primary context.
-                - Use wider relevant knowledge where helpful.
-                - Explain like a knowledgeable Islamic theology teacher.
-                - Break down complex concepts.
-                - Explain Arabic terms.
-                - Show how ideas connect.
-                - Do not merely summarise.
-
-                Output structure:
-                What this note is about
-                Key terms
-                Step-by-step explanation
-                From the note
-                Additional explanation
-                Why it matters
-                Common confusion
-                Final takeaway
-                Questions to revise
-            """.trimIndent()
-
-            NoteAiAction.DeepAnalysis -> """
-                Purpose: Give advanced intellectual analysis of the note.
-                Rules:
-                - Use the note as anchor.
-                - Use wider knowledge only when it directly helps.
-                - Avoid random broad comparisons.
-                - Analyse the actual argument, not just the topic.
-                - Be serious, precise, and structured.
-                - This is not a note-formatting action. Do not return HTML. Do not rewrite the note. Do not output content intended to replace the note.
-
-                Output structure:
-                Core Question
-                Main Thesis
-                Key Terms
-                Argument Map
-                From the Note
-                Wider Explanation
-                Underlying Assumptions
-                Objections and Responses
-                Why This Matters
-                Revision Points
-                Questions to Think About
-            """.trimIndent()
-
-            NoteAiAction.Ask -> """
-                Purpose: Act as the default conversational My AI assistant for the current note.
-                Rules:
-                - Infer the user's intent naturally from their message.
-                - Handle normal questions, follow-up questions, explanations, comparisons, clarifications, study help, and light note requests conversationally.
-                - If the user asks for a summary, summarise the note.
-                - If the user asks what something means, explain it like a serious study tutor.
-                - If the user asks for comparison or deeper reasoning, analyse carefully.
-                - Use the note as main context.
-                - If the answer is directly in the note, answer from the note.
-                - If the question requires wider explanation, provide it clearly.
-                - If the note does not contain the answer, say so, then explain generally if helpful.
-                - Do not behave like a tool menu. Respond as a natural assistant.
-
-                Output structure:
-                Direct answer
-                Based on the note
-                Wider explanation
-                Final takeaway
-            """.trimIndent()
-
-            NoteAiAction.ExplainNote -> """
-                Purpose: Explain the note in simpler, clearer language.
-                Rules:
-                - Use the note as the base.
-                - May use wider explanation to clarify.
-                - Teach concepts step by step.
-                - Do not turn it into a generic essay.
-
-                Output structure:
-                Simple explanation
-                Important terms
-                How the argument works
-                Why it matters
-                Final takeaway
-            """.trimIndent()
-
-            NoteAiAction.GeneralAsk -> """
-                Purpose: Answer any normal question.
-                Rules:
-                - Use the note if relevant.
-                - If note context is irrelevant, answer generally.
-                - Do not force everything back to the note.
-                - Still maintain Islamic academic integrity if the question is Islamic.
-            """.trimIndent()
-
-            NoteAiAction.IntelligentStructure -> intelligentStructureInstructions()
-
-            NoteAiAction.StructureOnly -> structureOnlyInstructions()
-
-            NoteAiAction.CleanFormat -> editorOutputInstructions(
-                purpose = "Rewrite the current note into a cleaner, better organised study note.",
-                rewriteStrength = "Improve headings, grouping, flow, clarity, readability, and study usefulness. You may restructure more substantially while preserving meaning.",
-            )
-
-            NoteAiAction.FormatNote -> editorOutputInstructions(
-                purpose = "Format the note without changing meaning significantly.",
-                rewriteStrength = "Make headings and emphasis clearer. Use minimal rewriting only.",
-            )
-        }
-
-    private fun editorOutputInstructions(purpose: String, rewriteStrength: String): String = """
-        Purpose: $purpose
-
-        Rules:
-        - This is an editor-output mode.
-        - Return only the improved note content.
-        - No explanation.
-        - No commentary.
-        - No markdown.
-        - No visible asterisks.
-        - Use simple HTML only.
-        - Preserve original meaning.
-        - Do not add new claims.
-        - Do not invent missing material.
-        - $rewriteStrength
-        - Keep Arabic terms intact.
-        - Preserve theological precision.
-        - Preserve Arabic text exactly unless clearly duplicated or malformed.
-
-        Organise into suitable sections only when they fit:
-        - Main Topic
-        - Key Principles
-        - Definitions / Terms
-        - Core Argument
-        - Objection
-        - Response
-        - Examples
-        - Important Takeaway
-        - Open Questions / Points to Review
-
-        Allowed HTML tags only:
-        <h1>, <h2>, <h3>, <p>, <strong>, <em>, <u>, <ul>, <ol>, <li>, <blockquote>, <br>
-    """.trimIndent()
-
-    private fun intelligentStructureInstructions(): String = """
-        Purpose: Transform a messy or unstructured note into a highly organised study note.
-
-        Rules:
-        - This is an editor-output mode.
-        - Return only structured editor content.
-        - Return simple HTML only.
-        - No commentary.
-        - No explanation of what changed.
-        - No markdown.
-        - No visible asterisks.
-        - No code fences.
-        - Never invent new claims.
-        - Never fabricate quotes or references.
-        - Preserve meaning, theological precision, Arabic terms, Qur'anic ayat, Hadith, and scholar quotes carefully.
-        - Do not alter sacred texts.
-
-        Structure:
-        - Read the whole note and identify the overall topic, major themes, missing headings, and logical flow.
-        - Add meaningful headings only where they genuinely help.
-        - Add subheadings when clear subtopics exist.
-        - Do not over-fragment the note.
-        - Avoid generic headings like "Important Point" unless genuinely appropriate.
-        - Prefer meaningful headings such as "The Distinction Between Muhdath and Makhluq", "Ibn Taymiyyah's Response to the Kalam Objection", "Qur'anic Evidence for the Argument", or "Objection and Response" when they fit the note.
-        - Group related ideas together.
-        - Separate definitions, arguments, objections, responses, evidences, examples, and takeaways.
-        - Use numbered lists when order or sequence matters.
-        - Use bullet points when listing related ideas.
-        - Split large paragraphs for readability.
-
-        Rich formatting:
-        - Use <h1> for the main note heading only when useful.
-        - Use <h2> for main sections.
-        - Use <h3> for subsections.
-        - Use <strong> for key terms.
-        - Use <em> for light emphasis or explanatory phrases.
-        - Use <u> sparingly for major labels only.
-        - Use <blockquote> for clear quotations or quoted evidences.
-        - Do not over-format.
-
-        Colour coding:
-        - Use colour only when the category is clear.
-        - Qur'anic verses / Qur'anic ayat must be red: <span data-color="red">...</span>
-        - Quotes of scholars must be blue: <span data-color="blue">...</span>
-        - Do not colour Hadith unless the note clearly treats it as a quote/evidence and colour is genuinely helpful.
-        - Do not colour key technical terms by default.
-        - Do not colour warnings, objections, headings, or random text.
-        - If unsure whether text is Qur'an or a scholar quote, do not colour it.
-
-        Long-note chunk behaviour:
-        - If this request says it is a chunk, structure only that chunk.
-        - Preserve the chunk's original order.
-        - Avoid duplicating generic headings across chunks.
-
-        Allowed HTML tags only:
-        <h1>, <h2>, <h3>, <p>, <strong>, <em>, <u>, <ul>, <ol>, <li>, <blockquote>, <br>, <span>
-
-        Allowed colour spans only:
-        <span data-color="red">...</span>
-        <span data-color="blue">...</span>
-    """.trimIndent()
-
-    private fun structureOnlyInstructions(): String = """
-        Purpose: Format and organise the note without changing the user's wording.
-
-        Absolute preservation rules:
-        - Do not add a single word that is not already in the note.
-        - Do not remove a single word from the note.
-        - Do not rewrite, paraphrase, explain, summarise, simplify, expand, correct, or translate any sentence.
-        - Do not speak to the user.
-        - Do not add second-person wording such as "you", "your", or "remember".
-        - Do not add new terms, definitions, examples, conclusions, takeaways, objections, or responses.
-        - Preserve every Arabic word, Qur'anic ayah, Hadith wording, scholar quote, punctuation, and technical term exactly as provided.
-        - The only permitted changes are structural HTML formatting, paragraph breaks, heading tags applied to existing headings/text, list tags around existing list items, blockquote tags around existing quoted material, and light emphasis/colour spans around existing text.
-
-        Structure:
-        - Use the existing wording to identify natural sections.
-        - If a heading is needed, it must be made from words already present in the note.
-        - Prefer preserving the original order of the note.
-        - You may move whole existing paragraphs or list items only when doing so clearly organises the note without changing wording.
-        - Do not merge sentences in a way that changes wording.
-        - Do not split a sentence by inserting new words.
-
-        Rich formatting:
-        - Use <h1>, <h2>, or <h3> only around existing note text.
-        - Use <p> for paragraphs.
-        - Use <ul>, <ol>, and <li> only for existing list-like lines.
-        - Use <strong>, <em>, and <u> only around existing words.
-        - Use <blockquote> only around existing quoted material.
-        - Use colour spans only around existing words.
-
-        Colour coding:
-        - Use colour only when the category is obvious from the note.
-        - Qur'anic verses / Qur'anic ayat may be red: <span data-color="red">...</span>
-        - Quotes of scholars may be blue: <span data-color="blue">...</span>
-        - If unsure, do not colour it.
-
-        Final self-check before answering:
-        - The visible words in your output, after removing HTML tags, must be the same words from the note.
-        - If you are tempted to add explanation, do not.
-        - Return only simple HTML.
-
-        Allowed HTML tags only:
-        <h1>, <h2>, <h3>, <p>, <strong>, <em>, <u>, <ul>, <ol>, <li>, <blockquote>, <br>, <span>
-
-        Allowed colour spans only:
-        <span data-color="red">...</span>
-        <span data-color="blue">...</span>
-    """.trimIndent()
-
-    private fun selectedTextInstructions(action: SelectedTextAiAction): String =
-        when (action) {
-            SelectedTextAiAction.Ask -> """
-                Answer the user's request about the selected text.
-                The selected text is the main focus.
-                Use the surrounding note only to clarify context.
-                If the user asks for wider explanation, provide it clearly and honestly.
-            """.trimIndent()
-
-            SelectedTextAiAction.Explain -> """
-                Explain the selected text clearly.
-                Define key terms.
-                Explain why it matters in the surrounding note.
-                Use headings such as "Meaning:", "Key terms:", and "Why it matters:" where useful.
-            """.trimIndent()
-
-            SelectedTextAiAction.Simplify -> """
-                Explain the selected text in simpler language.
-                Do not distort technical or theological meaning.
-                Keep important Arabic terms and explain them rather than replacing them loosely.
-            """.trimIndent()
-
-            SelectedTextAiAction.Expand -> """
-                Expand the selected idea with relevant background.
-                Clearly separate "From the selected text:" from "Wider explanation:".
-                Do not invent quotes or references.
-            """.trimIndent()
-
-            SelectedTextAiAction.Terminology -> """
-                Extract the important terms from the selected text.
-                For each term, provide:
-                - the term
-                - transliteration if Arabic
-                - plain meaning
-                - technical/theological significance when relevant
-            """.trimIndent()
-
-            SelectedTextAiAction.RelatedConcepts -> """
-                List related concepts that help the user understand the selected text.
-                Keep each explanation short and useful.
-                Do not force unrelated concepts.
-            """.trimIndent()
-
-            SelectedTextAiAction.ComparePositions -> """
-                Compare relevant theological positions only if applicable.
-                For example, Athari, Ashari, Maturidi, Mu'tazili, or kalam framings.
-                Do not force comparison if the selected text is not theological or comparative.
-                Represent each view fairly.
-            """.trimIndent()
-
-            SelectedTextAiAction.ObjectionResponse -> """
-                Identify a likely objection to the selected idea.
-                Then provide a possible response.
-                Clearly label what is from the selected text versus wider analysis.
-                Avoid pretending the note gave an objection if it did not.
-            """.trimIndent()
-
-            SelectedTextAiAction.StudyQuestions -> """
-                Generate revision questions from the selected text.
-                Include a mix of short-answer questions and deeper analysis questions.
-                Keep the questions focused on the selected text.
-            """.trimIndent()
+        when (action.promptMode()) {
+            PromptMode.NormalChat -> NormalChatSystemInstruction
+            PromptMode.FastNoteAction -> FastNoteSystemInstruction
+            PromptMode.DeepAnalysis -> DeepAnalysisSystemInstruction
+            PromptMode.EditorHtml -> EditorHtmlSystemInstruction
+            PromptMode.LocalOnly -> FastNoteSystemInstruction
         }
 
     private fun outputTypeFor(action: NoteAiAction): AiOutputType =
         when (action) {
+            NoteAiAction.IntelligentStructure,
             NoteAiAction.CleanFormat,
             NoteAiAction.FormatNote,
             NoteAiAction.StructureOnly,
-            NoteAiAction.IntelligentStructure,
             -> AiOutputType.EditorOutputHtml
-
-            NoteAiAction.QuickSummary,
-            NoteAiAction.DeepSummary,
-            NoteAiAction.StudyTutor,
-            NoteAiAction.DeepAnalysis,
-            NoteAiAction.Ask,
-            NoteAiAction.ExplainNote,
-            NoteAiAction.GeneralAsk,
-            -> AiOutputType.ChatAnswerPlainText
+            else -> AiOutputType.ChatAnswerPlainText
         }
 
-    private fun outputInstructions(outputType: AiOutputType): String =
-        when (outputType) {
+    private fun outputInstructions(type: AiOutputType): String =
+        when (type) {
             AiOutputType.ChatAnswerPlainText -> """
-                OUTPUT RULES FOR CHAT ANSWERS:
-                - Return clean plain text only.
-                - Do not use Markdown syntax.
-                - Do not use visible asterisks for emphasis.
-                - Do not use ### heading markers.
-                - Do not use Markdown tables.
-                - Do not use code fences unless the user specifically asks for code.
-                - Use simple headings ending with a colon when useful.
-                - Use simple hyphen bullets only.
+                Answer in readable plain text.
+                Do not use markdown tables or code fences unless the user asks for code.
+                Use headings and bullets only when they genuinely improve clarity.
+                Keep the answer as short or detailed as the request deserves.
             """.trimIndent()
-
             AiOutputType.EditorOutputHtml -> """
-                OUTPUT RULES FOR EDITOR OUTPUT:
-                - Return simple HTML only.
-                - Do not use Markdown.
-                - Do not include commentary or explanation.
-                - Do not use code fences.
-                - This output may be previewed, inserted, or used to replace note content.
+                Return HTML only.
+                No markdown.
+                No explanation before or after.
+                No code fences.
+                Use only editor-safe HTML tags.
+                Preserve the note's meaning and wording according to the selected mode.
             """.trimIndent()
         }
 
-    private fun temperatureFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Float {
-        if (provider == NoteAiProvider.ChatGPT) {
-            return when (model) {
-                NoteAiModel.Gemini25Flash -> when (action) {
-                    NoteAiAction.GeneralAsk -> 0.45f
-                    NoteAiAction.Ask,
-                    NoteAiAction.StudyTutor,
-                    NoteAiAction.DeepAnalysis,
-                    -> 0.35f
-                    NoteAiAction.IntelligentStructure,
-                    NoteAiAction.StructureOnly,
-                    NoteAiAction.CleanFormat,
-                    NoteAiAction.FormatNote,
-                    -> 0.18f
-                    else -> 0.25f
-                }
-                NoteAiModel.Gemini3Pro -> when (action) {
-                    NoteAiAction.GeneralAsk -> 0.45f
-                    NoteAiAction.Ask,
-                    NoteAiAction.StudyTutor,
-                    NoteAiAction.DeepAnalysis,
-                    -> 0.4f
-                    NoteAiAction.IntelligentStructure,
-                    NoteAiAction.StructureOnly,
-                    NoteAiAction.CleanFormat,
-                    NoteAiAction.FormatNote,
-                    -> 0.2f
-                    else -> 0.28f
-                }
-            }
+    private fun modeInstructions(action: NoteAiAction): String =
+        when (action) {
+            NoteAiAction.QuickSummary -> """
+                Give a quick summary of the note.
+                Focus on the main point and key takeaways.
+            """.trimIndent()
+            NoteAiAction.DeepSummary -> """
+                Give a useful structured summary.
+                Include the main argument, key terms, and important distinctions.
+                Do not turn it into a full deep analysis unless needed.
+            """.trimIndent()
+            NoteAiAction.StudyTutor -> """
+                Teach the note step by step.
+                Explain terms, structure the idea clearly, and include a short final takeaway.
+            """.trimIndent()
+            NoteAiAction.DeepAnalysis -> """
+                Analyse deeply and carefully.
+                Separate direct note content from wider explanation.
+                Include objections/responses where useful.
+                Be fair to all schools or views discussed.
+            """.trimIndent()
+            NoteAiAction.Ask,
+            NoteAiAction.GeneralAsk,
+            -> """
+                Answer the user's question naturally.
+                Use the note as context when relevant.
+                Do not force a long answer unless the question asks for one.
+            """.trimIndent()
+            NoteAiAction.ExplainNote -> """
+                Explain the note clearly.
+                Define key terms and make the idea easier to understand.
+            """.trimIndent()
+            NoteAiAction.IntelligentStructure -> """
+                Intelligently organise this note into clean HTML.
+                Preserve meaning and important wording, but you may improve structure, headings, grouping, and readability.
+                Use headings, paragraphs, lists, and blockquotes where helpful.
+            """.trimIndent()
+            NoteAiAction.CleanFormat,
+            NoteAiAction.FormatNote,
+            -> """
+                Clean and format this note into readable HTML.
+                Preserve meaning.
+                Remove obvious clutter only if it is formatting noise.
+            """.trimIndent()
+            NoteAiAction.StructureOnly -> """
+                Structure this note into clean editor-safe HTML with excellent organisation.
+
+                HARD RULES:
+                - Do not change the user's words.
+                - Do not paraphrase.
+                - Do not summarise.
+                - Do not add new arguments, explanations, examples, references, or conclusions.
+                - Do not remove any meaningful content.
+                - Preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly.
+                - Only change presentation/structure.
+
+                You may:
+                - create clear headings and subheadings from existing wording
+                - group related lines into sections
+                - turn existing lists into <ul>/<ol>
+                - use <strong> for important existing terms
+                - use <em> sparingly for emphasis
+                - use <blockquote> for obvious quotations or cited passages
+                - use paragraphs for normal prose
+
+                Return only clean HTML. No explanation.
+            """.trimIndent()
         }
-        return when (model) {
-            NoteAiModel.Gemini25Flash -> when (action) {
-                NoteAiAction.GeneralAsk -> 0.5f
-                NoteAiAction.Ask,
-                NoteAiAction.StudyTutor,
-                NoteAiAction.DeepAnalysis,
-                -> 0.4f
-                NoteAiAction.IntelligentStructure,
-                NoteAiAction.StructureOnly,
-                NoteAiAction.CleanFormat,
-                NoteAiAction.FormatNote,
-                -> 0.18f
-                else -> 0.25f
-            }
-            NoteAiModel.Gemini3Pro -> when (action) {
-                NoteAiAction.GeneralAsk -> 0.45f
-                NoteAiAction.Ask,
-                NoteAiAction.StudyTutor,
-                NoteAiAction.DeepAnalysis,
-                -> 0.38f
-                NoteAiAction.IntelligentStructure,
-                NoteAiAction.StructureOnly,
-                NoteAiAction.CleanFormat,
-                NoteAiAction.FormatNote,
-                -> 0.18f
-                else -> 0.25f
-            }
+
+    private fun selectedTextInstructions(action: SelectedTextAiAction): String =
+        when (action) {
+            SelectedTextAiAction.Ask -> "Answer the user's question about the selected text."
+            SelectedTextAiAction.Explain -> "Explain the selected text clearly."
+            SelectedTextAiAction.Simplify -> "Simplify the selected text without losing the technical meaning."
+            SelectedTextAiAction.Expand -> "Expand on the selected idea with useful context."
+            SelectedTextAiAction.Terminology -> "Explain the terminology in the selected text."
+            SelectedTextAiAction.RelatedConcepts -> "List and explain related concepts that clarify the selected text."
+            SelectedTextAiAction.ComparePositions -> "Compare the selected idea with another relevant position, fairly and clearly."
+            SelectedTextAiAction.ObjectionResponse -> "Give a strong objection to the selected idea and a possible response."
+            SelectedTextAiAction.StudyQuestions -> "Generate useful study questions from the selected text."
         }
+
+    private fun noteContextFor(title: String, body: String): String = """
+        <note>
+        <title>$title</title>
+        <body>
+        $body
+        </body>
+        </note>
+    """.trimIndent()
+
+    private enum class PromptMode {
+        NormalChat,
+        FastNoteAction,
+        DeepAnalysis,
+        EditorHtml,
+        LocalOnly,
     }
 
-    private fun legacyTemperatureFor(action: NoteAiAction): Float =
-        when (action) {
-            NoteAiAction.QuickSummary -> 0.25f
-            NoteAiAction.DeepSummary -> 0.35f
-            NoteAiAction.StudyTutor -> 0.45f
-            NoteAiAction.DeepAnalysis -> 0.45f
-            NoteAiAction.Ask -> 0.45f
-            NoteAiAction.ExplainNote -> 0.4f
-            NoteAiAction.GeneralAsk -> 0.55f
-            NoteAiAction.IntelligentStructure -> 0.25f
-            NoteAiAction.StructureOnly -> 0.08f
-            NoteAiAction.CleanFormat -> 0.2f
-            NoteAiAction.FormatNote -> 0.15f
+    private fun NoteAiAction.promptMode(): PromptMode =
+        when (this) {
+            NoteAiAction.GeneralAsk,
+            NoteAiAction.Ask,
+            -> PromptMode.NormalChat
+            NoteAiAction.QuickSummary,
+            NoteAiAction.DeepSummary,
+            NoteAiAction.ExplainNote,
+            -> PromptMode.FastNoteAction
+            NoteAiAction.StudyTutor,
+            NoteAiAction.DeepAnalysis,
+            -> PromptMode.DeepAnalysis
+            NoteAiAction.IntelligentStructure,
+            NoteAiAction.CleanFormat,
+            NoteAiAction.FormatNote,
+            -> PromptMode.EditorHtml
+            NoteAiAction.StructureOnly -> PromptMode.EditorHtml
         }
 
-    private fun maxOutputTokensFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Int =
-        when (provider) {
-            NoteAiProvider.ChatGPT -> when (model) {
-                NoteAiModel.Gemini25Flash -> when (action) {
-                    NoteAiAction.QuickSummary -> 800
-                    NoteAiAction.DeepSummary -> 1_800
-                    NoteAiAction.Ask,
-                    NoteAiAction.GeneralAsk,
-                    -> 1_800
-                    NoteAiAction.StudyTutor -> 2_600
-                    NoteAiAction.ExplainNote -> 1_800
-                    NoteAiAction.DeepAnalysis -> 3_000
-                    NoteAiAction.IntelligentStructure -> 3_600
-                    NoteAiAction.StructureOnly -> 4_000
-                    NoteAiAction.CleanFormat -> 2_800
-                    NoteAiAction.FormatNote -> 2_200
-                }
-                NoteAiModel.Gemini3Pro -> when (action) {
-                    NoteAiAction.QuickSummary -> 1_200
-                    NoteAiAction.DeepSummary -> 3_600
-                    NoteAiAction.Ask,
-                    NoteAiAction.GeneralAsk,
-                    -> 4_000
-                    NoteAiAction.StudyTutor -> 5_500
-                    NoteAiAction.ExplainNote -> 3_200
-                    NoteAiAction.DeepAnalysis -> 7_000
-                    NoteAiAction.IntelligentStructure -> 8_000
-                    NoteAiAction.StructureOnly -> 8_000
-                    NoteAiAction.CleanFormat -> 5_500
-                    NoteAiAction.FormatNote -> 4_000
-                }
-            }
-            NoteAiProvider.Gemini -> when (model) {
-                NoteAiModel.Gemini25Flash -> when (action) {
-                    NoteAiAction.QuickSummary -> 800
-                    NoteAiAction.DeepSummary -> 2_200
-                    NoteAiAction.Ask,
-                    NoteAiAction.GeneralAsk,
-                    -> 2_400
-                    NoteAiAction.StudyTutor -> 3_200
-                    NoteAiAction.ExplainNote -> 2_200
-                    NoteAiAction.DeepAnalysis -> 3_600
-                    NoteAiAction.IntelligentStructure -> 6_000
-                    NoteAiAction.StructureOnly -> 6_500
-                    NoteAiAction.CleanFormat -> 4_000
-                    NoteAiAction.FormatNote -> 3_200
-                }
-                NoteAiModel.Gemini3Pro -> when (action) {
-                    NoteAiAction.QuickSummary -> 1_000
-                    NoteAiAction.DeepSummary -> 3_000
-                    NoteAiAction.Ask,
-                    NoteAiAction.GeneralAsk,
-                    -> 3_200
-                    NoteAiAction.StudyTutor -> 4_200
-                    NoteAiAction.ExplainNote -> 3_000
-                    NoteAiAction.DeepAnalysis -> 5_000
-                    NoteAiAction.IntelligentStructure -> 8_000
-                    NoteAiAction.StructureOnly -> 8_000
-                    NoteAiAction.CleanFormat -> 5_500
-                    NoteAiAction.FormatNote -> 4_200
-                }
+    private fun NoteAiAction.defaultUserRequest(): String =
+        when (this) {
+            NoteAiAction.QuickSummary -> "Summarise this note briefly."
+            NoteAiAction.DeepSummary -> "Summarise this note clearly."
+            NoteAiAction.StudyTutor -> "Teach me this note step by step."
+            NoteAiAction.DeepAnalysis -> "Analyse this note deeply."
+            NoteAiAction.Ask -> "Answer my question about this note."
+            NoteAiAction.ExplainNote -> "Explain this note clearly."
+            NoteAiAction.GeneralAsk -> "Answer my question."
+            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve the exact wording. Do not add, remove, paraphrase, summarise, or rewrite any words; only organise and format it."
+            NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
+            NoteAiAction.CleanFormat -> "Clean and organise this note."
+            NoteAiAction.FormatNote -> "Format this note."
+        }
+
+    private fun SelectedTextAiAction.defaultSelectedTextRequest(): String =
+        when (this) {
+            SelectedTextAiAction.Ask -> "Answer my question about this selected text."
+            SelectedTextAiAction.Explain -> "Explain this selected text."
+            SelectedTextAiAction.Simplify -> "Simplify this selected text."
+            SelectedTextAiAction.Expand -> "Expand on this selected text."
+            SelectedTextAiAction.Terminology -> "Explain the terminology in this selected text."
+            SelectedTextAiAction.RelatedConcepts -> "Explain related concepts."
+            SelectedTextAiAction.ComparePositions -> "Compare this with another position."
+            SelectedTextAiAction.ObjectionResponse -> "Give an objection and response."
+            SelectedTextAiAction.StudyQuestions -> "Generate study questions."
+        }
+
+    private fun historyFor(action: NoteAiAction, history: List<NoteAiConversationTurn>): List<NoteAiConversationTurn> =
+        when (action.promptMode()) {
+            PromptMode.NormalChat -> history.takeLast(6)
+            PromptMode.DeepAnalysis -> history.takeLast(4)
+            PromptMode.FastNoteAction -> history.takeLast(2)
+            PromptMode.EditorHtml,
+            PromptMode.LocalOnly,
+            -> emptyList()
+        }
+
+    private fun historyCharBudgetFor(action: NoteAiAction): Int =
+        when (action.promptMode()) {
+            PromptMode.NormalChat -> 900
+            PromptMode.DeepAnalysis -> 1_200
+            else -> 600
+        }
+
+    private fun temperatureFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Float =
+        when (action) {
+            NoteAiAction.StructureOnly -> 4_500.08f
+            else -> when (action.promptMode()) {
+                PromptMode.NormalChat -> 0.45f
+                PromptMode.FastNoteAction -> 0.28f
+                PromptMode.DeepAnalysis -> if (model == NoteAiModel.Gemini3Pro || provider == NoteAiProvider.ChatGPT) 0.36f else 0.32f
+                PromptMode.EditorHtml -> 0.18f
+                PromptMode.LocalOnly -> 0.0f
             }
         }
+
+    private fun maxOutputTokensFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Int {
+        val base = when (action) {
+            NoteAiAction.QuickSummary -> 700
+            NoteAiAction.DeepSummary -> 1_400
+            NoteAiAction.Ask,
+            NoteAiAction.GeneralAsk,
+            -> 1_600
+            NoteAiAction.ExplainNote -> 1_400
+            NoteAiAction.StudyTutor -> 2_200
+            NoteAiAction.DeepAnalysis -> 3_200
+            NoteAiAction.IntelligentStructure -> 4_500
+            NoteAiAction.CleanFormat -> 3_000
+            NoteAiAction.FormatNote -> 2_400
+            NoteAiAction.StructureOnly -> 4_500
+        }
+        val multiplier = when {
+            model == NoteAiModel.Gemini3Pro -> 1.25f
+            provider == NoteAiProvider.ChatGPT -> 1.1f
+            else -> 1.0f
+        }
+        return (base * multiplier).toInt()
+    }
 
     private fun selectedTextTemperatureFor(action: SelectedTextAiAction, provider: NoteAiProvider, model: NoteAiModel): Float =
         when (action) {
@@ -967,74 +496,54 @@ object AiPromptBuilder {
             SelectedTextAiAction.Simplify,
             SelectedTextAiAction.Terminology,
             SelectedTextAiAction.StudyQuestions,
-            -> 0.28f
-
+            -> 0.26f
             SelectedTextAiAction.Explain,
             SelectedTextAiAction.Expand,
             SelectedTextAiAction.RelatedConcepts,
             SelectedTextAiAction.ComparePositions,
             SelectedTextAiAction.ObjectionResponse,
-            -> if (provider == NoteAiProvider.ChatGPT && model == NoteAiModel.Gemini3Pro) 0.38f else 0.34f
+            -> 0.32f
         }
 
     private fun selectedTextMaxOutputTokensFor(action: SelectedTextAiAction, provider: NoteAiProvider, model: NoteAiModel): Int {
         val base = when (action) {
-            SelectedTextAiAction.Ask -> 2_200
-            SelectedTextAiAction.Simplify -> 900
-            SelectedTextAiAction.StudyQuestions -> 1_200
+            SelectedTextAiAction.Ask -> 1_400
+            SelectedTextAiAction.Simplify -> 800
+            SelectedTextAiAction.StudyQuestions -> 1_000
             SelectedTextAiAction.Terminology,
             SelectedTextAiAction.RelatedConcepts,
-            -> 1_600
+            -> 1_300
             SelectedTextAiAction.Explain,
             SelectedTextAiAction.Expand,
             SelectedTextAiAction.ObjectionResponse,
-            -> 2_200
-            SelectedTextAiAction.ComparePositions -> 2_800
+            -> 1_600
+            SelectedTextAiAction.ComparePositions -> 2_200
         }
-        return when {
-            provider == NoteAiProvider.ChatGPT && model == NoteAiModel.Gemini3Pro -> (base * 1.45f).toInt()
-            provider == NoteAiProvider.Gemini && model == NoteAiModel.Gemini3Pro -> (base * 1.2f).toInt()
-            else -> base
+        val multiplier = when {
+            model == NoteAiModel.Gemini3Pro -> 1.2f
+            provider == NoteAiProvider.ChatGPT -> 1.1f
+            else -> 1.0f
         }
+        return (base * multiplier).toInt()
     }
 
-    private fun NoteAiAction.isLightweightAction(): Boolean =
-        this in setOf(
-            NoteAiAction.QuickSummary,
-            NoteAiAction.DeepSummary,
-            NoteAiAction.ExplainNote,
-            NoteAiAction.FormatNote,
-            NoteAiAction.StructureOnly,
-            NoteAiAction.CleanFormat,
-        )
-
     private fun String.scopedForAction(action: NoteAiAction): String =
-        when (action) {
-            NoteAiAction.QuickSummary -> takeMiddleAware(8_000)
-            NoteAiAction.ExplainNote,
-            -> takeMiddleAware(7_000)
-            NoteAiAction.DeepSummary,
-            NoteAiAction.FormatNote,
-            NoteAiAction.CleanFormat,
-            NoteAiAction.StructureOnly,
-            -> takeMiddleAware(12_000)
-            NoteAiAction.Ask,
-            NoteAiAction.GeneralAsk,
-            -> takeMiddleAware(14_000)
-            NoteAiAction.StudyTutor,
-            NoteAiAction.DeepAnalysis,
-            NoteAiAction.IntelligentStructure,
-            -> takeMiddleAware(18_000)
+        when (action.promptMode()) {
+            PromptMode.NormalChat -> takeMiddleAware(8_000)
+            PromptMode.FastNoteAction -> takeMiddleAware(7_000)
+            PromptMode.DeepAnalysis -> takeMiddleAware(12_000)
+            PromptMode.EditorHtml -> takeMiddleAware(14_000)
+            PromptMode.LocalOnly -> takeMiddleAware(12_000)
         }
 
     private fun String.takeMiddleAware(maxChars: Int): String {
         val clean = trim()
         if (clean.length <= maxChars) return clean
-        val headLength = (maxChars * 0.62f).toInt()
+        val headLength = (maxChars * 0.65f).toInt()
         val tailLength = maxChars - headLength
         return buildString {
             append(clean.take(headLength).trimEnd())
-            append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
+            append("\n\n[Middle of note trimmed for speed.]\n\n")
             append(clean.takeLast(tailLength).trimStart())
         }
     }
@@ -1045,15 +554,15 @@ private fun SelectedTextAiAction.selectedTextContextBudget(): Int =
         SelectedTextAiAction.Simplify,
         SelectedTextAiAction.Terminology,
         SelectedTextAiAction.StudyQuestions,
-        -> 1_500
+        -> 1_200
         SelectedTextAiAction.Ask,
         SelectedTextAiAction.Explain,
-        -> 2_500
+        -> 2_000
         SelectedTextAiAction.Expand,
         SelectedTextAiAction.RelatedConcepts,
         SelectedTextAiAction.ComparePositions,
         SelectedTextAiAction.ObjectionResponse,
-        -> 3_500
+        -> 3_000
     }
 
 private fun String.scopedAroundSelection(selectedText: String, maxChars: Int): String {
@@ -1075,11 +584,22 @@ private fun String.scopedAroundSelection(selectedText: String, maxChars: Int): S
 private fun String.takeMiddleAwareForSelectedText(maxChars: Int): String {
     val clean = trim()
     if (clean.length <= maxChars) return clean
-    val headLength = (maxChars * 0.62f).toInt()
+    val headLength = (maxChars * 0.65f).toInt()
     val tailLength = maxChars - headLength
     return buildString {
         append(clean.take(headLength).trimEnd())
-        append("\n\n[Middle of note trimmed for AI speed and token budget.]\n\n")
+        append("\n\n[Middle of note trimmed for speed.]\n\n")
         append(clean.takeLast(tailLength).trimStart())
+    }
+}
+
+private fun List<NoteAiConversationTurn>.toPromptHistory(maxCharsPerTurn: Int): String {
+    if (isEmpty()) return "No recent conversation."
+    return joinToString("\n\n") { turn ->
+        val role = when (turn.role) {
+            NoteAiChatRole.User -> "User"
+            NoteAiChatRole.Assistant -> "Assistant"
+        }
+        "<$role>\n${turn.content.trim().take(maxCharsPerTurn)}\n</$role>"
     }
 }

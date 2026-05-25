@@ -13,6 +13,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
@@ -47,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
@@ -175,6 +177,8 @@ private fun FolderTreeSingleRow(
     val colors = VaultThemeTokens.colors
     val topLevel = depth == 0
     val isFolder = item.type == VaultTreeItemType.Folder
+    val isSubfolder = isFolder && !topLevel
+    val subfolderAccent = Color(0xFFE23B3B)
     val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
     val background = if (topLevel && expanded) colors.surface else Color.Transparent
     val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
@@ -276,12 +280,27 @@ private fun FolderTreeSingleRow(
                 Spacer(modifier = Modifier.width(12.dp))
             }
 
-            Icon(
-                imageVector = if (isFolder) Icons.Rounded.Folder else Icons.Rounded.Description,
-                contentDescription = null,
-                modifier = Modifier.size(if (topLevel) 16.dp else 13.dp),
-                tint = if (topLevel && isFolder) colors.accent else colors.textSecondary,
-            )
+            if (isFolder) {
+                Icon(
+                    imageVector = Icons.Rounded.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (topLevel) 16.dp else 13.dp),
+                    tint = when {
+                        isSubfolder -> subfolderAccent
+                        topLevel -> colors.accent
+                        else -> colors.textSecondary
+                    },
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(width = 10.dp, height = 1.5.dp)
+                        .background(
+                            color = colors.textMuted,
+                            shape = VaultShapes.pill,
+                        ),
+                )
+            }
 
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
@@ -291,7 +310,7 @@ private fun FolderTreeSingleRow(
                     } else {
                         MaterialTheme.typography.bodySmall.copy(fontSize = (dashboardFontSizeSp - 1.5f).coerceAtLeast(12f).sp, fontWeight = FontWeight.W500)
                     },
-                    color = colors.text,
+                    color = if (isSubfolder) subfolderAccent else colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

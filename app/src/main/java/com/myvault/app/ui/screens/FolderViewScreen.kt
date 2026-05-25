@@ -365,7 +365,14 @@ private fun NoteListRow(note: FolderNoteSample, notePreviewLines: Int, onClick: 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
         ) {
-            Icon(Icons.Rounded.Description, null, modifier = Modifier.size(16.dp), tint = colors.textSecondary)
+            Box(
+                modifier = Modifier
+                    .size(width = 10.dp, height = 1.5.dp)
+                    .background(
+                        color = colors.textMuted,
+                        shape = VaultShapes.pill,
+                    ),
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(note.title, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)

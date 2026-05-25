@@ -76,6 +76,7 @@ fun AskAiScreen(
     onAiQuestionChange: (String) -> Unit,
     onOpenAiConversation: (String) -> Unit,
     onStartNewAiConversation: () -> Unit,
+    onCancelAiGeneration: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
     val clipboardManager = LocalClipboardManager.current
@@ -84,8 +85,9 @@ fun AskAiScreen(
     val noteTitle = uiState.note?.title?.takeIf { it.isNotBlank() } ?: "Untitled note"
     val noteBody = uiState.richText.text.ifBlank { uiState.note?.bodyPlainText.orEmpty() }
     val hasSelectedText = !selectedText.isNullOrBlank()
+    val aiBusy = aiState.loading || aiState.isStreaming
 
-    LaunchedEffect(aiState.messages.size, aiState.loading, aiState.error) {
+    LaunchedEffect(aiState.messages.size, aiBusy, aiState.isStreaming, aiState.streamedText, aiState.error) {
         conversationScrollState.animateScrollTo(conversationScrollState.maxValue)
     }
 
@@ -114,7 +116,7 @@ fun AskAiScreen(
                         minLines = 1,
                         maxLines = 4,
                         placeholder = { Text("Ask about this note...") },
-                        enabled = !aiState.loading,
+                        enabled = !aiBusy,
                     )
                     TextButton(
                         onClick = { clipboardManager.setText(AnnotatedString(aiState.messages.lastOrNull { it.role == NoteAiMessageRole.Assistant }?.content.orEmpty())) },
@@ -122,20 +124,42 @@ fun AskAiScreen(
                     ) {
                         Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp))
                     }
-                    Button(
-                        onClick = {
-                            onRunAiTool(
-                                NoteAiAction.Ask,
-                                aiState.provider,
-                                aiState.model,
-                                noteTitle,
-                                noteBody,
-                                AiPromptBuilder.wrapSelectedTextQuestion(aiState.question, selectedText),
-                            )
-                        },
-                        enabled = !aiState.loading && aiState.question.isNotBlank(),
-                    ) {
-                        Text("Send")
+                    if (aiBusy) {
+                        Button(onClick = onCancelAiGeneration) {
+                            Text("Stop")
+                        }
+                    } else {
+                        if (aiState.canContinue) {
+                            TextButton(
+                                onClick = {
+                                    onRunAiTool(
+                                        NoteAiAction.Ask,
+                                        aiState.provider,
+                                        aiState.model,
+                                        noteTitle,
+                                        noteBody,
+                                        "Continue from where you stopped. Do not restart the answer. Continue naturally and avoid repeating what you already said.",
+                                    )
+                                },
+                            ) {
+                                Text("Continue")
+                            }
+                        }
+                        Button(
+                            onClick = {
+                                onRunAiTool(
+                                    NoteAiAction.Ask,
+                                    aiState.provider,
+                                    aiState.model,
+                                    noteTitle,
+                                    noteBody,
+                                    AiPromptBuilder.wrapSelectedTextQuestion(aiState.question, selectedText),
+                                )
+                            },
+                            enabled = aiState.question.isNotBlank(),
+                        ) {
+                            Text("Send")
+                        }
                     }
                 }
             }
@@ -156,7 +180,7 @@ fun AskAiScreen(
                 }
                 TextButton(
                     onClick = onClearAiConversation,
-                    enabled = !aiState.loading && aiState.messages.isNotEmpty(),
+                    enabled = !aiBusy && aiState.messages.isNotEmpty(),
                 ) {
                     Text("Clear")
                 }
@@ -228,7 +252,7 @@ fun AskAiScreen(
                             AskAiChip(
                                 label = provider.displayName,
                                 active = aiState.provider == provider,
-                                enabled = !aiState.loading,
+                                enabled = !aiBusy,
                                 onClick = { onAiProviderSelected(provider) },
                             )
                         }
@@ -236,7 +260,7 @@ fun AskAiScreen(
                             AskAiChip(
                                 label = model.chipLabel(aiState.provider),
                                 active = aiState.model == model,
-                                enabled = !aiState.loading,
+                                enabled = !aiBusy,
                                 onClick = { onAiModelSelected(model) },
                             )
                         }
@@ -263,7 +287,7 @@ fun AskAiScreen(
                     }
 
                     AskAiSuggestionGrid(
-                        enabled = !aiState.loading,
+                        enabled = !aiBusy,
                         selectedTextMode = hasSelectedText,
                         onSuggestionClick = { suggestion ->
                             onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(suggestion, selectedTextMode = hasSelectedText))
@@ -288,7 +312,7 @@ fun AskAiScreen(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
-                    if (aiState.messages.isEmpty() && !aiState.loading) {
+                    if (aiState.messages.isEmpty() && !aiBusy) {
                         Text(
                             text = "Ask naturally about this note. Suggestions draft the prompt first, then you can edit and send.",
                             style = MaterialTheme.typography.bodyMedium,
@@ -298,7 +322,10 @@ fun AskAiScreen(
                     aiState.messages.forEach { message ->
                         AskAiChatBubble(message = message)
                     }
-                    if (aiState.loading) {
+                    if (aiState.isStreaming && aiState.streamedText.isNotBlank()) {
+                        AskAiStreamingBubble(content = aiState.streamedText)
+                    }
+                    if (aiBusy && aiState.streamedText.isBlank()) {
                         Surface(
                             color = colors.elevated,
                             shape = VaultShapes.md,
@@ -363,7 +390,7 @@ fun AskAiScreen(
                             onStartNewAiConversation()
                             historyOpen = false
                         },
-                        enabled = !aiState.loading,
+                        enabled = !aiBusy,
                     ) {
                         Icon(Icons.Rounded.Add, null, modifier = Modifier.size(17.dp))
                         Text("New")
@@ -452,6 +479,36 @@ private fun AiConversationHistoryRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
+        }
+    }
+}
+
+@Composable
+private fun AskAiStreamingBubble(content: String) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 560.dp),
+            color = colors.elevated,
+            shape = VaultShapes.lg,
+            border = BorderStroke(1.dp, colors.accentBorder),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp)) {
+                Text(
+                    text = "Ask AI · typing",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                    color = colors.textMuted,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = content,
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
+                    color = colors.text,
+                )
+            }
         }
     }
 }

@@ -1,20 +1,22 @@
 package com.myvault.app.data.repository
 
 import android.content.Context
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.ResponseStoppedException
 import com.google.firebase.ai.type.generationConfig
-import com.myvault.app.BuildConfig
 import com.myvault.app.data.supabase.SupabaseConfig
 import com.myvault.app.data.supabase.SupabaseSession
 import com.myvault.app.data.supabase.SupabaseSessionStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -55,7 +57,7 @@ enum class NoteAiModel(
     val displayName: String,
     val modelName: String,
 ) {
-    Gemini25Flash("Gemini 2.5 Flash", "gemini-2.5-flash"),
+    Gemini25Flash("Gemini 3.5 Flash", "gemini-3.5-flash"),
     Gemini3Pro("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
 }
 
@@ -150,6 +152,57 @@ class NoteAiRepository @Inject constructor(
         }
         return generated.cleanForAction(action)
     }
+
+
+    fun generateStreaming(
+        action: NoteAiAction,
+        provider: NoteAiProvider,
+        model: NoteAiModel,
+        title: String,
+        body: String,
+        question: String = "",
+        history: List<NoteAiConversationTurn> = emptyList(),
+        onProgress: ((String) -> Unit)? = null,
+    ): Flow<String> = flow {
+        if (action != NoteAiAction.GeneralAsk && title.isBlank() && body.isBlank()) {
+            error("This note is empty, so there is nothing for AI to read yet.")
+        }
+        if ((action == NoteAiAction.Ask || action == NoteAiAction.GeneralAsk) && question.isBlank()) {
+            error("Type a question first.")
+        }
+        // Editor-output actions must remain one-shot for now because they return full HTML that is
+        // applied back into the editor. Normal chat actions stream progressively.
+        if (provider != NoteAiProvider.Gemini || action.isEditorOutputModeForStreaming()) {
+            emit(
+                generate(
+                    action = action,
+                    provider = provider,
+                    model = model,
+                    title = title,
+                    body = body,
+                    question = question,
+                    history = history,
+                    onProgress = onProgress,
+                ),
+            )
+            return@flow
+        }
+
+        ensureFirebaseReady()
+        onProgress?.invoke("Thinking...")
+        val promptRequest = AiPromptBuilder.build(
+            action = action,
+            title = title,
+            body = body,
+            question = question,
+            history = history,
+            provider = NoteAiProvider.Gemini,
+            model = model,
+        )
+        generateWithGeminiPromptStream(model, promptRequest).collect { chunk ->
+            emit(chunk)
+        }
+    }.flowOn(Dispatchers.IO)
 
     suspend fun generateForSelectedText(
         action: SelectedTextAiAction,
@@ -358,6 +411,47 @@ class NoteAiRepository @Inject constructor(
         }
     }
 
+
+    private fun generateWithGeminiPromptStream(
+        model: NoteAiModel,
+        promptRequest: AiPromptRequest,
+    ): Flow<String> = flow {
+        val config = generationConfig {
+            temperature = promptRequest.temperature
+            topP = 0.9f
+            maxOutputTokens = promptRequest.maxOutputTokens
+        }
+        val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
+            .generativeModel(
+                modelName = model.modelName,
+                generationConfig = config,
+            )
+        var emittedAnyText = false
+        runCatching {
+            generativeModel.generateContentStream(promptRequest.prompt).collect { response ->
+                val chunk = response.text.orEmpty()
+                if (chunk.isNotBlank()) {
+                    emittedAnyText = true
+                    emit(chunk)
+                }
+            }
+        }.getOrElse { error ->
+            if (error is ResponseStoppedException) {
+                val partial = error.response.text?.trim().orEmpty()
+                if (partial.isNotBlank()) {
+                    emittedAnyText = true
+                    emit(partial)
+                }
+                emit("\n\n[Response paused because Gemini reached its output limit. Tap Continue to keep going.]")
+                return@flow
+            }
+            throw error
+        }
+        if (!emittedAnyText) {
+            error("Gemini did not return any text. Please try again.")
+        }
+    }
+
     private suspend fun generateWithChatGpt(
         action: NoteAiAction,
         model: NoteAiModel,
@@ -449,9 +543,9 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
         -> 10_000
         NoteAiAction.StudyTutor,
         NoteAiAction.DeepAnalysis,
-        NoteAiAction.StructureOnly,
         NoteAiAction.IntelligentStructure,
         -> 18_000
+        NoteAiAction.StructureOnly -> 0
     }
     val clean = trim()
     if (clean.length <= maxChars) return clean
@@ -526,24 +620,21 @@ private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
 
     private fun ensureFirebaseReady() {
         if (FirebaseApp.getApps(context).isNotEmpty()) return
-        val apiKey = BuildConfig.FIREBASE_API_KEY
-        val appId = BuildConfig.FIREBASE_APP_ID
-        val projectId = BuildConfig.FIREBASE_PROJECT_ID
-        if (apiKey.isBlank() || appId.isBlank() || projectId.isBlank()) {
-            error("Firebase AI is not connected yet. Add Firebase settings, then try AI Tools again.")
-        }
-        val options = FirebaseOptions.Builder()
-            .setApiKey(apiKey)
-            .setApplicationId(appId)
-            .setProjectId(projectId)
-            .build()
-        FirebaseApp.initializeApp(context, options)
+        FirebaseApp.initializeApp(context)
+            ?: error("Firebase AI is not connected yet. Make sure google-services.json is configured, then try AI Tools again.")
     }
 
 }
 
+
+private fun NoteAiAction.isEditorOutputModeForStreaming(): Boolean =
+    this == NoteAiAction.StructureOnly ||
+        this == NoteAiAction.IntelligentStructure ||
+        this == NoteAiAction.CleanFormat ||
+        this == NoteAiAction.FormatNote
+
 private const val IntelligentStructureChunkSize = 7_000
-private val StructuredEditorActions = setOf(NoteAiAction.IntelligentStructure, NoteAiAction.StructureOnly)
+private val StructuredEditorActions = setOf(NoteAiAction.StructureOnly, NoteAiAction.IntelligentStructure)
 
 private fun NoteAiAction.defaultStructureRequest(): String =
     when (this) {
@@ -664,9 +755,106 @@ private fun String.normaliseHeading(): String =
     lowercase().replace(Regex("\\s+"), " ").trim()
 
 private fun String.cleanForAction(action: NoteAiAction): String {
+    if (action == NoteAiAction.StructureOnly) return trim()
     if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().trim()
     if (action == NoteAiAction.CleanFormat || action == NoteAiAction.FormatNote) return trim()
     return stripChatMarkdown().trim()
+}
+
+
+private fun String.toStructureOnlyHtml(): String {
+    val clean = trim()
+    if (clean.isBlank()) return ""
+
+    if (clean.contains(Regex("<(h1|h2|h3|p|ul|ol|li|blockquote|span|strong|em)\\b", RegexOption.IGNORE_CASE))) {
+        return clean
+    }
+
+    val output = StringBuilder()
+    var listType: String? = null
+    var paragraph = StringBuilder()
+
+    fun escapeHtml(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+
+    fun closeParagraph() {
+        val text = paragraph.toString().trim()
+        if (text.isNotBlank()) {
+            output.append("<p>").append(escapeHtml(text)).append("</p>\n")
+        }
+        paragraph = StringBuilder()
+    }
+
+    fun closeList() {
+        listType?.let { output.append("</").append(it).append(">\n") }
+        listType = null
+    }
+
+    fun ensureList(type: String) {
+        closeParagraph()
+        if (listType != type) {
+            closeList()
+            output.append("<").append(type).append(">\n")
+            listType = type
+        }
+    }
+
+    fun looksLikeHeading(line: String): Boolean {
+        val value = line.trim()
+        if (value.length !in 3..90) return false
+        if (value.endsWith(".") || value.endsWith(",") || value.endsWith("،") || value.endsWith(":") || value.endsWith("؛")) return false
+        if (value.split(Regex("\\s+")).size > 9) return false
+        return value.any { it.isLetter() }
+    }
+
+    clean.lines().forEach { raw ->
+        val line = raw.trim()
+        if (line.isBlank()) {
+            closeParagraph()
+            closeList()
+            return@forEach
+        }
+
+        val explicitHeading = Regex("^(#{1,3})\\s+(.+)$").matchEntire(line)
+        val bullet = Regex("^[-•*]\\s+(.+)$").matchEntire(line)
+        val numbered = Regex("^\\d+[.)]\\s+(.+)$").matchEntire(line)
+
+        when {
+            explicitHeading != null -> {
+                closeParagraph()
+                closeList()
+                val level = explicitHeading.groupValues[1].length.coerceIn(1, 3)
+                output.append("<h").append(level).append(">").append(escapeHtml(explicitHeading.groupValues[2].trim())).append("</h").append(level).append(">\n")
+            }
+            bullet != null -> {
+                ensureList("ul")
+                output.append("<li>").append(escapeHtml(bullet.groupValues[1].trim())).append("</li>\n")
+            }
+            numbered != null -> {
+                ensureList("ol")
+                output.append("<li>").append(escapeHtml(numbered.groupValues[1].trim())).append("</li>\n")
+            }
+            looksLikeHeading(line) -> {
+                closeParagraph()
+                closeList()
+                output.append("<h2>").append(escapeHtml(line)).append("</h2>\n")
+            }
+            else -> {
+                closeList()
+                if (paragraph.isNotBlank()) paragraph.append(' ')
+                paragraph.append(line)
+            }
+        }
+    }
+
+    closeParagraph()
+    closeList()
+
+    return output.toString()
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
 }
 
 private fun String.normalizeIntelligentStructureColors(): String {
