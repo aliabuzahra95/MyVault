@@ -7,6 +7,7 @@ import android.text.style.UnderlineSpan
 import android.text.style.URLSpan
 import android.util.Log
 import androidx.core.text.HtmlCompat
+import com.myvault.app.BuildConfig
 
 data class RichImportResult(
     val document: VaultRichTextDocument,
@@ -34,7 +35,7 @@ fun parseRichImport(html: String?, plainText: String?): RichImportResult {
 
 private fun String.parseHtmlImport(): RichImportResult {
     val listNormalizedHtml = normalizeListsForVaultImport()
-    if (contains(Regex("<(ul|ol|li)\\b", RegexOption.IGNORE_CASE))) {
+    if (BuildConfig.DEBUG && contains(Regex("<(ul|ol|li)\\b", RegexOption.IGNORE_CASE))) {
         Log.d(
             "MyVaultStructureOnly",
             "rich-import-list-normalized beforeLists=true afterBullets=${listNormalizedHtml.contains("•")} afterNumbered=${Regex("\\b\\d+\\.\\s").containsMatchIn(listNormalizedHtml)}",

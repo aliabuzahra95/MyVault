@@ -87,6 +87,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
@@ -2307,7 +2308,7 @@ private fun NoteAiAction?.isEditorOutputMode(): Boolean =
     this == NoteAiAction.StructureOnly || this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
 
 private fun traceStructureOnlyEditorStage(context: Context, stage: String, content: String, action: NoteAiAction?) {
-    if (action != NoteAiAction.StructureOnly) return
+    if (action != NoteAiAction.StructureOnly || !BuildConfig.DEBUG) return
     Log.d(
         "MyVaultStructureOnly",
         "$stage chars=${content.length} ul=${content.contains("<ul", ignoreCase = true)} ol=${content.contains("<ol", ignoreCase = true)} li=${content.contains("<li", ignoreCase = true)} bullets=${content.contains("•")} numbered=${Regex("(?m)^\\s*\\d+\\.\\s").containsMatchIn(content)}",
