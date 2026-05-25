@@ -311,6 +311,7 @@ fun VaultNavHost(
                         onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
                         onStartMemorizingAyah = quranViewModel::startMemorizingAyah,
                         onToggleMemorizedAyah = quranViewModel::toggleMemorizedAyah,
+                        onMarkCurrentSurahMemorized = quranViewModel::markCurrentSurahMemorized,
                         onToggleWeakMemorization = quranViewModel::toggleWeakMemorization,
                         onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
                         onSetMemorizationRepeatMode = quranViewModel::setMemorizationRepeatMode,

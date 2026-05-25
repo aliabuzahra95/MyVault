@@ -473,6 +473,41 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    fun markCurrentSurahMemorized() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val surah = state.selectedSurah
+            val now = System.currentTimeMillis()
+            val currentRecords = vaultPreferences.userPreferences.first().quranMemorizationRecords
+            val existingByVerse = currentRecords.associateBy { it.verseKey }
+            val surahRecords = (1..surah.ayat).map { ayahNumber ->
+                val verseKey = "${surah.num}:$ayahNumber"
+                val existing = existingByVerse[verseKey]
+                existing?.copy(
+                    lastReviewedAt = now,
+                    reviewCount = if (existing.reviewCount == 0) 1 else existing.reviewCount,
+                    memorizedAt = existing.memorizedAt ?: now,
+                    updatedAt = now,
+                ) ?: MemorizationRecord(
+                    verseKey = verseKey,
+                    surahNumber = surah.num,
+                    ayahNumber = ayahNumber,
+                    startedAt = now,
+                    lastReviewedAt = now,
+                    reviewCount = 1,
+                    memorizedAt = now,
+                    isRevision = false,
+                    isWeak = false,
+                    updatedAt = now,
+                )
+            }
+            val updated = (currentRecords.filterNot { it.surahNumber == surah.num } + surahRecords)
+                .sortedWith(compareBy<MemorizationRecord> { it.surahNumber }.thenBy { it.ayahNumber })
+            _uiState.value = _uiState.value.copy(memorizationRecords = updated)
+            vaultPreferences.setQuranMemorizationRecords(updated)
+        }
+    }
+
     fun toggleWeakMemorization(ayah: QuranAyah) {
         updateMemorizationRecord(ayah) { existing, now ->
             val current = existing ?: ayah.toMemorizationRecord(now)

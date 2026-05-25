@@ -49,6 +49,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Check
@@ -183,6 +184,7 @@ fun QuranShellScreen(
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
     onStartMemorizingAyah: (QuranAyah) -> Unit,
     onToggleMemorizedAyah: (QuranAyah) -> Unit,
+    onMarkCurrentSurahMemorized: () -> Unit,
     onToggleWeakMemorization: (QuranAyah) -> Unit,
     onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
     onSetMemorizationRepeatMode: (QuranAyah, MemorizationRepeatMode) -> Unit,
@@ -251,6 +253,7 @@ fun QuranShellScreen(
                 onDownloadSurahAudio = onDownloadSurahAudio,
                 onStartMemorizingAyah = onStartMemorizingAyah,
                 onToggleMemorizedAyah = onToggleMemorizedAyah,
+                onMarkCurrentSurahMemorized = onMarkCurrentSurahMemorized,
                 onToggleWeakMemorization = onToggleWeakMemorization,
                 onSetMemorizationConcealAmount = onSetMemorizationConcealAmount,
                 onSetMemorizationRepeatMode = onSetMemorizationRepeatMode,
@@ -309,6 +312,7 @@ private fun QuranReaderSurface(
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
     onStartMemorizingAyah: (QuranAyah) -> Unit,
     onToggleMemorizedAyah: (QuranAyah) -> Unit,
+    onMarkCurrentSurahMemorized: () -> Unit,
     onToggleWeakMemorization: (QuranAyah) -> Unit,
     onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
     onSetMemorizationRepeatMode: (QuranAyah, MemorizationRepeatMode) -> Unit,
@@ -333,6 +337,14 @@ private fun QuranReaderSurface(
     val readerOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val memorizationRecordsByVerse = remember(uiState.memorizationRecords) {
         uiState.memorizationRecords.associateBy { it.verseKey }
+    }
+    val currentSurahMemorized = remember(uiState.selectedSurah.num, uiState.selectedSurah.ayat, uiState.memorizationRecords) {
+        val memorizedAyahs = uiState.memorizationRecords
+            .asSequence()
+            .filter { it.surahNumber == uiState.selectedSurah.num && it.isMemorized }
+            .map { it.ayahNumber }
+            .toSet()
+        memorizedAyahs.size >= uiState.selectedSurah.ayat
     }
 
     BackHandler(enabled = readerOptionsOpen || ayahActionsTarget != null || reflectionTarget != null || bookmarksOpen || audioDownloadsOpen || memorizationPanelVerseKey != null) {
@@ -366,9 +378,14 @@ private fun QuranReaderSurface(
         Column(modifier = Modifier.fillMaxSize()) {
             QuranTopBar(
                 surah = uiState.selectedSurah,
+                isSurahMemorized = currentSurahMemorized,
                 onOpenSelector = onOpenSelector,
                 onOpenSettings = { readerOptionsOpen = true },
                 onOpenBookmarks = { bookmarksOpen = true },
+                onMarkSurahMemorized = {
+                    onMarkCurrentSurahMemorized()
+                    readingPositionSavedMessage = "${uiState.selectedSurah.name} marked memorised"
+                },
                 onOpenSearch = onOpenSelector,
             )
 
@@ -662,9 +679,11 @@ private fun QuranReaderSurface(
 @Composable
 private fun QuranTopBar(
     surah: SurahInfo,
+    isSurahMemorized: Boolean,
     onOpenSelector: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onMarkSurahMemorized: () -> Unit,
     onOpenSearch: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -720,6 +739,14 @@ private fun QuranTopBar(
                     imageVector = Icons.Rounded.Bookmark,
                     contentDescription = "Qur'an bookmarks",
                     tint = colors.textSecondary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            ReaderTopIconButton(onClick = onMarkSurahMemorized) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = if (isSurahMemorized) "Surah memorised" else "Mark Surah memorised",
+                    tint = if (isSurahMemorized) colors.accent else colors.textSecondary,
                     modifier = Modifier.size(16.dp),
                 )
             }
