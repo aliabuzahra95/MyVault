@@ -1037,7 +1037,7 @@ fun EditorScreen(
             onRun = { action ->
                 structureOnlyNotice = null
                 val request = when (action) {
-                    NoteAiAction.StructureOnly -> "Structure this note very carefully. Preserve the exact wording. Do not add, remove, paraphrase, summarise, or rewrite any words. Only organise the existing content with headings, subheadings, paragraphs, lists, bold, emphasis, and blockquotes where appropriate."
+                    NoteAiAction.StructureOnly -> "Structure this note very carefully. Preserve body wording and meaning as exactly as possible, but strongly improve hierarchy, semantic grouping, lists, blockquotes, spacing, scanability, and premium study-note readability. Do not add new arguments, references, theology, or explanations."
                     NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
                     else -> action.displayName
                 }

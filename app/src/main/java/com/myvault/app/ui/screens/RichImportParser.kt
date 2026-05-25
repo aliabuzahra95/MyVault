@@ -57,13 +57,13 @@ private fun String.parseHtmlImport(): RichImportResult {
         marks += VaultStyleMark(spanned.getSpanStart(span), spanned.getSpanEnd(span), VaultInlineStyle.Underline)
     }
     text.headingRangesFromHtml(this).forEach { range ->
-        marks += VaultStyleMark(range.first, range.last, VaultInlineStyle.Heading)
+        marks += VaultStyleMark(range.first, range.endExclusive(), VaultInlineStyle.Heading)
     }
     text.quoteRangesFromHtml(this).forEach { range ->
-        marks += VaultStyleMark(range.first, range.last, VaultInlineStyle.Quote)
+        marks += VaultStyleMark(range.first, range.endExclusive(), VaultInlineStyle.Quote)
     }
     text.colorRangesFromHtml(this).forEach { (range, style) ->
-        marks += VaultStyleMark(range.first, range.last, style)
+        marks += VaultStyleMark(range.first, range.endExclusive(), style)
     }
     return RichImportResult(
         document = VaultRichTextDocument(text = text, styleMarks = marks.cleanMarks(text.length)),
@@ -229,6 +229,8 @@ private fun String.toVaultColorStyle(): VaultInlineStyle? =
 private fun String.htmlToPlainTextFallback(): String =
     runCatching { HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trimEnd() }
         .getOrDefault(replace(Regex("<[^>]+>"), "").trim())
+
+private fun IntRange.endExclusive(): Int = last + 1
 
 private fun List<VaultStyleMark>.cleanMarks(textLength: Int): List<VaultStyleMark> =
     mapNotNull { mark ->

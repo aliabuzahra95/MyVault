@@ -318,6 +318,7 @@ class NoteAiRepository @Inject constructor(
                 Do not include a generic <h1> for every chunk.
                 If this chunk continues a prior section, continue that structure instead of restarting.
                 Use extracted phrases/concepts already present in this chunk for headings.
+                Use lists for grouped concepts or ordered argument flow, but keep related sentences together instead of inflating whitespace.
                 User request: ${question.ifBlank { action.defaultStructureRequest() }}
             """.trimIndent()
             val processed = runCatching {
@@ -886,6 +887,20 @@ private fun String.extractHtmlHeadings(): List<String> =
 private fun String.stripHtmlTags(): String =
     replace(Regex("<[^>]+>"), "")
 
+private fun String.decodeCommonHtmlEntities(): String =
+    replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+
+private fun String.escapeEditorHtml(): String =
+    replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+
 private fun String.normaliseHeading(): String =
     lowercase().replace(Regex("\\s+"), " ").trim()
 
@@ -906,11 +921,48 @@ private fun String.cleanEditorHtmlOutput(): String {
         .replace(Regex("__([^\\n_]+?)__"), "<strong>$1</strong>")
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
+        .normalizeEditorHtmlSafety()
     return if (clean.contains(Regex("<(h1|h2|h3|p|ul|ol|li|blockquote|span|strong|em)\\b", RegexOption.IGNORE_CASE))) {
         clean
     } else {
-        clean.toStructureOnlyHtml()
+        clean.toStructureOnlyHtml().normalizeEditorHtmlSafety()
     }
+}
+
+private fun String.normalizeEditorHtmlSafety(): String {
+    var output = this
+        .replace(Regex("(?i)</h([1-3])\\s*>"), "</h$1>")
+        .replace(Regex("(?i)</(p|li|ul|ol|blockquote|strong|em|span)\\s*>"), "</$1>")
+
+    // Repair a common malformed model output where the last heading character lands just
+    // outside the closing heading tag, e.g. <h2>Exampl</h2>e<p>...
+    output = Regex(
+        "<h([1-3])([^>]*)>(.*?)</h\\1>\\s*([\\p{L}\\p{M}\\p{N}])(?=\\s*</?(?:p|h[1-3]|ul|ol|blockquote|br)\\b)",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+    ).replace(output) { match ->
+        "<h${match.groupValues[1]}${match.groupValues[2]}>${match.groupValues[3]}${match.groupValues[4]}</h${match.groupValues[1]}>"
+    }
+
+    // Headings are structural markers. Flatten their internals so broken nested spans/strong/em
+    // cannot produce partial heading ranges in the rich-text importer.
+    output = Regex(
+        "<h([1-3])[^>]*>(.*?)</h\\1>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+    ).replace(output) { match ->
+        val level = match.groupValues[1]
+        val heading = match.groupValues[2].stripHtmlTags().decodeCommonHtmlEntities().escapeEditorHtml().trim()
+        if (heading.isBlank()) "" else "<h$level>$heading</h$level>"
+    }
+
+    output = output
+        .replace(Regex("(?i)<span(?![^>]*data-color\\s*=\\s*['\"]?(?:red|blue)['\"]?)[^>]*>"), "")
+        .replace(Regex("(?i)</span>"), "</span>")
+        .replace(Regex("(?i)<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.DOT_MATCHES_ALL)), "")
+        .replace(Regex("(?i)</?(div|section|article|font|body|html)[^>]*>"), "")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
+
+    return output
 }
 
 private fun String.toStructureOnlyHtml(): String {

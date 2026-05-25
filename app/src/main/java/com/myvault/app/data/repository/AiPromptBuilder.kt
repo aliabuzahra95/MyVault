@@ -66,10 +66,10 @@ object AiPromptBuilder {
 
         Return simple clean HTML only.
         Do not include commentary, markdown, code fences, explanations, or prefaces.
-        Build polished study-note structure with clear hierarchy, readable paragraph flow, consistent lists, and useful blockquotes.
+        Build polished study-note structure with clear hierarchy, semantic grouping, readable paragraph flow, consistent lists, and useful blockquotes.
         Preserve the user's meaning and wording unless the selected mode explicitly asks you to improve clarity.
         Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">.
-        Avoid unsupported tags, CSS, deeply nested spans, malformed HTML, markdown syntax, and giant dense paragraphs.
+        Avoid unsupported tags, CSS, deeply nested spans, inline styling inside headings, malformed HTML, markdown syntax, and giant dense paragraphs.
         Use red only for Qur'anic verses when clearly identifiable.
         Use blue only for scholar quotations when clearly identifiable.
     """.trimIndent()
@@ -291,7 +291,9 @@ object AiPromptBuilder {
                 No code fences.
                 Use only editor-safe HTML tags.
                 Use a clean heading hierarchy, readable paragraphs, proper lists, and blockquotes for obvious quotations.
-                Avoid unsupported tags, CSS, markdown remnants, malformed nesting, and inconsistent heading jumps.
+                Infer the format from the content itself: bullets for grouped concepts, numbered lists for sequences/stages, subheadings for topic transitions, and blockquotes for definitions, quoted passages, or important conclusions.
+                Keep related sentences together when they form one idea; do not mechanically turn every sentence into its own paragraph.
+                Avoid unsupported tags, CSS, markdown remnants, malformed nesting, inline spans inside headings, and inconsistent heading jumps.
             """.trimIndent()
         }
 
@@ -343,16 +345,20 @@ object AiPromptBuilder {
                 Structure this note into polished, editor-safe HTML for premium study-note readability.
 
                 Core rule:
-                Preserve the wording and meaning of the body content as exactly as possible while strongly improving organisation, hierarchy, spacing, and scanability.
+                Preserve the wording and meaning of the body content as exactly as possible while aggressively improving organisation, hierarchy, spacing, scanability, academic presentation, and efficient visual density.
 
                 You should:
                 - create strong headings/subheadings from existing phrases, terms, or concepts already present in the note
                 - group related paragraphs into coherent sections
-                - convert inline enumerations or repeated points into clean <ul>/<ol> lists
+                - convert grouped concepts, assumptions, distinctions, objections, evidences, and repeated points into clean <ul> lists
+                - convert sequences, logical progressions, stages, arguments, or ordered flows into clean <ol> lists
+                - create definition-style blocks where the note defines a term or principle
+                - create example/evidence sections where the note contains examples or proofs
                 - use <strong> for important existing terms
                 - use <em> sparingly for emphasis
-                - use <blockquote> for obvious quotations or cited passages
-                - split giant dense paragraphs into readable paragraphs without changing sentence wording
+                - use <blockquote> for obvious quotations, cited passages, definitions, or important conclusions already present in the note
+                - split giant dense paragraphs into readable paragraphs without changing sentence wording, but avoid excessive vertical spacing between closely related sentences
+                - compress formatting where too many isolated paragraphs would make the note unnecessarily long
                 - preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly
 
                 Do not:
@@ -423,7 +429,7 @@ object AiPromptBuilder {
             NoteAiAction.Ask -> "Answer my question about this note."
             NoteAiAction.ExplainNote -> "Explain this note clearly."
             NoteAiAction.GeneralAsk -> "Answer my question."
-            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve the exact wording. Do not add, remove, paraphrase, summarise, or rewrite any words; only organise and format it."
+            NoteAiAction.StructureOnly -> "Structure this note into clean HTML. Preserve body wording and meaning as exactly as possible, but strongly improve hierarchy, semantic grouping, lists, blockquotes, spacing, and scanability."
             NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
             NoteAiAction.CleanFormat -> "Clean and organise this note."
             NoteAiAction.FormatNote -> "Format this note."
