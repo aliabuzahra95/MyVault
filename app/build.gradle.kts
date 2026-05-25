@@ -29,10 +29,14 @@ android {
     val firebaseApiKey = providers.gradleProperty("MYVAULT_FIREBASE_API_KEY").orElse("").get()
     val firebaseAppId = providers.gradleProperty("MYVAULT_FIREBASE_APP_ID").orElse("").get()
     val firebaseProjectId = providers.gradleProperty("MYVAULT_FIREBASE_PROJECT_ID").orElse("").get()
-    val openAiApiKey = providers.gradleProperty("MYVAULT_OPENAI_API_KEY")
-        .orElse(providers.environmentVariable("OPENAI_API_KEY"))
-        .orElse(localProperties.getProperty("MYVAULT_OPENAI_API_KEY") ?: "")
-        .get()
+    val localOpenAiApiKey = localProperties.getProperty("MYVAULT_OPENAI_API_KEY").orEmpty().trim()
+    val openAiApiKey = localOpenAiApiKey.ifBlank {
+        providers.environmentVariable("OPENAI_API_KEY")
+            .orElse(providers.gradleProperty("MYVAULT_OPENAI_API_KEY"))
+            .orElse("")
+            .get()
+            .trim()
+    }
 
     defaultConfig {
         applicationId = "com.myvault.app"
