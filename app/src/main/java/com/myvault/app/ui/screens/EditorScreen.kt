@@ -1,8 +1,10 @@
 package com.myvault.app.ui.screens
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -437,11 +439,14 @@ fun EditorScreen(
 
     fun insertAiResultBelow(result: String, action: NoteAiAction?) {
         if (action.isEditorOutputMode()) {
+            traceStructureOnlyEditorStage(context, "04-before-editor-insert-html", result, action)
             val imported = parseRichImport(html = result, plainText = null).document
+            traceStructureOnlyEditorStage(context, "05-after-editor-import-text", imported.text, action)
             val separator = if (bodyValue.text.isBlank()) "" else "\n\n"
             val insertStart = bodyValue.text.length + separator.length
             val updatedText = bodyValue.text + separator + imported.text
             bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(updatedText, selection = TextRange(updatedText.length)))
+            traceStructureOnlyEditorStage(context, "06-editor-applied-text", updatedText, action)
             styleMarks = sanitizeVaultStyleMarks(
                 styleMarks + imported.styleMarks.map { mark ->
                     mark.copy(start = mark.start + insertStart, end = mark.end + insertStart)
@@ -459,12 +464,15 @@ fun EditorScreen(
     }
 
     fun replaceBodyWithAiResult(result: String, action: NoteAiAction?) {
+        traceStructureOnlyEditorStage(context, "04-before-editor-insert-html", result, action)
         val imported = if (action.isEditorOutputMode()) {
             parseRichImport(html = result, plainText = null).document
         } else {
             VaultRichTextDocument(text = result.trim(), styleMarks = emptyList(), noteLinks = emptyList())
         }
+        traceStructureOnlyEditorStage(context, "05-after-editor-import-text", imported.text, action)
         bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(imported.text, selection = TextRange(imported.text.length)))
+        traceStructureOnlyEditorStage(context, "06-editor-applied-text", bodyValue.text, action)
         styleMarks = sanitizeVaultStyleMarks(imported.styleMarks, imported.text.length)
         noteLinks = emptyList()
         pendingInlineStyles = emptySet()
@@ -2297,6 +2305,20 @@ private fun TextFieldValue.insertText(textToInsert: String): TextFieldValue {
 
 private fun NoteAiAction?.isEditorOutputMode(): Boolean =
     this == NoteAiAction.StructureOnly || this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
+
+private fun traceStructureOnlyEditorStage(context: Context, stage: String, content: String, action: NoteAiAction?) {
+    if (action != NoteAiAction.StructureOnly) return
+    Log.d(
+        "MyVaultStructureOnly",
+        "$stage chars=${content.length} ul=${content.contains("<ul", ignoreCase = true)} ol=${content.contains("<ol", ignoreCase = true)} li=${content.contains("<li", ignoreCase = true)} bullets=${content.contains("•")} numbered=${Regex("(?m)^\\s*\\d+\\.\\s").containsMatchIn(content)}",
+    )
+    runCatching {
+        val dir = java.io.File(context.filesDir, "ai_debug/structure_only").apply { mkdirs() }
+        java.io.File(dir, "$stage.html").writeText(content, Charsets.UTF_8)
+    }.onFailure { error ->
+        Log.w("MyVaultStructureOnly", "Unable to save $stage trace: ${error.message}")
+    }
+}
 
 private fun TextFieldValue.currentLineStartsWith(prefix: String): Boolean {
     val line = currentLine()

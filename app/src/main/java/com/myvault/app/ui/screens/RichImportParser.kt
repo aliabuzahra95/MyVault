@@ -5,6 +5,7 @@ import android.text.Spanned
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import android.text.style.URLSpan
+import android.util.Log
 import androidx.core.text.HtmlCompat
 
 data class RichImportResult(
@@ -32,7 +33,14 @@ fun parseRichImport(html: String?, plainText: String?): RichImportResult {
 }
 
 private fun String.parseHtmlImport(): RichImportResult {
-    val spanned = HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_LEGACY)
+    val listNormalizedHtml = normalizeListsForVaultImport()
+    if (contains(Regex("<(ul|ol|li)\\b", RegexOption.IGNORE_CASE))) {
+        Log.d(
+            "MyVaultStructureOnly",
+            "rich-import-list-normalized beforeLists=true afterBullets=${listNormalizedHtml.contains("•")} afterNumbered=${Regex("(?m)>\\s*\\d+\\.\\s").containsMatchIn(listNormalizedHtml)}",
+        )
+    }
+    val spanned = HtmlCompat.fromHtml(listNormalizedHtml, HtmlCompat.FROM_HTML_MODE_LEGACY)
     val text = spanned.toString().trimEnd()
     val marks = mutableListOf<VaultStyleMark>()
     spanned.getSpans(0, spanned.length, StyleSpan::class.java).forEach { span ->
@@ -69,6 +77,28 @@ private fun String.parseHtmlImport(): RichImportResult {
         document = VaultRichTextDocument(text = text, styleMarks = marks.cleanMarks(text.length)),
         formattingPreserved = marks.isNotEmpty() || this.contains(Regex("</?(ul|ol|li|h\\d|strong|b|em|i|u|a|blockquote|span)\\b", RegexOption.IGNORE_CASE)),
     )
+}
+
+private fun String.normalizeListsForVaultImport(): String {
+    var orderedIndex = 0
+    return Regex(
+        "<(ul|ol)\\b[^>]*>(.*?)</\\1>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+    ).replace(this) { listMatch ->
+        val ordered = listMatch.groupValues[1].equals("ol", ignoreCase = true)
+        orderedIndex = 0
+        val items = Regex(
+            "<li\\b[^>]*>(.*?)</li>",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        ).findAll(listMatch.groupValues[2]).mapNotNull { itemMatch ->
+            val itemHtml = itemMatch.groupValues[1].trim()
+            if (itemHtml.isBlank()) null else {
+                val prefix = if (ordered) "${++orderedIndex}. " else "• "
+                "<p>$prefix$itemHtml</p>"
+            }
+        }.joinToString("\n")
+        items.ifBlank { listMatch.value }
+    }
 }
 
 private fun String.parseMarkdownImport(): RichImportResult {

@@ -1,6 +1,7 @@
 package com.myvault.app.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.ai.ai
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
@@ -128,7 +130,7 @@ data class NoteAiConversationTurn(
 
 @Singleton
 class NoteAiRepository @Inject constructor(
-    @param:ApplicationContext private val context: Context,
+    @param:ApplicationContext val context: Context,
     private val sessionStore: SupabaseSessionStore,
 ) {
     suspend fun generate(
@@ -152,7 +154,13 @@ class NoteAiRepository @Inject constructor(
         } else {
             generateOnce(action, provider, model, title, body, question, history)
         }
-        return generated.cleanForAction(action)
+        val cleaned = generated.cleanForAction(action)
+        traceStructureOnlyStage(
+            action = action,
+            stage = "03-cleaned-html-after-sanitizer",
+            content = cleaned,
+        )
+        return cleaned
     }
 
 
@@ -358,7 +366,10 @@ class NoteAiRepository @Inject constructor(
             provider = NoteAiProvider.Gemini,
             model = model,
         )
-        return generateWithGeminiPrompt(model, promptRequest)
+        traceStructureOnlyPrompt(action, promptRequest)
+        val raw = generateWithGeminiPrompt(model, promptRequest)
+        traceStructureOnlyRaw(action, raw)
+        return raw
     }
 
     private suspend fun generatePrompt(
@@ -369,14 +380,18 @@ class NoteAiRepository @Inject constructor(
         title: String,
         body: String,
         question: String,
-    ): String =
-        when (provider) {
+    ): String {
+        traceStructureOnlyPrompt(action, promptRequest)
+        val raw = when (provider) {
             NoteAiProvider.Gemini -> {
                 ensureFirebaseReady()
                 generateWithGeminiPrompt(model, promptRequest)
             }
             NoteAiProvider.ChatGPT -> generateWithChatGptPrompt(action, model, promptRequest, title, body, question)
         }
+        traceStructureOnlyRaw(action, raw)
+        return raw
+    }
 
     private suspend fun generateWithGeminiPrompt(
         model: NoteAiModel,
@@ -499,7 +514,10 @@ class NoteAiRepository @Inject constructor(
             provider = NoteAiProvider.ChatGPT,
             model = model,
         )
-        return generateWithChatGptPrompt(action, model, promptRequest, title, body, question)
+        traceStructureOnlyPrompt(action, promptRequest)
+        val raw = generateWithChatGptPrompt(action, model, promptRequest, title, body, question)
+        traceStructureOnlyRaw(action, raw)
+        return raw
     }
 
     private suspend fun generateWithChatGptPrompt(
@@ -909,6 +927,43 @@ private fun String.cleanForAction(action: NoteAiAction): String {
     if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().cleanEditorHtmlOutput().trim()
     if (action == NoteAiAction.CleanFormat || action == NoteAiAction.FormatNote) return trim()
     return stripChatMarkdown().trim()
+}
+
+private fun NoteAiRepository.traceStructureOnlyPrompt(action: NoteAiAction, promptRequest: AiPromptRequest) {
+    if (action != NoteAiAction.StructureOnly) return
+    traceStructureOnlyStage(
+        action = action,
+        stage = "01-final-prompt",
+        content = buildString {
+            append("SYSTEM:\n")
+            append(promptRequest.systemInstruction)
+            append("\n\nPROMPT:\n")
+            append(promptRequest.prompt)
+            append("\n\nTEMPERATURE: ${promptRequest.temperature}")
+            append("\nMAX_OUTPUT_TOKENS: ${promptRequest.maxOutputTokens}")
+        },
+    )
+}
+
+private fun NoteAiRepository.traceStructureOnlyRaw(action: NoteAiAction, raw: String) {
+    if (action != NoteAiAction.StructureOnly) return
+    traceStructureOnlyStage(
+        action = action,
+        stage = "02-raw-ai-response",
+        content = raw,
+    )
+}
+
+private fun NoteAiRepository.traceStructureOnlyStage(action: NoteAiAction, stage: String, content: String) {
+    if (action != NoteAiAction.StructureOnly) return
+    val listSummary = "ul=${content.contains("<ul", ignoreCase = true)} ol=${content.contains("<ol", ignoreCase = true)} li=${content.contains("<li", ignoreCase = true)}"
+    Log.d("MyVaultStructureOnly", "$stage chars=${content.length} $listSummary")
+    runCatching {
+        val dir = File(context.filesDir, "ai_debug/structure_only").apply { mkdirs() }
+        File(dir, "$stage.html").writeText(content, Charsets.UTF_8)
+    }.onFailure { error ->
+        Log.w("MyVaultStructureOnly", "Unable to save $stage trace: ${error.message}")
+    }
 }
 
 private fun String.cleanEditorHtmlOutput(preferDenseLists: Boolean = false): String {
