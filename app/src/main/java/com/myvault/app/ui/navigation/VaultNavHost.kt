@@ -12,9 +12,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -924,9 +924,13 @@ private fun StudyLibraryPersonalShell(
     val pagerState = rememberPagerState(initialPage = requestedPage) { modes.size }
     val scope = rememberCoroutineScope()
     val colors = VaultThemeTokens.colors
+    var visualSelectedPage by rememberSaveable(modes) { mutableStateOf(requestedPage) }
+    var lastNavTapMode by remember { mutableStateOf<VaultRootMode?>(null) }
+    var lastNavTapAt by remember { mutableStateOf(0L) }
 
     LaunchedEffect(modes, requestedPage) {
         if (pagerState.currentPage != requestedPage) {
+            visualSelectedPage = requestedPage
             pagerState.animateScrollToPage(
                 page = requestedPage,
                 animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
@@ -937,11 +941,16 @@ private fun StudyLibraryPersonalShell(
     LaunchedEffect(pagerState, modes) {
         snapshotFlow { pagerState.settledPage.coerceIn(0, modes.lastIndex) }
             .distinctUntilChanged()
-            .collect { page -> onRootModeChanged(modes[page]) }
+            .collect { page ->
+                visualSelectedPage = page
+                onRootModeChanged(modes[page])
+            }
     }
 
     BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
         scope.launch {
+            visualSelectedPage = 0
+            onRootModeChanged(modes[0])
             pagerState.animateScrollToPage(
                 page = 0,
                 animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
@@ -958,7 +967,7 @@ private fun StudyLibraryPersonalShell(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { page -> modes[page].name },
-            beyondViewportPageCount = 0,
+            beyondViewportPageCount = (modes.size - 1).coerceAtLeast(0),
             flingBehavior = PagerDefaults.flingBehavior(
                 state = pagerState,
                 snapPositionalThreshold = 0.18f,
@@ -975,20 +984,30 @@ private fun StudyLibraryPersonalShell(
 
         FloatingBottomNav(
             modes = modes,
-            selectedIndex = pagerState.currentPage.coerceIn(0, modes.lastIndex),
+            selectedIndex = visualSelectedPage.coerceIn(0, modes.lastIndex),
             onModeSelected = { index ->
+                val mode = modes[index]
+                val now = System.currentTimeMillis()
+                val isFastSecondTap = lastNavTapMode == mode && now - lastNavTapAt <= BottomNavDoubleTapWindowMs
+                lastNavTapMode = mode
+                lastNavTapAt = now
+                if (isFastSecondTap) {
+                    onQuickNoteMode(
+                        when (mode) {
+                            VaultRootMode.Study -> FOLDER_MODE_STUDY
+                            VaultRootMode.Personal -> FOLDER_MODE_PERSONAL
+                            else -> return@FloatingBottomNav
+                        },
+                    )
+                    return@FloatingBottomNav
+                }
+                visualSelectedPage = index
+                onRootModeChanged(mode)
                 scope.launch {
                     pagerState.animateScrollToPage(
                         page = index,
                         animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
                     )
-                }
-            },
-            onModeDoubleTapped = { mode ->
-                when (mode) {
-                    VaultRootMode.Study -> onQuickNoteMode(FOLDER_MODE_STUDY)
-                    VaultRootMode.Personal -> onQuickNoteMode(FOLDER_MODE_PERSONAL)
-                    else -> Unit
                 }
             },
             modifier = Modifier
@@ -1004,7 +1023,6 @@ private fun FloatingBottomNav(
     modes: List<VaultRootMode>,
     selectedIndex: Int,
     onModeSelected: (Int) -> Unit,
-    onModeDoubleTapped: (VaultRootMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -1032,21 +1050,18 @@ private fun FloatingBottomNav(
                     icon = mode.icon,
                     selected = selectedIndex == index,
                     onClick = { onModeSelected(index) },
-                    onDoubleClick = { onModeDoubleTapped(mode) },
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FloatingBottomNavItem(
     label: String,
     icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
-    onDoubleClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val contentColor by animateColorAsState(
@@ -1061,9 +1076,10 @@ private fun FloatingBottomNavItem(
     )
 
     Surface(
-        modifier = Modifier.combinedClickable(
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
             onClick = onClick,
-            onDoubleClick = onDoubleClick,
         ),
         color = androidx.compose.ui.graphics.Color.Transparent,
         contentColor = contentColor,
@@ -1095,6 +1111,8 @@ private fun FloatingBottomNavItem(
         }
     }
 }
+
+private const val BottomNavDoubleTapWindowMs = 260L
 
 private fun String.toNoteBodyFontSizeSp(): Float =
     when (this) {

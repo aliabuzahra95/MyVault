@@ -84,10 +84,7 @@ class TtsRepository @Inject constructor(
             cacheStatus = "miss:session",
         )
 
-        val apiKey = BuildConfig.OPENAI_API_KEY.trim()
-        if (apiKey.isBlank()) {
-            error("OpenAI narration is not configured. Add MYVAULT_OPENAI_API_KEY to the project or build environment.")
-        }
+        var apiKey: String? = null
 
         val chunks = textPreparer.splitIntoChunks(cleanText)
         if (chunks.isEmpty()) error("This note is empty.")
@@ -95,7 +92,6 @@ class TtsRepository @Inject constructor(
         runCatching {
             chunks.forEachIndexed { index, chunk ->
                 coroutineContext.ensureActive()
-                onChunkGenerating(index + 1, chunks.size)
                 val target = cacheManager.chunkFile(cacheKey, index)
                 if (target.exists() && target.length() >= MinValidMp3Bytes) {
                     OpenAiRequestGuard.logCacheDecision(
@@ -107,6 +103,13 @@ class TtsRepository @Inject constructor(
                         cacheStatus = "hit:chunk-${index + 1}",
                     )
                 } else {
+                    onChunkGenerating(index + 1, chunks.size)
+                    val resolvedApiKey = apiKey ?: BuildConfig.OPENAI_API_KEY.trim().also { resolved ->
+                        if (resolved.isBlank()) {
+                            error("OpenAI narration is not configured. Add MYVAULT_OPENAI_API_KEY to the project or build environment.")
+                        }
+                        apiKey = resolved
+                    }
                     OpenAiRequestGuard.validateAndLogRequest(
                         featureName = OpenAiFeature.ListenMode,
                         endpointUrl = SpeechEndpoint,
@@ -115,7 +118,7 @@ class TtsRepository @Inject constructor(
                         characterCount = chunk.length,
                         cacheStatus = "miss:chunk-${index + 1}",
                     )
-                    requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
+                    requestSpeechWithRetry(resolvedApiKey, chunk, normalizedVoice, target, index + 1)
                 }
                 generatedFiles += target
                 val partialSession = NarrationSession(
