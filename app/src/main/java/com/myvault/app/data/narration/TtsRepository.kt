@@ -128,6 +128,7 @@ class TtsRepository @Inject constructor(
                     contentHash = contentHash,
                     files = generatedFiles.toList(),
                 )
+                cacheManager.writeManifest(partialSession, isComplete = index == chunks.lastIndex, totalChunks = chunks.size)
                 onChunkReady(partialSession, index == chunks.lastIndex, chunks.size)
             }
         }.onFailure { error ->
@@ -142,7 +143,7 @@ class TtsRepository @Inject constructor(
             speed = clampedSpeed,
             contentHash = contentHash,
             files = generatedFiles.toList(),
-        ).also(cacheManager::writeManifest)
+        ).also { cacheManager.writeManifest(it, isComplete = true, totalChunks = generatedFiles.size) }
     }
 
     private fun requestSpeechWithRetry(apiKey: String, input: String, voice: String, target: File, partNumber: Int) {

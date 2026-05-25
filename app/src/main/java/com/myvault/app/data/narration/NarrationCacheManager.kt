@@ -39,6 +39,7 @@ class NarrationCacheManager @Inject constructor(
             if (json.optString("contentHash") != contentHash) return null
             if (json.optString("model") != model) return null
             if (json.optString("voice") != voice) return null
+            if (json.has("isComplete") && !json.optBoolean("isComplete", false)) return null
             val filesJson = json.optJSONArray("files") ?: return null
             val files = buildList {
                 for (index in 0 until filesJson.length()) {
@@ -56,7 +57,7 @@ class NarrationCacheManager @Inject constructor(
 
     fun chunkFile(cacheKey: String, index: Int): File = File(sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}.mp3")
 
-    fun writeManifest(session: NarrationSession) {
+    fun writeManifest(session: NarrationSession, isComplete: Boolean = true, totalChunks: Int = session.files.size) {
         val dir = sessionDir(session.cacheKey)
         val files = JSONArray().apply {
             session.files.forEach { put(it.name) }
@@ -69,7 +70,9 @@ class NarrationCacheManager @Inject constructor(
             .put("speed", session.speed.toDouble())
             .put("contentHash", session.contentHash)
             .put("files", files)
-            .put("createdAt", System.currentTimeMillis())
+            .put("isComplete", isComplete)
+            .put("totalChunks", totalChunks)
+            .put("updatedAt", System.currentTimeMillis())
         File(dir, "manifest.json").writeText(json.toString())
     }
 

@@ -24,6 +24,7 @@ class NarrationPlayerManager @Inject constructor() {
     private var speed = 1f
     private var streamingGeneration = false
     private var waitingForNextChunk = false
+    private var pendingSeekMs: Long? = null
 
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
@@ -100,12 +101,13 @@ class NarrationPlayerManager @Inject constructor() {
             state.copy(
                 totalChunks = expectedChunks,
                 currentChunk = (activeChunkIndex + 1).coerceAtMost(expectedChunks),
-                totalPositionMs = globalPositionMs(),
-                totalDurationMs = activeDurationsMs.sum(),
+                totalPositionMs = pendingSeekMs ?: globalPositionMs(),
+                totalDurationMs = estimatedTotalDurationMs(),
                 error = null,
             )
         }
-        if (waitingForNextChunk && activeChunkIndex + 1 < activeFiles.size) {
+        resumePendingSeekIfReady()
+        if (waitingForNextChunk && pendingSeekMs == null && activeChunkIndex + 1 < activeFiles.size) {
             waitingForNextChunk = false
             playChunk(activeChunkIndex + 1)
         }
@@ -119,7 +121,8 @@ class NarrationPlayerManager @Inject constructor() {
         expectedChunks = session.files.size
         streamingGeneration = false
         updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
-        if (waitingForNextChunk && activeChunkIndex + 1 < activeFiles.size) {
+        resumePendingSeekIfReady(force = true)
+        if (waitingForNextChunk && pendingSeekMs == null && activeChunkIndex + 1 < activeFiles.size) {
             waitingForNextChunk = false
             playChunk(activeChunkIndex + 1)
         }
@@ -171,24 +174,24 @@ class NarrationPlayerManager @Inject constructor() {
         if (activeFiles.isEmpty()) return
         if (activeDurationsMs.size != activeFiles.size) activeDurationsMs = activeFiles.map(::readDurationMs)
         val generatedDuration = activeDurationsMs.sum().takeIf { it > 0L } ?: return
-        val target = totalPositionMs.coerceIn(0L, (generatedDuration - 250L).coerceAtLeast(0L))
-        var accumulated = 0L
-        var targetChunk = 0
-        activeDurationsMs.forEachIndexed { index, duration ->
-            if (target < accumulated + duration || index == activeDurationsMs.lastIndex) {
-                targetChunk = index
-                return@forEachIndexed
-            }
-            accumulated += duration
+        val estimatedDuration = estimatedTotalDurationMs().takeIf { it > 0L } ?: generatedDuration
+        val target = totalPositionMs.coerceIn(0L, (estimatedDuration - 250L).coerceAtLeast(0L))
+        if (target >= generatedDuration && streamingGeneration) {
+            pendingSeekMs = target
+            waitingForNextChunk = true
+            releaseCurrentPlayer()
+            _state.value = _state.value.copy(
+                status = NarrationPlaybackStatus.Generating,
+                label = "Loading selected position...",
+                totalPositionMs = target,
+                totalDurationMs = estimatedDuration,
+                totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
+                error = null,
+            )
+            return
         }
-        val chunkOffset = (target - accumulated).coerceAtLeast(0L)
-        val player = mediaPlayer
-        if (targetChunk == activeChunkIndex && player != null) {
-            seekPlayer(player, chunkOffset)
-            updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
-        } else {
-            playChunk(targetChunk, startPositionMs = chunkOffset)
-        }
+        pendingSeekMs = null
+        seekWithinGenerated(target.coerceAtMost((generatedDuration - 250L).coerceAtLeast(0L)))
     }
 
     fun refreshProgress() {
@@ -219,8 +222,8 @@ class NarrationPlayerManager @Inject constructor() {
                     status = NarrationPlaybackStatus.Generating,
                     label = "Preparing next part...",
                     totalChunks = expectedChunks,
-                    totalPositionMs = globalPositionMs(),
-                    totalDurationMs = activeDurationsMs.sum(),
+                    totalPositionMs = pendingSeekMs ?: globalPositionMs(),
+                    totalDurationMs = estimatedTotalDurationMs(),
                 )
             } else {
                 stop()
@@ -241,8 +244,8 @@ class NarrationPlayerManager @Inject constructor() {
             speed = speed,
             currentChunk = index + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
-            totalPositionMs = globalPositionMs(startPositionMs),
-            totalDurationMs = activeDurationsMs.sum(),
+            totalPositionMs = pendingSeekMs ?: globalPositionMs(startPositionMs),
+            totalDurationMs = estimatedTotalDurationMs(),
         )
         runCatching {
             player.setAudioAttributes(
@@ -273,8 +276,8 @@ class NarrationPlayerManager @Inject constructor() {
                         status = NarrationPlaybackStatus.Generating,
                         label = "Preparing next part...",
                         totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
-                        totalPositionMs = globalPositionMs(),
-                        totalDurationMs = activeDurationsMs.sum(),
+                        totalPositionMs = pendingSeekMs ?: globalPositionMs(),
+                        totalDurationMs = estimatedTotalDurationMs(),
                     )
                 } else {
                     _state.value = NarrationUiState(
@@ -318,8 +321,8 @@ class NarrationPlayerManager @Inject constructor() {
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
             currentPositionMs = chunkPosition,
             durationMs = chunkDuration,
-            totalPositionMs = globalPositionMs(chunkPosition),
-            totalDurationMs = activeDurationsMs.sum().takeIf { it > 0L } ?: chunkDuration,
+            totalPositionMs = pendingSeekMs ?: globalPositionMs(chunkPosition),
+            totalDurationMs = estimatedTotalDurationMs().takeIf { it > 0L } ?: chunkDuration,
         )
     }
 
@@ -327,6 +330,45 @@ class NarrationPlayerManager @Inject constructor() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }
         }
+    }
+
+
+    private fun seekWithinGenerated(target: Long) {
+        var accumulated = 0L
+        var targetChunk = 0
+        activeDurationsMs.forEachIndexed { index, duration ->
+            if (target < accumulated + duration || index == activeDurationsMs.lastIndex) {
+                targetChunk = index
+                return@forEachIndexed
+            }
+            accumulated += duration
+        }
+        val chunkOffset = (target - accumulated).coerceAtLeast(0L)
+        val player = mediaPlayer
+        if (targetChunk == activeChunkIndex && player != null) {
+            seekPlayer(player, chunkOffset)
+            updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
+        } else {
+            playChunk(targetChunk, startPositionMs = chunkOffset)
+        }
+    }
+
+    private fun resumePendingSeekIfReady(force: Boolean = false) {
+        val target = pendingSeekMs ?: return
+        val generatedDuration = activeDurationsMs.sum()
+        if (force || generatedDuration > target) {
+            pendingSeekMs = null
+            waitingForNextChunk = false
+            seekWithinGenerated(target.coerceAtMost((generatedDuration - 250L).coerceAtLeast(0L)))
+        }
+    }
+
+    private fun estimatedTotalDurationMs(): Long {
+        val generatedDuration = activeDurationsMs.sum()
+        if (expectedChunks <= 0 || activeDurationsMs.isEmpty()) return generatedDuration
+        if (activeDurationsMs.size >= expectedChunks) return generatedDuration
+        val average = activeDurationsMs.filter { it > 0L }.average().takeIf { !it.isNaN() && it > 0.0 } ?: return generatedDuration
+        return (average * expectedChunks).toLong().coerceAtLeast(generatedDuration)
     }
 
     private fun seekPlayer(player: MediaPlayer, positionMs: Long) {
@@ -365,6 +407,7 @@ class NarrationPlayerManager @Inject constructor() {
         activeSession = null
         streamingGeneration = false
         waitingForNextChunk = false
+        pendingSeekMs = null
         if (resetState) _state.value = NarrationUiState(speed = speed)
     }
 
