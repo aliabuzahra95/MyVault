@@ -883,7 +883,10 @@ private fun StudyLibraryPersonalShell(
 
     LaunchedEffect(modes, requestedPage) {
         if (pagerState.currentPage != requestedPage) {
-            pagerState.scrollToPage(requestedPage)
+            pagerState.animateScrollToPage(
+                page = requestedPage,
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+            )
         }
     }
 
@@ -895,10 +898,9 @@ private fun StudyLibraryPersonalShell(
 
     BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
         scope.launch {
-            onRootModeChanged(VaultRootMode.Study)
             pagerState.animateScrollToPage(
                 page = 0,
-                animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
             )
         }
     }
@@ -931,11 +933,10 @@ private fun StudyLibraryPersonalShell(
             modes = modes,
             selectedIndex = pagerState.currentPage.coerceIn(0, modes.lastIndex),
             onModeSelected = { index ->
-                onRootModeChanged(modes[index])
                 scope.launch {
                     pagerState.animateScrollToPage(
                         page = index,
-                        animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
                     )
                 }
             },

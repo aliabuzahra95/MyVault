@@ -336,10 +336,12 @@ class NarrationPlayerManager @Inject constructor() {
     private fun seekWithinGenerated(target: Long) {
         var accumulated = 0L
         var targetChunk = 0
-        activeDurationsMs.forEachIndexed { index, duration ->
-            if (target < accumulated + duration || index == activeDurationsMs.lastIndex) {
+        for (index in activeDurationsMs.indices) {
+            val duration = activeDurationsMs[index]
+            val chunkEnd = accumulated + duration
+            if (target < chunkEnd || index == activeDurationsMs.lastIndex) {
                 targetChunk = index
-                return@forEachIndexed
+                break
             }
             accumulated += duration
         }
@@ -347,7 +349,13 @@ class NarrationPlayerManager @Inject constructor() {
         val player = mediaPlayer
         if (targetChunk == activeChunkIndex && player != null) {
             seekPlayer(player, chunkOffset)
-            updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
+            _state.update {
+                it.copy(
+                    currentPositionMs = chunkOffset,
+                    totalPositionMs = target,
+                    error = null,
+                )
+            }
         } else {
             playChunk(targetChunk, startPositionMs = chunkOffset)
         }
