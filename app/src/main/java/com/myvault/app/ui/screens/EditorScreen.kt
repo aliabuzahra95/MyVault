@@ -2176,13 +2176,13 @@ private fun AiSuggestion.toSelectedTextAction(): SelectedTextAiAction =
 private fun NoteAiModel.shortLabel(provider: NoteAiProvider): String =
     when (this) {
         NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini 2.5"
-        NoteAiModel.Gemini3Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini 3.1 Pro"
+        NoteAiModel.Gemini3Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini 2.5 Pro"
     }
 
 private fun NoteAiModel.chipLabel(provider: NoteAiProvider): String =
     when (this) {
         NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini · Fast" else "Gemini 2.5 · Fast"
-        NoteAiModel.Gemini3Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full · Best overall" else "Gemini 3.1 Pro · Deep"
+        NoteAiModel.Gemini3Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full · Best overall" else "Gemini 2.5 Pro · Deep"
     }
 
 private data class SelectedTextTarget(

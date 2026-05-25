@@ -74,7 +74,7 @@ Deno.serve(async (request) => {
       requestBody.reasoning = { effort: reasoningEffortFor(action, modelKind) };
       requestBody.text = { verbosity: verbosityFor(action, modelKind) };
     } else {
-      requestBody.temperature = typeof payload.temperature === "number" ? payload.temperature : temperatureFor(action, modelKind);
+      requestBody.temperature = clampTemperature(payload.temperature, action, modelKind);
     }
 
     const openAiEndpoint = "https://api.openai.com/v1/responses";
@@ -249,6 +249,12 @@ function temperatureFor(action: AiAction, modelKind: AiModel): number {
   return 0.28;
 }
 
+function clampTemperature(requested: number | undefined, action: AiAction, modelKind: AiModel): number {
+  const fallback = temperatureFor(action, modelKind);
+  const value = typeof requested === "number" && Number.isFinite(requested) ? requested : fallback;
+  return Math.min(Math.max(value, 0), 1);
+}
+
 function maxOutputTokensFor(action: AiAction, modelKind: AiModel): number {
   if (modelKind === "fast") {
     if (action === "quick_summary") return 800;
@@ -337,4 +343,3 @@ function guardOpenAiRequest(request: { endpoint: string; model: string; feature:
     timestamp: Date.now(),
   });
 }
-

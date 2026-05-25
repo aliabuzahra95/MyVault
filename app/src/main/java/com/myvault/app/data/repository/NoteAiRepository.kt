@@ -56,9 +56,11 @@ val NoteAiAction.displayName: String
 enum class NoteAiModel(
     val displayName: String,
     val modelName: String,
+    val isFastModel: Boolean,
+    val isDeepModel: Boolean,
 ) {
-    Gemini25Flash("Gemini 3.5 Flash", "gemini-3.5-flash"),
-    Gemini3Pro("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
+    Gemini25Flash("Gemini 2.5 Flash", "gemini-2.5-flash", isFastModel = true, isDeepModel = false),
+    Gemini3Pro("Gemini 2.5 Pro", "gemini-2.5-pro", isFastModel = false, isDeepModel = true),
 }
 
 enum class NoteAiProvider(
@@ -374,14 +376,20 @@ class NoteAiRepository @Inject constructor(
             topP = 0.9f
             maxOutputTokens = promptRequest.maxOutputTokens
         }
-        val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(
-                modelName = model.modelName,
-                generationConfig = config,
-            )
-        val response = runCatching {
-            generativeModel.generateContent(promptRequest.prompt)
-        }.getOrElse { error ->
+        var lastFailure: Throwable? = null
+        val response = model.safeGeminiModelNames().firstNotNullOfOrNull { modelName ->
+            val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
+                .generativeModel(
+                    modelName = modelName,
+                    generationConfig = config,
+                )
+            runCatching {
+                generativeModel.generateContent(promptRequest.prompt)
+            }.onFailure { error ->
+                lastFailure = error
+            }.getOrNull()
+        } ?: run {
+            val error = lastFailure ?: error("Gemini request failed before a response was returned.")
             if (error is ResponseStoppedException) {
                 val partial = error.response.text?.trim().orEmpty()
                 if (partial.isNotBlank()) {
@@ -421,29 +429,40 @@ class NoteAiRepository @Inject constructor(
             topP = 0.9f
             maxOutputTokens = promptRequest.maxOutputTokens
         }
-        val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(
-                modelName = model.modelName,
-                generationConfig = config,
-            )
         var emittedAnyText = false
-        runCatching {
-            generativeModel.generateContentStream(promptRequest.prompt).collect { response ->
-                val chunk = response.text.orEmpty()
-                if (chunk.isNotBlank()) {
-                    emittedAnyText = true
-                    emit(chunk)
+        var lastFailure: Throwable? = null
+        for (modelName in model.safeGeminiModelNames()) {
+            val completed = runCatching {
+                val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
+                    .generativeModel(
+                        modelName = modelName,
+                        generationConfig = config,
+                    )
+                generativeModel.generateContentStream(promptRequest.prompt).collect { response ->
+                    val chunk = response.text.orEmpty()
+                    if (chunk.isNotBlank()) {
+                        emittedAnyText = true
+                        emit(chunk)
+                    }
                 }
-            }
-        }.getOrElse { error ->
-            if (error is ResponseStoppedException) {
-                val partial = error.response.text?.trim().orEmpty()
-                if (partial.isNotBlank()) {
-                    emittedAnyText = true
-                    emit(partial)
+            }.onFailure { error ->
+                lastFailure = error
+                if (error is ResponseStoppedException) {
+                    val partial = error.response.text?.trim().orEmpty()
+                    if (partial.isNotBlank()) {
+                        emittedAnyText = true
+                        emit(partial)
+                    }
+                    emit("\n\n[Response paused because Gemini reached its output limit. Tap Continue to keep going.]")
+                    return@flow
                 }
-                emit("\n\n[Response paused because Gemini reached its output limit. Tap Continue to keep going.]")
-                return@flow
+            }.isSuccess
+            if (completed) break
+        }
+        if (!emittedAnyText && lastFailure != null) {
+            val error = lastFailure
+            if (model.safeGeminiModelNames().size > 1) {
+                throw IllegalStateException("Gemini model fallback failed. ${error.message.orEmpty()}".trim())
             }
             throw error
         }
@@ -632,6 +651,12 @@ private fun NoteAiAction.isEditorOutputModeForStreaming(): Boolean =
         this == NoteAiAction.IntelligentStructure ||
         this == NoteAiAction.CleanFormat ||
         this == NoteAiAction.FormatNote
+
+private fun NoteAiModel.safeGeminiModelNames(): List<String> =
+    when (this) {
+        NoteAiModel.Gemini25Flash -> listOf("gemini-2.5-flash")
+        NoteAiModel.Gemini3Pro -> listOf("gemini-2.5-pro", "gemini-2.5-flash")
+    }
 
 private const val IntelligentStructureChunkSize = 7_000
 private val StructuredEditorActions = setOf(NoteAiAction.StructureOnly, NoteAiAction.IntelligentStructure)

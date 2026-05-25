@@ -340,11 +340,15 @@ object AiPromptBuilder {
                 Structure this note into clean editor-safe HTML with excellent organisation.
 
                 HARD RULES:
-                - Do not change the user's words.
+                - Preserve the user's wording as exactly as possible.
+                - Every meaningful sentence, claim, quote, Arabic term, transliteration, and argument must remain present.
+                - Do not change the user's words except for HTML escaping and moving existing words into headings/lists.
                 - Do not paraphrase.
                 - Do not summarise.
                 - Do not add new arguments, explanations, examples, references, or conclusions.
                 - Do not remove any meaningful content.
+                - Do not write in second person unless the note already does.
+                - Do not add terms, names, schools, labels, or theological framing that is not already in the note.
                 - Preserve Arabic, transliteration, names, quotations, evidences, and technical terms exactly.
                 - Only change presentation/structure.
 
@@ -457,15 +461,19 @@ object AiPromptBuilder {
 
     private fun temperatureFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Float =
         when (action) {
-            NoteAiAction.StructureOnly -> 4_500.08f
+            NoteAiAction.StructureOnly -> 0.12f
+            NoteAiAction.CleanFormat,
+            NoteAiAction.FormatNote,
+            -> 0.18f
+            NoteAiAction.IntelligentStructure -> 0.22f
             else -> when (action.promptMode()) {
                 PromptMode.NormalChat -> 0.45f
                 PromptMode.FastNoteAction -> 0.28f
-                PromptMode.DeepAnalysis -> if (model == NoteAiModel.Gemini3Pro || provider == NoteAiProvider.ChatGPT) 0.36f else 0.32f
+                PromptMode.DeepAnalysis -> if (model.isDeepModel || provider == NoteAiProvider.ChatGPT) 0.55f else 0.42f
                 PromptMode.EditorHtml -> 0.18f
                 PromptMode.LocalOnly -> 0.0f
             }
-        }
+        }.coerceIn(0.0f, 1.0f)
 
     private fun maxOutputTokensFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Int {
         val base = when (action) {
@@ -483,7 +491,7 @@ object AiPromptBuilder {
             NoteAiAction.StructureOnly -> 4_500
         }
         val multiplier = when {
-            model == NoteAiModel.Gemini3Pro -> 1.25f
+            model.isDeepModel -> 1.25f
             provider == NoteAiProvider.ChatGPT -> 1.1f
             else -> 1.0f
         }
@@ -520,7 +528,7 @@ object AiPromptBuilder {
             SelectedTextAiAction.ComparePositions -> 2_200
         }
         val multiplier = when {
-            model == NoteAiModel.Gemini3Pro -> 1.2f
+            model.isDeepModel -> 1.2f
             provider == NoteAiProvider.ChatGPT -> 1.1f
             else -> 1.0f
         }
@@ -532,7 +540,7 @@ object AiPromptBuilder {
             PromptMode.NormalChat -> takeMiddleAware(8_000)
             PromptMode.FastNoteAction -> takeMiddleAware(7_000)
             PromptMode.DeepAnalysis -> takeMiddleAware(12_000)
-            PromptMode.EditorHtml -> takeMiddleAware(14_000)
+            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) takeMiddleAware(18_000) else takeMiddleAware(14_000)
             PromptMode.LocalOnly -> takeMiddleAware(12_000)
         }
 

@@ -811,7 +811,7 @@ private fun NoteAiAction.isEditorOutputMode(): Boolean =
 
 private fun NoteAiModel.fastForLightweight(action: NoteAiAction): NoteAiModel =
     if (
-        this == NoteAiModel.Gemini3Pro &&
+        this.isDeepModel &&
         action in setOf(
             NoteAiAction.QuickSummary,
             NoteAiAction.DeepSummary,
@@ -829,7 +829,7 @@ private fun NoteAiModel.fastForLightweight(action: NoteAiAction): NoteAiModel =
 
 private fun NoteAiModel.fastForSelectedText(action: SelectedTextAiAction): NoteAiModel =
     if (
-        this == NoteAiModel.Gemini3Pro &&
+        this.isDeepModel &&
         action in setOf(
             SelectedTextAiAction.Ask,
             SelectedTextAiAction.Explain,
@@ -936,7 +936,8 @@ private fun userMessageFor(action: NoteAiAction, question: String): String =
 private fun String.withVaultContextIfUseful(action: NoteAiAction, state: NoteUiState): String {
     if (action.isEditorOutputMode()) return this
     val normalized = lowercase()
-    val wantsContext = action in setOf(NoteAiAction.Ask, NoteAiAction.GeneralAsk, NoteAiAction.StudyTutor, NoteAiAction.DeepAnalysis) &&
+    val alwaysContextual = action in setOf(NoteAiAction.StudyTutor, NoteAiAction.DeepAnalysis)
+    val wantsContext = alwaysContextual || action in setOf(NoteAiAction.Ask, NoteAiAction.GeneralAsk) &&
         normalized.containsAny(
             "related",
             "connect",
@@ -955,6 +956,7 @@ private fun String.withVaultContextIfUseful(action: NoteAiAction, state: NoteUiS
         )
     if (!wantsContext) return this
     val context = buildString {
+        appendLine("Active note title: ${state.note?.title.orEmpty().ifBlank { "Untitled note" }}")
         if (state.folderPath.isNotEmpty()) appendLine("Folder path: ${state.folderPath.joinToString(" / ")}")
         if (state.knowledgeTags.isNotEmpty()) appendLine("Tags: ${state.knowledgeTags.take(8).joinToString { it.name }}")
         if (state.backlinks.isNotEmpty()) {
