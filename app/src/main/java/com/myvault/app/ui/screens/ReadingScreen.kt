@@ -110,6 +110,7 @@ fun ReadingScreen(
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: () -> Unit = {},
     onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
+    onDeviceListenClick: (title: String, body: String) -> Unit = { _, _ -> },
     onDeleteNote: () -> Unit = {},
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
@@ -126,6 +127,7 @@ fun ReadingScreen(
     val isPinned = note?.isPinned == true
     val isFavourite = note?.isFavourite == true
     var moreMenuOpen by remember { mutableStateOf(false) }
+    var listenModeOpen by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
     var removeTagDialogOpen by remember { mutableStateOf(false) }
@@ -178,7 +180,7 @@ fun ReadingScreen(
                         icon = Icons.Rounded.PlayArrow,
                         contentDescription = "Listen",
                         active = narrationState.isActive,
-                        onClick = { onListenClick(note?.title.orEmpty(), uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }, selectedNarrationVoice) },
+                        onClick = { listenModeOpen = true },
                     )
                     IconBtn(
                         icon = Icons.Rounded.PushPin,
@@ -327,6 +329,51 @@ fun ReadingScreen(
             },
             containerColor = colors.elevated,
             tonalElevation = 0.dp,
+        )
+    }
+
+    if (listenModeOpen) {
+        val noteTitle = note?.title.orEmpty()
+        val noteBody = uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }
+        AlertDialog(
+            onDismissRequest = { listenModeOpen = false },
+            title = {
+                Text(
+                    text = "Listen",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
+                    color = colors.text,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    ListenModeChoice(
+                        title = "AI narration",
+                        subtitle = "Natural OpenAI voice. Uses cached audio when available.",
+                        icon = Icons.Rounded.AutoAwesome,
+                        onClick = {
+                            listenModeOpen = false
+                            onListenClick(noteTitle, noteBody, selectedNarrationVoice)
+                        },
+                    )
+                    ListenModeChoice(
+                        title = "Device voice",
+                        subtitle = "Fast built-in phone voice. No OpenAI cost.",
+                        icon = Icons.Rounded.PlayArrow,
+                        onClick = {
+                            listenModeOpen = false
+                            onDeviceListenClick(noteTitle, noteBody)
+                        },
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { listenModeOpen = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colors.elevated,
+            shape = VaultShapes.xl,
         )
     }
 
@@ -583,6 +630,54 @@ private fun ReadingActionRow(
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
                 color = if (destructive) colors.warning else colors.text,
             )
+        }
+    }
+}
+
+@Composable
+private fun ListenModeChoice(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(32.dp),
+                color = colors.accentSoft,
+                shape = VaultShapes.sm,
+                border = BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = colors.accent)
+                }
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                    color = colors.text,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

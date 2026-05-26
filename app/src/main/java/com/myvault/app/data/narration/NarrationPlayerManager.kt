@@ -1,20 +1,35 @@
 package com.myvault.app.data.narration
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Build
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class NarrationPlayerManager @Inject constructor() {
+class NarrationPlayerManager @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+) {
     private var mediaPlayer: MediaPlayer? = null
+    private var textToSpeech: TextToSpeech? = null
+    private var deviceTtsReady = false
+    private var deviceChunks: List<String> = emptyList()
+    private var deviceChunkIndex = 0
+    private var deviceNoteId: String? = null
+    private var deviceNoteTitle: String = ""
+    private var devicePaused = false
+    private var deviceRequestId = 0L
     private var activeFiles: List<File> = emptyList()
     private var activeDurationsMs: List<Long> = emptyList()
     private var expectedChunks: Int = 0
@@ -28,6 +43,39 @@ class NarrationPlayerManager @Inject constructor() {
 
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
+
+    fun playDevice(noteId: String, noteTitle: String, narrationText: String) {
+        stopInternal(resetState = FalseResetState)
+        releaseDeviceTts(stopOnly = true)
+        val chunks = narrationText.splitForDeviceTts()
+        if (chunks.isEmpty()) {
+            showError(noteId, noteTitle, "This note is empty.")
+            return
+        }
+        deviceChunks = chunks
+        deviceChunkIndex = 0
+        deviceNoteId = noteId
+        deviceNoteTitle = noteTitle
+        devicePaused = false
+        deviceRequestId += 1
+        _state.value = NarrationUiState(
+            status = NarrationPlaybackStatus.Preparing,
+            noteId = noteId,
+            noteTitle = noteTitle,
+            label = "Preparing device voice...",
+            speed = speed,
+            voice = DeviceNarrationVoice,
+            currentChunk = 1,
+            totalChunks = chunks.size,
+        )
+        ensureDeviceTts { ready ->
+            if (!ready) {
+                showError(noteId, noteTitle, "Device voice is unavailable. Check your phone's text-to-speech settings.")
+                return@ensureDeviceTts
+            }
+            speakDeviceChunk(0, deviceRequestId)
+        }
+    }
 
     fun markPreparing(noteId: String, noteTitle: String, voice: String = NarrationConfig.DEFAULT_VOICE) {
         _state.value = NarrationUiState(
@@ -131,6 +179,15 @@ class NarrationPlayerManager @Inject constructor() {
     }
 
     fun toggle() {
+        if (_state.value.voice == DeviceNarrationVoice) {
+            when (_state.value.status) {
+                NarrationPlaybackStatus.Playing -> pauseDevice()
+                NarrationPlaybackStatus.Paused,
+                NarrationPlaybackStatus.Stopped -> resumeDevice()
+                else -> Unit
+            }
+            return
+        }
         when (_state.value.status) {
             NarrationPlaybackStatus.Playing -> pause()
             NarrationPlaybackStatus.Paused,
@@ -140,11 +197,19 @@ class NarrationPlayerManager @Inject constructor() {
     }
 
     fun pause() {
+        if (_state.value.voice == DeviceNarrationVoice) {
+            pauseDevice()
+            return
+        }
         mediaPlayer?.takeIf { it.isPlaying }?.pause()
         updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
     }
 
     fun resume() {
+        if (_state.value.voice == DeviceNarrationVoice) {
+            resumeDevice()
+            return
+        }
         mediaPlayer?.let {
             applyPlaybackSpeed(it)
             if (!it.isPlaying) it.start()
@@ -169,6 +234,7 @@ class NarrationPlayerManager @Inject constructor() {
     fun setSpeed(newSpeed: Float) {
         speed = newSpeed.coerceIn(0.75f, 1.5f)
         mediaPlayer?.let(::applyPlaybackSpeed)
+        textToSpeech?.setSpeechRate(speed)
         _state.update { it.copy(speed = speed) }
     }
 
@@ -214,6 +280,107 @@ class NarrationPlayerManager @Inject constructor() {
             speed = speed,
         )
     }
+
+    private fun ensureDeviceTts(onReady: (Boolean) -> Unit) {
+        if (deviceTtsReady && textToSpeech != null) {
+            onReady(true)
+            return
+        }
+        textToSpeech = TextToSpeech(context.applicationContext) { status ->
+            deviceTtsReady = status == TextToSpeech.SUCCESS
+            val engine = textToSpeech
+            if (deviceTtsReady && engine != null) {
+                engine.language = Locale.getDefault()
+                engine.setSpeechRate(speed)
+                engine.setOnUtteranceProgressListener(
+                    object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {
+                            if (!utteranceId.isCurrentDeviceUtterance()) return
+                            updateDeviceState(NarrationPlaybackStatus.Playing, "Reading with device voice")
+                        }
+
+                        override fun onDone(utteranceId: String?) {
+                            if (!utteranceId.isCurrentDeviceUtterance()) return
+                            if (devicePaused) return
+                            val next = deviceChunkIndex + 1
+                            if (next < deviceChunks.size) {
+                                speakDeviceChunk(next, deviceRequestId)
+                            } else {
+                                _state.value = NarrationUiState(
+                                    status = NarrationPlaybackStatus.Stopped,
+                                    noteId = deviceNoteId,
+                                    noteTitle = deviceNoteTitle,
+                                    label = "Device reading finished",
+                                    speed = speed,
+                                    voice = DeviceNarrationVoice,
+                                    currentChunk = deviceChunks.size,
+                                    totalChunks = deviceChunks.size,
+                                )
+                            }
+                        }
+
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            onError(utteranceId, TextToSpeech.ERROR)
+                        }
+
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            if (!utteranceId.isCurrentDeviceUtterance()) return
+                            showError(deviceNoteId, deviceNoteTitle, "Device voice failed. Try again.")
+                        }
+                    },
+                )
+            }
+            onReady(deviceTtsReady)
+        }
+    }
+
+    private fun speakDeviceChunk(index: Int, requestId: Long) {
+        val engine = textToSpeech ?: return
+        val text = deviceChunks.getOrNull(index) ?: return
+        deviceChunkIndex = index
+        devicePaused = false
+        updateDeviceState(NarrationPlaybackStatus.Preparing, "Loading device voice...")
+        val utteranceId = deviceUtteranceId(requestId, index)
+        val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        if (result == TextToSpeech.ERROR) {
+            showError(deviceNoteId, deviceNoteTitle, "Device voice failed. Try again.")
+        }
+    }
+
+    private fun pauseDevice() {
+        devicePaused = true
+        textToSpeech?.stop()
+        updateDeviceState(NarrationPlaybackStatus.Paused, "Paused")
+    }
+
+    private fun resumeDevice() {
+        if (deviceChunks.isEmpty()) return
+        speakDeviceChunk(deviceChunkIndex.coerceIn(0, deviceChunks.lastIndex), deviceRequestId)
+    }
+
+    private fun updateDeviceState(status: NarrationPlaybackStatus, label: String) {
+        _state.value = _state.value.copy(
+            status = status,
+            noteId = deviceNoteId,
+            noteTitle = deviceNoteTitle,
+            label = label,
+            error = null,
+            speed = speed,
+            voice = DeviceNarrationVoice,
+            currentChunk = (deviceChunkIndex + 1).coerceAtLeast(1),
+            totalChunks = deviceChunks.size,
+            currentPositionMs = 0L,
+            durationMs = 0L,
+            totalPositionMs = 0L,
+            totalDurationMs = 0L,
+        )
+    }
+
+    private fun String?.isCurrentDeviceUtterance(): Boolean =
+        this?.startsWith("device-$deviceRequestId-") == true
+
+    private fun deviceUtteranceId(requestId: Long, index: Int): String = "device-$requestId-$index"
 
     private fun playChunk(index: Int, startPositionMs: Long = 0L) {
         val session = activeSession ?: return
@@ -413,6 +580,7 @@ class NarrationPlayerManager @Inject constructor() {
 
     private fun stopInternal(resetState: Boolean) {
         releaseCurrentPlayer()
+        releaseDeviceTts(stopOnly = true)
         activeFiles = emptyList()
         activeDurationsMs = emptyList()
         expectedChunks = 0
@@ -421,6 +589,11 @@ class NarrationPlayerManager @Inject constructor() {
         streamingGeneration = false
         waitingForNextChunk = false
         pendingSeekMs = null
+        deviceChunks = emptyList()
+        deviceChunkIndex = 0
+        deviceNoteId = null
+        deviceNoteTitle = ""
+        devicePaused = false
         if (resetState) _state.value = NarrationUiState(speed = speed)
     }
 
@@ -433,7 +606,41 @@ class NarrationPlayerManager @Inject constructor() {
         mediaPlayer = null
     }
 
+    private fun releaseDeviceTts(stopOnly: Boolean) {
+        textToSpeech?.stop()
+        if (!stopOnly) {
+            textToSpeech?.shutdown()
+            textToSpeech = null
+            deviceTtsReady = false
+        }
+    }
+
+    private fun String.splitForDeviceTts(): List<String> =
+        split(Regex("\\n{2,}"))
+            .flatMap { paragraph ->
+                val clean = paragraph.trim()
+                if (clean.length <= DeviceTtsMaxChunkChars) {
+                    listOf(clean)
+                } else {
+                    clean.split(Regex("(?<=[.!?؟。])\\s+"))
+                        .fold(mutableListOf<String>()) { chunks, sentence ->
+                            val next = sentence.trim()
+                            if (next.isBlank()) return@fold chunks
+                            val current = chunks.lastOrNull()
+                            if (current != null && current.length + next.length + 1 <= DeviceTtsMaxChunkChars) {
+                                chunks[chunks.lastIndex] = "$current $next"
+                            } else {
+                                chunks += next
+                            }
+                            chunks
+                        }
+                }
+            }
+            .filter { it.isNotBlank() }
+
     private companion object {
         const val FalseResetState = false
+        const val DeviceNarrationVoice = "device"
+        const val DeviceTtsMaxChunkChars = 900
     }
 }

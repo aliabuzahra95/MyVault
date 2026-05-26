@@ -746,6 +746,7 @@ fun VaultNavHost(
                     }
                 },
                 onListenClick = viewModel::startNarration,
+                onDeviceListenClick = viewModel::startDeviceNarration,
                 onDeleteNote = {
                     viewModel.deleteNote {
                         navController.popBackStack(VaultDestination.Home.route, false)

@@ -83,6 +83,33 @@ class NarrationController @Inject constructor(
         }
     }
 
+    fun startDevice(noteId: String, title: String, body: String) {
+        val noteTitle = title.trim().ifBlank { "Untitled note" }
+        val current = state.value
+        if (current.noteId == noteId && current.voice == DeviceNarrationVoice) {
+            when (current.status) {
+                NarrationPlaybackStatus.Playing,
+                NarrationPlaybackStatus.Paused,
+                NarrationPlaybackStatus.Stopped -> {
+                    playerManager.toggle()
+                    return
+                }
+                NarrationPlaybackStatus.Preparing,
+                NarrationPlaybackStatus.Generating -> return
+                else -> Unit
+            }
+        }
+        generationJob?.cancel()
+        generationJob = null
+        val narrationText = textPreparer.prepare(noteTitle, body)
+        if (narrationText.isBlank()) {
+            playerManager.showError(noteId, noteTitle, "This note is empty.")
+            return
+        }
+        lastRequest = NarrationRequest(noteId, noteTitle, body, NarrationConfig.DEFAULT_VOICE)
+        playerManager.playDevice(noteId, noteTitle, narrationText)
+    }
+
     fun restartWithVoice(voice: String) {
         val request = lastRequest ?: return
         stop(resetLastRequest = false)
@@ -118,4 +145,8 @@ class NarrationController @Inject constructor(
         val body: String,
         val voice: String,
     )
+
+    private companion object {
+        const val DeviceNarrationVoice = "device"
+    }
 }

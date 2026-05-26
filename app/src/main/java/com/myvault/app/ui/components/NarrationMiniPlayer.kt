@@ -207,14 +207,23 @@ fun NarrationMiniPlayer(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                NarrationConfig.VoiceOptions.forEach { voice ->
-                    val selected = selectedVoice.equals(voice, ignoreCase = true)
+                if (state.voice == DeviceNarrationVoice) {
                     CompactChoiceChip(
-                        label = voice.replaceFirstChar { it.uppercase() },
-                        selected = selected,
-                        enabled = !isBusy,
-                        onClick = { if (!selected) onVoiceChange(voice) },
+                        label = "Device",
+                        selected = true,
+                        enabled = false,
+                        onClick = {},
                     )
+                } else {
+                    NarrationConfig.VoiceOptions.forEach { voice ->
+                        val selected = selectedVoice.equals(voice, ignoreCase = true)
+                        CompactChoiceChip(
+                            label = voice.replaceFirstChar { it.uppercase() },
+                            selected = selected,
+                            enabled = !isBusy,
+                            onClick = { if (!selected) onVoiceChange(voice) },
+                        )
+                    }
                 }
                 NarrationConfig.SpeedOptions.forEach { speed ->
                     val selected = state.speed == speed
@@ -229,6 +238,8 @@ fun NarrationMiniPlayer(
         }
     }
 }
+
+private const val DeviceNarrationVoice = "device"
 
 private fun formatNarrationTime(ms: Long): String {
     val totalSeconds = (ms / 1000L).coerceAtLeast(0L)

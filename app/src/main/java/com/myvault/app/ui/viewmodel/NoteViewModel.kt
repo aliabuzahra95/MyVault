@@ -257,6 +257,10 @@ class NoteViewModel @Inject constructor(
         narrationController.start(noteId, title, body, voice)
     }
 
+    fun startDeviceNarration(title: String, body: String) {
+        narrationController.startDevice(noteId, title, body)
+    }
+
     fun toggleNarrationPlayback() {
         narrationController.toggle()
     }
