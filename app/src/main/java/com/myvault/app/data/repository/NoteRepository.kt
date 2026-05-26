@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -77,6 +78,7 @@ class NoteRepository @Inject constructor(
                 .distinctUntilChanged(),
             blockDao.observeAll()
                 .debounce(1_500)
+                .onStart { emit(emptyList()) }
                 .distinctUntilChanged(),
         ) { noteMetadata, blocks ->
             val notesById = noteMetadata.associateBy { it.id }
