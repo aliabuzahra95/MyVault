@@ -663,7 +663,7 @@ private fun DriveRestoreProgressCard(state: DriveRestoreState) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = if (progress.stage == DriveRestoreStage.Complete) "Restore complete" else progress.stage.label,
+                    text = if (progress.stage == DriveRestoreStage.Complete) "Drive sync complete" else progress.stage.label,
                     style = MaterialTheme.typography.labelLarge,
                     color = colors.text,
                 )

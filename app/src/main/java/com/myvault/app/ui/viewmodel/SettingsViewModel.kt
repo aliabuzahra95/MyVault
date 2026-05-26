@@ -155,8 +155,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun pushGoogleDriveSync(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            onComplete(googleDriveSyncRepository.pushToDrive().displayMessage())
+        googleDriveRestoreController.startPush { result ->
+            onComplete(result.displayMessage())
         }
     }
 

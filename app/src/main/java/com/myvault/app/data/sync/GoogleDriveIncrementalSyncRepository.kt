@@ -54,7 +54,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         DriveSyncResult.Success("Google Drive connected${account.email?.let { " as $it" }.orEmpty()}.")
     }
 
-    suspend fun pushToDrive(): DriveSyncResult = withContext(Dispatchers.IO) {
+    suspend fun pushToDrive(
+        onProgress: suspend (DriveRestoreProgress) -> Unit = {},
+    ): DriveSyncResult = withContext(Dispatchers.IO) {
+        onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive backup"))
         val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
         val vault = drive.ensureMyVaultLayout()
         val remoteManifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
@@ -70,6 +73,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val backupFile = File(context.cacheDir, "drive-api-sync-export-${System.currentTimeMillis()}.vaultbackup")
         val unzipDir = File(context.cacheDir, "drive-api-sync-export-${System.currentTimeMillis()}").apply { mkdirs() }
         try {
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Exporting local vault"))
             backupRepository.exportBackupToFile(backupFile)
             val entries = backupFile.toDriveEntries(unzipDir)
             val remoteEntries = remoteManifest.toRemoteEntryMap()
@@ -77,7 +81,23 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             var uploadedFiles = 0
             var skippedFiles = 0
 
-            entries.forEach { entry ->
+            onProgress(
+                DriveRestoreProgress(
+                    stage = DriveRestoreStage.Uploading,
+                    message = "Uploading changed vault files",
+                    current = 0,
+                    total = entries.size,
+                ),
+            )
+            entries.forEachIndexed { index, entry ->
+                onProgress(
+                    DriveRestoreProgress(
+                        stage = DriveRestoreStage.Uploading,
+                        message = if (entry.kind == EntryKindFile) "Uploading file ${entry.fileName}" else "Uploading metadata ${entry.fileName}",
+                        current = index + 1,
+                        total = entries.size,
+                    ),
+                )
                 val remote = remoteEntries[entry.path]
                 if (remote?.sha256 == entry.sha256 && remote.size == entry.size) {
                     entry.cloudFileId = remote.cloudFileId.ifBlank {
@@ -85,7 +105,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                         drive.findChild(parentId, entry.fileName)?.id.orEmpty()
                     }
                     if (entry.kind == EntryKindFile) skippedFiles += 1
-                    return@forEach
+                    return@forEachIndexed
                 }
                 val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
                 val existingId = remote?.cloudFileId ?: drive.findChild(parentId, entry.fileName)?.id
@@ -100,6 +120,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 if (entry.kind == EntryKindFile) uploadedFiles += 1 else uploadedMetadata += 1
             }
 
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Finalising, message = "Finalising Drive backup"))
             val cloudVersion = System.currentTimeMillis()
             val manifest = entries.toManifest(cloudVersion)
             val existingManifestId = remoteManifestFile?.id ?: drive.findChild(vault.manifests.id, SyncManifestFile)?.id
@@ -132,7 +153,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     }
 
     suspend fun pullLatestFromDrive(
-        onProgress: (DriveRestoreProgress) -> Unit = {},
+        onProgress: suspend (DriveRestoreProgress) -> Unit = {},
     ): DriveSyncResult = withContext(Dispatchers.IO) {
         onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive restore"))
         val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
@@ -627,6 +648,7 @@ sealed interface DriveSyncResult {
 enum class DriveRestoreStage(val label: String) {
     Idle("Idle"),
     Preparing("Preparing"),
+    Uploading("Uploading"),
     Downloading("Downloading"),
     Verifying("Verifying"),
     RestoringDatabase("Restoring database"),
