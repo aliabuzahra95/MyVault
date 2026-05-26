@@ -21,6 +21,8 @@ import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.ui.components.EditorBlockType
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -30,6 +32,7 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 @Singleton
 class NoteRepository @Inject constructor(
     private val database: VaultDatabase,
@@ -64,14 +67,25 @@ class NoteRepository @Inject constructor(
     fun observeAllNotes() = noteDao.observeAll()
 
     fun observeBacklinks(noteId: String): Flow<List<NoteLinkRef>> =
-        combine(noteDao.observeAll(), blockDao.observeAll()) { notes, blocks ->
-            val notesById = notes.associateBy { it.id }
+        combine(
+            noteDao.observeAll()
+                .map { notes ->
+                    notes
+                        .filter { it.id != noteId }
+                        .map { NoteBacklinkMeta(it.id, it.title, it.bodyPlainText.previewLine()) }
+                }
+                .distinctUntilChanged(),
+            blockDao.observeAll()
+                .debounce(1_500)
+                .distinctUntilChanged(),
+        ) { noteMetadata, blocks ->
+            val notesById = noteMetadata.associateBy { it.id }
             blocks
                 .filter { it.type == "rich_text" && it.noteId != noteId }
                 .filter { block -> block.content.containsNoteLink(noteId) }
                 .mapNotNull { block ->
-                    notesById[block.noteId]?.let { note ->
-                        NoteLinkRef(id = note.id, title = note.title, preview = note.bodyPlainText.previewLine())
+                    notesById[block.noteId]?.let { noteMeta ->
+                        NoteLinkRef(id = noteMeta.id, title = noteMeta.title, preview = noteMeta.preview)
                     }
                 }
                 .distinctBy { it.id }
@@ -270,124 +284,140 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun createTable(noteId: String, rows: Int, columns: Int) {
-        val now = System.currentTimeMillis()
-        val safeRows = rows.coerceIn(1, 10)
-        val safeColumns = columns.coerceIn(1, 10)
-        val orderIndex = (noteTableDao.getForNote(noteId).maxOfOrNull { it.orderIndex } ?: -1) + 1
-        noteTableDao.upsertAll(
-            listOf(
-                NoteTableEntity(
-                    id = UUID.randomUUID().toString(),
-                    noteId = noteId,
-                    rowCount = safeRows,
-                    columnCount = safeColumns,
-                    cellsJson = emptyCellsJson(safeRows, safeColumns),
-                    orderIndex = orderIndex,
-                    createdAt = now,
-                    updatedAt = now,
+        database.withTransaction {
+            val now = System.currentTimeMillis()
+            val safeRows = rows.coerceIn(1, 10)
+            val safeColumns = columns.coerceIn(1, 10)
+            val orderIndex = (noteTableDao.getForNote(noteId).maxOfOrNull { it.orderIndex } ?: -1) + 1
+            noteTableDao.upsertAll(
+                listOf(
+                    NoteTableEntity(
+                        id = UUID.randomUUID().toString(),
+                        noteId = noteId,
+                        rowCount = safeRows,
+                        columnCount = safeColumns,
+                        cellsJson = emptyCellsJson(safeRows, safeColumns),
+                        orderIndex = orderIndex,
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
                 ),
-            ),
-        )
-        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), now)
+            )
+            noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), now)
+        }
     }
 
     suspend fun updateTableCell(noteId: String, tableId: String, row: Int, column: Int, text: String) {
-        val table = noteTableDao.getForNote(noteId).firstOrNull { it.id == tableId } ?: return
-        val now = System.currentTimeMillis()
-        noteTableDao.updateCells(
-            id = tableId,
-            cellsJson = table.cellsJson.updateCell(table.rowCount, table.columnCount, row, column, text),
-            updatedAt = now,
-        )
-        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), now)
+        database.withTransaction {
+            val table = noteTableDao.getForNote(noteId).firstOrNull { it.id == tableId } ?: return@withTransaction
+            val now = System.currentTimeMillis()
+            noteTableDao.updateCells(
+                id = tableId,
+                cellsJson = table.cellsJson.updateCell(table.rowCount, table.columnCount, row, column, text),
+                updatedAt = now,
+            )
+            noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), now)
+        }
     }
 
     suspend fun deleteTable(noteId: String, tableId: String) {
-        noteTableDao.deleteById(tableId)
-        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), System.currentTimeMillis())
+        database.withTransaction {
+            noteTableDao.deleteById(tableId)
+            noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), System.currentTimeMillis())
+        }
     }
 
     suspend fun updateBody(noteId: String, body: String) {
-        noteDao.updateBodyPlainText(noteId, body, System.currentTimeMillis())
-        val blocks = blockDao.getForNote(noteId)
-        val mainTextBlock = blocks.firstOrNull { it.type in listOf("paragraph", "heading", "quote", "checklist", "bullet", "numbered", "link") }
-        if (mainTextBlock != null) {
-            blockDao.updateContent(mainTextBlock.id, body)
-        } else {
+        database.withTransaction {
+            noteDao.updateBodyPlainText(noteId, body, System.currentTimeMillis())
+            val blocks = blockDao.getForNote(noteId)
+            val mainTextBlock = blocks.firstOrNull { it.type in listOf("paragraph", "heading", "quote", "checklist", "bullet", "numbered", "link") }
+            if (mainTextBlock != null) {
+                blockDao.updateContent(mainTextBlock.id, body)
+            } else {
+                blockDao.upsertAll(
+                    listOf(
+                        BlockEntity(
+                            id = UUID.randomUUID().toString(),
+                            noteId = noteId,
+                            type = "paragraph",
+                            content = body,
+                            orderIndex = 0,
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun saveRichHtml(noteId: String, html: String, plainText: String) {
+        database.withTransaction {
+            val blockId = "$noteId-rich-html"
+            blockDao.upsertAll(
+                listOf(
+                    BlockEntity(
+                        id = blockId,
+                        noteId = noteId,
+                        type = "rich_html",
+                        content = html,
+                        orderIndex = 0,
+                    ),
+                ),
+            )
+            blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+            noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, plainText), System.currentTimeMillis())
+        }
+    }
+
+    suspend fun saveRichText(noteId: String, text: String, styleMarksJson: String, noteLinksJson: String = "[]") {
+        database.withTransaction {
+            val safeStyleMarks = sanitizeStyleMarksJson(styleMarksJson, text.length)
+            val safeNoteLinks = sanitizeNoteLinksJson(noteLinksJson, text.length)
+            val blockId = "$noteId-rich-text"
+            blockDao.upsertAll(
+                listOf(
+                    BlockEntity(
+                        id = blockId,
+                        noteId = noteId,
+                        type = "rich_text",
+                        content = JSONObject()
+                            .put("text", text)
+                            .put("styleMarks", safeStyleMarks)
+                            .put("noteLinks", safeNoteLinks)
+                            .toString(),
+                        orderIndex = 0,
+                    ),
+                ),
+            )
+            blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+            noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, text), System.currentTimeMillis())
+        }
+    }
+
+    suspend fun updateBlockContent(noteId: String, blockId: String, content: String) {
+        database.withTransaction {
+            blockDao.updateContent(blockId, content)
+            updateBodyPlainText(noteId)
+        }
+    }
+
+    suspend fun insertBlock(noteId: String, type: EditorBlockType) {
+        database.withTransaction {
+            val blocks = blockDao.getForNote(noteId)
+            val orderIndex = (blocks.maxOfOrNull { it.orderIndex } ?: -1) + 1
             blockDao.upsertAll(
                 listOf(
                     BlockEntity(
                         id = UUID.randomUUID().toString(),
                         noteId = noteId,
-                        type = "paragraph",
-                        content = body,
-                        orderIndex = 0,
+                        type = type.toStorageType(),
+                        content = type.defaultContent(),
+                        orderIndex = orderIndex,
                     ),
                 ),
             )
+            updateBodyPlainText(noteId)
         }
-    }
-
-    suspend fun saveRichHtml(noteId: String, html: String, plainText: String) {
-        val blockId = "$noteId-rich-html"
-        blockDao.upsertAll(
-            listOf(
-                BlockEntity(
-                    id = blockId,
-                    noteId = noteId,
-                    type = "rich_html",
-                    content = html,
-                    orderIndex = 0,
-                ),
-            ),
-        )
-        blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
-        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, plainText), System.currentTimeMillis())
-    }
-
-    suspend fun saveRichText(noteId: String, text: String, styleMarksJson: String, noteLinksJson: String = "[]") {
-        val safeStyleMarks = sanitizeStyleMarksJson(styleMarksJson, text.length)
-        val safeNoteLinks = sanitizeNoteLinksJson(noteLinksJson, text.length)
-        val blockId = "$noteId-rich-text"
-        blockDao.upsertAll(
-            listOf(
-                BlockEntity(
-                    id = blockId,
-                    noteId = noteId,
-                    type = "rich_text",
-                    content = JSONObject()
-                        .put("text", text)
-                        .put("styleMarks", safeStyleMarks)
-                        .put("noteLinks", safeNoteLinks)
-                        .toString(),
-                    orderIndex = 0,
-                ),
-            ),
-        )
-        blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
-        noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, text), System.currentTimeMillis())
-    }
-
-    suspend fun updateBlockContent(noteId: String, blockId: String, content: String) {
-        blockDao.updateContent(blockId, content)
-        updateBodyPlainText(noteId)
-    }
-
-    suspend fun insertBlock(noteId: String, type: EditorBlockType) {
-        val blocks = blockDao.getForNote(noteId)
-        val orderIndex = (blocks.maxOfOrNull { it.orderIndex } ?: -1) + 1
-        blockDao.upsertAll(
-            listOf(
-                BlockEntity(
-                    id = UUID.randomUUID().toString(),
-                    noteId = noteId,
-                    type = type.toStorageType(),
-                    content = type.defaultContent(),
-                    orderIndex = orderIndex,
-                ),
-            ),
-        )
-        updateBodyPlainText(noteId)
     }
 
     private suspend fun updateBodyPlainText(noteId: String) {
@@ -441,6 +471,12 @@ class NoteRepository @Inject constructor(
 }
 
 data class NoteLinkRef(
+    val id: String,
+    val title: String,
+    val preview: String,
+)
+
+private data class NoteBacklinkMeta(
     val id: String,
     val title: String,
     val preview: String,

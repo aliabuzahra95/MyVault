@@ -403,6 +403,28 @@ fun EditorScreen(
         }
     }
 
+    fun openAskAiFromEditor() {
+        val selectedText = selectedBodyText
+        if (selectedText.isNullOrBlank()) {
+            selectedTextTarget = null
+            onAskAiClick(null)
+            return
+        }
+
+        val currentStart = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
+            .coerceIn(0, safeBodyValue.text.length)
+        val currentEnd = maxOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
+            .coerceIn(0, safeBodyValue.text.length)
+        selectedTextTarget = SelectedTextTarget(
+            text = selectedText,
+            start = currentStart,
+            end = currentEnd,
+        )
+        onClearSelectedTextAi()
+        onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(AiSuggestion.Explain, selectedTextMode = true))
+        onAskAiClick(selectedText)
+    }
+
     fun updateBody(updatedValue: TextFieldValue) {
         val previousValue = sanitizeVaultTextFieldValue(bodyValue)
         val continuedValue = sanitizeVaultTextFieldValue(continueListOnNewline(previousValue, sanitizeVaultTextFieldValue(updatedValue)))
@@ -899,32 +921,28 @@ fun EditorScreen(
                 }
             }
 
-            if (!bodyFocused) {
-                Surface(
-                    onClick = {
-                        selectedTextTarget = null
-                        onAskAiClick(null)
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = VaultSpacing.screen, bottom = VaultSpacing.sm),
-                    color = colors.accent,
-                    contentColor = Color.White,
-                    shape = VaultShapes.pill,
-                    shadowElevation = 8.dp,
+            Surface(
+                onClick = ::openAskAiFromEditor,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = VaultSpacing.screen, bottom = VaultSpacing.sm),
+                color = colors.elevated.copy(alpha = 0.96f),
+                contentColor = colors.accent,
+                shape = VaultShapes.pill,
+                border = BorderStroke(1.dp, colors.accentBorder),
+                shadowElevation = 8.dp,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = Color.White)
-                        Text(
-                            text = "Ask AI",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                            color = Color.White,
-                        )
-                    }
+                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(15.dp), tint = colors.accent)
+                    Text(
+                        text = if (selectedBodyText.isNullOrBlank()) "Ask AI" else "Ask selection",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                        color = colors.accent,
+                    )
                 }
             }
         }

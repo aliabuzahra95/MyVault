@@ -1,6 +1,7 @@
 package com.myvault.app.data.quran
 
 import android.content.Context
+import android.util.LruCache
 import androidx.core.text.HtmlCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,7 @@ import javax.inject.Singleton
 class QuranTextRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
-    private val surahCache = mutableMapOf<Int, List<QuranAyah>>()
+    private val surahCache = LruCache<Int, List<QuranAyah>>(8)
     private val jsonMutex = Mutex()
     private val surahMutex = Mutex()
     private var arabicSource: JSONObject? = null
@@ -24,12 +25,12 @@ class QuranTextRepository @Inject constructor(
     private var tajweedByVerse: Map<String, List<TajweedAnnotation>>? = null
     private var tafsirByVerse: Map<String, String>? = null
     private var tafsirSources: List<TafsirSourceUiModel>? = null
-    private val remoteTafsirCache = mutableMapOf<String, String>()
+    private val remoteTafsirCache = LruCache<String, String>(48)
 
     suspend fun getSurahAyahs(surahNumber: Int): List<QuranAyah> {
-        surahCache[surahNumber]?.let { return it }
+        surahCache.get(surahNumber)?.let { return it }
         return surahMutex.withLock {
-            surahCache[surahNumber] ?: loadSurahAyahs(surahNumber).also { surahCache[surahNumber] = it }
+            surahCache.get(surahNumber) ?: loadSurahAyahs(surahNumber).also { surahCache.put(surahNumber, it) }
         }
     }
 
@@ -44,8 +45,8 @@ class QuranTextRepository @Inject constructor(
             loadTafsirSource()[verseKey].orEmpty()
         } else {
             val cacheKey = tafsirCacheKey(verseKey, tafsirId)
-            remoteTafsirCache[cacheKey] ?: withContext(Dispatchers.IO) {
-                fetchRemoteTafsir(verseKey, tafsirId).also { remoteTafsirCache[cacheKey] = it }
+            remoteTafsirCache.get(cacheKey) ?: withContext(Dispatchers.IO) {
+                fetchRemoteTafsir(verseKey, tafsirId).also { remoteTafsirCache.put(cacheKey, it) }
             }
         }
     }

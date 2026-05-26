@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -173,13 +175,17 @@ class NoteViewModel @Inject constructor(
 
     private val coreUiState = combine(
         noteContentState,
-        noteRepository.observeAllNotes(),
+        noteRepository.observeAllNotes()
+            .map { notes ->
+                notes
+                    .filter { it.id != noteId }
+                    .map { NoteLinkSuggestion(it.id, it.title) }
+            }
+            .distinctUntilChanged(),
         noteRepository.observeBacklinks(noteId),
-    ) { state, allNotes, backlinks ->
+    ) { state, noteSuggestions, backlinks ->
         state.copy(
-            allNotes = allNotes
-                .filter { it.id != noteId }
-                .map { NoteLinkSuggestion(it.id, it.title) },
+            allNotes = noteSuggestions,
             backlinks = backlinks,
         )
     }
