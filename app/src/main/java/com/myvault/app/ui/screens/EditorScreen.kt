@@ -773,7 +773,7 @@ fun EditorScreen(
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colors.text,
                                 fontSize = bodyFontSizeSp.sp,
-                                textDirection = TextDirection.ContentOrRtl,
+                                textDirection = TextDirection.ContentOrLtr,
                             ),
                             cursorBrush = SolidColor(colors.accent),
                             visualTransformation = remember(styleMarks, noteLinks, colors) {
