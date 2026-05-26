@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
@@ -131,25 +132,27 @@ fun FolderTreeRow(
         ) {
             Column {
                 item.children.forEach { child ->
-                    val childFolderIndex = folderChildren.indexOfFirst { it.id == child.id }
-                    FolderTreeRow(
-                        item = child,
-                        depth = depth + 1,
-                        expanded = isChildExpanded(child.id),
-                        isChildExpanded = isChildExpanded,
-                        onToggle = onToggle,
-                        onOpenNote = onOpenNote,
-                        onLongPress = onLongPress,
-                        selectionMode = selectionMode,
-                        isSelected = isSelected,
-                        onSelectionToggle = onSelectionToggle,
-                        organizeMode = organizeMode,
-                        notePreviewLines = notePreviewLines,
-                        dashboardFontSizeSp = dashboardFontSizeSp,
-                        canMoveUp = childFolderIndex > 0,
-                        canMoveDown = childFolderIndex in 0 until folderChildren.lastIndex,
-                        onMoveFolder = onMoveFolder,
-                    )
+                    key(child.id) {
+                        val childFolderIndex = folderChildren.indexOfFirst { it.id == child.id }
+                        FolderTreeRow(
+                            item = child,
+                            depth = depth + 1,
+                            expanded = isChildExpanded(child.id),
+                            isChildExpanded = isChildExpanded,
+                            onToggle = onToggle,
+                            onOpenNote = onOpenNote,
+                            onLongPress = onLongPress,
+                            selectionMode = selectionMode,
+                            isSelected = isSelected,
+                            onSelectionToggle = onSelectionToggle,
+                            organizeMode = organizeMode,
+                            notePreviewLines = notePreviewLines,
+                            dashboardFontSizeSp = dashboardFontSizeSp,
+                            canMoveUp = childFolderIndex > 0,
+                            canMoveDown = childFolderIndex in 0 until folderChildren.lastIndex,
+                            onMoveFolder = onMoveFolder,
+                        )
+                    }
                 }
             }
         }

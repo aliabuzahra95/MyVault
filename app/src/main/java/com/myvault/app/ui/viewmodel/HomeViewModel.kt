@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -172,7 +173,7 @@ class HomeViewModel @Inject constructor(
 
     fun setFolderExpanded(folderId: String, expanded: Boolean) {
         viewModelScope.launch {
-            val folderIds = uiState.value.expandedFolderIds.toMutableSet()
+            val folderIds = vaultPreferences.userPreferences.first().expandedFolderIds.toMutableSet()
             if (expanded) {
                 folderIds += folderId
             } else {

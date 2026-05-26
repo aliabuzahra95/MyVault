@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -276,7 +277,7 @@ class LibraryViewModel @Inject constructor(
 
     fun setFolderExpanded(folderId: String, expanded: Boolean) {
         viewModelScope.launch {
-            val folderIds = uiState.value.expandedFolderIds.toMutableSet()
+            val folderIds = vaultPreferences.userPreferences.first().expandedFolderIds.toMutableSet()
             if (expanded) folderIds += folderId else folderIds -= folderId
             vaultPreferences.setExpandedFolderIds(folderIds)
         }

@@ -68,6 +68,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -193,6 +194,9 @@ fun HomeScreen(
     }
     val displayedWorkspace = if (organizeMode) uiState.workspace else sortedWorkspace
     val rootFolders = displayedWorkspace.filter { it.type == VaultTreeItemType.Folder }
+    val folderExpansionPrefix = remember(currentFolderMode) { "home:$currentFolderMode:" }
+    fun folderExpansionKey(folderId: String): String = "$folderExpansionPrefix$folderId"
+    fun isFolderExpanded(folderId: String): Boolean = folderExpansionKey(folderId) in uiState.expandedFolderIds
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -349,39 +353,41 @@ fun HomeScreen(
                             )
                         } else {
                             displayedWorkspace.forEach { item ->
-                                val rootFolderIndex = rootFolders.indexOfFirst { it.id == item.id }
-                                FolderTreeRow(
-                                    item = item,
-                                    depth = 0,
-                                    notePreviewLines = uiState.notePreviewLines,
-                                    dashboardFontSizeSp = dashboardFontSizeSp,
-                                    expanded = item.id in uiState.expandedFolderIds,
-                                    isChildExpanded = { id -> id in uiState.expandedFolderIds },
-                                    onToggle = { folder ->
-                                        onFolderExpandedChange(folder.id, folder.id !in uiState.expandedFolderIds)
-                                    },
-                                    onOpenNote = { note -> onNoteClick(note.id) },
-                                    onLongPress = { item ->
-                                        if (manageSelectionMode) {
-                                            selectedItemIds.toggle(item.id)
-                                        } else if (item.type == VaultTreeItemType.Folder) {
-                                            selectedFolder = item
-                                            folderActionsOpen = true
-                                        } else {
-                                            selectedNote = item
-                                            noteActionsOpen = true
-                                        }
-                                    },
-                                    selectionMode = manageSelectionMode,
-                                    isSelected = { id -> selectedItemIds[id] == true },
-                                    onSelectionToggle = { item -> selectedItemIds.toggle(item.id) },
-                                    organizeMode = organizeMode,
-                                    canMoveUp = rootFolderIndex > 0,
-                                    canMoveDown = rootFolderIndex in 0 until rootFolders.lastIndex,
-                                    onMoveFolder = { folder, direction ->
-                                        onMoveFolderInOrderClick(folder.id, direction)
-                                    },
-                                )
+                                key(item.id) {
+                                    val rootFolderIndex = rootFolders.indexOfFirst { it.id == item.id }
+                                    FolderTreeRow(
+                                        item = item,
+                                        depth = 0,
+                                        notePreviewLines = uiState.notePreviewLines,
+                                        dashboardFontSizeSp = dashboardFontSizeSp,
+                                        expanded = isFolderExpanded(item.id),
+                                        isChildExpanded = { id -> isFolderExpanded(id) },
+                                        onToggle = { folder ->
+                                            onFolderExpandedChange(folderExpansionKey(folder.id), !isFolderExpanded(folder.id))
+                                        },
+                                        onOpenNote = { note -> onNoteClick(note.id) },
+                                        onLongPress = { item ->
+                                            if (manageSelectionMode) {
+                                                selectedItemIds.toggle(item.id)
+                                            } else if (item.type == VaultTreeItemType.Folder) {
+                                                selectedFolder = item
+                                                folderActionsOpen = true
+                                            } else {
+                                                selectedNote = item
+                                                noteActionsOpen = true
+                                            }
+                                        },
+                                        selectionMode = manageSelectionMode,
+                                        isSelected = { id -> selectedItemIds[id] == true },
+                                        onSelectionToggle = { item -> selectedItemIds.toggle(item.id) },
+                                        organizeMode = organizeMode,
+                                        canMoveUp = rootFolderIndex > 0,
+                                        canMoveDown = rootFolderIndex in 0 until rootFolders.lastIndex,
+                                        onMoveFolder = { folder, direction ->
+                                            onMoveFolderInOrderClick(folder.id, direction)
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
