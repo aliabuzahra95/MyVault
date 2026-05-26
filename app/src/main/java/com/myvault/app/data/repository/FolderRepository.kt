@@ -13,6 +13,7 @@ import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import kotlinx.coroutines.flow.Flow
@@ -170,7 +171,7 @@ class FolderRepository @Inject constructor(
                 noteDao.updateDeletedAt(noteIds, now, now)
                 attachmentDao.updateDeletedAtForNotes(noteIds, now)
             }
-            if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+            if (folders.firstOrNull { it.id == folderId }?.mode.isLibraryFolderMode()) {
                 attachmentDao.updateDeletedAtForLibraryFolders(folderIds, now)
             }
             folderDao.updateDeletedAt(folderIds, now, now)
@@ -190,7 +191,7 @@ class FolderRepository @Inject constructor(
                 noteDao.updateDeletedAt(noteIds, null, now)
                 attachmentDao.updateDeletedAtForNotes(noteIds, null)
             }
-            if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+            if (folders.firstOrNull { it.id == folderId }?.mode.isLibraryFolderMode()) {
                 attachmentDao.updateDeletedAtForLibraryFolders(folderIds, null)
             }
             folderDao.updateDeletedAt(folderIds, null, now)
@@ -204,7 +205,7 @@ class FolderRepository @Inject constructor(
             .filter { it.folderId in folderIds }
             .map { it.id }
         val noteAttachments = if (noteIds.isNotEmpty()) attachmentDao.getForNotes(noteIds) else emptyList()
-        val libraryAttachments = if (folders.firstOrNull { it.id == folderId }?.mode == FOLDER_MODE_LIBRARY) {
+        val libraryAttachments = if (folders.firstOrNull { it.id == folderId }?.mode.isLibraryFolderMode()) {
             attachmentDao.getAllIncludingDeleted().filter { it.libraryFolderId in folderIds }
         } else {
             emptyList()
@@ -283,6 +284,9 @@ class FolderRepository @Inject constructor(
         }
     }
 }
+
+private fun String?.isLibraryFolderMode(): Boolean =
+    this == FOLDER_MODE_LIBRARY || this == FOLDER_MODE_PERSONAL_LIBRARY
 
 private fun List<com.myvault.app.data.local.entity.AttachmentEntity>.deleteLocalFiles() {
     forEach { attachment ->

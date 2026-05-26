@@ -63,6 +63,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
@@ -108,6 +109,7 @@ fun VaultNavHost(
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
+    var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
 
@@ -163,12 +165,14 @@ fun VaultNavHost(
             StudyLibraryPersonalShell(
                 workspace = preferences.workspace,
                 selectedRootModeName = if (preferences.workspace == WORKSPACE_PERSONAL) {
-                    VaultRootMode.Personal.name
+                    selectedPersonalRootMode
                 } else {
                     selectedIslamicRootMode
                 },
                 onRootModeChanged = { mode ->
-                    if (mode != VaultRootMode.Personal) {
+                    if (preferences.workspace == WORKSPACE_PERSONAL) {
+                        selectedPersonalRootMode = mode.name
+                    } else if (mode != VaultRootMode.Personal) {
                         selectedIslamicRootMode = mode.name
                     }
                 },
@@ -350,6 +354,9 @@ fun VaultNavHost(
                 },
                 libraryContent = {
                     val libraryViewModel: LibraryViewModel = hiltViewModel()
+                    LaunchedEffect(libraryViewModel) {
+                        libraryViewModel.setLibraryMode("library")
+                    }
                     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
                     LibraryScreen(
                         uiState = libraryState,
@@ -489,19 +496,88 @@ fun VaultNavHost(
                         currentFolderMode = FOLDER_MODE_PERSONAL,
                     )
                 },
+                personalLibraryContent = {
+                    val personalLibraryViewModel: LibraryViewModel = hiltViewModel()
+                    LaunchedEffect(personalLibraryViewModel) {
+                        personalLibraryViewModel.setLibraryMode(FOLDER_MODE_PERSONAL_LIBRARY)
+                    }
+                    val personalLibraryState by personalLibraryViewModel.uiState.collectAsStateWithLifecycle()
+                    LibraryScreen(
+                        uiState = personalLibraryState,
+                        workspaceTitle = preferences.workspace.workspaceLabel(),
+                        workspaceOptions = WorkspaceLabels,
+                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onFolderClick = { folderId ->
+                            navController.navigate(VaultDestination.LibraryFolder.route(folderId, FOLDER_MODE_PERSONAL_LIBRARY))
+                        },
+                        onAttachmentClick = { attachmentId ->
+                            navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                        },
+                        onAnnotationClick = { attachmentId, pageIndex ->
+                            navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
+                        },
+                        onReferenceNoteClick = { noteId ->
+                            navController.navigate(VaultDestination.Reading.route(noteId))
+                        },
+                        onRenameAnnotation = personalLibraryViewModel::renameAnnotation,
+                        onMoveAnnotation = personalLibraryViewModel::moveAnnotation,
+                        onDeleteAnnotationNote = personalLibraryViewModel::deleteAnnotationNote,
+                        onDeleteAnnotation = personalLibraryViewModel::deleteAnnotation,
+                        onLinkAnnotationToStudyNote = personalLibraryViewModel::linkAnnotationToStudyNote,
+                        onCreateFolder = { parentId, name ->
+                            personalLibraryViewModel.createFolder(parentId = parentId, name = name)
+                        },
+                        onRenameFolder = personalLibraryViewModel::renameFolder,
+                        onMoveFolder = personalLibraryViewModel::moveFolder,
+                        onDeleteFolder = personalLibraryViewModel::deleteFolder,
+                        onFolderExpandedChange = personalLibraryViewModel::setFolderExpanded,
+                        onViewModeChange = personalLibraryViewModel::setViewMode,
+                        onImportFiles = { uris ->
+                            personalLibraryViewModel.importFiles(uris)
+                        },
+                        onDismissImportMessage = personalLibraryViewModel::clearImportMessage,
+                        onRenameFile = personalLibraryViewModel::renameFile,
+                        onMoveFile = personalLibraryViewModel::moveFile,
+                        onSetFilePinned = personalLibraryViewModel::setFilePinned,
+                        onDeleteFile = personalLibraryViewModel::deleteFile,
+                        onAddAttachmentTag = personalLibraryViewModel::addAttachmentTag,
+                        onRemoveAttachmentTag = personalLibraryViewModel::removeAttachmentTag,
+                        onAddAnnotationTag = personalLibraryViewModel::addAnnotationTag,
+                        onRemoveAnnotationTag = personalLibraryViewModel::removeAnnotationTag,
+                        onThemeClick = {
+                            settingsViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            settingsViewModel.pushGoogleDriveSync {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
+                    )
+                },
             )
         }
         composable(
             route = VaultDestination.LibraryFolder.route,
-            arguments = listOf(navArgument("libraryFolderId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("libraryFolderId") { type = NavType.StringType },
+                navArgument("libraryMode") {
+                    type = NavType.StringType
+                    defaultValue = "library"
+                },
+            ),
         ) {
             val viewModel: LibraryViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val libraryMode = it.arguments?.getString("libraryMode") ?: "library"
             LibraryFolderScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
                 onFolderClick = { folderId ->
-                    navController.navigate(VaultDestination.LibraryFolder.route(folderId))
+                    navController.navigate(VaultDestination.LibraryFolder.route(folderId, libraryMode))
                 },
                 onAttachmentClick = { attachmentId ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
@@ -910,10 +986,11 @@ private fun StudyLibraryPersonalShell(
     memoriseContent: @Composable () -> Unit,
     libraryContent: @Composable () -> Unit,
     personalContent: @Composable () -> Unit,
+    personalLibraryContent: @Composable () -> Unit,
 ) {
     val modes = remember(workspace) {
         if (workspace == WORKSPACE_PERSONAL) {
-            listOf(VaultRootMode.Personal)
+            listOf(VaultRootMode.Personal, VaultRootMode.Library)
         } else {
             listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
         }
@@ -976,7 +1053,7 @@ private fun StudyLibraryPersonalShell(
                 VaultRootMode.Study -> studyContent()
                 VaultRootMode.Quran -> quranContent()
                 VaultRootMode.Memorise -> memoriseContent()
-                VaultRootMode.Library -> libraryContent()
+                VaultRootMode.Library -> if (workspace == WORKSPACE_PERSONAL) personalLibraryContent() else libraryContent()
                 VaultRootMode.Personal -> personalContent()
             }
         }

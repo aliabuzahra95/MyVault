@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 const val FOLDER_MODE_STUDY = "study"
 const val FOLDER_MODE_PERSONAL = "personal"
 const val FOLDER_MODE_LIBRARY = "library"
+const val FOLDER_MODE_PERSONAL_LIBRARY = "personal_library"
 
 @Entity(
     tableName = "folders",

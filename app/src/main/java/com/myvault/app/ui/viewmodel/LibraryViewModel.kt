@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
@@ -118,7 +119,10 @@ class LibraryViewModel @Inject constructor(
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
-    private val viewModeLocationKey = folderId ?: LIBRARY_ROOT_VIEW_MODE_KEY
+    private val requestedLibraryMode = MutableStateFlow(savedStateHandle["libraryMode"] ?: FOLDER_MODE_LIBRARY)
+    private val libraryMode: String get() = requestedLibraryMode.value
+    private val isPersonalLibrary: Boolean get() = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
+    private val viewModeLocationKey: String get() = "$libraryMode:${folderId ?: LIBRARY_ROOT_VIEW_MODE_KEY}"
     private val importState = MutableStateFlow(LibraryImportState())
     private val pdfLayer = combine(
         pdfReadingProgressRepository.observeAll(),
@@ -127,9 +131,8 @@ class LibraryViewModel @Inject constructor(
     private val libraryDataLayer = combine(
         folderRepository.observeLibraryFolders(),
         attachmentRepository.observeLibraryFiles(),
-        if (folderId == null) attachmentRepository.observeRootLibraryFiles() else attachmentRepository.observeForLibraryFolder(folderId),
-    ) { folders, allFiles, currentFiles ->
-        LibraryDataLayer(folders, allFiles, currentFiles)
+    ) { folders, allFiles ->
+        LibraryDataLayer(folders, allFiles)
     }
     private val preferencesAndImportState = combine(
         vaultPreferences.userPreferences,
@@ -149,13 +152,34 @@ class LibraryViewModel @Inject constructor(
         pdfLayer,
         preferencesAndImportState,
         knowledgeLayer,
-    ) { libraryData, pdfLayer, preferencesAndImporting, knowledge ->
-        val (folders, allFiles, currentFiles) = libraryData
+        requestedLibraryMode,
+    ) { libraryData, pdfLayer, preferencesAndImporting, knowledge, libraryMode ->
+        val isPersonalLibrary = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
+        val (folders, allFiles) = libraryData
         val (progress, annotations) = pdfLayer
         val (preferences, importing) = preferencesAndImporting
-        val libraryFolders = folders.filter { it.mode == FOLDER_MODE_LIBRARY }
+        val modeFolders = folders.filter { it.mode == libraryMode }
+        val internalPersonalRoot = modeFolders.firstOrNull {
+            it.parentId == null && it.name == PERSONAL_LIBRARY_ROOT_FOLDER_NAME
+        }
+        val rootParentId = if (isPersonalLibrary) internalPersonalRoot?.id else null
+        val currentParentId = folderId ?: rootParentId
+        val libraryFolders = if (isPersonalLibrary) {
+            modeFolders.filter { it.id != internalPersonalRoot?.id }
+        } else {
+            modeFolders
+        }
+        val modeFolderIds = modeFolders.map { it.id }.toSet()
         val progressByAttachment = progress.associateBy { it.attachmentId }
-        val activeFiles = allFiles.filter { it.deletedAt == null }
+        val activeFiles = allFiles
+            .filter { it.deletedAt == null }
+            .filter { file ->
+                if (isPersonalLibrary) {
+                    file.libraryFolderId in modeFolderIds
+                } else {
+                    file.libraryFolderId == null || file.libraryFolderId in modeFolderIds
+                }
+            }
         val attachmentsById = activeFiles.associateBy { it.id }
         val annotationStatsByAttachment = annotations
             .filter { it.attachmentId in attachmentsById }
@@ -194,23 +218,24 @@ class LibraryViewModel @Inject constructor(
             .toMap()
         val foldersByParent = libraryFolders.groupBy { it.parentId }
         val currentFolder = folderId?.let { id -> libraryFolders.firstOrNull { it.id == id } }
-        val visibleFolders = foldersByParent[folderId].orEmpty()
+        val visibleFolders = foldersByParent[currentParentId].orEmpty()
             .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
             .map { it.toLibraryFolderItem(foldersByParent, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) }
 
+        val currentFiles = activeFiles.filter { it.libraryFolderId == currentParentId }
         val currentFileItems = currentFiles
             .mapNotNull { fileItemsById[it.id] }
             .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta })
-        val continueReadingItems = (if (folderId == null) allFiles else currentFiles)
+        val continueReadingItems = (if (folderId == null) activeFiles else currentFiles)
             .mapNotNull { fileItemsById[it.id] }
-        val currentFileIds = (if (folderId == null) allFiles else currentFiles).map { it.id }.toSet()
-        val currentAnnotationIds = annotationItemsByFolder[folderId].orEmpty().map { it.id }.toSet()
+        val currentFileIds = (if (folderId == null) activeFiles else currentFiles).map { it.id }.toSet()
+        val currentAnnotationIds = annotationItemsByFolder[currentParentId].orEmpty().map { it.id }.toSet()
 
         LibraryUiState(
             currentFolder = currentFolder,
             folders = visibleFolders,
             files = currentFileItems,
-            pinnedFiles = allFiles
+            pinnedFiles = activeFiles
                 .filter { it.isPinned }
                 .mapNotNull { fileItemsById[it.id] }
                 .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
@@ -218,7 +243,9 @@ class LibraryViewModel @Inject constructor(
                 .filter {
                     !it.noteText.isNullOrBlank() &&
                         if (folderId == null) {
-                            it.displayFolderId == null || it.attachmentId in currentFileIds
+                            (it.displayFolderId == null && it.attachmentId in currentFileIds) ||
+                                it.displayFolderId == currentParentId ||
+                                it.attachmentId in currentFileIds
                         } else {
                             it.displayFolderId == folderId ||
                                 (it.displayFolderId == null && it.attachmentId in currentFileIds)
@@ -239,13 +266,13 @@ class LibraryViewModel @Inject constructor(
             continueReading = continueReadingItems
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
-            recentFiles = allFiles
+            recentFiles = activeFiles
                 .mapNotNull { fileItemsById[it.id] }
                 .filter { it.lastOpenedAt > 0L }
                 .sortedByDescending { it.lastOpenedAt }
                 .take(5),
             allFolders = libraryFolders
-                .filter { it.parentId == null }
+                .filter { it.parentId == rootParentId }
                 .sortedWith(compareBy<FolderEntity> { it.orderIndex }.thenBy { it.name.lowercase() })
                 .map { it.toLibraryFolderItem(foldersByParent, fileCounts, annotationCounts, filesByFolder, annotationItemsByFolder, depth = 0) },
             expandedFolderIds = preferences.expandedFolderIds,
@@ -257,9 +284,14 @@ class LibraryViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
+    fun setLibraryMode(mode: String) {
+        requestedLibraryMode.value = mode
+    }
+
     fun createFolder(parentId: String? = folderId, name: String, onCreated: (String) -> Unit = {}) {
         viewModelScope.launch {
-            onCreated(folderRepository.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_LIBRARY))
+            val targetParentId = parentId ?: personalRootFolderIdIfNeeded()
+            onCreated(folderRepository.createFolder(parentId = targetParentId, name = name, mode = libraryMode))
         }
     }
 
@@ -268,7 +300,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun moveFolder(folderId: String, parentId: String?) {
-        viewModelScope.launch { folderRepository.moveFolder(folderId, parentId) }
+        viewModelScope.launch { folderRepository.moveFolder(folderId, parentId ?: personalRootFolderIdIfNeeded()) }
     }
 
     fun deleteFolder(folderId: String) {
@@ -289,7 +321,7 @@ class LibraryViewModel @Inject constructor(
 
     fun importFile(uri: Uri, onImported: (String) -> Unit = {}) {
         viewModelScope.launch {
-            onImported(attachmentRepository.importLibraryDocument(folderId, uri))
+            onImported(attachmentRepository.importLibraryDocument(targetLibraryFolderId(), uri))
         }
     }
 
@@ -297,7 +329,7 @@ class LibraryViewModel @Inject constructor(
         if (uris.isEmpty()) return
         viewModelScope.launch {
             importState.value = LibraryImportState(active = true, message = "Importing ${uris.size} file${if (uris.size == 1) "" else "s"}...")
-            val result = attachmentRepository.importLibraryDocuments(folderId, uris)
+            val result = attachmentRepository.importLibraryDocuments(targetLibraryFolderId(), uris)
             result.importedIds.firstOrNull()?.let(onImported)
             val message = when {
                 result.importedIds.isEmpty() && result.failedCount > 0 -> "Import failed for ${result.failedCount} file${if (result.failedCount == 1) "" else "s"}."
@@ -317,7 +349,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun moveFile(fileId: String, folderId: String?) {
-        viewModelScope.launch { attachmentRepository.moveLibraryAttachment(fileId, folderId) }
+        viewModelScope.launch { attachmentRepository.moveLibraryAttachment(fileId, folderId ?: personalRootFolderIdIfNeeded()) }
     }
 
     fun setFilePinned(fileId: String, pinned: Boolean) {
@@ -363,6 +395,16 @@ class LibraryViewModel @Inject constructor(
     fun deleteFile(fileId: String) {
         viewModelScope.launch { attachmentRepository.deleteAttachment(fileId) }
     }
+
+    private suspend fun targetLibraryFolderId(): String? =
+        folderId ?: personalRootFolderIdIfNeeded()
+
+    private suspend fun personalRootFolderIdIfNeeded(): String? =
+        if (isPersonalLibrary) {
+            folderRepository.ensureRootFolderForMode(PERSONAL_LIBRARY_ROOT_FOLDER_NAME, FOLDER_MODE_PERSONAL_LIBRARY)
+        } else {
+            null
+        }
 }
 
 private fun FolderEntity.toLibraryFolderItem(
@@ -440,7 +482,6 @@ private data class LibraryImportState(
 private data class LibraryDataLayer(
     val folders: List<FolderEntity>,
     val allFiles: List<AttachmentEntity>,
-    val currentFiles: List<AttachmentEntity>,
 )
 
 private data class LibraryKnowledgeLayer(
@@ -451,3 +492,4 @@ private data class LibraryKnowledgeLayer(
 )
 
 private const val LIBRARY_ROOT_VIEW_MODE_KEY = "root"
+private const val PERSONAL_LIBRARY_ROOT_FOLDER_NAME = ".personal-library-root"
