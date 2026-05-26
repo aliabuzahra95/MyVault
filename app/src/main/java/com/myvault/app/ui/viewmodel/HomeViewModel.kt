@@ -69,30 +69,25 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private val homeContent = combine(
+    private fun homeContentForMode(mode: String) = combine(
         noteRepository.observePinnedCards(),
-        attachmentRepository.observeCardsForMode(FOLDER_MODE_STUDY),
-        attachmentRepository.observeCardsForMode(FOLDER_MODE_PERSONAL),
-        folderRepository.observeWorkspaceTree(FOLDER_MODE_STUDY),
-        folderRepository.observeWorkspaceTree(FOLDER_MODE_PERSONAL),
-    ) { pinned, studyAttachments, personalAttachments, studyTree, personalTree ->
+        attachmentRepository.observeCardsForMode(mode),
+        folderRepository.observeWorkspaceTree(mode),
+    ) { pinned, attachments, tree ->
         HomeContent(
             pinnedNotes = pinned,
-            studyAttachments = studyAttachments,
-            personalAttachments = personalAttachments,
-            studyTree = studyTree,
-            personalTree = personalTree,
+            attachments = attachments,
+            tree = tree,
         )
     }
 
     val uiState: StateFlow<HomeUiState> = combine(
-        homeContent,
+        homeContentForMode(FOLDER_MODE_STUDY),
         searchQuery,
         searchResults,
         vaultPreferences.userPreferences,
     ) { content, query, results, preferences ->
         content.toUiState(
-            mode = FOLDER_MODE_STUDY,
             query = query,
             results = results,
             expandedFolderIds = preferences.expandedFolderIds,
@@ -101,13 +96,12 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     val personalUiState: StateFlow<HomeUiState> = combine(
-        homeContent,
+        homeContentForMode(FOLDER_MODE_PERSONAL),
         searchQuery,
         searchResults,
         vaultPreferences.userPreferences,
     ) { content, query, results, preferences ->
         content.toUiState(
-            mode = FOLDER_MODE_PERSONAL,
             query = query,
             results = results,
             expandedFolderIds = preferences.expandedFolderIds,
@@ -219,21 +213,16 @@ class HomeViewModel @Inject constructor(
 
 private data class HomeContent(
     val pinnedNotes: List<VaultNoteCardData>,
-    val studyAttachments: List<AttachmentSample>,
-    val personalAttachments: List<AttachmentSample>,
-    val studyTree: List<VaultTreeItem>,
-    val personalTree: List<VaultTreeItem>,
+    val attachments: List<AttachmentSample>,
+    val tree: List<VaultTreeItem>,
 )
 
 private fun HomeContent.toUiState(
-    mode: String,
     query: String,
     results: Triple<List<SearchResultData>, List<FolderEntity>, List<String>>,
     expandedFolderIds: Set<String>,
     notePreviewLines: Int,
 ): HomeUiState {
-    val tree = if (mode == FOLDER_MODE_PERSONAL) personalTree else studyTree
-    val attachments = if (mode == FOLDER_MODE_PERSONAL) personalAttachments else studyAttachments
     val visibleItems = tree.flatMap { it.flattenItems() }
     val visibleNoteIds = visibleItems.filter { it.type == VaultTreeItemType.Note }.map { it.id }.toSet()
     val visibleFolderIds = visibleItems.filter { it.type == VaultTreeItemType.Folder }.map { it.id }.toSet()

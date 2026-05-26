@@ -356,9 +356,10 @@ internal fun continueListOnNewline(oldValue: TextFieldValue, newValue: TextField
     val cursor = safeNewValue.selection.start.coerceIn(0, safeNewValue.text.length)
     if (cursor == 0 || safeNewValue.text.getOrNull(cursor - 1) != '\n') return safeNewValue
 
-    val previousLineStart = safeNewValue.text.lastIndexOf('\n', startIndex = (cursor - 2).coerceAtLeast(0))
-        .let { if (it == -1) 0 else it + 1 }
-    val previousLine = safeNewValue.text.substring(previousLineStart, cursor - 1)
+    val previousLineEnd = (cursor - 1).coerceIn(0, safeNewValue.text.length)
+    val previousLineStart = safeNewValue.text.lineStartBefore(previousLineEnd)
+        .coerceIn(0, previousLineEnd)
+    val previousLine = safeNewValue.text.substring(previousLineStart, previousLineEnd)
     val prefix = when {
         previousLine == BULLET_PREFIX.trimEnd() || previousLine.matches(NUMBERED_LIST_EMPTY_REGEX) -> {
             val removeStart = previousLineStart
@@ -558,10 +559,9 @@ private fun selectedLines(value: TextFieldValue): List<LineSlice> {
     val text = value.text
     if (text.isEmpty()) return listOf(LineSlice(0, 0, ""))
     val range = normalizedSelection(value.selection, text.length)
-    val blockStart = text.lastIndexOf('\n', startIndex = (range.start - 1).coerceAtLeast(0))
-        .let { if (it == -1) 0 else it + 1 }
+    val blockStart = text.lineStartBefore(range.start).coerceIn(0, text.length)
     val blockEndBase = text.indexOf('\n', startIndex = range.end)
-    val blockEnd = if (blockEndBase == -1) text.length else blockEndBase
+    val blockEnd = (if (blockEndBase == -1) text.length else blockEndBase).coerceAtLeast(blockStart)
     val blockText = text.substring(blockStart, blockEnd)
     var offset = blockStart
     return blockText.split('\n').map { line ->
@@ -570,6 +570,13 @@ private fun selectedLines(value: TextFieldValue): List<LineSlice> {
         offset = lineEnd + 1
         LineSlice(lineStart, lineEnd, line)
     }
+}
+
+private fun String.lineStartBefore(offset: Int): Int {
+    if (isEmpty() || offset <= 0) return 0
+    val safeStartIndex = (offset - 1).coerceIn(0, lastIndex)
+    val previousBreak = lastIndexOf('\n', startIndex = safeStartIndex)
+    return if (previousBreak == -1) 0 else (previousBreak + 1).coerceAtMost(length)
 }
 
 private fun stylesForInsertedText(

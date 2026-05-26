@@ -87,6 +87,60 @@ class VaultRichTextDeletionTest {
     }
 
     @Test
+    fun pressingEnterAtVeryBeginningDoesNotCrashListContinuation() {
+        val oldValue = TextFieldValue(
+            text = "First line\nSecond line",
+            selection = TextRange(0),
+        )
+        val newValue = TextFieldValue(
+            text = "\nFirst line\nSecond line",
+            selection = TextRange(1),
+        )
+
+        val continued = continueListOnNewline(oldValue, newValue)
+
+        assertEquals("\nFirst line\nSecond line", continued.text)
+        assertEquals(TextRange(1), continued.selection)
+    }
+
+    @Test
+    fun togglingListAtBeginningOfTextStartingWithNewlineDoesNotCrash() {
+        val value = TextFieldValue(
+            text = "\nFirst line\nSecond line",
+            selection = TextRange(0),
+        )
+
+        val transformed = applyBulletListTransform(value)
+
+        assertValidTextField(transformed.value)
+    }
+
+    @Test
+    fun deletingLargeBeginningSelectionClampsStylesAndLinks() {
+        val oldText = (1..120).joinToString("\n") { "Opening line $it with substantial styled content" }
+        val deleteEnd = oldText.length / 2
+        val newText = oldText.removeRange(0, deleteEnd)
+        val oldValue = TextFieldValue(oldText, selection = TextRange(0, deleteEnd))
+        val newValue = TextFieldValue(newText, selection = TextRange(0))
+        val marks = listOf(
+            VaultStyleMark(0, oldText.length, VaultInlineStyle.Heading2),
+            VaultStyleMark(0, deleteEnd + 50, VaultInlineStyle.Bold),
+            VaultStyleMark(deleteEnd - 10, oldText.length, VaultInlineStyle.ColorBlue),
+        )
+        val links = listOf(
+            VaultNoteLink(0, deleteEnd - 20, "deleted-link"),
+            VaultNoteLink(deleteEnd + 5, oldText.length - 5, "kept-link"),
+        )
+
+        val updatedMarks = handleVaultRichTextChange(oldValue, newValue, marks, emptySet())
+        val updatedLinks = handleVaultNoteLinkChange(oldValue, newValue, links)
+
+        assertValidMarks(updatedMarks, newText.length)
+        assertValidLinks(updatedLinks, newText.length)
+        assertTrue(updatedLinks.none { it.noteId == "deleted-link" })
+    }
+
+    @Test
     fun currentLineWithStaleSelectionAfterDeletionDoesNotCrash() {
         val value = TextFieldValue(
             text = "\n" + (1..100).joinToString("\n") { "Line $it" },
@@ -137,6 +191,16 @@ class VaultRichTextDeletionTest {
             assertTrue("Invalid link: $link for length $textLength", link.end <= textLength)
             assertTrue("Invalid link: $link for length $textLength", link.start < link.end)
             assertTrue("Invalid link: $link", link.noteId.isNotBlank())
+        }
+    }
+
+    private fun assertValidTextField(value: TextFieldValue) {
+        assertTrue(value.selection.start in 0..value.text.length)
+        assertTrue(value.selection.end in 0..value.text.length)
+        value.composition?.let { composition ->
+            assertTrue(composition.start in 0..value.text.length)
+            assertTrue(composition.end in 0..value.text.length)
+            assertTrue(composition.start < composition.end)
         }
     }
 }

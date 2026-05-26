@@ -28,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
         handleSharedIntent(intent)
 
         setContent {
-            val loadedPreferences by preferences.userPreferences.collectAsState(initial = null)
+            val loadedPreferences by preferences.userPreferences.collectAsStateWithLifecycle(initialValue = null)
             val userPreferences = loadedPreferences ?: VaultUserPreferences()
             val lifecycleOwner = LocalLifecycleOwner.current
             var unlocked by rememberSaveable { mutableStateOf(false) }

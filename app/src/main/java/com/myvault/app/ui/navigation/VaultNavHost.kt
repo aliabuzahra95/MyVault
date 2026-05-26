@@ -149,8 +149,6 @@ fun VaultNavHost(
         composable(VaultDestination.Home.route) {
             val homeViewModel: HomeViewModel = hiltViewModel()
             val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
-            val personalState by homeViewModel.personalUiState.collectAsStateWithLifecycle()
             val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             val context = LocalContext.current
             val openNote: (String) -> Unit = { noteId ->
@@ -181,6 +179,7 @@ fun VaultNavHost(
                     }
                 },
                 studyContent = {
+                    val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
                     HomeScreen(
                         uiState = studyState,
                         onSearchClick = {},
@@ -409,6 +408,7 @@ fun VaultNavHost(
                     )
                 },
                 personalContent = {
+                    val personalState by homeViewModel.personalUiState.collectAsStateWithLifecycle()
                     HomeScreen(
                         uiState = personalState,
                         onSearchClick = {},
@@ -950,7 +950,6 @@ private fun StudyLibraryPersonalShell(
     BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
         scope.launch {
             visualSelectedPage = 0
-            onRootModeChanged(modes[0])
             pagerState.animateScrollToPage(
                 page = 0,
                 animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
@@ -967,7 +966,7 @@ private fun StudyLibraryPersonalShell(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { page -> modes[page].name },
-            beyondViewportPageCount = (modes.size - 1).coerceAtLeast(0),
+            beyondViewportPageCount = 0,
             flingBehavior = PagerDefaults.flingBehavior(
                 state = pagerState,
                 snapPositionalThreshold = 0.18f,
@@ -1002,7 +1001,6 @@ private fun StudyLibraryPersonalShell(
                     return@FloatingBottomNav
                 }
                 visualSelectedPage = index
-                onRootModeChanged(mode)
                 scope.launch {
                     pagerState.animateScrollToPage(
                         page = index,

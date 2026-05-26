@@ -312,7 +312,9 @@ fun EditorScreen(
         restoreHistorySnapshot(next)
     }
 
-    val liveHistorySnapshot = currentHistorySnapshot()
+    val liveHistorySnapshot = remember(title, bodyValue, styleMarks, noteLinks, pendingInlineStyles) {
+        currentHistorySnapshot()
+    }
     val canUndo = undoHistory.size > 1 || undoHistory.lastOrNull()?.hasSameEditorContentAs(liveHistorySnapshot) == false
     val canRedo = redoHistory.isNotEmpty()
 
@@ -1121,7 +1123,7 @@ fun EditorScreen(
     }
 }
 
-private const val EditorHistoryLimit = 80
+private const val EditorHistoryLimit = 48
 
 @Composable
 private fun InlineTextColorToolbar(

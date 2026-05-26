@@ -30,10 +30,17 @@ fun buildTree(
     val visibleNotes = notes.filter { note ->
         note.folderId in visibleFolderIds || (note.folderId == null && mode == FOLDER_MODE_STUDY)
     }
+    val visibleNoteIds = visibleNotes.map { it.id }.toHashSet()
     val foldersByParent = visibleFolders.groupBy { it.parentId }
     val notesByFolder = visibleNotes.groupBy { it.folderId }
-    val attachmentsByNote = attachments.groupBy { it.noteId }
-    val tablesByNote = tables.groupBy { it.noteId }
+    val attachmentsByNote = attachments
+        .asSequence()
+        .filter { it.noteId in visibleNoteIds }
+        .groupBy { it.noteId }
+    val tablesByNote = tables
+        .asSequence()
+        .filter { it.noteId in visibleNoteIds }
+        .groupBy { it.noteId }
     val countCache = mutableMapOf<String, Int>()
 
     fun folderItem(folder: FolderEntity, depth: Int): VaultTreeItem {

@@ -2,6 +2,7 @@ package com.myvault.app.data.repository
 
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
+import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.ui.components.SearchResultData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -39,9 +40,11 @@ class SearchRepository @Inject constructor(
         }
     }
 
-    fun searchFolders(query: String) = folderDao.observeAll().map { folders ->
-        if (query.isBlank()) return@map emptyList()
-        folders.filter { it.name.contains(query, ignoreCase = true) }
+    fun searchFolders(query: String): Flow<List<FolderEntity>> {
+        if (query.isBlank()) return flowOf(emptyList())
+        return folderDao.observeAll().map { folders ->
+            folders.filter { it.name.contains(query, ignoreCase = true) }
+        }
     }
 
     fun searchTags(query: String): Flow<List<String>> = flowOf(emptyList())
