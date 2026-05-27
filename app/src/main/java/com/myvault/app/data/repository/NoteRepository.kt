@@ -8,6 +8,7 @@ import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
@@ -19,6 +20,7 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.ui.components.EditorBlockType
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -43,6 +45,7 @@ class NoteRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val tagDao: TagDao,
     private val noteTableDao: NoteTableDao,
+    private val noteVersionDao: NoteVersionDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
@@ -94,6 +97,8 @@ class NoteRepository @Inject constructor(
         }
 
     fun observeTables(noteId: String) = noteTableDao.observeForNote(noteId)
+
+    fun observeVersions(noteId: String) = noteVersionDao.observeForNote(noteId)
 
     fun observePinnedCards() = combine(noteDao.observePinned(), folderDao.observeAll(), noteTableDao.observeAll()) { notes, folders, tables ->
         val folderNames = folders.associate { it.id to it.name }
@@ -279,6 +284,7 @@ class NoteRepository @Inject constructor(
             sourceBacklinkDao.deleteForNotes(listOf(noteId))
             knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, listOf(noteId))
             noteTableDao.deleteForNotes(listOf(noteId))
+            noteVersionDao.deleteForNotes(listOf(noteId))
             attachmentDao.deleteForNotes(listOf(noteId))
             noteDao.deleteByIds(listOf(noteId))
         }
@@ -354,6 +360,7 @@ class NoteRepository @Inject constructor(
 
     suspend fun saveRichHtml(noteId: String, html: String, plainText: String) {
         database.withTransaction {
+            captureVersionIfNeeded(noteId)
             val blockId = "$noteId-rich-html"
             blockDao.upsertAll(
                 listOf(
@@ -373,6 +380,7 @@ class NoteRepository @Inject constructor(
 
     suspend fun saveRichText(noteId: String, text: String, styleMarksJson: String, noteLinksJson: String = "[]") {
         database.withTransaction {
+            captureVersionIfNeeded(noteId)
             val safeStyleMarks = sanitizeStyleMarksJson(styleMarksJson, text.length)
             val safeNoteLinks = sanitizeNoteLinksJson(noteLinksJson, text.length)
             val blockId = "$noteId-rich-text"
@@ -396,8 +404,70 @@ class NoteRepository @Inject constructor(
         }
     }
 
+    suspend fun restoreVersion(noteId: String, versionId: String) {
+        database.withTransaction {
+            val version = noteVersionDao.getById(versionId) ?: return@withTransaction
+            captureVersionIfNeeded(noteId)
+            val now = System.currentTimeMillis()
+            when {
+                !version.richHtml.isNullOrBlank() -> {
+                    val blockId = "$noteId-rich-html"
+                    blockDao.upsertAll(
+                        listOf(
+                            BlockEntity(
+                                id = blockId,
+                                noteId = noteId,
+                                type = "rich_html",
+                                content = version.richHtml,
+                                orderIndex = 0,
+                            ),
+                        ),
+                    )
+                    blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+                }
+                !version.richTextJson.isNullOrBlank() -> {
+                    val blockId = "$noteId-rich-text"
+                    blockDao.upsertAll(
+                        listOf(
+                            BlockEntity(
+                                id = blockId,
+                                noteId = noteId,
+                                type = "rich_text",
+                                content = version.richTextJson,
+                                orderIndex = 0,
+                            ),
+                        ),
+                    )
+                    blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+                }
+                else -> {
+                    val blockId = "$noteId-rich-text"
+                    blockDao.upsertAll(
+                        listOf(
+                            BlockEntity(
+                                id = blockId,
+                                noteId = noteId,
+                                type = "rich_text",
+                                content = JSONObject()
+                                    .put("text", version.bodyPlainText)
+                                    .put("styleMarks", JSONArray())
+                                    .put("noteLinks", JSONArray())
+                                    .toString(),
+                                orderIndex = 0,
+                            ),
+                        ),
+                    )
+                    blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
+                }
+            }
+            noteDao.updateTitle(noteId, version.title, now)
+            noteDao.updateBodyPlainText(noteId, version.bodyPlainText, now)
+        }
+    }
+
     suspend fun updateBlockContent(noteId: String, blockId: String, content: String) {
         database.withTransaction {
+            captureVersionIfNeeded(noteId)
             blockDao.updateContent(blockId, content)
             updateBodyPlainText(noteId)
         }
@@ -405,6 +475,7 @@ class NoteRepository @Inject constructor(
 
     suspend fun insertBlock(noteId: String, type: EditorBlockType) {
         database.withTransaction {
+            captureVersionIfNeeded(noteId)
             val blocks = blockDao.getForNote(noteId)
             val orderIndex = (blocks.maxOfOrNull { it.orderIndex } ?: -1) + 1
             blockDao.upsertAll(
@@ -445,6 +516,36 @@ class NoteRepository @Inject constructor(
             .joinToString(separator = "\n")
     }
 
+    private suspend fun captureVersionIfNeeded(noteId: String) {
+        val note = noteDao.getAllIncludingDeleted().firstOrNull { it.id == noteId && it.deletedAt == null } ?: return
+        val blocks = blockDao.getForNote(noteId)
+        val richTextBlock = blocks.firstOrNull { it.type == "rich_text" }
+        val richHtmlBlock = blocks.firstOrNull { it.type == "rich_html" }
+        val plainText = currentBodyPlainText(noteId)
+        if (plainText.isBlank() && richHtmlBlock?.content.isNullOrBlank()) return
+
+        val latest = noteVersionDao.latestForNote(noteId)
+        if (latest?.bodyPlainText == plainText && latest.title == note.title) return
+        if (latest != null && System.currentTimeMillis() - latest.createdAt < VersionSnapshotIntervalMs) return
+
+        noteVersionDao.upsertAll(
+            listOf(
+                NoteVersionEntity(
+                    id = UUID.randomUUID().toString(),
+                    noteId = noteId,
+                    title = note.title,
+                    bodyPlainText = plainText,
+                    richTextJson = richTextBlock?.content,
+                    richHtml = richHtmlBlock?.content,
+                    wordCount = plainText.wordCount(),
+                    characterCount = plainText.length,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            ),
+        )
+        noteVersionDao.pruneForNote(noteId, MaxVersionsPerNote)
+    }
+
     private fun EditorBlockType.toStorageType(): String = when (this) {
         EditorBlockType.Heading -> "heading"
         EditorBlockType.Quote -> "quote"
@@ -471,6 +572,16 @@ class NoteRepository @Inject constructor(
         EditorBlockType.Paragraph -> "Start writing..."
     }
 }
+
+private const val VersionSnapshotIntervalMs = 5 * 60 * 1000L
+private const val MaxVersionsPerNote = 30
+
+private fun String.wordCount(): Int =
+    trim()
+        .takeIf { it.isNotBlank() }
+        ?.split(Regex("\\s+"))
+        ?.count { it.isNotBlank() }
+        ?: 0
 
 data class NoteLinkRef(
     val id: String,

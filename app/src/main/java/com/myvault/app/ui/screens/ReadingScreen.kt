@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -119,6 +120,7 @@ fun ReadingScreen(
     onRemoveSourceReference: (String) -> Unit = {},
     onAddKnowledgeTag: (String) -> Unit = {},
     onRemoveKnowledgeTag: (String) -> Unit = {},
+    onRestoreVersion: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
 ) {
     val colors = VaultThemeTokens.colors
@@ -129,6 +131,8 @@ fun ReadingScreen(
     var moreMenuOpen by remember { mutableStateOf(false) }
     var listenModeOpen by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
+    var versionHistoryOpen by remember { mutableStateOf(false) }
+    var versionToRestore by remember { mutableStateOf<String?>(null) }
     var tagDialogOpen by remember { mutableStateOf(false) }
     var removeTagDialogOpen by remember { mutableStateOf(false) }
     var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
@@ -315,6 +319,10 @@ fun ReadingScreen(
                         tagDraft = ""
                         tagDialogOpen = true
                     }
+                    ReadingActionRow("Version history", Icons.Rounded.History) {
+                        moreMenuOpen = false
+                        versionHistoryOpen = true
+                    }
                     if (uiState.knowledgeTags.isNotEmpty()) {
                         ReadingActionRow("Remove Tag", Icons.Rounded.LocalOffer) {
                             moreMenuOpen = false
@@ -395,6 +403,82 @@ fun ReadingScreen(
             dismissButton = {
                 TextButton(onClick = { deleteDialogOpen = false }) {
                     Text("Keep")
+                }
+            },
+        )
+    }
+
+    if (versionHistoryOpen) {
+        AlertDialog(
+            onDismissRequest = { versionHistoryOpen = false },
+            title = { Text("Version history") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    if (uiState.versions.isEmpty()) {
+                        Text(
+                            "No saved versions yet. MyVault creates versions as you make meaningful note changes.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary,
+                        )
+                    } else {
+                        uiState.versions.take(12).forEach { version ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = colors.surface,
+                                shape = VaultShapes.md,
+                                border = BorderStroke(1.dp, colors.border),
+                                onClick = { versionToRestore = version.id },
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(VaultSpacing.sm),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(
+                                        version.createdAt.toRelativeTime(),
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                                        color = colors.text,
+                                    )
+                                    Text(
+                                        "${version.wordCount} words · ${version.characterCount} characters",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = colors.textMuted,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { versionHistoryOpen = false }) {
+                    Text("Close")
+                }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
+    versionToRestore?.let { versionId ->
+        AlertDialog(
+            onDismissRequest = { versionToRestore = null },
+            title = { Text("Restore this version?") },
+            text = { Text("Your current note will be saved as a version first, then this older version will be restored.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRestoreVersion(versionId)
+                        versionToRestore = null
+                        versionHistoryOpen = false
+                    },
+                ) {
+                    Text("Restore")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { versionToRestore = null }) {
+                    Text("Cancel")
                 }
             },
         )

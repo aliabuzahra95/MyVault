@@ -9,6 +9,7 @@ import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.narration.NarrationConfig
 import com.myvault.app.data.narration.NarrationController
 import com.myvault.app.data.repository.AiConversationRepository
@@ -67,6 +68,7 @@ data class NoteUiState(
     val knowledgeTags: List<KnowledgeTagChip> = emptyList(),
     val richHtml: String = "",
     val richText: VaultRichTextDocument = VaultRichTextDocument("", emptyList(), emptyList()),
+    val versions: List<NoteVersionEntity> = emptyList(),
 )
 
 data class NoteLinkSuggestion(
@@ -193,11 +195,13 @@ class NoteViewModel @Inject constructor(
     val uiState: StateFlow<NoteUiState> = combine(
         coreUiState,
         noteRepository.observeTables(noteId),
+        noteRepository.observeVersions(noteId),
         knowledgeRepository.observeSourceReferencesForNote(noteId),
         knowledgeRepository.observeTagsFor(KnowledgeRepository.TargetNote, noteId),
-    ) { state, tables, sourceReferences, knowledgeTags ->
+    ) { state, tables, versions, sourceReferences, knowledgeTags ->
         state.copy(
             tables = tables.map { it.toUiState() },
+            versions = versions,
             sourceReferences = sourceReferences,
             knowledgeTags = knowledgeTags,
         )
@@ -250,6 +254,10 @@ class NoteViewModel @Inject constructor(
 
     fun saveRichText(text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) {
         viewModelScope.launch { noteRepository.saveRichText(noteId, text, styleMarks.toJsonArrayString(), noteLinks.toNoteLinksJsonArrayString()) }
+    }
+
+    fun restoreVersion(versionId: String) {
+        viewModelScope.launch { noteRepository.restoreVersion(noteId, versionId) }
     }
 
 

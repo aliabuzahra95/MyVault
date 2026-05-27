@@ -769,6 +769,7 @@ fun VaultNavHost(
                 onRemoveSourceReference = viewModel::removeSourceReference,
                 onAddKnowledgeTag = viewModel::addKnowledgeTag,
                 onRemoveKnowledgeTag = viewModel::removeKnowledgeTag,
+                onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
             )
         }

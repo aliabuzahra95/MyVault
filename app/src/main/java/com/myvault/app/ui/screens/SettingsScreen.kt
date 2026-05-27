@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Lock
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -624,6 +626,7 @@ private fun BackupSettingsDialog(
                 SettingsRow(Icons.Rounded.Restore, "Restore vault", "Import file", onClick = onRestoreClick)
                 val driveConnected = preferences.googleDriveAccountEmail.isNotBlank()
                 SettingsRow(Icons.Rounded.Storage, "Login", if (driveConnected) preferences.googleDriveAccountEmail else "Connect Google Drive", onClick = onGoogleDriveConnectClick)
+                BackupHealthCard(preferences = preferences, driveRestoreState = driveRestoreState)
                 SettingsRow(Icons.Rounded.Backup, "Push to Drive", if (driveConnected) "Incremental upload" else "Connect Drive first", onClick = onGoogleDrivePushClick)
                 SettingsRow(Icons.Rounded.Restore, "Restore from Drive", if (driveConnected) "Pull latest vault" else "Connect Drive first", onClick = onGoogleDrivePullClick)
                 if (driveRestoreState.active || driveRestoreState.isFinished) {
@@ -899,6 +902,51 @@ private fun Long.displayBackupTime(): String =
 
 private fun VaultUserPreferences.backupSummary(): String =
     backupReminderText() ?: if (googleDriveAccountEmail.isNotBlank()) "Google Drive ready" else "Manual backup"
+
+@Composable
+private fun BackupHealthCard(
+    preferences: VaultUserPreferences,
+    driveRestoreState: DriveRestoreState,
+) {
+    val colors = VaultThemeTokens.colors
+    val driveConnected = preferences.googleDriveAccountEmail.isNotBlank()
+    val lastBackup = maxOf(preferences.lastLocalBackupAt, preferences.lastGoogleDriveSyncAt)
+    val status = when {
+        driveRestoreState.active -> "Running"
+        lastBackup <= 0L -> "No backup yet"
+        System.currentTimeMillis() - lastBackup > 7L * 24L * 60L * 60L * 1000L -> "Backup due"
+        else -> "Protected"
+    }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.HealthAndSafety, null, modifier = Modifier.size(18.dp), tint = colors.accent)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Backup health", style = MaterialTheme.typography.labelLarge, color = colors.text)
+                Text(
+                    "Notes, files, PDF annotations, Qur'an state, memorisation, settings",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
+            }
+            Text(
+                if (driveConnected) status else "Drive off",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (driveConnected && status == "Protected") colors.accent else colors.textSecondary,
+            )
+        }
+    }
+}
 
 private fun VaultUserPreferences.backupReminderText(now: Long = System.currentTimeMillis()): String? {
     val mostRecent = maxOf(lastLocalBackupAt, lastGoogleDriveSyncAt)

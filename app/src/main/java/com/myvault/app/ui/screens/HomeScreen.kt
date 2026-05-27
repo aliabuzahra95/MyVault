@@ -302,6 +302,7 @@ fun HomeScreen(
                             onFolderClick = { folderId ->
                                 onFolderExpandedChange(folderId, true)
                             },
+                            onAttachmentClick = onAttachmentClick,
                             modifier = Modifier.padding(top = VaultSpacing.sm),
                         )
                     }
@@ -1247,11 +1248,13 @@ private fun InlineSearchResults(
     uiState: HomeUiState,
     onNoteClick: (String) -> Unit,
     onFolderClick: (String) -> Unit,
+    onAttachmentClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     val hasResults = uiState.searchNotes.isNotEmpty() ||
-        uiState.searchFolders.isNotEmpty()
+        uiState.searchFolders.isNotEmpty() ||
+        uiState.searchAttachments.isNotEmpty()
 
     Surface(
         modifier = modifier
@@ -1271,7 +1274,7 @@ private fun InlineSearchResults(
             ) {
                 Icon(Icons.Rounded.Search, null, modifier = Modifier.size(15.dp), tint = colors.accent)
                 Text(
-                    text = "Search results",
+                    text = "Workspace search",
                     style = androidx.compose.material3.MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
                     color = colors.text,
                 )
@@ -1279,7 +1282,7 @@ private fun InlineSearchResults(
 
             if (!hasResults) {
                 Text(
-                    text = "No matching notes or folders yet.",
+                    text = "No matching notes, folders, or files in this workspace.",
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
@@ -1295,6 +1298,10 @@ private fun InlineSearchResults(
 
             uiState.searchFolders.take(4).forEach { folder ->
                 InlineFolderResult(folder = folder, onClick = { onFolderClick(folder.id) })
+            }
+
+            uiState.searchAttachments.take(5).forEach { attachment ->
+                InlineAttachmentResult(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
             }
         }
     }
@@ -1353,6 +1360,54 @@ private fun InlineFolderResult(
                     text = "Folder",
                     style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
                     color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InlineAttachmentResult(
+    attachment: AttachmentSample,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(28.dp),
+                color = colors.accentSoft,
+                shape = VaultShapes.sm,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.AttachFile, null, modifier = Modifier.size(15.dp), tint = colors.accent)
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = attachment.name,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${attachment.kind} · ${attachment.note}",
+                    style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

@@ -40,6 +40,7 @@ data class HomeUiState(
     val searchQuery: String = "",
     val searchNotes: List<SearchResultData> = emptyList(),
     val searchFolders: List<FolderEntity> = emptyList(),
+    val searchAttachments: List<AttachmentSample> = emptyList(),
     val searchTags: List<String> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val notePreviewLines: Int = 0,
@@ -234,6 +235,10 @@ private fun HomeContent.toUiState(
         searchQuery = query,
         searchNotes = results.first.filter { it.id in visibleNoteIds },
         searchFolders = results.second.filter { it.id in visibleFolderIds },
+        searchAttachments = attachments.filter {
+            query.isNotBlank() &&
+                (it.name.contains(query, ignoreCase = true) || it.note.contains(query, ignoreCase = true))
+        }.take(5),
         searchTags = results.third,
         expandedFolderIds = expandedFolderIds,
         notePreviewLines = notePreviewLines,

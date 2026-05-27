@@ -11,6 +11,7 @@ import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
@@ -26,6 +27,7 @@ import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
@@ -63,6 +65,7 @@ class BackupRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val searchDao: SearchDao,
     private val noteTableDao: NoteTableDao,
+    private val noteVersionDao: NoteVersionDao,
     private val aiConversationDao: AiConversationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
@@ -170,6 +173,7 @@ class BackupRepository @Inject constructor(
         val tags = tagDao.getAll()
         val tagRefs = tagDao.getAllRefs().filter { it.noteId in backupNoteIds }
         val tables = noteTableDao.getAll().filter { it.noteId in backupNoteIds }
+        val noteVersions = noteVersionDao.getAll().filter { it.noteId in backupNoteIds }
         val folderIds = folders.map { it.id }.toSet()
         val attachments = attachmentDao.getAllIncludingDeleted().filter {
             it.noteId in backupNoteIds || it.noteId.isBlank() || it.libraryFolderId in folderIds
@@ -206,6 +210,7 @@ class BackupRepository @Inject constructor(
             tags = tags,
             tagRefs = tagRefs,
             tables = tables,
+            noteVersions = noteVersions,
             aiConversations = aiConversations,
             aiMessages = aiMessages,
             attachments = attachments,
@@ -452,6 +457,9 @@ class BackupRepository @Inject constructor(
             val tables = entries.requireJsonArray("note_tables.json")
                 .mapJson { it.toNoteTableEntity() }
                 .filter { it.noteId in restoredNoteIds }
+            val noteVersions = entries.optionalJsonArray("note_versions.json")
+                .mapJson { it.toNoteVersionEntity() }
+                .filter { it.noteId in restoredNoteIds }
             val aiConversations = entries.optionalJsonArray("ai_conversations.json")
                 .mapJson { it.toAiConversationEntity() }
                 .filter { it.noteId in restoredNoteIds }
@@ -520,6 +528,7 @@ class BackupRepository @Inject constructor(
                 if (tags.isNotEmpty()) tagDao.upsertAll(tags)
                 if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
                 if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
+                if (noteVersions.isNotEmpty()) noteVersionDao.upsertAll(noteVersions)
                 if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
                 if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
                 if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
@@ -775,6 +784,7 @@ private data class BackupSnapshot(
     val tags: List<TagEntity>,
     val tagRefs: List<NoteTagCrossRef>,
     val tables: List<NoteTableEntity>,
+    val noteVersions: List<NoteVersionEntity>,
     val aiConversations: List<AiConversationEntity>,
     val aiMessages: List<AiMessageEntity>,
     val attachments: List<AttachmentEntity>,
@@ -794,6 +804,7 @@ private data class BackupSnapshot(
         destinationDir.writeJsonFile("tags.json", tags.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("note_tags.json", tagRefs.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("note_tables.json", tables.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("note_versions.json", noteVersions.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("attachments.json", attachments.toJsonArray { it.toBackupJson() })
@@ -813,6 +824,7 @@ private data class BackupSnapshot(
         zip.writeJson("tags.json", tags.toJsonArray { it.toJson() })
         zip.writeJson("note_tags.json", tagRefs.toJsonArray { it.toJson() })
         zip.writeJson("note_tables.json", tables.toJsonArray { it.toJson() })
+        zip.writeJson("note_versions.json", noteVersions.toJsonArray { it.toJson() })
         zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
         zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
         zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
@@ -1048,6 +1060,18 @@ private fun NoteTableEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
+private fun NoteVersionEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("noteId", noteId)
+        .put("title", title)
+        .put("bodyPlainText", bodyPlainText)
+        .put("richTextJson", richTextJson)
+        .put("richHtml", richHtml)
+        .put("wordCount", wordCount)
+        .put("characterCount", characterCount)
+        .put("createdAt", createdAt)
+
 private fun AiConversationEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
@@ -1249,6 +1273,19 @@ private fun JSONObject.toNoteTableEntity(): NoteTableEntity =
         updatedAt = getLong("updatedAt"),
     )
 
+private fun JSONObject.toNoteVersionEntity(): NoteVersionEntity =
+    NoteVersionEntity(
+        id = getString("id"),
+        noteId = getString("noteId"),
+        title = optString("title").ifBlank { "Untitled note" },
+        bodyPlainText = optString("bodyPlainText"),
+        richTextJson = optNullableString("richTextJson"),
+        richHtml = optNullableString("richHtml"),
+        wordCount = optInt("wordCount", optString("bodyPlainText").wordCount()),
+        characterCount = optInt("characterCount", optString("bodyPlainText").length),
+        createdAt = optLong("createdAt", System.currentTimeMillis()),
+    )
+
 private fun JSONObject.toAiConversationEntity(): AiConversationEntity =
     AiConversationEntity(
         id = getString("id"),
@@ -1329,6 +1366,13 @@ private fun JSONArray.validateAttachmentFiles(restoredFileIds: Set<String>) {
 
 private fun String.sanitizeBackupFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+
+private fun String.wordCount(): Int =
+    trim()
+        .takeIf { it.isNotBlank() }
+        ?.split(Regex("\\s+"))
+        ?.count { it.isNotBlank() }
+        ?: 0
 
 private fun String.toCellsArray(rows: Int, columns: Int): JSONArray {
     val parsed = JSONArray(this)

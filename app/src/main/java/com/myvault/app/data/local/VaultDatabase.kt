@@ -11,6 +11,7 @@ import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
@@ -26,6 +27,7 @@ import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
+import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
@@ -49,8 +51,9 @@ import com.myvault.app.data.local.entity.TagEntity
         SourceBacklinkEntity::class,
         KnowledgeTagEntity::class,
         KnowledgeTagLinkEntity::class,
+        NoteVersionEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -66,6 +69,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun pdfAnnotationDao(): PdfAnnotationDao
     abstract fun sourceBacklinkDao(): SourceBacklinkDao
     abstract fun knowledgeTagDao(): KnowledgeTagDao
+    abstract fun noteVersionDao(): NoteVersionDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -263,6 +267,27 @@ abstract class VaultDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_libraryFolderId_updatedAt ON pdf_annotations(libraryFolderId, updatedAt)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_displayFolderId_updatedAt ON pdf_annotations(displayFolderId, updatedAt)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_pdf_annotations_updatedAt ON pdf_annotations(updatedAt)")
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS note_versions (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        noteId TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        bodyPlainText TEXT NOT NULL,
+                        richTextJson TEXT,
+                        richHtml TEXT,
+                        wordCount INTEGER NOT NULL,
+                        characterCount INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_note_versions_noteId_createdAt ON note_versions(noteId, createdAt)")
             }
         }
     }
