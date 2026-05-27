@@ -26,7 +26,6 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,13 +69,12 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             )
         }
 
-        val backupFile = File(context.cacheDir, "drive-api-sync-export-${System.currentTimeMillis()}.vaultbackup")
-        val unzipDir = File(context.cacheDir, "drive-api-sync-export-${System.currentTimeMillis()}").apply { mkdirs() }
+        val metadataDir = File(context.cacheDir, "drive-api-sync-metadata-${System.currentTimeMillis()}").apply { mkdirs() }
         try {
-            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Exporting local vault"))
-            backupRepository.exportBackupToFile(backupFile)
-            val entries = backupFile.toDriveEntries(unzipDir)
+            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Exporting changed metadata"))
+            backupRepository.exportMetadataForDriveSync(metadataDir)
             val remoteEntries = remoteManifest.toRemoteEntryMap()
+            val entries = metadataDir.toMetadataDriveEntries() + localFileDriveEntries(remoteEntries)
             var uploadedMetadata = 0
             var uploadedFiles = 0
             var skippedFiles = 0
@@ -99,6 +97,15 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     ),
                 )
                 val remote = remoteEntries[entry.path]
+                if (entry.kind == EntryKindFile && remote != null && remote.size == entry.size && remote.sha256.isNotBlank()) {
+                    entry.sha256 = remote.sha256
+                    entry.cloudFileId = remote.cloudFileId.ifBlank {
+                        drive.findChild(vault.files.id, entry.fileName)?.id.orEmpty()
+                    }
+                    skippedFiles += 1
+                    return@forEachIndexed
+                }
+                entry.ensureSha256()
                 if (remote?.sha256 == entry.sha256 && remote.size == entry.size) {
                     entry.cloudFileId = remote.cloudFileId.ifBlank {
                         val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
@@ -147,8 +154,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         } catch (error: Throwable) {
             DriveSyncResult.Failure(error.driveMessage("Drive push failed"))
         } finally {
-            backupFile.delete()
-            unzipDir.deleteRecursively()
+            metadataDir.deleteRecursively()
         }
     }
 
@@ -251,56 +257,44 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         return DriveApiClient(context, account)
     }
 
-    private fun File.toDriveEntries(unzipDir: File): List<DriveEntry> {
-        val rawEntries = mutableListOf<Pair<String, File>>()
-        ZipInputStream(inputStream().buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                if (!entry.isDirectory) {
-                    val safeName = entry.name.replace('/', '_')
-                    val out = File(unzipDir, safeName)
-                    out.outputStream().use { zip.copyTo(it) }
-                    rawEntries += entry.name to out
-                }
-                zip.closeEntry()
-                entry = zip.nextEntry
+    private fun File.toMetadataDriveEntries(): List<DriveEntry> =
+        listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".json") }
+            ?.map { file ->
+                DriveEntry(
+                    path = "metadata/${file.name}",
+                    fileName = file.name,
+                    backupEntry = file.name,
+                    kind = EntryKindMetadata,
+                    mimeType = "application/json",
+                    size = file.length(),
+                    sha256 = file.sha256(),
+                    file = file,
+                )
             }
-        }
-        val attachmentNames = rawEntries.firstOrNull { it.first == "attachments.json" }
-            ?.second
-            ?.readText()
-            ?.let(::attachmentFileNamesById)
             .orEmpty()
 
-        return rawEntries.map { (backupEntry, file) ->
-            val isFile = backupEntry.startsWith("files/")
-            val attachmentId = backupEntry.removePrefix("files/")
-            val fileName = if (isFile) {
-                attachmentNames[attachmentId]?.let { "$attachmentId.${it.safeExtension()}" } ?: attachmentId
-            } else {
-                backupEntry.substringAfterLast('/')
+    private suspend fun localFileDriveEntries(remoteEntries: Map<String, RemoteEntry>): List<DriveEntry> {
+        val attachments = attachmentDao.getAllIncludingDeleted()
+        return attachments
+            .filter { it.deletedAt == null }
+            .mapNotNull { attachment ->
+                val file = File(attachment.localPath)
+                if (!file.exists() || !file.isFile) return@mapNotNull null
+                val fileName = "${attachment.id}.${attachment.fileName.safeExtension()}"
+                val path = "files/$fileName"
+                val remote = remoteEntries[path]
+                DriveEntry(
+                    path = path,
+                    fileName = fileName,
+                    backupEntry = "files/${attachment.id}",
+                    kind = EntryKindFile,
+                    mimeType = "application/octet-stream",
+                    size = file.length(),
+                    sha256 = if (remote?.size == file.length()) remote.sha256 else "",
+                    file = file,
+                )
             }
-            DriveEntry(
-                path = if (isFile) "files/$fileName" else "metadata/$fileName",
-                fileName = fileName,
-                backupEntry = backupEntry,
-                kind = if (isFile) EntryKindFile else EntryKindMetadata,
-                mimeType = if (isFile) "application/octet-stream" else "application/json",
-                size = file.length(),
-                sha256 = file.sha256(),
-                file = file,
-            )
-        }
-    }
-
-    private fun attachmentFileNamesById(json: String): Map<String, String> {
-        val array = JSONArray(json)
-        return buildMap {
-            for (index in 0 until array.length()) {
-                val item = array.getJSONObject(index)
-                put(item.getString("id"), item.optString("fileName", item.getString("id")))
-            }
-        }
     }
 
     private fun List<DriveEntry>.toManifest(cloudVersion: Long): JSONObject =
@@ -362,6 +356,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun DriveEntry.ensureSha256() {
+        if (sha256.isBlank()) sha256 = file.sha256()
     }
 
     private fun String.safeExtension(): String {
@@ -600,7 +598,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val kind: String,
         val mimeType: String,
         val size: Long,
-        val sha256: String,
+        var sha256: String,
         val file: File,
         var cloudFileId: String = "",
     )

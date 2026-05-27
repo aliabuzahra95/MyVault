@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -24,12 +25,17 @@ class DriveSyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val operation = inputData.getString(KeyOperation) ?: OperationPush
-        setForeground(createForegroundInfo(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle())))
+        setForeground(createForegroundInfo(operation, DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle())))
         publishProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle()))
 
-        val result = when (operation) {
-            OperationPull -> googleDriveSyncRepository.pullLatestFromDrive(::publishProgress)
-            else -> googleDriveSyncRepository.pushToDrive(::publishProgress)
+        val result = try {
+            when (operation) {
+                OperationPull -> googleDriveSyncRepository.pullLatestFromDrive { publishProgress(it) }
+                else -> googleDriveSyncRepository.pushToDrive { publishProgress(it) }
+            }
+        } catch (error: Throwable) {
+            Log.e(Tag, "Google Drive ${operation.operationLabel()} crashed", error)
+            DriveSyncResult.Failure("Google Drive ${operation.operationLabel()} failed: ${error.message ?: "Unknown error"}")
         }
         val finalStage = when (result) {
             is DriveSyncResult.Success -> DriveRestoreStage.Complete
@@ -40,8 +46,8 @@ class DriveSyncWorker @AssistedInject constructor(
             is DriveSyncResult.Success -> Result.success(output)
             is DriveSyncResult.Conflict,
             is DriveSyncResult.Skipped,
-            is DriveSyncResult.Failure,
-            -> Result.failure(output)
+            -> Result.success(output)
+            is DriveSyncResult.Failure -> Result.failure(output)
         }
     }
 
@@ -54,15 +60,16 @@ class DriveSyncWorker @AssistedInject constructor(
                 KeyTotal to progress.total,
             ),
         )
-        setForeground(createForegroundInfo(progress))
+        val operation = inputData.getString(KeyOperation) ?: OperationPush
+        setForeground(createForegroundInfo(operation, progress))
     }
 
-    private fun createForegroundInfo(progress: DriveRestoreProgress): ForegroundInfo {
+    private fun createForegroundInfo(operation: String, progress: DriveRestoreProgress): ForegroundInfo {
         ensureNotificationChannel()
         val percent = progress.percent
         val notification = NotificationCompat.Builder(applicationContext, ChannelId)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(if (progress.stage == DriveRestoreStage.Uploading) "MyVault backup" else "MyVault restore")
+            .setContentTitle(if (operation == OperationPull) "MyVault restore" else "MyVault backup")
             .setContentText(progress.message.ifBlank { progress.stage.label })
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -96,6 +103,9 @@ class DriveSyncWorker @AssistedInject constructor(
 
     private fun String.progressTitle(): String =
         if (this == OperationPull) "Starting Google Drive restore" else "Starting Google Drive backup"
+
+    private fun String.operationLabel(): String =
+        if (this == OperationPull) "restore" else "backup"
 
     companion object {
         const val UniqueWorkName = "myvault-google-drive-sync"

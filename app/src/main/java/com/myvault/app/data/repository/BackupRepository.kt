@@ -97,6 +97,17 @@ class BackupRepository @Inject constructor(
         }
     }
 
+    suspend fun exportMetadataForDriveSync(destinationDir: File): BackupResult = withContext(Dispatchers.IO) {
+        destinationDir.mkdirs()
+        val snapshot = buildBackupSnapshot()
+        snapshot.writeMetadataFiles(destinationDir)
+        BackupResult(
+            folderCount = snapshot.folders.size,
+            noteCount = snapshot.notes.size,
+            attachmentCount = snapshot.attachments.size,
+        )
+    }
+
     suspend fun restoreBackup(source: Uri): BackupResult = withContext(Dispatchers.IO) {
         context.contentResolver.openInputStream(source)?.use { input ->
             restoreBackup(input)
@@ -130,6 +141,28 @@ class BackupRepository @Inject constructor(
     }
 
     private suspend fun writeBackup(output: OutputStream): BackupResult {
+        val snapshot = buildBackupSnapshot()
+        ZipOutputStream(output.buffered()).use { zip ->
+            snapshot.writeMetadataToZip(zip)
+
+            snapshot.attachments.forEach { attachment ->
+                val file = File(attachment.localPath)
+                if (file.exists() && file.isFile) {
+                    zip.putNextEntry(ZipEntry(attachment.backupFileEntry()))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+        }
+
+        return BackupResult(
+            folderCount = snapshot.folders.size,
+            noteCount = snapshot.notes.size,
+            attachmentCount = snapshot.attachments.size,
+        )
+    }
+
+    private suspend fun buildBackupSnapshot(): BackupSnapshot {
         val folders = folderDao.getAllIncludingDeleted()
         val notes = noteDao.getAllIncludingDeleted()
         val backupNoteIds = notes.map { it.id }.toSet()
@@ -166,38 +199,22 @@ class BackupRepository @Inject constructor(
         }
         val preferences = vaultPreferences.userPreferences.first()
 
-        ZipOutputStream(output.buffered()).use { zip ->
-            zip.writeJson("manifest.json", manifestJson())
-            zip.writeJson("settings.json", preferences.toBackupJson())
-            zip.writeJson("folders.json", folders.toJsonArray { it.toJson() })
-            zip.writeJson("notes.json", notes.toJsonArray { it.toJson() })
-            zip.writeJson("blocks.json", blocks.toJsonArray { it.toJson() })
-            zip.writeJson("tags.json", tags.toJsonArray { it.toJson() })
-            zip.writeJson("note_tags.json", tagRefs.toJsonArray { it.toJson() })
-            zip.writeJson("note_tables.json", tables.toJsonArray { it.toJson() })
-            zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
-            zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
-            zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
-            zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
-            zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
-            zip.writeJson("source_backlinks.json", sourceBacklinks.toJsonArray { it.toJson() })
-            zip.writeJson("knowledge_tags.json", knowledgeTags.toJsonArray { it.toJson() })
-            zip.writeJson("knowledge_tag_links.json", knowledgeTagLinks.toJsonArray { it.toJson() })
-
-            attachments.forEach { attachment ->
-                val file = File(attachment.localPath)
-                if (file.exists() && file.isFile) {
-                    zip.putNextEntry(ZipEntry(attachment.backupFileEntry()))
-                    file.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                }
-            }
-        }
-
-        return BackupResult(
-            folderCount = folders.size,
-            noteCount = notes.size,
-            attachmentCount = attachments.size,
+        return BackupSnapshot(
+            folders = folders,
+            notes = notes,
+            blocks = blocks,
+            tags = tags,
+            tagRefs = tagRefs,
+            tables = tables,
+            aiConversations = aiConversations,
+            aiMessages = aiMessages,
+            attachments = attachments,
+            pdfReadingProgress = pdfReadingProgress,
+            pdfAnnotations = pdfAnnotations,
+            sourceBacklinks = sourceBacklinks,
+            knowledgeTags = knowledgeTags,
+            knowledgeTagLinks = knowledgeTagLinks,
+            preferences = preferences,
         )
     }
 
@@ -751,11 +768,71 @@ data class BackupVerificationResult(
     val message: String,
 )
 
+private data class BackupSnapshot(
+    val folders: List<FolderEntity>,
+    val notes: List<NoteEntity>,
+    val blocks: List<BlockEntity>,
+    val tags: List<TagEntity>,
+    val tagRefs: List<NoteTagCrossRef>,
+    val tables: List<NoteTableEntity>,
+    val aiConversations: List<AiConversationEntity>,
+    val aiMessages: List<AiMessageEntity>,
+    val attachments: List<AttachmentEntity>,
+    val pdfReadingProgress: List<PdfReadingProgressEntity>,
+    val pdfAnnotations: List<PdfAnnotationEntity>,
+    val sourceBacklinks: List<SourceBacklinkEntity>,
+    val knowledgeTags: List<KnowledgeTagEntity>,
+    val knowledgeTagLinks: List<KnowledgeTagLinkEntity>,
+    val preferences: VaultUserPreferences,
+) {
+    fun writeMetadataFiles(destinationDir: File) {
+        destinationDir.writeJsonFile("manifest.json", manifestJson())
+        destinationDir.writeJsonFile("settings.json", preferences.toBackupJson())
+        destinationDir.writeJsonFile("folders.json", folders.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("notes.json", notes.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("blocks.json", blocks.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("tags.json", tags.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("note_tags.json", tagRefs.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("note_tables.json", tables.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("attachments.json", attachments.toJsonArray { it.toBackupJson() })
+        destinationDir.writeJsonFile("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("source_backlinks.json", sourceBacklinks.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("knowledge_tags.json", knowledgeTags.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("knowledge_tag_links.json", knowledgeTagLinks.toJsonArray { it.toJson() })
+    }
+
+    fun writeMetadataToZip(zip: ZipOutputStream) {
+        zip.writeJson("manifest.json", manifestJson())
+        zip.writeJson("settings.json", preferences.toBackupJson())
+        zip.writeJson("folders.json", folders.toJsonArray { it.toJson() })
+        zip.writeJson("notes.json", notes.toJsonArray { it.toJson() })
+        zip.writeJson("blocks.json", blocks.toJsonArray { it.toJson() })
+        zip.writeJson("tags.json", tags.toJsonArray { it.toJson() })
+        zip.writeJson("note_tags.json", tagRefs.toJsonArray { it.toJson() })
+        zip.writeJson("note_tables.json", tables.toJsonArray { it.toJson() })
+        zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
+        zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
+        zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
+        zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
+        zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
+        zip.writeJson("source_backlinks.json", sourceBacklinks.toJsonArray { it.toJson() })
+        zip.writeJson("knowledge_tags.json", knowledgeTags.toJsonArray { it.toJson() })
+        zip.writeJson("knowledge_tag_links.json", knowledgeTagLinks.toJsonArray { it.toJson() })
+    }
+}
+
 private fun manifestJson(): JSONObject =
     JSONObject()
         .put("format", "myvault-backup")
         .put("version", 1)
         .put("createdAt", System.currentTimeMillis())
+
+private fun File.writeJsonFile(name: String, json: Any) {
+    resolve(name).writeText(json.toString(), Charsets.UTF_8)
+}
 
 private fun VaultUserPreferences.toBackupJson(): JSONObject =
     JSONObject()
