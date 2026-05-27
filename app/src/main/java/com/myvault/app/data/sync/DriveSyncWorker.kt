@@ -25,10 +25,8 @@ class DriveSyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val operation = inputData.getString(KeyOperation) ?: OperationPush
-        setForeground(createForegroundInfo(operation, DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle())))
-        publishProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle()))
-
         val result = try {
+            publishProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle()))
             when (operation) {
                 OperationPull -> googleDriveSyncRepository.pullLatestFromDrive { publishProgress(it) }
                 else -> googleDriveSyncRepository.pushToDrive { publishProgress(it) }
@@ -46,8 +44,8 @@ class DriveSyncWorker @AssistedInject constructor(
             is DriveSyncResult.Success -> Result.success(output)
             is DriveSyncResult.Conflict,
             is DriveSyncResult.Skipped,
+            is DriveSyncResult.Failure,
             -> Result.success(output)
-            is DriveSyncResult.Failure -> Result.failure(output)
         }
     }
 
@@ -61,7 +59,15 @@ class DriveSyncWorker @AssistedInject constructor(
             ),
         )
         val operation = inputData.getString(KeyOperation) ?: OperationPush
-        setForeground(createForegroundInfo(operation, progress))
+        safeSetForeground(operation, progress)
+    }
+
+    private suspend fun safeSetForeground(operation: String, progress: DriveRestoreProgress) {
+        runCatching {
+            setForeground(createForegroundInfo(operation, progress))
+        }.onFailure { error ->
+            Log.e(Tag, "Unable to show Google Drive ${operation.operationLabel()} foreground notification", error)
+        }
     }
 
     private fun createForegroundInfo(operation: String, progress: DriveRestoreProgress): ForegroundInfo {
