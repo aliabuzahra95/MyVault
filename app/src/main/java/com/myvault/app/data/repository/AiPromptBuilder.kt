@@ -102,7 +102,7 @@ object AiPromptBuilder {
         val safeQuestion = question.ifBlank { action.defaultUserRequest() }
         val outputType = outputTypeFor(action)
         val systemInstruction = systemInstructionFor(action)
-        val noteContext = noteContextFor(safeTitle, body.scopedForAction(action))
+        val noteContext = noteContextFor(safeTitle, body.scopedForAction(action, safeQuestion))
         val safeHistory = historyFor(action, history)
 
         val prompt = """
@@ -474,9 +474,9 @@ object AiPromptBuilder {
 
     private fun historyFor(action: NoteAiAction, history: List<NoteAiConversationTurn>): List<NoteAiConversationTurn> =
         when (action.promptMode()) {
-            PromptMode.NormalChat -> history.takeLast(10)
-            PromptMode.DeepAnalysis -> history.takeLast(6)
-            PromptMode.FastNoteAction -> history.takeLast(4)
+            PromptMode.NormalChat -> history.takeLast(6)
+            PromptMode.DeepAnalysis -> history.takeLast(5)
+            PromptMode.FastNoteAction -> history.takeLast(3)
             PromptMode.EditorHtml,
             PromptMode.LocalOnly,
             -> emptyList()
@@ -484,9 +484,9 @@ object AiPromptBuilder {
 
     private fun historyCharBudgetFor(action: NoteAiAction): Int =
         when (action.promptMode()) {
-            PromptMode.NormalChat -> 4_000
-            PromptMode.DeepAnalysis -> 5_000
-            else -> 2_500
+            PromptMode.NormalChat -> 2_500
+            PromptMode.DeepAnalysis -> 4_000
+            else -> 2_000
         }
 
     private fun temperatureFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Float =
@@ -565,14 +565,60 @@ object AiPromptBuilder {
         return (base * multiplier).toInt()
     }
 
-    private fun String.scopedForAction(action: NoteAiAction): String =
+    private fun String.scopedForAction(action: NoteAiAction, question: String): String =
         when (action.promptMode()) {
-            PromptMode.NormalChat -> takeMiddleAware(40_000)
-            PromptMode.FastNoteAction -> takeMiddleAware(30_000)
-            PromptMode.DeepAnalysis -> takeMiddleAware(50_000)
-            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) this else takeMiddleAware(40_000)
+            PromptMode.NormalChat -> scopedAroundQuestion(question, maxChars = 22_000, fallbackChars = 18_000)
+            PromptMode.FastNoteAction -> scopedAroundQuestion(question, maxChars = 24_000, fallbackChars = 20_000)
+            PromptMode.DeepAnalysis -> scopedAroundQuestion(question, maxChars = 42_000, fallbackChars = 36_000)
+            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) this else takeMiddleAware(32_000)
             PromptMode.LocalOnly -> takeMiddleAware(12_000)
         }
+
+    private fun String.scopedAroundQuestion(question: String, maxChars: Int, fallbackChars: Int): String {
+        val clean = trim()
+        if (clean.length <= maxChars) return clean
+        val terms = question.keyContextTerms()
+        if (terms.isEmpty()) return clean.takeMiddleAware(fallbackChars)
+
+        val paragraphs = clean.split(Regex("\\n{2,}"))
+        var bestStart = -1
+        var bestScore = 0
+        var cursor = 0
+        paragraphs.forEach { paragraph ->
+            val lower = paragraph.lowercase()
+            val score = terms.count { term -> lower.contains(term) }
+            if (score > bestScore) {
+                bestScore = score
+                bestStart = cursor
+            }
+            cursor += paragraph.length + 2
+        }
+
+        if (bestStart < 0 || bestScore == 0) return clean.takeMiddleAware(fallbackChars)
+
+        val sideBudget = maxChars / 2
+        val start = (bestStart - sideBudget).coerceAtLeast(0)
+        val end = (bestStart + sideBudget).coerceAtMost(clean.length)
+        return buildString {
+            if (start > 0) append("[Earlier note context trimmed for relevance.]\n\n")
+            append(clean.substring(start, end).trim())
+            if (end < clean.length) append("\n\n[Later note context trimmed for relevance.]")
+        }
+    }
+
+    private fun String.keyContextTerms(): List<String> {
+        val stopWords = setOf(
+            "about", "after", "again", "also", "answer", "before", "being", "could", "does",
+            "explain", "from", "have", "into", "note", "question", "should", "study", "that",
+            "this", "what", "when", "where", "which", "with", "would",
+        )
+        return lowercase()
+            .split(Regex("[^a-z0-9]+"))
+            .map { it.trim() }
+            .filter { it.length >= 4 && it !in stopWords }
+            .distinct()
+            .take(8)
+    }
 
     private fun String.takeMiddleAware(maxChars: Int): String {
         val clean = trim()

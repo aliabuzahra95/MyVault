@@ -183,6 +183,18 @@ class NoteViewModel @Inject constructor(
         val richText: VaultRichTextDocument = VaultRichTextDocument("", emptyList(), emptyList()),
     )
 
+    private data class NoteLinkState(
+        val allNotes: List<NoteLinkSuggestion> = emptyList(),
+        val backlinks: List<NoteLinkRef> = emptyList(),
+    )
+
+    private data class NoteSecondaryUiState(
+        val tables: List<NoteTableUiState> = emptyList(),
+        val versions: List<NoteVersionEntity> = emptyList(),
+        val sourceReferences: List<SourceReferenceCard> = emptyList(),
+        val knowledgeTags: List<KnowledgeTagChip> = emptyList(),
+    )
+
     private val deferredAttachments = flow {
         emit(AttachmentHydrationState())
         secondaryDataReady.filter { it }.first()
@@ -237,8 +249,7 @@ class NoteViewModel @Inject constructor(
         }
     }
 
-    private val coreUiState = combine(
-        noteContentState,
+    private val noteLinkState = combine(
         deferredSecondaryFlow(
             emptyList(),
             noteRepository.observeAllNotes()
@@ -250,25 +261,50 @@ class NoteViewModel @Inject constructor(
                 .distinctUntilChanged(),
         ),
         deferredSecondaryFlow(emptyList(), noteRepository.observeBacklinks(noteId)),
-    ) { state, noteSuggestions, backlinks ->
-        state.copy(
+    ) { noteSuggestions, backlinks ->
+        NoteLinkState(
             allNotes = noteSuggestions,
             backlinks = backlinks,
         )
     }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
 
-    val uiState: StateFlow<NoteUiState> = combine(
-        coreUiState,
+    private val coreUiState = combine(
+        noteContentState,
+        noteLinkState,
+    ) { state, links ->
+        state.copy(
+            allNotes = links.allNotes,
+            backlinks = links.backlinks,
+        )
+    }
+
+    private val noteSecondaryState = combine(
         deferredSecondaryFlow(emptyList(), noteRepository.observeTables(noteId)),
         deferredSecondaryFlow(emptyList(), noteRepository.observeVersions(noteId)),
         deferredSecondaryFlow(emptyList(), knowledgeRepository.observeSourceReferencesForNote(noteId)),
         deferredSecondaryFlow(emptyList(), knowledgeRepository.observeTagsFor(KnowledgeRepository.TargetNote, noteId)),
-    ) { state, tables, versions, sourceReferences, knowledgeTags ->
-        state.copy(
+    ) { tables, versions, sourceReferences, knowledgeTags ->
+        NoteSecondaryUiState(
             tables = tables.map { it.toUiState() },
             versions = versions,
             sourceReferences = sourceReferences,
             knowledgeTags = knowledgeTags,
+        )
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+
+    val uiState: StateFlow<NoteUiState> = combine(
+        coreUiState,
+        noteSecondaryState,
+    ) { state, secondary ->
+        state.copy(
+            tables = secondary.tables,
+            versions = secondary.versions,
+            sourceReferences = secondary.sourceReferences,
+            knowledgeTags = secondary.knowledgeTags,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NoteUiState())
     private val _aiState = aiSessionStore.stateFor(noteId)
