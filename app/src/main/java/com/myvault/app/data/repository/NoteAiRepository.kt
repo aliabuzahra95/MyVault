@@ -26,6 +26,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.net.UnknownHostException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.ConnectException
 
 enum class NoteAiAction {
     QuickSummary,
@@ -267,7 +271,7 @@ class NoteAiRepository @Inject constructor(
                 question = selectedText,
             )
         }
-        return generated.stripChatMarkdown().trim()
+        return generated.stripChatMarkdown(isHtmlOutput = false).trim()
     }
 
     private suspend fun generateOnce(
@@ -423,21 +427,14 @@ class NoteAiRepository @Inject constructor(
             }.getOrNull()
         } ?: run {
             val error = lastFailure ?: error("Gemini request failed before a response was returned.")
-            if (error is ResponseStoppedException) {
-                val partial = error.response.text?.trim().orEmpty()
+            if (error is ResponseStoppedException || error.message?.contains("MAX_TOKENS") == true) {
+                val partial = (error as? ResponseStoppedException)?.response?.text?.trim().orEmpty()
                 if (partial.isNotBlank()) {
                     return partial + "\n\n[Gemini stopped because the answer reached its output limit. The useful partial answer above was kept.]"
                 }
-                val reason = error.response.candidates.firstOrNull()?.finishReason?.name ?: "unknown"
-                throw IllegalStateException(
-                    if (reason == "MAX_TOKENS") {
-                        "Gemini reached its answer length limit before returning text. Try the fast model, shorten the request, or ask for a smaller section."
-                    } else {
-                        "Gemini stopped before finishing. Reason: $reason."
-                    },
-                )
+                throw java.lang.IllegalStateException("Gemini reached its answer length limit before returning text. Try the fast model, shorten the request, or ask for a smaller section.")
             }
-            throw error
+            throw java.lang.IllegalStateException(error.toFriendlyMessage())
         }
         val text = response.text?.trim().orEmpty()
         return text.ifBlank {
@@ -480,8 +477,8 @@ class NoteAiRepository @Inject constructor(
                 }
             }.onFailure { error ->
                 lastFailure = error
-                if (error is ResponseStoppedException) {
-                    val partial = error.response.text?.trim().orEmpty()
+                if (error is ResponseStoppedException || error.message?.contains("MAX_TOKENS") == true) {
+                    val partial = (error as? ResponseStoppedException)?.response?.text?.trim().orEmpty()
                     if (partial.isNotBlank()) {
                         emittedAnyText = true
                         emit(partial)
@@ -489,15 +486,16 @@ class NoteAiRepository @Inject constructor(
                     emit("\n\n[Response paused because Gemini reached its output limit. Tap Continue to keep going.]")
                     return@flow
                 }
+                
+                // If it emitted text before failing for network reasons, stop fallback loops and exit gracefully.
+                if (emittedAnyText) {
+                    throw error
+                }
             }.isSuccess
             if (completed) break
         }
         if (!emittedAnyText && lastFailure != null) {
-            val error = lastFailure
-            if (model.safeGeminiModelNames().size > 1) {
-                throw IllegalStateException("Gemini model fallback failed. ${error.message.orEmpty()}".trim())
-            }
-            throw error
+            throw java.lang.IllegalStateException(lastFailure.toFriendlyMessage())
         }
         if (!emittedAnyText) {
             error("Gemini did not return any text. Please try again.")
@@ -579,11 +577,11 @@ class NoteAiRepository @Inject constructor(
                 error("ChatGPT did not return any text. Please try again.")
             }
         }.getOrElse { error ->
-            throw IllegalStateException(error.message ?: "ChatGPT request failed.")
+            throw java.lang.IllegalStateException(error.toFriendlyMessage())
         }.also {
             connection.disconnect()
+        }
     }
-}
 
     private fun generateWithChatGptPromptStream(
         action: NoteAiAction,
@@ -668,7 +666,7 @@ class NoteAiRepository @Inject constructor(
                 error("ChatGPT did not stream any text. Please try again.")
             }
         } catch (error: Throwable) {
-            throw IllegalStateException(error.message ?: "ChatGPT streaming request failed.")
+            throw java.lang.IllegalStateException(error.toFriendlyMessage())
         } finally {
             connection.disconnect()
         }
@@ -794,7 +792,7 @@ private fun NoteAiModel.safeGeminiModelNames(): List<String> =
         NoteAiModel.Gemini25Pro -> listOf("gemini-2.5-pro", "gemini-2.5-flash")
     }
 
-private const val IntelligentStructureChunkSize = 7_000
+private const val IntelligentStructureChunkSize = 25_000
 private val StructuredEditorActions = setOf(NoteAiAction.StructureOnly, NoteAiAction.IntelligentStructure)
 
 private fun NoteAiAction.defaultStructureRequest(): String =
@@ -933,9 +931,8 @@ private fun String.cleanForAction(action: NoteAiAction): String {
     if (action == NoteAiAction.StructureOnly) return cleanEditorHtmlOutput(preferDenseLists = true).trim()
     if (action in StructuredEditorActions) return normalizeIntelligentStructureColors().cleanEditorHtmlOutput().trim()
     if (action == NoteAiAction.CleanFormat || action == NoteAiAction.FormatNote) return trim()
-    return stripChatMarkdown().trim()
+    return stripChatMarkdown(isHtmlOutput = action.isEditorOutputModeForStreaming()).trim()
 }
-
 
 private fun String.ensureStructureOnlyPreservesContent(originalBody: String): String {
     val originalPlain = originalBody.toPlainComparableText()
@@ -1510,13 +1507,22 @@ private fun String.looksLikeScholarQuote(): Boolean {
     ).any { value.contains(it) }
 }
 
-private fun String.stripChatMarkdown(): String {
+private fun String.stripChatMarkdown(isHtmlOutput: Boolean = false): String {
     var output = trim()
         .replace(Regex("(?m)^```[A-Za-z0-9_-]*\\s*$"), "")
-        .replace(Regex("\\*\\*([^\\n*]+?)\\*\\*"), "$1")
-        .replace(Regex("__([^\\n_]+?)__"), "$1")
-        .replace(Regex("(?<!\\*)\\*([^\\n*]+?)\\*(?!\\*)"), "$1")
-        .replace(Regex("(?<!_)_([^\\n_]+?)_(?!_)"), "$1")
+    
+    // Only strip bold/italic markdown if this is a plain text chat answer.
+    // If it's Editor Output (StructureOnly/IntelligentStructure), we want to preserve markdown 
+    // temporarily so it can be parsed into actual <strong> and <em> tags in cleanEditorHtmlOutput.
+    if (!isHtmlOutput) {
+        output = output
+            .replace(Regex("\\*\\*([^\\n*]+?)\\*\\*"), "$1")
+            .replace(Regex("__([^\\n_]+?)__"), "$1")
+            .replace(Regex("(?<!\\*)\\*([^\\n*]+?)\\*(?!\\*)"), "$1")
+            .replace(Regex("(?<!_)_([^\\n_]+?)_(?!_)"), "$1")
+    }
+
+    output = output
         .replace(Regex("(?m)^\\s*#{1,6}\\s+"), "")
         .replace(Regex("(?m)^\\s*[*+]\\s+"), "- ")
         .replace(Regex("\\[([^\\]]+)]\\(([^)]+)\\)"), "$1 ($2)")
@@ -1538,9 +1544,22 @@ private fun String.stripChatMarkdown(): String {
         .joinToString("\n")
 
     return output
-        .replace(Regex("\n{3,}"), "\n\n")
+        .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
 }
 
 private fun String.isMarkdownTableDivider(): Boolean =
     matches(Regex("^\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?$"))
+
+private fun Throwable.toFriendlyMessage(): String {
+    val msg = message ?: ""
+    return when {
+        this is UnknownHostException -> "Network connection lost. Please check your internet and try again."
+        this is SocketException -> "The connection dropped while waiting for the AI. Please try again."
+        this is SocketTimeoutException -> "The AI took too long to respond. Please try again."
+        this is ConnectException -> "Unable to connect to the server. Please check your internet."
+        msg.contains("Unable to resolve host", ignoreCase = true) -> "Network connection lost. Please check your internet."
+        msg.contains("Software caused connection abort", ignoreCase = true) -> "The connection was interrupted. Please try again."
+        else -> msg.ifBlank { "AI request failed." }
+    }
+}

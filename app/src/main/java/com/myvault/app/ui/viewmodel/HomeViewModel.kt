@@ -6,9 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.DatabaseSeeder
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
+import com.myvault.app.data.repository.HomeSnapshotRepository
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SearchRepository
 import com.myvault.app.data.preferences.VaultPreferences
+import com.myvault.app.data.quran.QuranReflectionRepository
+import com.myvault.app.data.quran.QuranReflectionSummary
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -29,6 +32,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -44,6 +49,14 @@ data class HomeUiState(
     val searchTags: List<String> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val notePreviewLines: Int = 0,
+    val showFullNoteTitles: Boolean = false,
+    val quranReflectionSummary: QuranReflectionSummary = QuranReflectionSummary(),
+)
+
+private val EmptySearchResults = Triple(
+    emptyList<SearchResultData>(),
+    emptyList<FolderEntity>(),
+    emptyList<String>(),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
@@ -55,6 +68,8 @@ class HomeViewModel @Inject constructor(
     private val attachmentRepository: AttachmentRepository,
     private val searchRepository: SearchRepository,
     private val vaultPreferences: VaultPreferences,
+    private val quranReflectionRepository: QuranReflectionRepository,
+    private val homeSnapshotRepository: HomeSnapshotRepository,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val debouncedSearchQuery = searchQuery
@@ -62,12 +77,16 @@ class HomeViewModel @Inject constructor(
         .distinctUntilChanged()
 
     private val searchResults = debouncedSearchQuery.flatMapLatest { query ->
-        combine(
-            searchRepository.searchNotes(query),
-            searchRepository.searchFolders(query),
-            searchRepository.searchTags(query),
-        ) { notes, folders, tags ->
-            Triple(notes, folders, tags)
+        if (query.isBlank()) {
+            flowOf(EmptySearchResults)
+        } else {
+            combine(
+                searchRepository.searchNotes(query),
+                searchRepository.searchFolders(query),
+                searchRepository.searchTags(query),
+            ) { notes, folders, tags ->
+                Triple(notes, folders, tags)
+            }
         }
     }
 
@@ -88,14 +107,23 @@ class HomeViewModel @Inject constructor(
         searchQuery,
         searchResults,
         vaultPreferences.userPreferences,
-    ) { content, query, results, preferences ->
+        quranReflectionRepository.observeReflectionSummary(),
+    ) { content, query, results, preferences, quranReflectionSummary ->
         content.toUiState(
             query = query,
             results = results,
             expandedFolderIds = preferences.expandedFolderIds,
             notePreviewLines = preferences.notePreview.toPreviewLines(),
+            showFullNoteTitles = preferences.showFullNoteTitles,
+            quranReflectionSummary = quranReflectionSummary,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+    }
+        .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_STUDY, state) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            homeSnapshotRepository.load(FOLDER_MODE_STUDY) ?: HomeUiState(),
+        )
 
     val personalUiState: StateFlow<HomeUiState> = combine(
         homeContentForMode(FOLDER_MODE_PERSONAL),
@@ -108,8 +136,16 @@ class HomeViewModel @Inject constructor(
             results = results,
             expandedFolderIds = preferences.expandedFolderIds,
             notePreviewLines = preferences.notePreview.toPreviewLines(),
+            showFullNoteTitles = preferences.showFullNoteTitles,
+            quranReflectionSummary = QuranReflectionSummary(),
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+    }
+        .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_PERSONAL, state) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            homeSnapshotRepository.load(FOLDER_MODE_PERSONAL) ?: HomeUiState(),
+        )
 
     init {
         viewModelScope.launch { seeder.seedIfNeeded() }
@@ -224,6 +260,8 @@ private fun HomeContent.toUiState(
     results: Triple<List<SearchResultData>, List<FolderEntity>, List<String>>,
     expandedFolderIds: Set<String>,
     notePreviewLines: Int,
+    showFullNoteTitles: Boolean,
+    quranReflectionSummary: QuranReflectionSummary,
 ): HomeUiState {
     val visibleItems = tree.flatMap { it.flattenItems() }
     val visibleNoteIds = visibleItems.filter { it.type == VaultTreeItemType.Note }.map { it.id }.toSet()
@@ -242,6 +280,8 @@ private fun HomeContent.toUiState(
         searchTags = results.third,
         expandedFolderIds = expandedFolderIds,
         notePreviewLines = notePreviewLines,
+        showFullNoteTitles = showFullNoteTitles,
+        quranReflectionSummary = quranReflectionSummary,
     )
 }
 

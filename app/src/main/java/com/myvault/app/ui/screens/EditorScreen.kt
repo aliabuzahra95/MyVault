@@ -7,10 +7,16 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -120,6 +126,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.NumberFormat
 
 @OptIn(FlowPreview::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -190,6 +197,7 @@ fun EditorScreen(
     val isPinned = uiState.note?.isPinned == true
     val isFavourite = uiState.note?.isFavourite == true
     val hasTables = uiState.tables.isNotEmpty()
+    val bodyEditorScrollState = rememberScrollState()
     val tableEditorScrollState = rememberScrollState()
     val breadcrumbItems = remember(uiState.folderPath, title.text) {
         listOf("My Vault") + uiState.folderPath + listOf(title.text.ifBlank { "Note" })
@@ -234,10 +242,14 @@ fun EditorScreen(
         if (safeBodyValue.currentLineStartsWith("• ")) add(EditorTool.BulletList)
         if (safeBodyValue.currentLineMatches(Regex("^\\d+\\.\\s.*"))) add(EditorTool.NumberedList)
     }
+    val wordCount = remember(bodyValue.text) { bodyValue.text.split(Regex("\\s+")).count { it.isNotBlank() } }
+    val charCount = remember(bodyValue.text) { bodyValue.text.length }
+    val numberFormat = remember { NumberFormat.getNumberInstance() }
+
     val saveStatusLabel = if (editorReady && (bodyValue.text != lastSavedText || styleMarks != lastSavedMarks || noteLinks != lastSavedLinks)) {
-        "Saving..."
+        "Saving... · ${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} chars"
     } else {
-        "Saved"
+        "Saved · ${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} chars"
     }
     val mentionRange = remember(safeBodyValue.text, safeBodyValue.selection) { safeBodyValue.activeMentionRange() }
     val mentionQuery = mentionRange?.let { safeBodyValue.text.substring(it.start + 1, it.end) }.orEmpty()
@@ -403,31 +415,15 @@ fun EditorScreen(
         }
     }
 
-    fun openAskAiFromEditor() {
-        val selectedText = selectedBodyText
-        if (selectedText.isNullOrBlank()) {
-            selectedTextTarget = null
-            onAskAiClick(null)
+    fun updateBody(updatedValue: TextFieldValue) {
+        val previousValue = sanitizeVaultTextFieldValue(bodyValue)
+        val safeUpdatedValue = sanitizeVaultTextFieldValue(updatedValue)
+        if (safeUpdatedValue.text == previousValue.text) {
+            bodyValue = safeUpdatedValue
             return
         }
 
-        val currentStart = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-            .coerceIn(0, safeBodyValue.text.length)
-        val currentEnd = maxOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-            .coerceIn(0, safeBodyValue.text.length)
-        selectedTextTarget = SelectedTextTarget(
-            text = selectedText,
-            start = currentStart,
-            end = currentEnd,
-        )
-        onClearSelectedTextAi()
-        onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(AiSuggestion.Explain, selectedTextMode = true))
-        onAskAiClick(selectedText)
-    }
-
-    fun updateBody(updatedValue: TextFieldValue) {
-        val previousValue = sanitizeVaultTextFieldValue(bodyValue)
-        val continuedValue = sanitizeVaultTextFieldValue(continueListOnNewline(previousValue, sanitizeVaultTextFieldValue(updatedValue)))
+        val continuedValue = sanitizeVaultTextFieldValue(continueListOnNewline(previousValue, safeUpdatedValue))
         styleMarks = sanitizeVaultStyleMarks(handleVaultRichTextChange(
             oldValue = previousValue,
             newValue = continuedValue,
@@ -771,10 +767,25 @@ fun EditorScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 52.dp, max = 220.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    bodyFocusRequester.requestFocus()
+                                    keyboardController?.show()
+                                }
                         } else {
                             Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
+                                .verticalScroll(bodyEditorScrollState)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    bodyFocusRequester.requestFocus()
+                                    keyboardController?.show()
+                                }
                         },
                     ) {
                         BasicTextField(
@@ -788,14 +799,14 @@ fun EditorScreen(
                                     .onFocusChanged { bodyFocused = it.isFocused }
                             } else {
                                 Modifier
-                                    .fillMaxSize()
+                                    .fillMaxWidth()
                                     .focusRequester(bodyFocusRequester)
                                     .onFocusChanged { bodyFocused = it.isFocused }
                             },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colors.text,
                                 fontSize = bodyFontSizeSp.sp,
-                                textDirection = TextDirection.ContentOrLtr,
+                                textDirection = TextDirection.Content,
                             ),
                             cursorBrush = SolidColor(colors.accent),
                             visualTransformation = remember(styleMarks, noteLinks, colors) {
@@ -804,9 +815,15 @@ fun EditorScreen(
                             maxLines = Int.MAX_VALUE,
                             decorationBox = { innerTextField ->
                                 Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(bottom = 10.dp),
+                                    modifier = if (hasTables) {
+                                        Modifier
+                                            .fillMaxSize()
+                                            .padding(bottom = 10.dp)
+                                    } else {
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 10.dp)
+                                    },
                                 ) {
                                     if (bodyValue.text.isBlank()) {
                                         Text(
@@ -819,48 +836,50 @@ fun EditorScreen(
                                 }
                             },
                         )
-                    }
 
-                    selectedTextChipText?.let { selectedText ->
-                        Spacer(modifier = Modifier.height(VaultSpacing.xs))
-                        Surface(
-                            onClick = {
-                                val currentStart = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-                                    .coerceIn(0, safeBodyValue.text.length)
-                                val currentEnd = maxOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-                                    .coerceIn(0, safeBodyValue.text.length)
-                                val previousTarget = selectedTextTarget
-                                val start = if (currentStart < currentEnd) currentStart else previousTarget?.start ?: currentStart
-                                val end = if (currentStart < currentEnd) currentEnd else previousTarget?.end ?: currentEnd
-                                selectedTextTarget = SelectedTextTarget(
-                                    text = selectedText,
-                                    start = start,
-                                    end = end,
-                                )
-                                onClearSelectedTextAi()
-                                onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(AiSuggestion.Explain, selectedTextMode = true))
-                                onAskAiClick(selectedText)
-                            },
-                            color = colors.accentSoft,
-                            shape = VaultShapes.pill,
-                            border = BorderStroke(1.dp, colors.accentBorder),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                                verticalAlignment = Alignment.CenterVertically,
+                        selectedTextChipText?.let { selectedText ->
+                            Surface(
+                                onClick = {
+                                    val currentStart = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
+                                        .coerceIn(0, safeBodyValue.text.length)
+                                    val currentEnd = maxOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
+                                        .coerceIn(0, safeBodyValue.text.length)
+                                    val previousTarget = selectedTextTarget
+                                    val start = if (currentStart < currentEnd) currentStart else previousTarget?.start ?: currentStart
+                                    val end = if (currentStart < currentEnd) currentEnd else previousTarget?.end ?: currentEnd
+                                    selectedTextTarget = SelectedTextTarget(
+                                        text = selectedText,
+                                        start = start,
+                                        end = end,
+                                    )
+                                    onClearSelectedTextAi()
+                                    onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(AiSuggestion.Explain, selectedTextMode = true))
+                                    onAskAiClick(selectedText)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(bottom = 12.dp),
+                                color = colors.accentSoft,
+                                shape = VaultShapes.pill,
+                                border = BorderStroke(1.dp, colors.accentBorder),
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AutoAwesome,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = colors.accent,
-                                )
-                                Text(
-                                    text = "Ask AI about selection",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                                    color = colors.accent,
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AutoAwesome,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = colors.accent,
+                                    )
+                                    Text(
+                                        text = "Ask AI about selection",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                                        color = colors.accent,
+                                    )
+                                }
                             }
                         }
                     }
@@ -914,35 +933,44 @@ fun EditorScreen(
                         }
                     }
 
-                    if (!bodyFocused && uiState.attachments.isNotEmpty()) {
+                    if (!bodyFocused && (uiState.attachmentsLoading || uiState.attachments.isNotEmpty())) {
                         Spacer(modifier = Modifier.height(VaultSpacing.md))
-                        EditorAttachmentPreviewSection(attachments = uiState.attachments, onAttachmentClick = onAttachmentClick)
+                        EditorAttachmentPreviewSection(
+                            attachments = uiState.attachments,
+                            loading = uiState.attachmentsLoading,
+                            attachmentCount = uiState.attachmentCount,
+                            onAttachmentClick = onAttachmentClick,
+                        )
                     }
                 }
             }
 
-            Surface(
-                onClick = ::openAskAiFromEditor,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = VaultSpacing.sm),
-                color = colors.elevated.copy(alpha = 0.96f),
-                contentColor = colors.accent,
-                shape = VaultShapes.pill,
-                border = BorderStroke(1.dp, colors.accentBorder),
-                shadowElevation = 8.dp,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
+            if (!bodyFocused) {
+                Surface(
+                    onClick = {
+                        selectedTextTarget = null
+                        onAskAiClick(null)
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = VaultSpacing.screen, bottom = VaultSpacing.sm),
+                    color = colors.accent,
+                    contentColor = Color.White,
+                    shape = VaultShapes.pill,
+                    shadowElevation = 8.dp,
                 ) {
-                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(15.dp), tint = colors.accent)
-                    Text(
-                        text = if (selectedBodyText.isNullOrBlank()) "Ask AI" else "Ask selection",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                        color = colors.accent,
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Text(
+                            text = "Ask AI",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                            color = Color.White,
+                        )
+                    }
                 }
             }
         }
@@ -1342,16 +1370,7 @@ private fun IntelligentStructureSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        modifier = Modifier.size(38.dp),
-                        color = colors.accentSoft,
-                        shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, colors.accentBorder),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(19.dp), tint = colors.accent)
-                        }
-                    }
+                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp), tint = colors.accent)
                     Column {
                         Text(
                             text = "Intelligent Structure",
@@ -1360,7 +1379,7 @@ private fun IntelligentStructureSheet(
                         )
                         Text(
                             text = "Restructure, format, headings, colour coding",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall,
                             color = colors.textMuted,
                         )
                     }
@@ -1371,21 +1390,27 @@ private fun IntelligentStructureSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 NoteAiProvider.entries.forEach { provider ->
-                    AiActionChip(
+                    CompactChip(
                         label = provider.displayName,
                         active = aiState.provider == provider,
                         enabled = !aiState.loading,
                         onClick = { onProviderSelected(provider) },
                     )
                 }
+                Box(modifier = Modifier.height(14.dp).width(1.dp).background(colors.borderStrong))
                 NoteAiModel.entries.forEach { model ->
-                    AiActionChip(
-                        label = model.chipLabel(aiState.provider),
+                    val label = when (model) {
+                        NoteAiModel.Gemini25Flash -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
+                        NoteAiModel.Gemini25Pro -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+                    }
+                    CompactChip(
+                        label = label,
                         active = aiState.model == model,
                         enabled = !aiState.loading,
                         onClick = { onModelSelected(model) },
@@ -1485,6 +1510,23 @@ private fun IntelligentStructureSheet(
     }
 }
 
+@Composable
+private fun CompactChip(label: String, active: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.height(28.dp),
+        color = if (active) colors.accentSoft else colors.elevated,
+        shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, if (active) colors.accentBorder else colors.border)
+    ) {
+        Box(modifier = Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (active) FontWeight.W800 else FontWeight.W600), color = if (active) colors.accent else colors.textSecondary)
+        }
+    }
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun AskAiSheet(
@@ -1563,9 +1605,9 @@ fun AskAiSheet(
                         )
                         Text(
                             text = if (selectedText.isNullOrBlank()) {
-                                "Current note only · ${aiState.provider.displayName} · ${aiState.model.shortLabel(aiState.provider)}"
+                                "Current note only"
                             } else {
-                                "Selected text focus · ${aiState.provider.displayName} · ${aiState.model.shortLabel(aiState.provider)}"
+                                "Selected text focus"
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = colors.textMuted,
@@ -1595,8 +1637,12 @@ fun AskAiSheet(
                     )
                 }
                 NoteAiModel.entries.forEach { model ->
+                    val label = when (model) {
+                        NoteAiModel.Gemini25Flash -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
+                        NoteAiModel.Gemini25Pro -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+                    }
                     AiActionChip(
-                        label = model.chipLabel(aiState.provider),
+                        label = label,
                         active = aiState.model == model,
                         enabled = !aiState.loading,
                         onClick = { onModelSelected(model) },
@@ -1809,8 +1855,12 @@ private fun SelectedTextAiSheet(
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
                             color = colors.text,
                         )
+                        val label = when (model) {
+                            NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
+                            NoteAiModel.Gemini25Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+                        }
                         Text(
-                            text = "${provider.displayName} · ${model.shortLabel(provider)}",
+                            text = "${provider.displayName} · $label",
                             style = MaterialTheme.typography.labelMedium,
                             color = colors.textMuted,
                         )
@@ -2205,18 +2255,6 @@ private fun AiSuggestion.toSelectedTextAction(): SelectedTextAiAction =
         AiSuggestion.RelatedConcepts -> SelectedTextAiAction.RelatedConcepts
         AiSuggestion.ObjectionResponse -> SelectedTextAiAction.ObjectionResponse
         AiSuggestion.StudyQuestions -> SelectedTextAiAction.StudyQuestions
-    }
-
-private fun NoteAiModel.shortLabel(provider: NoteAiProvider): String =
-    when (this) {
-        NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini 2.5"
-        NoteAiModel.Gemini25Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini 2.5 Pro"
-    }
-
-private fun NoteAiModel.chipLabel(provider: NoteAiProvider): String =
-    when (this) {
-        NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini · Fast" else "Gemini 2.5 · Fast"
-        NoteAiModel.Gemini25Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full · Best overall" else "Gemini 2.5 Pro · Deep"
     }
 
 private data class SelectedTextTarget(
@@ -2728,6 +2766,8 @@ private fun EditorActionRow(
 @Composable
 private fun EditorAttachmentPreviewSection(
     attachments: List<AttachmentEntity>,
+    loading: Boolean,
+    attachmentCount: Int,
     onAttachmentClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2737,17 +2777,67 @@ private fun EditorAttachmentPreviewSection(
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
             color = VaultThemeTokens.colors.textMuted,
         )
-        attachments.forEach { attachment ->
-            when {
-                attachment.mimeType.startsWith("image/") -> {
-                    EditorImageAttachmentPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
+        Crossfade(
+            targetState = attachments,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            label = "editorAttachmentsHydration",
+        ) { hydratedAttachments ->
+            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                if (loading && hydratedAttachments.isEmpty()) {
+                    EditorAttachmentHydrationPlaceholder(count = attachmentCount)
+                } else {
+                    hydratedAttachments.forEach { attachment ->
+                        when {
+                            attachment.mimeType.startsWith("image/") -> {
+                                EditorImageAttachmentPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
+                            }
+                            attachment.mimeType == "application/pdf" -> {
+                                EditorPdfAttachmentPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
+                            }
+                            else -> {
+                                EditorAttachmentRow(attachment, onClick = { onAttachmentClick(attachment.id) })
+                            }
+                        }
+                    }
                 }
-                attachment.mimeType == "application/pdf" -> {
-                    EditorPdfAttachmentPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
-                }
-                else -> {
-                    EditorAttachmentRow(attachment, onClick = { onAttachmentClick(attachment.id) })
-                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorAttachmentHydrationPlaceholder(count: Int) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface.copy(alpha = 0.72f),
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(colors.inset, VaultShapes.md),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.AttachFile, null, modifier = Modifier.size(19.dp), tint = colors.textMuted)
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (count > 1) "Loading attachments..." else "Loading attachment...",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                    color = colors.text,
+                )
+                Text(
+                    text = "Preparing file preview",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                )
             }
         }
     }

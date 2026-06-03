@@ -21,6 +21,9 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE noteId = :noteId AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeForNote(noteId: String): Flow<List<AttachmentEntity>>
 
+    @Query("SELECT COUNT(*) FROM attachments WHERE noteId = :noteId AND deletedAt IS NULL")
+    fun observeCountForNote(noteId: String): Flow<Int>
+
     @Query("SELECT * FROM attachments WHERE libraryFolderId = :folderId AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeForLibraryFolder(folderId: String): Flow<List<AttachmentEntity>>
 

@@ -31,6 +31,7 @@ fun PinnedNoteCard(
     note: VaultNoteCardData,
     modifier: Modifier = Modifier,
     previewLines: Int = 0,
+    showFullTitle: Boolean = false,
     onClick: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
@@ -58,7 +59,7 @@ fun PinnedNoteCard(
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
                     color = colors.text,
                     textAlign = TextAlign.Center,
-                    maxLines = if (previewLines > 0) 1 else 2,
+                    maxLines = if (previewLines > 0 && !showFullTitle) 1 else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (previewLines > 0 && note.preview.isNotBlank()) {

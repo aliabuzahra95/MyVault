@@ -28,11 +28,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -55,6 +57,7 @@ import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -134,6 +137,7 @@ fun HomeScreen(
     onImportFileClick: (Uri) -> Unit = {},
     onAttachmentClick: (String) -> Unit = {},
     onOpenAttachmentsClick: () -> Unit = {},
+    onQuranReflectionsClick: () -> Unit = {},
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     quickBackupRecommended: Boolean = false,
@@ -194,6 +198,7 @@ fun HomeScreen(
     }
     val displayedWorkspace = if (organizeMode) uiState.workspace else sortedWorkspace
     val rootFolders = displayedWorkspace.filter { it.type == VaultTreeItemType.Folder }
+    val listState = rememberLazyListState()
     val folderExpansionPrefix = remember(currentFolderMode) { "home:$currentFolderMode:" }
     fun folderExpansionKey(folderId: String): String = "$folderExpansionPrefix$folderId"
     fun isFolderExpanded(folderId: String): Boolean = folderExpansionKey(folderId) in uiState.expandedFolderIds
@@ -209,10 +214,11 @@ fun HomeScreen(
                 .padding(innerPadding),
         ) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 144.dp),
             ) {
-                item {
+                item(key = "study_top_bar") {
                     VaultTopBar(
                         title = workspaceTitle,
                         titleContent = if (workspaceOptions.isNotEmpty()) {
@@ -269,7 +275,7 @@ fun HomeScreen(
                     }
                 }
 
-                item {
+                item(key = "study_search") {
                     SearchBar(
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                         query = uiState.searchQuery,
@@ -278,7 +284,7 @@ fun HomeScreen(
                     )
                 }
 
-                item {
+                item(key = "study_search_results") {
                     AnimatedVisibility(
                         visible = isSearching,
                         enter = slideInVertically(
@@ -308,8 +314,8 @@ fun HomeScreen(
                     }
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(5.dp))
+                item(key = "study_pinned") {
+                    Spacer(modifier = Modifier.height(2.dp))
                     SectionLabel(
                         label = "Pinned",
                         actionLabel = if (uiState.pinnedNotes.isNotEmpty()) "View all" else null,
@@ -328,19 +334,19 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
                         ) {
                             items(uiState.pinnedNotes, key = { it.id }) { note ->
-                                PinnedNoteCard(note = note, previewLines = uiState.notePreviewLines, onClick = { onNoteClick(note.id) })
+                                PinnedNoteCard(note = note, previewLines = uiState.notePreviewLines, showFullTitle = uiState.showFullNoteTitles, onClick = { onNoteClick(note.id) })
                             }
                         }
                     }
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(4.dp))
+                item(key = "study_workspace_tree") {
+                    Spacer(modifier = Modifier.height(1.dp))
                     WorkspaceHeader(
                         onSortClick = { sortMenuOpen = true },
                         onManageClick = { manageMenuOpen = true },
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(0.dp))
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -360,6 +366,7 @@ fun HomeScreen(
                                         item = item,
                                         depth = 0,
                                         notePreviewLines = uiState.notePreviewLines,
+                                        showFullNoteTitles = uiState.showFullNoteTitles,
                                         dashboardFontSizeSp = dashboardFontSizeSp,
                                         expanded = isFolderExpanded(item.id),
                                         isChildExpanded = { id -> isFolderExpanded(id) },
@@ -391,6 +398,15 @@ fun HomeScreen(
                                 }
                             }
                         }
+                    }
+                    if (currentFolderMode == FOLDER_MODE_STUDY) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        QuranReflectionsEntryCard(
+                            count = uiState.quranReflectionSummary.count,
+                            latestReference = uiState.quranReflectionSummary.latestReference,
+                            onClick = onQuranReflectionsClick,
+                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                        )
                     }
                 }
 
@@ -539,6 +555,7 @@ fun HomeScreen(
         PinnedNotesSheet(
             notes = uiState.pinnedNotes,
             previewLines = uiState.notePreviewLines,
+            showFullTitles = uiState.showFullNoteTitles,
             onDismiss = { pinnedOverflowOpen = false },
             onNoteClick = { noteId ->
                 pinnedOverflowOpen = false
@@ -1128,6 +1145,63 @@ private fun HomeAttachmentCard(
     }
 }
 
+@Composable
+private fun QuranReflectionsEntryCard(
+    count: Int,
+    latestReference: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = colors.accentSoft,
+                shape = VaultShapes.md,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.AutoStories,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(9.dp)
+                        .size(18.dp),
+                    tint = colors.accent,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = "Qur'an Reflections ($count)",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (latestReference.isBlank()) "No reflections yet" else "Last updated: $latestReference",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
 private fun AttachmentSample.toEntityOrNull(): AttachmentEntity? =
     if (id.isBlank() || noteId.isBlank() || localPath.isBlank()) {
         null
@@ -1511,6 +1585,7 @@ private fun VaultTreeItem.flattenFolderPathItems(parentPath: String = ""): List<
 private fun PinnedNotesSheet(
     notes: List<com.myvault.app.ui.components.VaultNoteCardData>,
     previewLines: Int,
+    showFullTitles: Boolean,
     onDismiss: () -> Unit,
     onNoteClick: (String) -> Unit,
 ) {
@@ -1601,8 +1676,8 @@ private fun PinnedNotesSheet(
                                     text = note.title,
                                     style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
                                     color = colors.text,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                    maxLines = if (showFullTitles) Int.MAX_VALUE else 1,
+                                    overflow = if (showFullTitles) TextOverflow.Clip else TextOverflow.Ellipsis,
                                 )
                                 if (previewLines > 0 && note.preview.isNotBlank()) {
                                     Text(

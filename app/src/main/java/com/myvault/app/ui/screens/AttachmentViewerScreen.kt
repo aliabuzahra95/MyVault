@@ -5,8 +5,11 @@ import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.Path
 import android.content.Context
+import android.net.Uri
 import android.view.MotionEvent
 import android.view.ViewGroup
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.FrameLayout
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Draw
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -156,10 +160,14 @@ fun AttachmentViewerScreen(
     onUpdatePdfAnnotationNote: (annotationId: String, noteText: String) -> Unit = { _, _ -> },
     onDeletePdfAnnotation: (annotationId: String) -> Unit = {},
     onDeleteAttachment: () -> Unit = {},
+    onExportAttachment: (Uri) -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
     var deleteConfirmOpen by remember { mutableStateOf(false) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        uri?.let(onExportAttachment)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -176,6 +184,9 @@ fun AttachmentViewerScreen(
                         IconBtn(Icons.AutoMirrored.Rounded.OpenInNew, "Open externally") {
                             openAttachment(context, attachment)
                         }
+                    }
+                    IconBtn(Icons.Rounded.FileDownload, "Save to device") {
+                        exportLauncher.launch(attachment.fileName.ifBlank { "myvault-file" })
                     }
                     IconBtn(Icons.Rounded.Delete, "Delete attachment") {
                         deleteConfirmOpen = true

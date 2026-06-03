@@ -24,6 +24,9 @@ interface NoteTableDao {
     @Query("SELECT * FROM note_tables WHERE noteId = :noteId ORDER BY orderIndex ASC")
     suspend fun getForNote(noteId: String): List<NoteTableEntity>
 
+    @Query("SELECT COUNT(*) FROM note_tables WHERE noteId = :noteId")
+    suspend fun countForNote(noteId: String): Int
+
     @Query("UPDATE note_tables SET cellsJson = :cellsJson, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateCells(id: String, cellsJson: String, updatedAt: Long)
 

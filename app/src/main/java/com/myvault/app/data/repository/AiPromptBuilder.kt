@@ -40,7 +40,6 @@ object AiPromptBuilder {
         Be clear and useful without unnecessary rigidity.
         Preserve Arabic terms when they matter and explain them in English.
         Do not fabricate quotations or references.
-        Do not over-structure the answer unless structure improves clarity.
     """.trimIndent()
 
     private val DeepAnalysisSystemInstruction = """
@@ -49,16 +48,19 @@ object AiPromptBuilder {
         Use this deeper mode for advanced analysis, theological comparison, objections/responses, and serious study.
         Represent Athari, Ashari, Maturidi, Mu'tazili, Jahmi, Karrami, and other positions accurately when relevant.
         Do not strawman opposing views.
-        Distinguish between:
-        - what the note directly says
-        - wider explanation
-        - inference
-        - possible objection
-        - possible response
-        - uncertainty
-
         Do not invent quotations, references, page numbers, or attributions.
         Preserve Arabic technical terms when precision matters, and explain them clearly in English.
+        Write naturally and fluidly. Do not force robotic templates or repetitive bullet points unless the content demands it.
+    """.trimIndent()
+
+
+    private val StructurePlanSystemInstruction = """
+        You are an internal structural planning assistant for MyVault, a private study-note app.
+
+        Produce a concise plain-text planning note only.
+        Do not output HTML, markdown tables, code fences, or user-facing formatted content.
+        Do not rewrite, summarise, delete, or replace the user's note text.
+        Identify only the natural topic flow, major sections, and hierarchy so the later formatter can preserve all content.
     """.trimIndent()
 
     private val EditorHtmlSystemInstruction = """
@@ -153,9 +155,9 @@ object AiPromptBuilder {
         """.trimIndent()
 
         return AiPromptRequest(
-            systemInstruction = EditorHtmlSystemInstruction,
+            systemInstruction = StructurePlanSystemInstruction,
             prompt = prompt,
-            temperature = 0.15f,
+            temperature = 0.05f,
             maxOutputTokens = 900,
         )
     }
@@ -199,7 +201,7 @@ object AiPromptBuilder {
             </request>
 
             Recent conversation:
-            ${history.takeLast(2).toPromptHistory(maxCharsPerTurn = 900)}
+            ${history.takeLast(2).toPromptHistory(maxCharsPerTurn = 4_000)}
         """.trimIndent()
 
         return AiPromptRequest(
@@ -472,9 +474,9 @@ object AiPromptBuilder {
 
     private fun historyFor(action: NoteAiAction, history: List<NoteAiConversationTurn>): List<NoteAiConversationTurn> =
         when (action.promptMode()) {
-            PromptMode.NormalChat -> history.takeLast(6)
-            PromptMode.DeepAnalysis -> history.takeLast(4)
-            PromptMode.FastNoteAction -> history.takeLast(2)
+            PromptMode.NormalChat -> history.takeLast(10)
+            PromptMode.DeepAnalysis -> history.takeLast(6)
+            PromptMode.FastNoteAction -> history.takeLast(4)
             PromptMode.EditorHtml,
             PromptMode.LocalOnly,
             -> emptyList()
@@ -482,9 +484,9 @@ object AiPromptBuilder {
 
     private fun historyCharBudgetFor(action: NoteAiAction): Int =
         when (action.promptMode()) {
-            PromptMode.NormalChat -> 900
-            PromptMode.DeepAnalysis -> 1_200
-            else -> 600
+            PromptMode.NormalChat -> 4_000
+            PromptMode.DeepAnalysis -> 5_000
+            else -> 2_500
         }
 
     private fun temperatureFor(action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel): Float =
@@ -516,7 +518,7 @@ object AiPromptBuilder {
             NoteAiAction.IntelligentStructure -> 4_500
             NoteAiAction.CleanFormat -> 3_000
             NoteAiAction.FormatNote -> 2_400
-            NoteAiAction.StructureOnly -> 9_000
+            NoteAiAction.StructureOnly -> 12_000
         }
         val multiplier = when {
             model.isDeepModel -> 1.25f
@@ -565,17 +567,17 @@ object AiPromptBuilder {
 
     private fun String.scopedForAction(action: NoteAiAction): String =
         when (action.promptMode()) {
-            PromptMode.NormalChat -> takeMiddleAware(8_000)
-            PromptMode.FastNoteAction -> takeMiddleAware(7_000)
-            PromptMode.DeepAnalysis -> takeMiddleAware(12_000)
-            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) this else takeMiddleAware(14_000)
+            PromptMode.NormalChat -> takeMiddleAware(40_000)
+            PromptMode.FastNoteAction -> takeMiddleAware(30_000)
+            PromptMode.DeepAnalysis -> takeMiddleAware(50_000)
+            PromptMode.EditorHtml -> if (action == NoteAiAction.StructureOnly) this else takeMiddleAware(40_000)
             PromptMode.LocalOnly -> takeMiddleAware(12_000)
         }
 
     private fun String.takeMiddleAware(maxChars: Int): String {
         val clean = trim()
         if (clean.length <= maxChars) return clean
-        val headLength = (maxChars * 0.65f).toInt()
+        val headLength = (maxChars * 65) / 100
         val tailLength = maxChars - headLength
         return buildString {
             append(clean.take(headLength).trimEnd())
@@ -590,15 +592,15 @@ private fun SelectedTextAiAction.selectedTextContextBudget(): Int =
         SelectedTextAiAction.Simplify,
         SelectedTextAiAction.Terminology,
         SelectedTextAiAction.StudyQuestions,
-        -> 1_200
+        -> 10_000
         SelectedTextAiAction.Ask,
         SelectedTextAiAction.Explain,
-        -> 2_000
+        -> 15_000
         SelectedTextAiAction.Expand,
         SelectedTextAiAction.RelatedConcepts,
         SelectedTextAiAction.ComparePositions,
         SelectedTextAiAction.ObjectionResponse,
-        -> 3_000
+        -> 20_000
     }
 
 private fun String.scopedAroundSelection(selectedText: String, maxChars: Int): String {
@@ -620,7 +622,7 @@ private fun String.scopedAroundSelection(selectedText: String, maxChars: Int): S
 private fun String.takeMiddleAwareForSelectedText(maxChars: Int): String {
     val clean = trim()
     if (clean.length <= maxChars) return clean
-    val headLength = (maxChars * 0.65f).toInt()
+    val headLength = (maxChars * 65) / 100
     val tailLength = maxChars - headLength
     return buildString {
         append(clean.take(headLength).trimEnd())

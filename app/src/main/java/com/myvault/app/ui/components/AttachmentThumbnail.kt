@@ -41,11 +41,16 @@ fun AttachmentThumbnail(
     kind: String,
     modifier: Modifier = Modifier,
     size: Dp = 38.dp,
+    renderPdfPreview: Boolean = true,
 ) {
     val colors = VaultThemeTokens.colors
-    val bitmap by produceState<Bitmap?>(null, mimeType, localPath) {
-        value = withContext(Dispatchers.IO) {
-            loadAttachmentThumbnail(mimeType, localPath)
+    val bitmap by produceState<Bitmap?>(null, mimeType, localPath, renderPdfPreview) {
+        value = if (mimeType == "application/pdf" && !renderPdfPreview) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                loadAttachmentThumbnail(mimeType, localPath)
+            }
         }
     }
 

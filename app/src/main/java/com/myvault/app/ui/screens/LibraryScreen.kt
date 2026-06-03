@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
@@ -112,6 +113,7 @@ fun LibraryScreen(
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
     onLinkAnnotationToStudyNote: (String, String) -> Unit,
+    onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -119,11 +121,14 @@ fun LibraryScreen(
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
+    onReplaceDuplicatePdf: () -> Unit,
+    onSkipDuplicatePdf: () -> Unit,
     onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
+    onExportFile: (fileId: String, destination: Uri) -> Unit,
     onAddAttachmentTag: (String, String) -> Unit,
     onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
@@ -132,6 +137,7 @@ fun LibraryScreen(
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
     quickBackupRecommended: Boolean = false,
+    showFullFileTitles: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     LibraryArchiveScreen(
@@ -152,6 +158,7 @@ fun LibraryScreen(
         onDeleteAnnotationNote = onDeleteAnnotationNote,
         onDeleteAnnotation = onDeleteAnnotation,
         onLinkAnnotationToStudyNote = onLinkAnnotationToStudyNote,
+        onPrepareStudyNoteLinks = onPrepareStudyNoteLinks,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -159,11 +166,14 @@ fun LibraryScreen(
         onFolderExpandedChange = onFolderExpandedChange,
         onViewModeChange = onViewModeChange,
         onImportFiles = onImportFiles,
+        onReplaceDuplicatePdf = onReplaceDuplicatePdf,
+        onSkipDuplicatePdf = onSkipDuplicatePdf,
         onDismissImportMessage = onDismissImportMessage,
         onRenameFile = onRenameFile,
         onMoveFile = onMoveFile,
         onSetFilePinned = onSetFilePinned,
         onDeleteFile = onDeleteFile,
+        onExportFile = onExportFile,
         onAddAttachmentTag = onAddAttachmentTag,
         onRemoveAttachmentTag = onRemoveAttachmentTag,
         onAddAnnotationTag = onAddAnnotationTag,
@@ -172,6 +182,7 @@ fun LibraryScreen(
         onQuickBackupClick = onQuickBackupClick,
         onSettingsClick = onSettingsClick,
         quickBackupRecommended = quickBackupRecommended,
+        showFullFileTitles = showFullFileTitles,
         modifier = modifier,
     )
 }
@@ -189,6 +200,7 @@ fun LibraryFolderScreen(
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
     onLinkAnnotationToStudyNote: (String, String) -> Unit,
+    onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -196,15 +208,19 @@ fun LibraryFolderScreen(
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
+    onReplaceDuplicatePdf: () -> Unit,
+    onSkipDuplicatePdf: () -> Unit,
     onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
+    onExportFile: (fileId: String, destination: Uri) -> Unit,
     onAddAttachmentTag: (String, String) -> Unit,
     onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
     onRemoveAnnotationTag: (String, String) -> Unit,
+    showFullFileTitles: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val folder = uiState.currentFolder
@@ -223,6 +239,7 @@ fun LibraryFolderScreen(
         onDeleteAnnotationNote = onDeleteAnnotationNote,
         onDeleteAnnotation = onDeleteAnnotation,
         onLinkAnnotationToStudyNote = onLinkAnnotationToStudyNote,
+        onPrepareStudyNoteLinks = onPrepareStudyNoteLinks,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
@@ -230,15 +247,19 @@ fun LibraryFolderScreen(
         onFolderExpandedChange = onFolderExpandedChange,
         onViewModeChange = onViewModeChange,
         onImportFiles = onImportFiles,
+        onReplaceDuplicatePdf = onReplaceDuplicatePdf,
+        onSkipDuplicatePdf = onSkipDuplicatePdf,
         onDismissImportMessage = onDismissImportMessage,
         onRenameFile = onRenameFile,
         onMoveFile = onMoveFile,
         onSetFilePinned = onSetFilePinned,
         onDeleteFile = onDeleteFile,
+        onExportFile = onExportFile,
         onAddAttachmentTag = onAddAttachmentTag,
         onRemoveAttachmentTag = onRemoveAttachmentTag,
         onAddAnnotationTag = onAddAnnotationTag,
         onRemoveAnnotationTag = onRemoveAnnotationTag,
+        showFullFileTitles = showFullFileTitles,
         modifier = modifier,
     )
 }
@@ -263,6 +284,7 @@ private fun LibraryArchiveScreen(
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
     onLinkAnnotationToStudyNote: (String, String) -> Unit,
+    onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
@@ -270,11 +292,14 @@ private fun LibraryArchiveScreen(
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
+    onReplaceDuplicatePdf: () -> Unit,
+    onSkipDuplicatePdf: () -> Unit,
     onDismissImportMessage: () -> Unit,
     onRenameFile: (fileId: String, name: String) -> Unit,
     onMoveFile: (fileId: String, folderId: String?) -> Unit,
     onSetFilePinned: (fileId: String, pinned: Boolean) -> Unit,
     onDeleteFile: (fileId: String) -> Unit,
+    onExportFile: (fileId: String, destination: Uri) -> Unit,
     onAddAttachmentTag: (String, String) -> Unit,
     onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
@@ -283,6 +308,7 @@ private fun LibraryArchiveScreen(
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     quickBackupRecommended: Boolean = false,
+    showFullFileTitles: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -321,6 +347,12 @@ private fun LibraryArchiveScreen(
     }
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportFiles(uris)
+    }
+    val exportFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val file = selectedFile
+        if (uri != null && file != null) {
+            onExportFile(file.id, uri)
+        }
     }
     val actions = remember {
         listOf(
@@ -447,15 +479,6 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
-                uiState.continueReading?.let { file ->
-                    item {
-                        ContinueReadingCard(
-                            file = file,
-                            onClick = { onAttachmentClick(file.id) },
-                        )
-                    }
-                }
-
                 if (currentFolderId == null && uiState.recentFiles.isNotEmpty()) {
                     item {
                         RecentLibraryFilesRow(
@@ -478,6 +501,7 @@ private fun LibraryArchiveScreen(
                                 PinnedNoteCard(
                                     note = file.toPinnedCardData(),
                                     previewLines = 1,
+                                    showFullTitle = showFullFileTitles,
                                     onClick = { onAttachmentClick(file.id) },
                                 )
                             }
@@ -519,6 +543,8 @@ private fun LibraryArchiveScreen(
                         LibraryFolderRow(
                             folder = folder,
                             viewMode = uiState.viewMode,
+                            forceSubfolderStyle = currentFolderId != null,
+                            showFullFileTitles = showFullFileTitles,
                             expanded = folder.id in uiState.expandedFolderIds,
                             isChildExpanded = { id -> id in uiState.expandedFolderIds },
                             onToggle = {
@@ -567,6 +593,7 @@ private fun LibraryArchiveScreen(
                             content = { file ->
                                 LibraryGridFileCard(
                                     file = file,
+                                    showFullTitle = showFullFileTitles,
                                     onClick = { onAttachmentClick(file.id) },
                                     onLongPress = {
                                         selectedFile = file
@@ -581,6 +608,7 @@ private fun LibraryArchiveScreen(
                         LibraryNestedFileRow(
                             file = file,
                             depth = 0,
+                            showFullTitle = showFullFileTitles,
                             showMetadata = uiState.viewMode == LibraryViewMode.Icons,
                             dense = uiState.viewMode == LibraryViewMode.Icons,
                             tags = uiState.attachmentTags[file.id].orEmpty(),
@@ -751,6 +779,31 @@ private fun LibraryArchiveScreen(
         )
     }
 
+    uiState.duplicatePdfImport?.let { duplicate ->
+        AlertDialog(
+            onDismissRequest = onSkipDuplicatePdf,
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+            title = { Text("PDF already exists.") },
+            text = {
+                Text(
+                    text = "${duplicate.fileName} already exists in this Library folder.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(onClick = onReplaceDuplicatePdf) {
+                    Text("Replace")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onSkipDuplicatePdf) {
+                    Text("Skip")
+                }
+            },
+        )
+    }
+
     if (actionDialogOpen && selectedFolder != null) {
         LibraryActionDialog(
             title = selectedFolder?.name.orEmpty(),
@@ -820,6 +873,10 @@ private fun LibraryArchiveScreen(
                 LibraryAction(if (file?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
                     file?.let { onSetFilePinned(it.id, !it.pinned) }
                     fileActionDialogOpen = false
+                },
+                LibraryAction("Save to device", Icons.Rounded.FileDownload) {
+                    fileActionDialogOpen = false
+                    file?.let { exportFileLauncher.launch(it.name.ifBlank { "myvault-file" }) }
                 },
                 LibraryAction("Add tag", Icons.Rounded.LocalOffer) {
                     fileActionDialogOpen = false
@@ -1024,6 +1081,7 @@ private fun LibraryArchiveScreen(
                     annotationMoveDialogOpen = true
                 },
                 LibraryAction("Link to Study note", Icons.Rounded.LocalOffer) {
+                    onPrepareStudyNoteLinks()
                     annotationActionDialogOpen = false
                     annotationLinkDialogOpen = true
                 },
@@ -1104,13 +1162,17 @@ private fun LibraryArchiveScreen(
         val annotation = selectedAnnotation
         LibraryActionDialog(
             title = "Link to Study note",
-            actions = uiState.studyNotes.take(30).map { note ->
-                LibraryAction(note.title.ifBlank { "Untitled note" }, Icons.Rounded.Description) {
-                    annotation?.let { onLinkAnnotationToStudyNote(it.id, note.id) }
-                    annotationLinkDialogOpen = false
+            actions = when {
+                uiState.studyNotesLoading -> listOf(
+                    LibraryAction("Loading Study notes...", Icons.Rounded.Description) {},
+                )
+                uiState.studyNotes.isNotEmpty() -> uiState.studyNotes.take(30).map { note ->
+                    LibraryAction(note.title.ifBlank { "Untitled note" }, Icons.Rounded.Description) {
+                        annotation?.let { onLinkAnnotationToStudyNote(it.id, note.id) }
+                        annotationLinkDialogOpen = false
+                    }
                 }
-            }.ifEmpty {
-                listOf(
+                else -> listOf(
                     LibraryAction("No Study notes found", Icons.Rounded.Description) {
                         annotationLinkDialogOpen = false
                     },
@@ -1358,6 +1420,7 @@ private fun LibrarySearchResults(
                 LibraryNestedFileRow(
                     file = file,
                     depth = 0,
+                    showFullTitle = false,
                     showMetadata = true,
                     tags = uiState.attachmentTags[file.id].orEmpty(),
                     onClick = { onAttachmentClick(file.id) },
@@ -1486,6 +1549,7 @@ private fun LibraryGridFolderCard(
 @Composable
 private fun LibraryGridFileCard(
     file: LibraryFileItem,
+    showFullTitle: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -1508,13 +1572,14 @@ private fun LibraryGridFileCard(
                 localPath = file.localPath,
                 kind = file.kind,
                 size = 34.dp,
+                renderPdfPreview = false,
             )
             Text(
                 text = file.name,
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W700),
                 color = colors.text,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = if (showFullTitle) Int.MAX_VALUE else 2,
+                overflow = if (showFullTitle) TextOverflow.Clip else TextOverflow.Ellipsis,
             )
             Text(
                 text = "${file.kind} · ${file.size}",
@@ -1552,67 +1617,6 @@ private fun String.toAnnotationColor(): Color =
         "red" -> Color(0xFFFF5A5F)
         else -> Color(0xFFFFD84D)
     }
-
-@Composable
-private fun ContinueReadingCard(
-    file: LibraryFileItem,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    val pageLabel = if (file.pageIndex != null && file.pageCount != null) {
-        "Page ${file.pageIndex + 1} of ${file.pageCount}"
-    } else {
-        "Resume reading"
-    }
-    val percent = file.progressPercent?.let { "${(it.coerceIn(0f, 1f) * 100).toInt()}%" } ?: ""
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
-        color = colors.surface,
-        shape = VaultShapes.lg,
-        border = BorderStroke(1.dp, colors.accentBorder),
-        shadowElevation = 2.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Surface(
-                color = colors.accentSoft,
-                contentColor = colors.accent,
-                shape = VaultShapes.md,
-                border = BorderStroke(1.dp, colors.accentBorder),
-                modifier = Modifier.size(42.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.MenuBook, contentDescription = null, modifier = Modifier.size(20.dp))
-                }
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = "Continue reading",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
-                    color = colors.accent,
-                )
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = listOf(pageLabel, percent).filter { it.isNotBlank() }.joinToString(" · "),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.textMuted,
-                )
-            }
-    }
-    }
-}
 
 @Composable
 private fun RecentLibraryFilesRow(
@@ -1660,10 +1664,11 @@ private fun RecentLibraryFileCard(
         border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
+        modifier = Modifier.size(width = 104.dp, height = 64.dp),
     ) {
         Row(
             modifier = Modifier
-                .width(148.dp)
+                .fillMaxSize()
                 .padding(horizontal = 10.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Top,
@@ -1673,6 +1678,7 @@ private fun RecentLibraryFileCard(
                 localPath = file.localPath,
                 kind = file.kind,
                 size = 22.dp,
+                renderPdfPreview = false,
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -1702,6 +1708,8 @@ private fun RecentLibraryFileCard(
 private fun LibraryFolderRow(
     folder: LibraryFolderItem,
     viewMode: LibraryViewMode,
+    forceSubfolderStyle: Boolean,
+    showFullFileTitles: Boolean,
     expanded: Boolean,
     isChildExpanded: (String) -> Boolean,
     onToggle: () -> Unit,
@@ -1718,6 +1726,7 @@ private fun LibraryFolderRow(
     annotationTags: Map<String, List<KnowledgeTagChip>>,
 ) {
     val colors = VaultThemeTokens.colors
+    val subfolderStyle = forceSubfolderStyle || folder.depth > 0
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
         animationSpec = tween(durationMillis = LIBRARY_EXPAND_ROTATION_MS, easing = FastOutSlowInEasing),
@@ -1732,12 +1741,13 @@ private fun LibraryFolderRow(
             title = folder.name,
             subtitle = null,
             count = folder.count.takeIf { it > 0 }?.toString(),
+            subfolderStyle = subfolderStyle,
             leading = { topLevel ->
                 Icon(
                     Icons.Rounded.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(if (topLevel) 16.dp else 13.dp),
-                    tint = colors.warning,
+                    tint = if (subfolderStyle) Color(0xFFE23B3B) else colors.accent,
                 )
             },
             expanded = expanded,
@@ -1757,6 +1767,8 @@ private fun LibraryFolderRow(
                     LibraryFolderRow(
                         folder = child,
                         viewMode = viewMode,
+                        forceSubfolderStyle = true,
+                        showFullFileTitles = showFullFileTitles,
                         expanded = isChildExpanded(child.id),
                         isChildExpanded = isChildExpanded,
                         onToggle = { onFolderExpandedChange(child.id, !isChildExpanded(child.id)) },
@@ -1777,6 +1789,7 @@ private fun LibraryFolderRow(
                     LibraryNestedFileRow(
                         file = file,
                         depth = folder.depth + 1,
+                        showFullTitle = showFullFileTitles,
                         showMetadata = false,
                         dense = viewMode == LibraryViewMode.Icons,
                         tags = attachmentTags[file.id].orEmpty(),
@@ -1803,6 +1816,7 @@ private fun LibraryFolderRow(
 private fun LibraryNestedFileRow(
     file: LibraryFileItem,
     depth: Int,
+    showFullTitle: Boolean,
     showMetadata: Boolean,
     dense: Boolean = false,
     tags: List<KnowledgeTagChip> = emptyList(),
@@ -1832,12 +1846,14 @@ private fun LibraryNestedFileRow(
                 localPath = file.localPath,
                 kind = file.kind,
                 size = if (topLevel) 18.dp else 16.dp,
+                renderPdfPreview = false,
             )
         },
         onClick = onClick,
         onLongClick = onLongPress,
         dense = dense,
         fileRow = true,
+        showFullTitle = showFullTitle,
     )
 }
 
@@ -1881,6 +1897,8 @@ private fun LibraryHierarchyRow(
     subtitle: String? = null,
     count: String? = null,
     leading: @Composable (topLevel: Boolean) -> Unit,
+    subfolderStyle: Boolean = false,
+    showFullTitle: Boolean = false,
     expanded: Boolean = false,
     chevronRotation: Float = 0f,
     onToggle: (() -> Unit)? = null,
@@ -1962,9 +1980,9 @@ private fun LibraryHierarchyRow(
                     } else {
                         MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    color = if (subfolderStyle && !fileRow) Color(0xFFE23B3B) else colors.text,
+                    maxLines = if (fileRow && showFullTitle) Int.MAX_VALUE else 1,
+                    overflow = if (fileRow && showFullTitle) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )
                 if (!subtitle.isNullOrBlank()) {
                     Text(

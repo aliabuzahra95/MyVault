@@ -30,6 +30,8 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+const val DriveConflictMessage = "Cloud contains newer MyVault changes. Pull latest first, then push again."
+
 @Singleton
 class GoogleDriveIncrementalSyncRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -54,6 +56,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     }
 
     suspend fun pushToDrive(
+        force: Boolean = false,
         onProgress: suspend (DriveRestoreProgress) -> Unit = {},
     ): DriveSyncResult = withContext(Dispatchers.IO) {
         onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive backup"))
@@ -63,9 +66,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val remoteManifest = remoteManifestFile?.let { drive.downloadJsonObject(it.id) }
         val remoteVersion = remoteManifest?.optLong("cloudVersion", 0L) ?: 0L
         val lastSyncedVersion = preferences.userPreferences.first().lastGoogleDriveManifestAt
-        if (remoteVersion > 0L && remoteVersion > lastSyncedVersion) {
+        if (!force && remoteVersion > 0L && remoteVersion > lastSyncedVersion) {
             return@withContext DriveSyncResult.Conflict(
-                "Cloud contains newer MyVault changes. Pull latest first, then push again.",
+                DriveConflictMessage,
             )
         }
 
@@ -465,9 +468,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 "$DriveUploadUrl/${existingFileId.urlPathEncode()}?uploadType=multipart&fields=id,name,mimeType,size,modifiedTime"
             }
             return requestJsonStreaming(
-                method = if (existingFileId.isNullOrBlank()) "POST" else "PATCH",
+                method = "POST",
                 url = url,
                 contentType = "multipart/related; boundary=$boundary",
+                methodOverride = if (!existingFileId.isNullOrBlank()) "PATCH" else null,
             ) { output ->
                 output.writeUtf8("--$boundary\r\n")
                 output.writeUtf8("Content-Type: application/json; charset=UTF-8\r\n\r\n")
@@ -497,13 +501,18 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             method: String,
             url: String,
             contentType: String,
+            methodOverride: String? = null,
             writeBody: (OutputStream) -> Unit,
         ): JSONObject =
-            JSONObject(requestBytesStreaming(method, url, contentType, writeBody).toString(Charsets.UTF_8))
+            JSONObject(requestBytesStreaming(method, url, contentType, methodOverride, writeBody).toString(Charsets.UTF_8))
 
         private fun requestBytes(method: String, url: String, body: ByteArray?, contentType: String?): ByteArray {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
+                val actualMethod = if (method == "PATCH") "POST" else method
+                requestMethod = actualMethod
+                if (method == "PATCH") {
+                    setRequestProperty("X-HTTP-Method-Override", "PATCH")
+                }
                 connectTimeout = 30_000
                 readTimeout = 120_000
                 setRequestProperty("Authorization", "Bearer ${accessToken()}")
@@ -527,10 +536,15 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             method: String,
             url: String,
             contentType: String,
+            methodOverride: String?,
             writeBody: (OutputStream) -> Unit,
         ): ByteArray {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
+                val actualMethod = if (method == "PATCH") "POST" else method
+                requestMethod = actualMethod
+                if (method == "PATCH" || methodOverride == "PATCH") {
+                    setRequestProperty("X-HTTP-Method-Override", "PATCH")
+                }
                 connectTimeout = 30_000
                 readTimeout = 120_000
                 doOutput = true

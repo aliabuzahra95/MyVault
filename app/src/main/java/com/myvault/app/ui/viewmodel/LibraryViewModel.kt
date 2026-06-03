@@ -16,6 +16,7 @@ import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.KnowledgeRepository
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.data.repository.LibraryReferencedNote
+import com.myvault.app.data.repository.LibrarySnapshotRepository
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.PdfAnnotationRepository
 import com.myvault.app.data.repository.PdfReadingProgressRepository
@@ -27,10 +28,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 enum class LibraryViewMode(val storedValue: String, val label: String) {
@@ -98,6 +100,7 @@ data class LibraryUiState(
     val attachmentTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
     val annotationTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
     val studyNotes: List<LibraryStudyNoteItem> = emptyList(),
+    val studyNotesLoading: Boolean = false,
     val continueReading: LibraryFileItem? = null,
     val recentFiles: List<LibraryFileItem> = emptyList(),
     val allFolders: List<LibraryFolderItem> = emptyList(),
@@ -105,6 +108,11 @@ data class LibraryUiState(
     val viewMode: LibraryViewMode = LibraryViewMode.List,
     val importing: Boolean = false,
     val importMessage: String? = null,
+    val duplicatePdfImport: PdfDuplicateImportUiState? = null,
+)
+
+data class PdfDuplicateImportUiState(
+    val fileName: String,
 )
 
 @HiltViewModel
@@ -117,9 +125,12 @@ class LibraryViewModel @Inject constructor(
     private val pdfAnnotationRepository: PdfAnnotationRepository,
     private val knowledgeRepository: KnowledgeRepository,
     private val vaultPreferences: VaultPreferences,
+    private val librarySnapshotRepository: LibrarySnapshotRepository,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
-    private val requestedLibraryMode = MutableStateFlow(savedStateHandle["libraryMode"] ?: FOLDER_MODE_LIBRARY)
+    private val initialLibraryMode: String = savedStateHandle["libraryMode"] ?: FOLDER_MODE_LIBRARY
+    private val hasExplicitInitialMode: Boolean = savedStateHandle.contains("libraryMode")
+    private val requestedLibraryMode = MutableStateFlow(initialLibraryMode)
     private val libraryMode: String get() = requestedLibraryMode.value
     private val isPersonalLibrary: Boolean get() = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
     private val viewModeLocationKey: String get() = "$libraryMode:${folderId ?: LIBRARY_ROOT_VIEW_MODE_KEY}"
@@ -142,16 +153,29 @@ class LibraryViewModel @Inject constructor(
         knowledgeRepository.observeLibraryReferences(),
         knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAttachment),
         knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAnnotation),
-        noteRepository.observeAllNotes(),
-    ) { references, attachmentTags, annotationTags, studyNotes ->
-        LibraryKnowledgeLayer(references, attachmentTags, annotationTags, studyNotes.map { LibraryStudyNoteItem(id = it.id, title = it.title) })
+    ) { references, attachmentTags, annotationTags ->
+        LibraryKnowledgeLayer(references, attachmentTags, annotationTags, emptyList(), studyNotesLoading = false)
     }
+    private val studyNoteLinks = MutableStateFlow(LibraryStudyNoteLinks())
+    private val librarySupportLayer = combine(knowledgeLayer, studyNoteLinks) { knowledge, studyNotes ->
+        knowledge.copy(studyNotes = studyNotes.items, studyNotesLoading = studyNotes.loading)
+    }
+    private var studyNoteLinksJob: Job? = null
 
-    val uiState: StateFlow<LibraryUiState> = combine(
+    private val _uiState = MutableStateFlow(
+        if (hasExplicitInitialMode || folderId != null) {
+            snapshotFor(initialLibraryMode) ?: LibraryUiState()
+        } else {
+            LibraryUiState()
+        },
+    )
+    val uiState: StateFlow<LibraryUiState> = _uiState
+
+    private val liveUiState = combine(
         libraryDataLayer,
         pdfLayer,
         preferencesAndImportState,
-        knowledgeLayer,
+        librarySupportLayer,
         requestedLibraryMode,
     ) { libraryData, pdfLayer, preferencesAndImporting, knowledge, libraryMode ->
         val isPersonalLibrary = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
@@ -263,6 +287,7 @@ class LibraryViewModel @Inject constructor(
             attachmentTags = knowledge.attachmentTags,
             annotationTags = knowledge.annotationTags.filterKeys { it in currentAnnotationIds },
             studyNotes = knowledge.studyNotes,
+            studyNotesLoading = knowledge.studyNotesLoading,
             continueReading = continueReadingItems
                 .filter { it.mimeType == "application/pdf" && it.pageCount.orZero() > 0 }
                 .maxByOrNull { it.lastOpenedAt },
@@ -281,11 +306,28 @@ class LibraryViewModel @Inject constructor(
             ),
             importing = importing.active,
             importMessage = importing.message,
+            duplicatePdfImport = importing.duplicatePdf?.let { PdfDuplicateImportUiState(fileName = it.fileName) },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
+    }
+
+    init {
+        viewModelScope.launch {
+            liveUiState.collect { state ->
+                _uiState.value = state
+                librarySnapshotRepository.save(libraryMode, folderId, state)
+            }
+        }
+    }
 
     fun setLibraryMode(mode: String) {
+        val previousMode = requestedLibraryMode.value
         requestedLibraryMode.value = mode
+        val snapshot = snapshotFor(mode)
+        if (snapshot != null) {
+            _uiState.value = snapshot
+        } else if (previousMode != mode) {
+            _uiState.value = LibraryUiState()
+        }
     }
 
     fun createFolder(parentId: String? = folderId, name: String, onCreated: (String) -> Unit = {}) {
@@ -319,6 +361,19 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { vaultPreferences.setLibraryViewMode(viewModeLocationKey, mode.storedValue) }
     }
 
+    fun prepareStudyNoteLinks() {
+        if (studyNoteLinksJob != null) return
+        studyNoteLinks.value = LibraryStudyNoteLinks(loading = true)
+        studyNoteLinksJob = viewModelScope.launch {
+            noteRepository.observeAllNotes().collect { notes ->
+                studyNoteLinks.value = LibraryStudyNoteLinks(
+                    items = notes.map { LibraryStudyNoteItem(id = it.id, title = it.title) },
+                    loading = false,
+                )
+            }
+        }
+    }
+
     fun importFile(uri: Uri, onImported: (String) -> Unit = {}) {
         viewModelScope.launch {
             onImported(attachmentRepository.importLibraryDocument(targetLibraryFolderId(), uri))
@@ -328,8 +383,23 @@ class LibraryViewModel @Inject constructor(
     fun importFiles(uris: List<Uri>, onImported: (String) -> Unit = {}) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
+            val folderId = targetLibraryFolderId()
+            val duplicate = uris.firstNotNullOfOrNull { uri ->
+                attachmentRepository.findDuplicateLibraryPdf(folderId, uri)?.let { existing ->
+                    PendingDuplicatePdfImport(
+                        uri = uri,
+                        remainingUris = uris.filterNot { it == uri },
+                        existingAttachmentId = existing.id,
+                        fileName = existing.fileName,
+                    )
+                }
+            }
+            if (duplicate != null) {
+                importState.value = LibraryImportState(duplicatePdf = duplicate)
+                return@launch
+            }
             importState.value = LibraryImportState(active = true, message = "Importing ${uris.size} file${if (uris.size == 1) "" else "s"}...")
-            val result = attachmentRepository.importLibraryDocuments(targetLibraryFolderId(), uris)
+            val result = attachmentRepository.importLibraryDocuments(folderId, uris)
             result.importedIds.firstOrNull()?.let(onImported)
             val message = when {
                 result.importedIds.isEmpty() && result.failedCount > 0 -> "Import failed for ${result.failedCount} file${if (result.failedCount == 1) "" else "s"}."
@@ -337,6 +407,33 @@ class LibraryViewModel @Inject constructor(
                 else -> "Imported ${result.importedIds.size} file${if (result.importedIds.size == 1) "" else "s"}."
             }
             importState.value = LibraryImportState(active = false, message = message)
+        }
+    }
+
+    fun replaceDuplicatePdf() {
+        val pending = importState.value.duplicatePdf ?: return
+        viewModelScope.launch {
+            importState.value = LibraryImportState(active = true, message = "Replacing ${pending.fileName}...")
+            runCatching { attachmentRepository.replaceLibraryPdf(pending.existingAttachmentId, pending.uri) }
+                .onSuccess {
+                    if (pending.remainingUris.isNotEmpty()) {
+                        importFiles(pending.remainingUris)
+                    } else {
+                        importState.value = LibraryImportState(active = false, message = "Replaced ${pending.fileName}.")
+                    }
+                }
+                .onFailure {
+                    importState.value = LibraryImportState(active = false, message = "Replace failed: ${it.message ?: "Unknown error"}")
+                }
+        }
+    }
+
+    fun skipDuplicatePdf() {
+        val pending = importState.value.duplicatePdf ?: return
+        if (pending.remainingUris.isNotEmpty()) {
+            importFiles(pending.remainingUris)
+        } else {
+            importState.value = LibraryImportState(active = false, message = "Skipped ${pending.fileName}.")
         }
     }
 
@@ -396,6 +493,14 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { attachmentRepository.deleteAttachment(fileId) }
     }
 
+    fun exportFile(fileId: String, destination: Uri, onComplete: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching { attachmentRepository.exportAttachmentToUri(fileId, destination) }
+                .onSuccess { onComplete("File saved to device.") }
+                .onFailure { onComplete(it.message ?: "Could not save file.") }
+        }
+    }
+
     private suspend fun targetLibraryFolderId(): String? =
         folderId ?: personalRootFolderIdIfNeeded()
 
@@ -405,6 +510,9 @@ class LibraryViewModel @Inject constructor(
         } else {
             null
         }
+
+    private fun snapshotFor(mode: String): LibraryUiState? =
+        librarySnapshotRepository.load(mode, folderId)
 }
 
 private fun FolderEntity.toLibraryFolderItem(
@@ -477,6 +585,14 @@ private fun Int?.orZero(): Int = this ?: 0
 private data class LibraryImportState(
     val active: Boolean = false,
     val message: String? = null,
+    val duplicatePdf: PendingDuplicatePdfImport? = null,
+)
+
+private data class PendingDuplicatePdfImport(
+    val uri: Uri,
+    val remainingUris: List<Uri>,
+    val existingAttachmentId: String,
+    val fileName: String,
 )
 
 private data class LibraryDataLayer(
@@ -489,6 +605,12 @@ private data class LibraryKnowledgeLayer(
     val attachmentTags: Map<String, List<KnowledgeTagChip>>,
     val annotationTags: Map<String, List<KnowledgeTagChip>>,
     val studyNotes: List<LibraryStudyNoteItem>,
+    val studyNotesLoading: Boolean,
+)
+
+private data class LibraryStudyNoteLinks(
+    val items: List<LibraryStudyNoteItem> = emptyList(),
+    val loading: Boolean = false,
 )
 
 private const val LIBRARY_ROOT_VIEW_MODE_KEY = "root"

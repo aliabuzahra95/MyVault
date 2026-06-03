@@ -23,9 +23,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Provider
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -35,7 +38,7 @@ class SettingsViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
     private val folderRepository: FolderRepository,
     private val googleDriveSyncRepository: GoogleDriveIncrementalSyncRepository,
-    private val googleDriveRestoreController: GoogleDriveRestoreController,
+    private val googleDriveRestoreController: Provider<GoogleDriveRestoreController>,
     private val supabaseAuthRepository: SupabaseAuthRepository,
     supabaseSessionStore: SupabaseSessionStore,
 ) : ViewModel() {
@@ -47,32 +50,52 @@ class SettingsViewModel @Inject constructor(
         )
     private val _storageLabel = MutableStateFlow("Calculating...")
     val storageLabel: StateFlow<String> = _storageLabel
-    val driveRestoreState: StateFlow<DriveRestoreState> = googleDriveRestoreController.state
+    private val _driveRestoreState = MutableStateFlow(DriveRestoreState())
+    val driveRestoreState: StateFlow<DriveRestoreState> = _driveRestoreState
+    private var driveRestoreJob: Job? = null
     val supabaseSession: StateFlow<SupabaseSession> =
         supabaseSessionStore.session.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
             SupabaseSession(),
         )
-    val recentlyDeleted: StateFlow<RecentlyDeletedUiState> =
-        combine(
-            noteRepository.observeDeletedNotes(),
-            folderRepository.observeDeletedFolders(),
-            folderRepository.observeAllFoldersIncludingDeleted(),
-        ) { notes, deletedFolders, allFolders ->
-            val allFoldersById = allFolders.associateBy { it.id }
-            RecentlyDeletedUiState(
-                notes = notes
-                    .filterNot { note -> note.folderId.hasDeletedFolderAncestor(allFoldersById) }
-                    .map { DeletedItemUiState(it.id, it.title, "Note", it.deletedAt ?: it.updatedAt) },
-                folders = deletedFolders
-                    .filterNot { folder -> folder.parentId.hasDeletedFolderAncestor(allFoldersById) }
-                    .map { DeletedItemUiState(it.id, it.name, "Folder", it.deletedAt ?: it.updatedAt) },
-            )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecentlyDeletedUiState())
+    private val _recentlyDeleted = MutableStateFlow(RecentlyDeletedUiState())
+    val recentlyDeleted: StateFlow<RecentlyDeletedUiState> = _recentlyDeleted
+    private val _recentlyDeletedLoaded = MutableStateFlow(false)
+    val recentlyDeletedLoaded: StateFlow<Boolean> = _recentlyDeletedLoaded
+    private var recentlyDeletedJob: Job? = null
 
-    init {
-        refreshStorage()
+    fun observeDriveRestoreState() {
+        if (driveRestoreJob != null) return
+        driveRestoreJob = viewModelScope.launch {
+            googleDriveRestoreController.get().state.collect { state ->
+                _driveRestoreState.value = state
+            }
+        }
+    }
+
+    fun observeRecentlyDeleted() {
+        if (recentlyDeletedJob != null) return
+        _recentlyDeletedLoaded.value = true
+        recentlyDeletedJob = viewModelScope.launch {
+            combine(
+                noteRepository.observeDeletedNotes(),
+                folderRepository.observeDeletedFolders(),
+                folderRepository.observeAllFoldersIncludingDeleted(),
+            ) { notes, deletedFolders, allFolders ->
+                val allFoldersById = allFolders.associateBy { it.id }
+                RecentlyDeletedUiState(
+                    notes = notes
+                        .filterNot { note -> note.folderId.hasDeletedFolderAncestor(allFoldersById) }
+                        .map { DeletedItemUiState(it.id, it.title, "Note", it.deletedAt ?: it.updatedAt) },
+                    folders = deletedFolders
+                        .filterNot { folder -> folder.parentId.hasDeletedFolderAncestor(allFoldersById) }
+                        .map { DeletedItemUiState(it.id, it.name, "Folder", it.deletedAt ?: it.updatedAt) },
+                )
+            }.collect { state ->
+                _recentlyDeleted.value = state
+            }
+        }
     }
 
     fun setTheme(mode: VaultThemeMode) {
@@ -101,6 +124,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setNotePreview(notePreview: String) {
         viewModelScope.launch { preferences.setNotePreview(notePreview) }
+    }
+
+    fun setShowFullNoteTitles(show: Boolean) {
+        viewModelScope.launch { preferences.setShowFullNoteTitles(show) }
+    }
+
+    fun setShowFullFileTitles(show: Boolean) {
+        viewModelScope.launch { preferences.setShowFullFileTitles(show) }
     }
 
     fun setDefaultNoteView(defaultNoteView: String) {
@@ -155,20 +186,30 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun pushGoogleDriveSync(onComplete: (String) -> Unit) {
-        googleDriveRestoreController.startPush { result ->
+        observeDriveRestoreState()
+        googleDriveRestoreController.get().startPush { result ->
+            onComplete(result.displayMessage())
+        }
+    }
+
+    fun forcePushGoogleDriveSync(onComplete: (String) -> Unit) {
+        observeDriveRestoreState()
+        googleDriveRestoreController.get().startForcePush { result ->
             onComplete(result.displayMessage())
         }
     }
 
     fun pullGoogleDriveSync(onComplete: (String) -> Unit) {
-        googleDriveRestoreController.startRestore { result ->
+        observeDriveRestoreState()
+        googleDriveRestoreController.get().startRestore { result ->
             if (result is DriveSyncResult.Success) refreshStorage()
             onComplete(result.displayMessage())
         }
     }
 
     fun dismissDriveRestoreMessage() {
-        googleDriveRestoreController.dismissMessage()
+        observeDriveRestoreState()
+        googleDriveRestoreController.get().dismissMessage()
     }
 
     fun checkGoogleDriveUpdates(onComplete: (String) -> Unit) {
@@ -232,6 +273,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 backupRepository.createSafetyBackup("before-empty-recently-deleted")
+                observeRecentlyDeleted()
                 val current = recentlyDeleted.value
                 current.folders.forEach { folderRepository.permanentlyDeleteFolderTree(it.id) }
                 current.notes.forEach { noteRepository.permanentlyDeleteNote(it.id) }

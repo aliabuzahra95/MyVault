@@ -79,6 +79,7 @@ import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
 import com.myvault.app.ui.screens.MemoriseShellScreen
 import com.myvault.app.ui.screens.QuranShellScreen
+import com.myvault.app.ui.screens.QuranReflectionsHubScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
@@ -95,8 +96,10 @@ import com.myvault.app.ui.viewmodel.MemoriseViewModel
 import com.myvault.app.ui.viewmodel.NarrationViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
 import com.myvault.app.ui.viewmodel.QuranReaderViewModel
+import com.myvault.app.ui.viewmodel.QuranReflectionsViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
+import com.myvault.app.ui.viewmodel.ShellPreferencesViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -110,8 +113,12 @@ fun VaultNavHost(
     val currentRoute = currentBackStackEntry?.destination?.route
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
     var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
+    var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
+    val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
+    val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
@@ -150,9 +157,6 @@ fun VaultNavHost(
         ) {
         composable(VaultDestination.Home.route) {
             val homeViewModel: HomeViewModel = hiltViewModel()
-            val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
-            val context = LocalContext.current
             val openNote: (String) -> Unit = { noteId ->
                 navController.navigate(
                     if (preferences.defaultNoteView == "editing") {
@@ -189,7 +193,7 @@ fun VaultNavHost(
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = {},
@@ -249,13 +253,16 @@ fun VaultNavHost(
                         onOpenAttachmentsClick = {
                             navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_STUDY))
                         },
+                        onQuranReflectionsClick = {
+                            navController.navigate(VaultDestination.QuranReflections.route)
+                        },
                         onThemeClick = {
-                            settingsViewModel.setTheme(
+                            shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.pushGoogleDriveSync {
+                            shellViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -267,17 +274,22 @@ fun VaultNavHost(
                 quranContent = {
                     val quranViewModel: QuranReaderViewModel = hiltViewModel()
                     val quranState by quranViewModel.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(pendingQuranVerseKey) {
+                        val verseKey = pendingQuranVerseKey ?: return@LaunchedEffect
+                        quranViewModel.openBookmarkedAyah(verseKey)
+                        pendingQuranVerseKey = null
+                    }
                     QuranShellScreen(
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onThemeClick = {
-                            settingsViewModel.setTheme(
+                            shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.pushGoogleDriveSync {
+                            shellViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -328,14 +340,14 @@ fun VaultNavHost(
                         uiState = memoriseState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onThemeClick = {
-                            settingsViewModel.setTheme(
+                            shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.pushGoogleDriveSync {
+                            shellViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -362,7 +374,7 @@ fun VaultNavHost(
                         uiState = libraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onFolderClick = { folderId ->
                             navController.navigate(VaultDestination.LibraryFolder.route(folderId))
                         },
@@ -380,6 +392,7 @@ fun VaultNavHost(
                         onDeleteAnnotationNote = libraryViewModel::deleteAnnotationNote,
                         onDeleteAnnotation = libraryViewModel::deleteAnnotation,
                         onLinkAnnotationToStudyNote = libraryViewModel::linkAnnotationToStudyNote,
+                        onPrepareStudyNoteLinks = libraryViewModel::prepareStudyNoteLinks,
                         onCreateFolder = { parentId, name ->
                             libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
@@ -391,27 +404,35 @@ fun VaultNavHost(
                         onImportFiles = { uris ->
                             libraryViewModel.importFiles(uris)
                         },
+                        onReplaceDuplicatePdf = libraryViewModel::replaceDuplicatePdf,
+                        onSkipDuplicatePdf = libraryViewModel::skipDuplicatePdf,
                         onDismissImportMessage = libraryViewModel::clearImportMessage,
                         onRenameFile = libraryViewModel::renameFile,
                         onMoveFile = libraryViewModel::moveFile,
                         onSetFilePinned = libraryViewModel::setFilePinned,
                         onDeleteFile = libraryViewModel::deleteFile,
+                        onExportFile = { fileId, uri ->
+                            libraryViewModel.exportFile(fileId, uri) {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onAddAttachmentTag = libraryViewModel::addAttachmentTag,
                         onRemoveAttachmentTag = libraryViewModel::removeAttachmentTag,
                         onAddAnnotationTag = libraryViewModel::addAnnotationTag,
                         onRemoveAnnotationTag = libraryViewModel::removeAnnotationTag,
                         onThemeClick = {
-                            settingsViewModel.setTheme(
+                            shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.pushGoogleDriveSync {
+                            shellViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
+                        showFullFileTitles = preferences.showFullFileTitles,
                     )
                 },
                 personalContent = {
@@ -421,7 +442,7 @@ fun VaultNavHost(
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = {},
@@ -482,12 +503,12 @@ fun VaultNavHost(
                             navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_PERSONAL))
                         },
                         onThemeClick = {
-                            settingsViewModel.setTheme(
+                            shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.pushGoogleDriveSync {
+                            shellViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
@@ -506,7 +527,7 @@ fun VaultNavHost(
                         uiState = personalLibraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { settingsViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onFolderClick = { folderId ->
                             navController.navigate(VaultDestination.LibraryFolder.route(folderId, FOLDER_MODE_PERSONAL_LIBRARY))
                         },
@@ -524,6 +545,7 @@ fun VaultNavHost(
                         onDeleteAnnotationNote = personalLibraryViewModel::deleteAnnotationNote,
                         onDeleteAnnotation = personalLibraryViewModel::deleteAnnotation,
                         onLinkAnnotationToStudyNote = personalLibraryViewModel::linkAnnotationToStudyNote,
+                        onPrepareStudyNoteLinks = personalLibraryViewModel::prepareStudyNoteLinks,
                         onCreateFolder = { parentId, name ->
                             personalLibraryViewModel.createFolder(parentId = parentId, name = name)
                         },
@@ -535,27 +557,35 @@ fun VaultNavHost(
                         onImportFiles = { uris ->
                             personalLibraryViewModel.importFiles(uris)
                         },
+                        onReplaceDuplicatePdf = personalLibraryViewModel::replaceDuplicatePdf,
+                        onSkipDuplicatePdf = personalLibraryViewModel::skipDuplicatePdf,
                         onDismissImportMessage = personalLibraryViewModel::clearImportMessage,
                         onRenameFile = personalLibraryViewModel::renameFile,
                         onMoveFile = personalLibraryViewModel::moveFile,
                         onSetFilePinned = personalLibraryViewModel::setFilePinned,
                         onDeleteFile = personalLibraryViewModel::deleteFile,
+                        onExportFile = { fileId, uri ->
+                            personalLibraryViewModel.exportFile(fileId, uri) {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onAddAttachmentTag = personalLibraryViewModel::addAttachmentTag,
                         onRemoveAttachmentTag = personalLibraryViewModel::removeAttachmentTag,
                         onAddAnnotationTag = personalLibraryViewModel::addAnnotationTag,
                         onRemoveAnnotationTag = personalLibraryViewModel::removeAnnotationTag,
                         onThemeClick = {
-                            settingsViewModel.setTheme(
+                            shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
                             )
                         },
                         onQuickBackupClick = {
-                            settingsViewModel.pushGoogleDriveSync {
+                            shellViewModel.pushGoogleDriveSync {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
+                        showFullFileTitles = preferences.showFullFileTitles,
                     )
                 },
             )
@@ -593,6 +623,7 @@ fun VaultNavHost(
                 onDeleteAnnotationNote = viewModel::deleteAnnotationNote,
                 onDeleteAnnotation = viewModel::deleteAnnotation,
                 onLinkAnnotationToStudyNote = viewModel::linkAnnotationToStudyNote,
+                onPrepareStudyNoteLinks = viewModel::prepareStudyNoteLinks,
                 onCreateFolder = { parentId, name ->
                     viewModel.createFolder(parentId = parentId, name = name)
                 },
@@ -604,15 +635,23 @@ fun VaultNavHost(
                 onImportFiles = { uris ->
                     viewModel.importFiles(uris)
                 },
+                onReplaceDuplicatePdf = viewModel::replaceDuplicatePdf,
+                onSkipDuplicatePdf = viewModel::skipDuplicatePdf,
                 onDismissImportMessage = viewModel::clearImportMessage,
                 onRenameFile = viewModel::renameFile,
                 onMoveFile = viewModel::moveFile,
                 onSetFilePinned = viewModel::setFilePinned,
                 onDeleteFile = viewModel::deleteFile,
+                onExportFile = { fileId, uri ->
+                    viewModel.exportFile(fileId, uri) {
+                        Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                    }
+                },
                 onAddAttachmentTag = viewModel::addAttachmentTag,
                 onRemoveAttachmentTag = viewModel::removeAttachmentTag,
                 onAddAnnotationTag = viewModel::addAnnotationTag,
                 onRemoveAnnotationTag = viewModel::removeAnnotationTag,
+                showFullFileTitles = preferences.showFullFileTitles,
             )
         }
         composable(
@@ -620,9 +659,7 @@ fun VaultNavHost(
             arguments = listOf(navArgument("folderId") { type = NavType.StringType }),
         ) {
             val viewModel: FolderViewModel = hiltViewModel()
-            val settingsViewModel: SettingsViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             FolderViewScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
@@ -660,13 +697,10 @@ fun VaultNavHost(
                 },
             ),
         ) { backStackEntry ->
-            val context = LocalContext.current
             val viewModel: NoteViewModel = hiltViewModel()
-            val settingsViewModel: SettingsViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val aiState by viewModel.aiState.collectAsStateWithLifecycle()
             val selectedTextAiState by viewModel.selectedTextAiState.collectAsStateWithLifecycle()
-            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             EditorScreen(
                 uiState = uiState,
                 aiState = aiState,
@@ -713,13 +747,10 @@ fun VaultNavHost(
             route = VaultDestination.Reading.route,
             arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
         ) {
-            val context = LocalContext.current
             val viewModel: NoteViewModel = hiltViewModel()
-            val settingsViewModel: SettingsViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val aiState by viewModel.aiState.collectAsStateWithLifecycle()
             val narrationState by viewModel.narrationState.collectAsStateWithLifecycle()
-            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             ReadingScreen(
                 uiState = uiState,
                 aiState = aiState,
@@ -804,9 +835,7 @@ fun VaultNavHost(
         }
         composable(VaultDestination.Search.route) {
             val viewModel: SearchViewModel = hiltViewModel()
-            val settingsViewModel: SettingsViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
             SearchScreen(
                 uiState = uiState,
                 onBackClick = { navController.popBackStack() },
@@ -822,6 +851,20 @@ fun VaultNavHost(
                 },
             )
         }
+        composable(VaultDestination.QuranReflections.route) {
+            val viewModel: QuranReflectionsViewModel = hiltViewModel()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            QuranReflectionsHubScreen(
+                uiState = uiState,
+                onBackClick = { navController.popBackStack() },
+                onReflectionClick = { reflection ->
+                    pendingQuranVerseKey = reflection.verseKey
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
+                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+                    navController.popBackStack(VaultDestination.Home.route, false)
+                },
+            )
+        }
         composable(
             route = VaultDestination.AttachmentViewer.route,
             arguments = listOf(
@@ -832,7 +875,6 @@ fun VaultNavHost(
                 },
             ),
         ) {
-            val context = LocalContext.current
             val viewModel: AttachmentViewerViewModel = hiltViewModel()
             val attachment by viewModel.attachment.collectAsStateWithLifecycle()
             val pdfProgress by viewModel.pdfProgress.collectAsStateWithLifecycle()
@@ -852,6 +894,11 @@ fun VaultNavHost(
                     viewModel.deleteAttachment {
                         Toast.makeText(context, "Attachment deleted", Toast.LENGTH_SHORT).show()
                         navController.popBackStack()
+                    }
+                },
+                onExportAttachment = { uri ->
+                    viewModel.exportAttachment(uri) {
+                        Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                     }
                 },
             )
@@ -876,9 +923,13 @@ fun VaultNavHost(
             val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
             val storageLabel by viewModel.storageLabel.collectAsStateWithLifecycle()
             val recentlyDeleted by viewModel.recentlyDeleted.collectAsStateWithLifecycle()
+            val recentlyDeletedLoaded by viewModel.recentlyDeletedLoaded.collectAsStateWithLifecycle()
             val driveRestoreState by viewModel.driveRestoreState.collectAsStateWithLifecycle()
             val supabaseSession by viewModel.supabaseSession.collectAsStateWithLifecycle()
             var backupMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            LaunchedEffect(viewModel) {
+                viewModel.refreshStorage()
+            }
             SettingsScreen(
                 preferences = preferences,
                 onBackClick = { navController.popBackStack() },
@@ -889,11 +940,15 @@ fun VaultNavHost(
                 onDashboardFontSizeSelected = viewModel::setDashboardFontSize,
                 onNoteFontSizeSelected = viewModel::setNoteFontSize,
                 onNotePreviewSelected = viewModel::setNotePreview,
+                onShowFullNoteTitlesChanged = viewModel::setShowFullNoteTitles,
+                onShowFullFileTitlesChanged = viewModel::setShowFullFileTitles,
                 onDefaultNoteViewSelected = viewModel::setDefaultNoteView,
                 onSecurityLockChanged = viewModel::setSecurityLockEnabled,
                 onSecurityLockTimeoutSelected = viewModel::setSecurityLockTimeout,
                 storageLabel = storageLabel,
                 recentlyDeleted = recentlyDeleted,
+                recentlyDeletedLoaded = recentlyDeletedLoaded,
+                onRecentlyDeletedOpened = viewModel::observeRecentlyDeleted,
                 onRestoreDeletedNote = viewModel::restoreNote,
                 onPermanentlyDeleteNote = { noteId -> viewModel.permanentlyDeleteNote(noteId) { backupMessage = it } },
                 onRestoreDeletedFolder = viewModel::restoreFolder,
@@ -902,7 +957,9 @@ fun VaultNavHost(
                 googleDriveSignInIntent = viewModel.googleDriveSignInIntent(),
                 onGoogleDriveSignInResult = { data -> viewModel.handleGoogleDriveSignInResult(data) { backupMessage = it } },
                 onGoogleDrivePush = { viewModel.pushGoogleDriveSync { backupMessage = it } },
+                onGoogleDriveForcePush = { viewModel.forcePushGoogleDriveSync { backupMessage = it } },
                 onGoogleDrivePull = { viewModel.pullGoogleDriveSync { backupMessage = it } },
+                onBackupSettingsOpened = viewModel::observeDriveRestoreState,
                 supabaseAiEmail = supabaseSession.email,
                 onSupabaseAiLogin = { email, password -> viewModel.signInSupabaseAi(email, password) { backupMessage = it } },
                 onSupabaseAiLogout = { viewModel.signOutSupabaseAi { backupMessage = it } },
@@ -1045,7 +1102,7 @@ private fun StudyLibraryPersonalShell(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { page -> modes[page].name },
-            beyondViewportPageCount = 0,
+            beyondViewportPageCount = 1,
             flingBehavior = PagerDefaults.flingBehavior(
                 state = pagerState,
                 snapPositionalThreshold = 0.18f,
@@ -1201,6 +1258,7 @@ private fun String.toNoteBodyFontSizeSp(): Float =
 private fun String.toDashboardFontSizeSp(): Float =
     when (this) {
         "small" -> 13f
+        "medium_large" -> 15f
         "large" -> 16f
         else -> 14f
     }

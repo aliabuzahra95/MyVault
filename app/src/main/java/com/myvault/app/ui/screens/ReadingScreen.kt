@@ -5,9 +5,13 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -92,6 +97,7 @@ import com.myvault.app.ui.viewmodel.NoteTableUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.NumberFormat
 
 @Composable
 fun ReadingScreen(
@@ -150,6 +156,16 @@ fun ReadingScreen(
             addAll(uiState.folderPath)
         }
     }
+    
+    val wordCount = remember(uiState.richText.text, note?.bodyPlainText) {
+        val text = uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }
+        text.split(Regex("\\s+")).count { it.isNotBlank() }
+    }
+    val charCount = remember(uiState.richText.text, note?.bodyPlainText) {
+        val text = uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }
+        text.length
+    }
+    val numberFormat = remember { NumberFormat.getNumberInstance() }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -216,7 +232,8 @@ fun ReadingScreen(
                         Text(
                             text = listOfNotNull(
                                 note?.updatedAt?.toRelativeTime()?.let { "Edited $it" },
-                                attachmentCount.takeIf { it > 0 }?.let { "$it attachment${if (it == 1) "" else "s"}" },
+                                "${numberFormat.format(wordCount)} words",
+                                "${numberFormat.format(charCount)} chars",
                             ).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium,
                             color = colors.textMuted,
@@ -246,10 +263,29 @@ fun ReadingScreen(
                     ReadOnlyNoteTable(table = table)
                 }
             }
-            if (uiState.attachments.isNotEmpty()) {
-                item { SectionLabel(label = "Attachments") }
-                items(uiState.attachments, key = { it.id }) { attachment ->
-                    AttachmentReadingPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
+            if (uiState.attachmentsLoading || uiState.attachments.isNotEmpty()) {
+                item(key = "attachments_hydration") {
+                    Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                        SectionLabel(label = "Attachments")
+                        Crossfade(
+                            targetState = uiState.attachments,
+                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            label = "readingAttachmentsHydration",
+                        ) { attachments ->
+                            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                                if (attachments.isEmpty()) {
+                                    AttachmentHydrationPlaceholder(count = uiState.attachmentCount)
+                                } else {
+                                    attachments.forEach { attachment ->
+                                        AttachmentReadingPreview(
+                                            attachment = attachment,
+                                            onClick = { onAttachmentClick(attachment.id) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (uiState.sourceReferences.isNotEmpty()) {
@@ -414,6 +450,32 @@ fun ReadingScreen(
             title = { Text("Version history") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    // Always show current version details at the top
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = colors.accentSoft,
+                        shape = VaultShapes.md,
+                        border = BorderStroke(1.dp, colors.accentBorder),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(VaultSpacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                "Current Note Stats",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+                                color = colors.accent,
+                            )
+                            Text(
+                                "${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} characters",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textSecondary,
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
                     if (uiState.versions.isEmpty()) {
                         Text(
                             "No saved versions yet. MyVault creates versions as you make meaningful note changes.",
@@ -439,7 +501,7 @@ fun ReadingScreen(
                                         color = colors.text,
                                     )
                                     Text(
-                                        "${version.wordCount} words · ${version.characterCount} characters",
+                                        "${numberFormat.format(version.wordCount)} words · ${numberFormat.format(version.characterCount)} characters",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = colors.textMuted,
                                     )
@@ -654,8 +716,7 @@ private fun SourceReferenceCardRow(
                     text = source.title,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
                     color = if (source.unavailable) colors.textMuted else colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = when {
@@ -787,7 +848,9 @@ private fun RichNoteBody(
             color = colors.textMuted,
         )
     } else {
-        val annotated = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
+        val annotated = remember(bodyText, richText.styleMarks, richText.noteLinks, colors) {
+            buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
+        }
         SelectionContainer(
             modifier = modifier
                 .fillMaxWidth()
@@ -888,6 +951,46 @@ private fun ReadOnlyNoteTable(table: NoteTableUiState) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentHydrationPlaceholder(count: Int) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
+        color = colors.surface.copy(alpha = 0.72f),
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(colors.inset, VaultShapes.md),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.AttachFile, null, modifier = Modifier.size(20.dp), tint = colors.textMuted)
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (count > 1) "Loading attachments..." else "Loading attachment...",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                    color = colors.text,
+                )
+                Text(
+                    text = "Preparing file preview",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                )
             }
         }
     }

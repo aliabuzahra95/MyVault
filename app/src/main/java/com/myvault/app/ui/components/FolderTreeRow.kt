@@ -83,6 +83,7 @@ fun FolderTreeRow(
     onSelectionToggle: (VaultTreeItem) -> Unit = {},
     organizeMode: Boolean = false,
     notePreviewLines: Int = 0,
+    showFullNoteTitles: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
@@ -112,6 +113,7 @@ fun FolderTreeRow(
             selected = isSelected(item.id),
             organizeMode = organizeMode,
             notePreviewLines = notePreviewLines,
+            showFullNoteTitles = showFullNoteTitles,
             dashboardFontSizeSp = dashboardFontSizeSp,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
@@ -145,9 +147,10 @@ fun FolderTreeRow(
                             selectionMode = selectionMode,
                             isSelected = isSelected,
                             onSelectionToggle = onSelectionToggle,
-                            organizeMode = organizeMode,
-                            notePreviewLines = notePreviewLines,
-                            dashboardFontSizeSp = dashboardFontSizeSp,
+                        organizeMode = organizeMode,
+                        notePreviewLines = notePreviewLines,
+                        showFullNoteTitles = showFullNoteTitles,
+                        dashboardFontSizeSp = dashboardFontSizeSp,
                             canMoveUp = childFolderIndex > 0,
                             canMoveDown = childFolderIndex in 0 until folderChildren.lastIndex,
                             onMoveFolder = onMoveFolder,
@@ -171,6 +174,7 @@ private fun FolderTreeSingleRow(
     selected: Boolean,
     organizeMode: Boolean,
     notePreviewLines: Int,
+    showFullNoteTitles: Boolean,
     dashboardFontSizeSp: Float,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
@@ -208,10 +212,14 @@ private fun FolderTreeSingleRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                start = if (topLevel) 12.dp else (10 + depth * 14).dp,
-                top = if (topLevel) 2.dp else 0.dp,
+                start = when {
+                    topLevel -> 12.dp
+                    isFolder -> (8 + depth * 10).dp
+                    else -> (4 + depth * 9).dp
+                },
+                top = if (topLevel) 1.dp else 0.dp,
                 end = if (topLevel) 12.dp else 8.dp,
-                bottom = if (topLevel) 4.dp else 0.dp,
+                bottom = if (topLevel) 2.dp else 0.dp,
             )
             .clip(rowShape)
             .graphicsLayer {
@@ -258,7 +266,7 @@ private fun FolderTreeSingleRow(
                 .fillMaxWidth()
                 .padding(
                     horizontal = if (topLevel) 12.dp else 10.dp,
-                    vertical = if (topLevel) 10.dp else 8.dp,
+                    vertical = if (topLevel) 8.dp else 7.dp,
                 ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -314,8 +322,8 @@ private fun FolderTreeSingleRow(
                         MaterialTheme.typography.bodySmall.copy(fontSize = (dashboardFontSizeSp - 1.5f).coerceAtLeast(12f).sp, fontWeight = FontWeight.W500)
                     },
                     color = if (isSubfolder) subfolderAccent else colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    maxLines = if (!isFolder && showFullNoteTitles) Int.MAX_VALUE else 1,
+                    overflow = if (!isFolder && showFullNoteTitles) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )
                 if (!isFolder && notePreviewLines > 0 && item.preview.isNotBlank()) {
                     Text(

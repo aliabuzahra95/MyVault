@@ -73,6 +73,7 @@ class NoteRepository @Inject constructor(
     fun observeBacklinks(noteId: String): Flow<List<NoteLinkRef>> =
         combine(
             noteDao.observeAll()
+                .debounce(1_500)
                 .map { notes ->
                     notes
                         .filter { it.id != noteId }
@@ -508,25 +509,30 @@ class NoteRepository @Inject constructor(
                     else -> block.content.substringBefore("|")
                 }
             }).trim()
-        val tableText = noteTableDao.getForNote(noteId)
-            .joinToString(separator = "\n") { it.cellsJson.tableText() }
-            .trim()
+        val tableText = if (overrideBlockText != null && noteTableDao.countForNote(noteId) == 0) {
+            ""
+        } else {
+            noteTableDao.getForNote(noteId)
+                .joinToString(separator = "\n") { it.cellsJson.tableText() }
+                .trim()
+        }
         return listOf(blockText, tableText)
             .filter { it.isNotBlank() }
             .joinToString(separator = "\n")
     }
 
     private suspend fun captureVersionIfNeeded(noteId: String) {
-        val note = noteDao.getAllIncludingDeleted().firstOrNull { it.id == noteId && it.deletedAt == null } ?: return
+        val note = noteDao.getById(noteId) ?: return
+        val latest = noteVersionDao.latestForNote(noteId)
+        if (latest != null && System.currentTimeMillis() - latest.createdAt < VersionSnapshotIntervalMs) return
+
         val blocks = blockDao.getForNote(noteId)
         val richTextBlock = blocks.firstOrNull { it.type == "rich_text" }
         val richHtmlBlock = blocks.firstOrNull { it.type == "rich_html" }
         val plainText = currentBodyPlainText(noteId)
         if (plainText.isBlank() && richHtmlBlock?.content.isNullOrBlank()) return
 
-        val latest = noteVersionDao.latestForNote(noteId)
         if (latest?.bodyPlainText == plainText && latest.title == note.title) return
-        if (latest != null && System.currentTimeMillis() - latest.createdAt < VersionSnapshotIntervalMs) return
 
         noteVersionDao.upsertAll(
             listOf(
@@ -683,9 +689,9 @@ private fun String.tableText(): String {
 }
 
 private fun String.stripHtml(): String =
-    replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-        .replace(Regex("</p>|</h[1-6]>|</li>|</tr>", RegexOption.IGNORE_CASE), "\n")
-        .replace(Regex("<[^>]+>"), "")
+    replace(HtmlBreakRegex, "\n")
+        .replace(HtmlBlockCloseRegex, "\n")
+        .replace(HtmlTagRegex, "")
         .replace("&nbsp;", " ")
         .replace("&amp;", "&")
         .replace("&lt;", "<")
@@ -696,6 +702,10 @@ private fun String.stripHtml(): String =
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .joinToString("\n")
+
+private val HtmlBreakRegex = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
+private val HtmlBlockCloseRegex = Regex("</p>|</h[1-6]>|</li>|</tr>", RegexOption.IGNORE_CASE)
+private val HtmlTagRegex = Regex("<[^>]+>")
 
 private fun String.toCellsArray(rows: Int, columns: Int): JSONArray {
     val parsed = runCatching { JSONArray(this) }.getOrNull()

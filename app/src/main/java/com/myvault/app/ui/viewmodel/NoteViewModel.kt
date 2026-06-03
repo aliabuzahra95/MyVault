@@ -38,13 +38,21 @@ import com.myvault.app.ui.screens.toJsonArrayString
 import com.myvault.app.ui.screens.toNoteLinksJsonArrayString
 import com.myvault.app.ui.screens.parseVaultRichTextDocument
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -69,6 +77,8 @@ data class NoteUiState(
     val richHtml: String = "",
     val richText: VaultRichTextDocument = VaultRichTextDocument("", emptyList(), emptyList()),
     val versions: List<NoteVersionEntity> = emptyList(),
+    val attachmentCount: Int = 0,
+    val attachmentsLoading: Boolean = false,
 )
 
 data class NoteLinkSuggestion(
@@ -149,6 +159,7 @@ class NoteViewModel @Inject constructor(
 ) : ViewModel() {
     private val noteId: String = savedStateHandle.get<String>("noteId").orEmpty()
     private val noteRepository = noteRepository
+    private val secondaryDataReady = MutableStateFlow(false)
     private val noteWithFolderPath = combine(
         noteRepository.observeNote(noteId),
         noteRepository.observeFolderPath(noteId),
@@ -156,35 +167,89 @@ class NoteViewModel @Inject constructor(
         note to folderPath
     }
 
+    private fun <T> deferredSecondaryFlow(initialValue: T, source: Flow<T>): Flow<T> = flow {
+        emit(initialValue)
+        secondaryDataReady.filter { it }.first()
+        emitAll(source)
+    }
+
+    private data class AttachmentHydrationState(
+        val attachments: List<AttachmentEntity> = emptyList(),
+        val loaded: Boolean = false,
+    )
+
+    private data class NoteRichContentState(
+        val richHtml: String = "",
+        val richText: VaultRichTextDocument = VaultRichTextDocument("", emptyList(), emptyList()),
+    )
+
+    private val deferredAttachments = flow {
+        emit(AttachmentHydrationState())
+        secondaryDataReady.filter { it }.first()
+        emitAll(
+            attachmentRepository.observeForNote(noteId)
+                .map { AttachmentHydrationState(attachments = it, loaded = true) },
+            )
+    }
+
+    private val richContentState = combine(
+        noteRepository.observeRawBlocks(noteId),
+        noteRepository.observeNote(noteId)
+            .map { it?.bodyPlainText }
+            .distinctUntilChanged(),
+    ) { rawBlocks, bodyPlainText ->
+        NoteRichContentState(
+            richHtml = richHtmlFrom(rawBlocks, bodyPlainText),
+            richText = richTextFrom(rawBlocks, bodyPlainText),
+        )
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+
     private val noteContentState = combine(
         noteWithFolderPath,
-        noteRepository.observeTags(noteId),
+        deferredSecondaryFlow(emptyList(), noteRepository.observeTags(noteId)),
         noteRepository.observeBlocks(noteId),
-        noteRepository.observeRawBlocks(noteId),
-        attachmentRepository.observeForNote(noteId),
-    ) { noteAndPath, tags, blocks, rawBlocks, attachments ->
+        deferredAttachments,
+        richContentState,
+    ) { noteAndPath, tags, blocks, attachmentHydration, richContent ->
         val (note, folderPath) = noteAndPath
         NoteUiState(
             note = note,
             folderPath = folderPath,
             tags = tags,
             blocks = blocks,
-            attachments = attachments,
-            richHtml = richHtmlFrom(rawBlocks, note?.bodyPlainText),
-            richText = richTextFrom(rawBlocks, note?.bodyPlainText),
+            attachments = attachmentHydration.attachments,
+            attachmentCount = attachmentHydration.attachments.size,
+            attachmentsLoading = !attachmentHydration.loaded,
+            richHtml = richContent.richHtml,
+            richText = richContent.richText,
         )
+    }.let { contentFlow ->
+        combine(
+            contentFlow,
+            attachmentRepository.observeCountForNote(noteId),
+        ) { state, attachmentCount ->
+            state.copy(
+                attachmentCount = maxOf(attachmentCount, state.attachments.size),
+                attachmentsLoading = attachmentCount > 0 && state.attachmentsLoading,
+            )
+        }
     }
 
     private val coreUiState = combine(
         noteContentState,
-        noteRepository.observeAllNotes()
-            .map { notes ->
-                notes
-                    .filter { it.id != noteId }
-                    .map { NoteLinkSuggestion(it.id, it.title) }
-            }
-            .distinctUntilChanged(),
-        noteRepository.observeBacklinks(noteId),
+        deferredSecondaryFlow(
+            emptyList(),
+            noteRepository.observeAllNotes()
+                .map { notes ->
+                    notes
+                        .filter { it.id != noteId }
+                        .map { NoteLinkSuggestion(it.id, it.title) }
+                }
+                .distinctUntilChanged(),
+        ),
+        deferredSecondaryFlow(emptyList(), noteRepository.observeBacklinks(noteId)),
     ) { state, noteSuggestions, backlinks ->
         state.copy(
             allNotes = noteSuggestions,
@@ -194,10 +259,10 @@ class NoteViewModel @Inject constructor(
 
     val uiState: StateFlow<NoteUiState> = combine(
         coreUiState,
-        noteRepository.observeTables(noteId),
-        noteRepository.observeVersions(noteId),
-        knowledgeRepository.observeSourceReferencesForNote(noteId),
-        knowledgeRepository.observeTagsFor(KnowledgeRepository.TargetNote, noteId),
+        deferredSecondaryFlow(emptyList(), noteRepository.observeTables(noteId)),
+        deferredSecondaryFlow(emptyList(), noteRepository.observeVersions(noteId)),
+        deferredSecondaryFlow(emptyList(), knowledgeRepository.observeSourceReferencesForNote(noteId)),
+        deferredSecondaryFlow(emptyList(), knowledgeRepository.observeTagsFor(KnowledgeRepository.TargetNote, noteId)),
     ) { state, tables, versions, sourceReferences, knowledgeTags ->
         state.copy(
             tables = tables.map { it.toUiState() },
@@ -216,6 +281,11 @@ class NoteViewModel @Inject constructor(
     init {
         viewModelScope.launch { seeder.seedIfNeeded() }
         viewModelScope.launch {
+            delay(320)
+            secondaryDataReady.value = true
+        }
+        viewModelScope.launch {
+            secondaryDataReady.filter { it }.first()
             val summaries = aiConversationRepository.conversationSummaries(noteId)
             val savedSession = aiConversationRepository.loadLatestSession(noteId)
             if (savedSession != null && savedSession.messages.isNotEmpty() && _aiState.value.messages.isEmpty()) {

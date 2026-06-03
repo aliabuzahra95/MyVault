@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,7 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.data.preferences.VaultUserPreferences
+import com.myvault.app.data.sync.DriveConflictMessage
 import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.DriveRestoreStage
 import com.myvault.app.ui.viewmodel.DeletedItemUiState
@@ -80,11 +82,15 @@ fun SettingsScreen(
     onDashboardFontSizeSelected: (String) -> Unit = {},
     onNoteFontSizeSelected: (String) -> Unit = {},
     onNotePreviewSelected: (String) -> Unit = {},
+    onShowFullNoteTitlesChanged: (Boolean) -> Unit = {},
+    onShowFullFileTitlesChanged: (Boolean) -> Unit = {},
     onDefaultNoteViewSelected: (String) -> Unit = {},
     onSecurityLockChanged: (Boolean) -> Unit = {},
     onSecurityLockTimeoutSelected: (Long) -> Unit = {},
     storageLabel: String = "Calculating...",
     recentlyDeleted: RecentlyDeletedUiState = RecentlyDeletedUiState(),
+    recentlyDeletedLoaded: Boolean = false,
+    onRecentlyDeletedOpened: () -> Unit = {},
     onRestoreDeletedNote: (String) -> Unit = {},
     onPermanentlyDeleteNote: (String) -> Unit = {},
     onRestoreDeletedFolder: (String) -> Unit = {},
@@ -93,7 +99,9 @@ fun SettingsScreen(
     googleDriveSignInIntent: Intent? = null,
     onGoogleDriveSignInResult: (Intent?) -> Unit = {},
     onGoogleDrivePush: () -> Unit = {},
+    onGoogleDriveForcePush: () -> Unit = {},
     onGoogleDrivePull: () -> Unit = {},
+    onBackupSettingsOpened: () -> Unit = {},
     supabaseAiEmail: String = "",
     onSupabaseAiLogin: (String, String) -> Unit = { _, _ -> },
     onSupabaseAiLogout: () -> Unit = {},
@@ -114,6 +122,7 @@ fun SettingsScreen(
     var backupSettingsOpen by remember { mutableStateOf(false) }
     var aiLoginOpen by remember { mutableStateOf(false) }
     var driveRestoreConfirmOpen by remember { mutableStateOf(false) }
+    var driveConflictOpen by remember { mutableStateOf(false) }
     var releaseReadinessOpen by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         uri?.let(onBackupSelected)
@@ -123,6 +132,11 @@ fun SettingsScreen(
     }
     val googleDriveSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         onGoogleDriveSignInResult(result.data)
+    }
+    val driveConflictDetected = driveRestoreState.message == DriveConflictMessage || backupMessage == DriveConflictMessage
+
+    LaunchedEffect(driveConflictDetected) {
+        if (driveConflictDetected) driveConflictOpen = true
     }
 
     Scaffold(modifier = modifier.fillMaxSize(), containerColor = colors.bg) { innerPadding ->
@@ -154,7 +168,8 @@ fun SettingsScreen(
                     preferences = preferences,
                     onDashboardFontSizeClick = { dashboardFontSizeDialogOpen = true },
                     onNoteFontSizeClick = { noteFontSizeDialogOpen = true },
-                    onNotePreviewClick = { notePreviewDialogOpen = true },
+                    onShowFullNoteTitlesChanged = onShowFullNoteTitlesChanged,
+                    onShowFullFileTitlesChanged = onShowFullFileTitlesChanged,
                     onDefaultViewClick = { defaultViewDialogOpen = true },
                 )
             }
@@ -168,15 +183,21 @@ fun SettingsScreen(
                     onBackupSettingsClick = { backupSettingsOpen = true },
                     onAiLoginClick = { aiLoginOpen = true },
                     onLockTimerClick = { lockTimerDialogOpen = true },
-                    onRecentlyDeletedClick = { recentlyDeletedOpen = true },
+                    onRecentlyDeletedClick = {
+                        onRecentlyDeletedOpened()
+                        recentlyDeletedOpen = true
+                    },
                     onReleaseReadinessClick = { releaseReadinessOpen = true },
-                    recentlyDeletedCount = recentlyDeleted.notes.size + recentlyDeleted.folders.size,
+                    recentlyDeletedCount = if (recentlyDeletedLoaded) recentlyDeleted.notes.size + recentlyDeleted.folders.size else null,
                 )
             }
         }
     }
 
     if (backupSettingsOpen) {
+        LaunchedEffect(Unit) {
+            onBackupSettingsOpened()
+        }
         BackupSettingsDialog(
             preferences = preferences,
             onDismiss = { backupSettingsOpen = false },
@@ -239,6 +260,53 @@ fun SettingsScreen(
         )
     }
 
+    if (driveConflictOpen) {
+        AlertDialog(
+            onDismissRequest = {
+                driveConflictOpen = false
+                onDismissBackupMessage()
+            },
+            title = { Text("Cloud Backup Is Newer") },
+            text = {
+                Text(
+                    "Google Drive contains a newer MyVault backup than this device last synced with.\n\nIf this device contains the correct/latest vault, you may force push this device and replace the current Drive sync state.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        driveConflictOpen = false
+                        onDismissBackupMessage()
+                        onGoogleDrivePull()
+                    },
+                ) {
+                    Text("Pull Latest")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                    TextButton(
+                        onClick = {
+                            driveConflictOpen = false
+                            onDismissBackupMessage()
+                            onGoogleDriveForcePush()
+                        },
+                    ) {
+                        Text("Force Push Local Vault")
+                    }
+                    TextButton(
+                        onClick = {
+                            driveConflictOpen = false
+                            onDismissBackupMessage()
+                        },
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            },
+        )
+    }
+
     if (releaseReadinessOpen) {
         ReleaseReadinessDialog(onDismiss = { releaseReadinessOpen = false })
     }
@@ -249,6 +317,7 @@ fun SettingsScreen(
             options = listOf(
                 SettingsChoice("small", "Small"),
                 SettingsChoice("medium", "Medium"),
+                SettingsChoice("medium_large", "Medium-Large"),
                 SettingsChoice("large", "Large"),
             ),
             selectedValue = preferences.dashboardFontSize,
@@ -483,7 +552,8 @@ private fun SettingsGroupEditor(
     preferences: VaultUserPreferences,
     onDashboardFontSizeClick: () -> Unit,
     onNoteFontSizeClick: () -> Unit,
-    onNotePreviewClick: () -> Unit,
+    onShowFullNoteTitlesChanged: (Boolean) -> Unit,
+    onShowFullFileTitlesChanged: (Boolean) -> Unit,
     onDefaultViewClick: () -> Unit,
 ) {
     Column(
@@ -492,7 +562,8 @@ private fun SettingsGroupEditor(
     ) {
         SettingsRow(Icons.Rounded.TextFields, "Dashboard font size", preferences.dashboardFontSize.displayPreference(), onClick = onDashboardFontSizeClick)
         SettingsRow(Icons.Rounded.TextFields, "Note editor font size", preferences.noteFontSize.displayPreference(), onClick = onNoteFontSizeClick)
-        SettingsRow(Icons.Rounded.Visibility, "Note Preview", preferences.notePreview.displayNotePreview(), onClick = onNotePreviewClick)
+        SettingsRow(Icons.Rounded.Visibility, "Show full note titles", if (preferences.showFullNoteTitles) "On" else "Off", onClick = { onShowFullNoteTitlesChanged(!preferences.showFullNoteTitles) })
+        SettingsRow(Icons.Rounded.Visibility, "Show full file titles", if (preferences.showFullFileTitles) "On" else "Off", onClick = { onShowFullFileTitlesChanged(!preferences.showFullFileTitles) })
         SettingsRow(Icons.Rounded.Visibility, "Default note view", preferences.defaultNoteView.displayPreference(), onClick = onDefaultViewClick)
     }
 }
@@ -507,7 +578,7 @@ private fun SettingsGroupVault(
     onLockTimerClick: () -> Unit,
     onRecentlyDeletedClick: () -> Unit,
     onReleaseReadinessClick: () -> Unit,
-    recentlyDeletedCount: Int,
+    recentlyDeletedCount: Int?,
 ) {
     Column(
         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
@@ -520,7 +591,12 @@ private fun SettingsGroupVault(
             onClick = onBackupSettingsClick,
         )
         SettingsRow(Icons.Rounded.Psychology, "ChatGPT AI login", "Supabase account", onClick = onAiLoginClick)
-        SettingsRow(Icons.Rounded.RestoreFromTrash, "Recently Deleted", "$recentlyDeletedCount item${if (recentlyDeletedCount == 1) "" else "s"}", onClick = onRecentlyDeletedClick)
+        SettingsRow(
+            Icons.Rounded.RestoreFromTrash,
+            "Recently Deleted",
+            recentlyDeletedCount?.let { "$it item${if (it == 1) "" else "s"}" } ?: "Open",
+            onClick = onRecentlyDeletedClick,
+        )
         SettingsRow(Icons.Rounded.Lock, "Security lock", if (preferences.securityLockEnabled) "On" else "Off", onClick = onSecurityLockClick)
         SettingsRow(Icons.Rounded.Timer, "Auto-lock timer", preferences.securityLockTimeoutMs.displayLockTimeout(), onClick = onLockTimerClick)
         SettingsRow(Icons.Rounded.Verified, "Release readiness", "Checklist", onClick = onReleaseReadinessClick)
@@ -848,7 +924,10 @@ private fun SettingsChoiceDialog(
 }
 
 private fun String.displayPreference(): String =
-    replaceFirstChar { it.uppercase() }
+    when (this) {
+        "medium_large" -> "Medium-Large"
+        else -> replaceFirstChar { it.uppercase() }
+    }
 
 private fun String.displayNotePreview(): String = when (this) {
     "one" -> "1 line"

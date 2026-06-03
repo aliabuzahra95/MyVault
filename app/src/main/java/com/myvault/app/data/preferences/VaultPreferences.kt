@@ -31,6 +31,8 @@ data class VaultUserPreferences(
     val dashboardFontSize: String = "medium",
     val noteFontSize: String = "medium",
     val notePreview: String = "off",
+    val showFullNoteTitles: Boolean = false,
+    val showFullFileTitles: Boolean = false,
     val defaultNoteView: String = "reading",
     val autoTagSuggestions: Boolean = true,
     val securityLockEnabled: Boolean = false,
@@ -68,6 +70,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 dashboardFontSize = preferences[Keys.DashboardFontSize] ?: preferences[Keys.FontSize] ?: "medium",
                 noteFontSize = preferences[Keys.NoteFontSize] ?: preferences[Keys.FontSize] ?: "medium",
                 notePreview = preferences[Keys.NotePreview] ?: "off",
+                showFullNoteTitles = preferences[Keys.ShowFullNoteTitles] ?: false,
+                showFullFileTitles = preferences[Keys.ShowFullFileTitles] ?: false,
                 defaultNoteView = preferences[Keys.DefaultNoteView] ?: "reading",
                 autoTagSuggestions = preferences[Keys.AutoTagSuggestions] ?: true,
                 securityLockEnabled = preferences[Keys.SecurityLockEnabled] ?: false,
@@ -145,6 +149,18 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     suspend fun setNotePreview(notePreview: String) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.NotePreview] = notePreview
+        }
+    }
+
+    suspend fun setShowFullNoteTitles(show: Boolean) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.ShowFullNoteTitles] = show
+        }
+    }
+
+    suspend fun setShowFullFileTitles(show: Boolean) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.ShowFullFileTitles] = show
         }
     }
 
@@ -311,6 +327,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val DashboardFontSize: Preferences.Key<String> = stringPreferencesKey("dashboard_font_size")
         val NoteFontSize: Preferences.Key<String> = stringPreferencesKey("note_font_size")
         val NotePreview: Preferences.Key<String> = stringPreferencesKey("note_preview")
+        val ShowFullNoteTitles: Preferences.Key<Boolean> = booleanPreferencesKey("show_full_note_titles")
+        val ShowFullFileTitles: Preferences.Key<Boolean> = booleanPreferencesKey("show_full_file_titles")
         val DefaultNoteView: Preferences.Key<String> = stringPreferencesKey("default_note_view")
         val AutoTagSuggestions: Preferences.Key<Boolean> = booleanPreferencesKey("auto_tag_suggestions")
         val SecurityLockEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("security_lock_enabled")

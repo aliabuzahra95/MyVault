@@ -40,6 +40,10 @@ class GoogleDriveRestoreController @Inject constructor(
         enqueue(DriveSyncWorker.OperationPush, "Drive backup started. You can leave MyVault while it continues.", onComplete)
     }
 
+    fun startForcePush(onComplete: (DriveSyncResult) -> Unit = {}) {
+        enqueue(DriveSyncWorker.OperationForcePush, "Drive force push started. You can leave MyVault while it continues.", onComplete)
+    }
+
     fun startRestore(onComplete: (DriveSyncResult) -> Unit = {}) {
         enqueue(DriveSyncWorker.OperationPull, "Drive restore started. You can leave MyVault while it continues.", onComplete)
     }

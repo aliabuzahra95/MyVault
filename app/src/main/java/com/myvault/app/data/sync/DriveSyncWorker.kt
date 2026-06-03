@@ -29,6 +29,7 @@ class DriveSyncWorker @AssistedInject constructor(
             publishProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = operation.progressTitle()))
             when (operation) {
                 OperationPull -> googleDriveSyncRepository.pullLatestFromDrive { publishProgress(it) }
+                OperationForcePush -> googleDriveSyncRepository.pushToDrive(force = true) { publishProgress(it) }
                 else -> googleDriveSyncRepository.pushToDrive { publishProgress(it) }
             }
         } catch (error: Throwable) {
@@ -117,6 +118,7 @@ class DriveSyncWorker @AssistedInject constructor(
         const val UniqueWorkName = "myvault-google-drive-sync"
         const val Tag = "google-drive-sync"
         const val OperationPush = "push"
+        const val OperationForcePush = "force_push"
         const val OperationPull = "pull"
         const val KeyOperation = "operation"
         const val KeyStage = "stage"

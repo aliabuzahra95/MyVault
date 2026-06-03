@@ -85,6 +85,8 @@ class AttachmentRepository @Inject constructor(
 
     fun observeForNote(noteId: String) = attachmentDao.observeForNote(noteId)
 
+    fun observeCountForNote(noteId: String) = attachmentDao.observeCountForNote(noteId)
+
     fun observeLibraryFiles() = attachmentDao.observeLibraryFiles()
 
     fun observeForLibraryFolder(folderId: String) = attachmentDao.observeForLibraryFolder(folderId)
@@ -93,6 +95,19 @@ class AttachmentRepository @Inject constructor(
 
     suspend fun displayName(uri: Uri): String = withContext(Dispatchers.IO) {
         context.contentResolver.displayName(uri)
+    }
+
+    suspend fun findDuplicateLibraryPdf(folderId: String?, uri: Uri): AttachmentEntity? = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val fileName = resolver.displayName(uri).sanitizeFileName()
+        val mimeType = resolver.getType(uri).orEmpty()
+        if (!fileName.isPdfFileName() && mimeType != "application/pdf") return@withContext null
+        attachmentDao.getAll()
+            .firstOrNull { attachment ->
+                attachment.libraryFolderId == folderId &&
+                    attachment.fileName.equals(fileName, ignoreCase = true) &&
+                    (attachment.mimeType == "application/pdf" || attachment.fileName.isPdfFileName())
+            }
     }
 
     suspend fun attachDocument(noteId: String, uri: Uri): String = withContext(Dispatchers.IO) {
@@ -154,6 +169,51 @@ class AttachmentRepository @Inject constructor(
             ),
         )
         id
+    }
+
+    suspend fun replaceLibraryPdf(existingAttachmentId: String, uri: Uri): String = withContext(Dispatchers.IO) {
+        val existing = attachmentDao.getByIdIncludingDeleted(existingAttachmentId)
+            ?: error("Original PDF could not be found")
+        val resolver = context.contentResolver
+        val fileName = resolver.displayName(uri).sanitizeFileName().ifBlank { existing.fileName }
+        val mimeType = resolver.getType(uri) ?: existing.mimeType
+        check(fileName.isPdfFileName() || mimeType == "application/pdf") { "Only PDFs can be replaced here." }
+        val attachmentsDir = File(context.filesDir, "library/${existing.libraryFolderId ?: "root"}").apply { mkdirs() }
+        val localFile = File(attachmentsDir, "${existing.id}_$fileName")
+
+        resolver.openInputStream(uri)?.use { input ->
+            localFile.outputStream().use { output -> input.copyTo(output) }
+        } ?: error("Unable to open selected file")
+
+        runCatching {
+            File(existing.localPath).takeIf { it.absolutePath != localFile.absolutePath && it.exists() }?.delete()
+        }
+        val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
+        attachmentDao.upsertAll(
+            listOf(
+                existing.copy(
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    sizeBytes = sizeBytes,
+                    localPath = localFile.absolutePath,
+                    deletedAt = null,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            ),
+        )
+        existing.id
+    }
+
+    suspend fun exportAttachmentToUri(attachmentId: String, destination: Uri) = withContext(Dispatchers.IO) {
+        val attachment = attachmentDao.getByIdIncludingDeleted(attachmentId)
+            ?: error("File could not be found in MyVault.")
+        check(attachment.deletedAt == null) { "File is no longer available." }
+        val source = File(attachment.localPath)
+        check(source.exists() && source.isFile) { "Stored file is missing. It may need to be restored from backup." }
+
+        context.contentResolver.openOutputStream(destination)?.use { output ->
+            source.inputStream().use { input -> input.copyTo(output) }
+        } ?: error("Unable to open the selected save location.")
     }
 
     suspend fun importLibraryDocuments(folderId: String?, uris: List<Uri>): LibraryImportResult = withContext(Dispatchers.IO) {
@@ -228,3 +288,6 @@ private fun android.content.ContentResolver.fileSize(uri: Uri): Long =
 
 private fun String.sanitizeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+
+private fun String.isPdfFileName(): Boolean =
+    endsWith(".pdf", ignoreCase = true)

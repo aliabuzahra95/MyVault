@@ -1,5 +1,6 @@
 package com.myvault.app.ui.viewmodel
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -54,6 +55,14 @@ class AttachmentViewerViewModel @Inject constructor(
         viewModelScope.launch {
             attachmentRepository.deleteAttachment(attachmentId)
             onDeleted()
+        }
+    }
+
+    fun exportAttachment(destination: Uri, onComplete: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching { attachmentRepository.exportAttachmentToUri(attachmentId, destination) }
+                .onSuccess { onComplete("File saved to device.") }
+                .onFailure { onComplete(it.message ?: "Could not save file.") }
         }
     }
 

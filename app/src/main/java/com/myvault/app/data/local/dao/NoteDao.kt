@@ -33,6 +33,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id AND deletedAt IS NULL")
     fun observeById(id: String): Flow<NoteEntity?>
 
+    @Query("SELECT * FROM notes WHERE id = :id AND deletedAt IS NULL")
+    suspend fun getById(id: String): NoteEntity?
+
     @Query("SELECT COUNT(*) FROM notes")
     suspend fun count(): Int
 
