@@ -11,6 +11,8 @@ import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.FrameLayout
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -316,6 +318,8 @@ private fun PdfAttachmentViewer(
     var noteDialogAnnotation by remember { mutableStateOf<PdfAnnotationEntity?>(null) }
     var noteDraft by remember { mutableStateOf("") }
     var pdfView by remember(attachment.id) { mutableStateOf<PDFView?>(null) }
+    var allowPdfViewCreation by remember(attachment.localPath) { mutableStateOf(false) }
+    var pdfReady by remember(attachment.localPath) { mutableStateOf(false) }
     var dragStart by remember(attachment.id) { mutableStateOf<Offset?>(null) }
     var dragEnd by remember(attachment.id) { mutableStateOf<Offset?>(null) }
     var highlightSaveMessage by remember(attachment.id) { mutableStateOf<String?>(null) }
@@ -400,6 +404,19 @@ private fun PdfAttachmentViewer(
         }
     }
 
+    LaunchedEffect(attachment.localPath) {
+        allowPdfViewCreation = false
+        pdfReady = false
+        delay(120)
+        allowPdfViewCreation = true
+    }
+
+    val pdfAlpha by animateFloatAsState(
+        targetValue = if (pdfReady) 1f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "pdfContentAlpha",
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
         when {
             error != null -> AttachmentViewerEmpty(error ?: "Unable to load PDF")
@@ -408,139 +425,145 @@ private fun PdfAttachmentViewer(
                 if (!file.exists() || !file.isFile) {
                     AttachmentViewerEmpty("PDF file is missing")
                 } else {
-                    AndroidView(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(VaultThemeTokens.colors.inset),
-                        factory = { context ->
-                            HighlightablePdfContainer(context).apply {
-                                val pdf = this.pdfView
-                                pdfView = pdf
-                                pdfSurfaceColor = surfaceColorArgb
-                                setBackgroundColor(surfaceColorArgb)
-                                onHighlightDragStart = { x, y ->
+                    if (allowPdfViewCreation) {
+                        AndroidView(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(VaultThemeTokens.colors.inset)
+                                .graphicsLayer { alpha = pdfAlpha },
+                            factory = { context ->
+                                HighlightablePdfContainer(context).apply {
+                                    val pdf = this.pdfView
+                                    pdfView = pdf
+                                    pdfSurfaceColor = surfaceColorArgb
+                                    setBackgroundColor(surfaceColorArgb)
+                                    onHighlightDragStart = { x, y ->
+                                        val offset = Offset(x, y)
+                                        dragStart = offset
+                                        dragEnd = offset
+                                    }
+                                    onHighlightDragMove = { x, y ->
+                                        dragEnd = Offset(x, y)
+                                    }
+                                    onHighlightDragEnd = {
+                                        finishHighlightDrag()
+                                    }
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                    )
+                                    pdf.setMinZoom(1f)
+                                    pdf.setMidZoom(2.25f)
+                                    pdf.setMaxZoom(5f)
+                                    pdf.fromFile(file)
+                                        .enableSwipe(true)
+                                        .swipeHorizontal(false)
+                                        .enableDoubleTap(true)
+                                        .defaultPage(pageIndex)
+                                        .enableAnnotationRendering(false)
+                                        .enableAntialiasing(true)
+                                        .spacing(4)
+                                        .autoSpacing(false)
+                                        .pageFitPolicy(FitPolicy.WIDTH)
+                                        .fitEachPage(true)
+                                        .pageSnap(false)
+                                        .pageFling(false)
+                                        .onLoad(object : OnLoadCompleteListener {
+                                            override fun loadComplete(totalPages: Int) {
+                                                pageCount = totalPages
+                                                error = null
+                                                val targetPage = pageIndex.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+                                                pageIndex = targetPage
+                                                pdf.jumpTo(targetPage, false)
+                                                onProgressChanged(targetPage, totalPages)
+                                                pdfReady = true
+                                            }
+                                        })
+                                        .onPageChange(object : OnPageChangeListener {
+                                            override fun onPageChanged(page: Int, totalPages: Int) {
+                                                pageIndex = page
+                                                pageCount = totalPages
+                                                onProgressChanged(page.coerceIn(0, (totalPages - 1).coerceAtLeast(0)), totalPages)
+                                            }
+                                        })
+                                        .onDrawAll(object : OnDrawListener {
+                                            override fun onLayerDrawn(
+                                                canvas: android.graphics.Canvas?,
+                                                pageWidth: Float,
+                                                pageHeight: Float,
+                                                currentPage: Int,
+                                            ) {
+                                                if (canvas == null) return
+                                                drawPdfHighlights(
+                                                    canvas = canvas,
+                                                    pdfView = pdf,
+                                                    pageIndex = currentPage,
+                                                    pageWidth = pageWidth,
+                                                    pageHeight = pageHeight,
+                                                    annotations = currentAnnotationsByPageState.value[currentPage].orEmpty(),
+                                                )
+                                            }
+                                        })
+                                        .onTap(object : OnTapListener {
+                                            override fun onTap(e: MotionEvent?): Boolean {
+                                                if (e == null) return false
+                                                if (highlighterMode) return true
+                                                val point = pdf.toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
+                                                val pageSize = pdf.pdfFile?.getScaledPageSize(point.pageIndex, pdf.zoom) ?: return false
+                                                val annotation = currentAnnotationsByPageState.value[point.pageIndex]
+                                                    .orEmpty()
+                                                    .findPdfAnnotationAt(
+                                                        point = point.offset,
+                                                        pageWidth = pageSize.width,
+                                                        pageHeight = pageSize.height,
+                                                    )
+                                                return if (annotation != null) {
+                                                    selectedAnnotation = annotation
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            }
+                                        })
+                                        .onError(object : OnErrorListener {
+                                            override fun onError(t: Throwable?) {
+                                                pdfReady = false
+                                                error = t?.message ?: "Unable to load PDF"
+                                            }
+                                        })
+                                        .onPageError(object : OnPageErrorListener {
+                                            override fun onPageError(page: Int, t: Throwable?) {
+                                                pdfReady = false
+                                                error = "Unable to load page ${page + 1}: ${t?.message ?: "unknown error"}"
+                                            }
+                                        })
+                                        .load()
+                                }
+                            },
+                            update = { view ->
+                                if (pdfView !== view.pdfView) {
+                                    pdfView = view.pdfView
+                                }
+                                view.highlighterModeEnabled = highlighterMode
+                                view.pdfSurfaceColor = surfaceColorArgb
+                                view.onHighlightDragStart = { x, y ->
                                     val offset = Offset(x, y)
                                     dragStart = offset
                                     dragEnd = offset
                                 }
-                                onHighlightDragMove = { x, y ->
+                                view.onHighlightDragMove = { x, y ->
                                     dragEnd = Offset(x, y)
                                 }
-                                onHighlightDragEnd = {
+                                view.onHighlightDragEnd = {
                                     finishHighlightDrag()
                                 }
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                )
-                                pdf.setMinZoom(1f)
-                                pdf.setMidZoom(2.25f)
-                                pdf.setMaxZoom(5f)
-                                pdf.fromFile(file)
-                                    .enableSwipe(true)
-                                    .swipeHorizontal(false)
-                                    .enableDoubleTap(true)
-                                    .defaultPage(pageIndex)
-                                    .enableAnnotationRendering(false)
-                                    .enableAntialiasing(true)
-                                    .spacing(4)
-                                    .autoSpacing(false)
-                                    .pageFitPolicy(FitPolicy.WIDTH)
-                                    .fitEachPage(true)
-                                    .pageSnap(false)
-                                    .pageFling(false)
-                                    .onLoad(object : OnLoadCompleteListener {
-                                        override fun loadComplete(totalPages: Int) {
-                                            pageCount = totalPages
-                                            error = null
-                                            val targetPage = pageIndex.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
-                                            pageIndex = targetPage
-                                            pdf.jumpTo(targetPage, false)
-                                            onProgressChanged(targetPage, totalPages)
-                                        }
-                                    })
-                                    .onPageChange(object : OnPageChangeListener {
-                                        override fun onPageChanged(page: Int, totalPages: Int) {
-                                            pageIndex = page
-                                            pageCount = totalPages
-                                            onProgressChanged(page.coerceIn(0, (totalPages - 1).coerceAtLeast(0)), totalPages)
-                                        }
-                                    })
-                                    .onDrawAll(object : OnDrawListener {
-                                        override fun onLayerDrawn(
-                                            canvas: android.graphics.Canvas?,
-                                            pageWidth: Float,
-                                            pageHeight: Float,
-                                            currentPage: Int,
-                                        ) {
-                                            if (canvas == null) return
-                                            drawPdfHighlights(
-                                                canvas = canvas,
-                                                pdfView = pdf,
-                                                pageIndex = currentPage,
-                                                pageWidth = pageWidth,
-                                                pageHeight = pageHeight,
-                                                annotations = currentAnnotationsByPageState.value[currentPage].orEmpty(),
-                                            )
-                                        }
-                                    })
-                                    .onTap(object : OnTapListener {
-                                        override fun onTap(e: MotionEvent?): Boolean {
-                                            if (e == null) return false
-                                            if (highlighterMode) return true
-                                            val point = pdf.toNormalizedPagePoint(e.x, e.y, clampToPage = false) ?: return false
-                                            val pageSize = pdf.pdfFile?.getScaledPageSize(point.pageIndex, pdf.zoom) ?: return false
-                                            val annotation = currentAnnotationsByPageState.value[point.pageIndex]
-                                                .orEmpty()
-                                                .findPdfAnnotationAt(
-                                                    point = point.offset,
-                                                    pageWidth = pageSize.width,
-                                                    pageHeight = pageSize.height,
-                                                )
-                                            return if (annotation != null) {
-                                                selectedAnnotation = annotation
-                                                true
-                                            } else {
-                                                false
-                                            }
-                                        }
-                                    })
-                                    .onError(object : OnErrorListener {
-                                        override fun onError(t: Throwable?) {
-                                            error = t?.message ?: "Unable to load PDF"
-                                        }
-                                    })
-                                    .onPageError(object : OnPageErrorListener {
-                                        override fun onPageError(page: Int, t: Throwable?) {
-                                            error = "Unable to load page ${page + 1}: ${t?.message ?: "unknown error"}"
-                                        }
-                                    })
-                                    .load()
-                            }
-                        },
-                        update = { view ->
-                            if (pdfView !== view.pdfView) {
-                                pdfView = view.pdfView
-                            }
-                            view.highlighterModeEnabled = highlighterMode
-                            view.pdfSurfaceColor = surfaceColorArgb
-                            view.onHighlightDragStart = { x, y ->
-                                val offset = Offset(x, y)
-                                dragStart = offset
-                                dragEnd = offset
-                            }
-                            view.onHighlightDragMove = { x, y ->
-                                dragEnd = Offset(x, y)
-                            }
-                            view.onHighlightDragEnd = {
-                                finishHighlightDrag()
-                            }
-                        },
-                        onRelease = { view ->
-                            if (pdfView === view.pdfView) pdfView = null
-                            view.pdfView.recycle()
-                        },
-                    )
+                            },
+                            onRelease = { view ->
+                                if (pdfView === view.pdfView) pdfView = null
+                                view.pdfView.recycle()
+                            },
+                        )
+                    }
                 }
 
                 if (highlighterMode) {
@@ -554,7 +577,7 @@ private fun PdfAttachmentViewer(
                     )
                 }
 
-                if (pageCount <= 0) {
+                if (!pdfReady) {
                     AttachmentViewerEmpty("Loading PDF...")
                 } else {
                     PdfDocumentTitleOverlay(attachment = attachment)

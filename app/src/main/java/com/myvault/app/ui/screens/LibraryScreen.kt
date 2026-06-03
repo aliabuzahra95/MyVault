@@ -46,6 +46,8 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.StickyNote2
@@ -117,6 +119,7 @@ fun LibraryScreen(
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
+    onMoveFolderInOrder: (folderId: String, direction: Int) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
@@ -162,6 +165,7 @@ fun LibraryScreen(
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
+        onMoveFolderInOrder = onMoveFolderInOrder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
         onViewModeChange = onViewModeChange,
@@ -204,6 +208,7 @@ fun LibraryFolderScreen(
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
+    onMoveFolderInOrder: (folderId: String, direction: Int) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
@@ -243,6 +248,7 @@ fun LibraryFolderScreen(
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
         onMoveFolder = onMoveFolder,
+        onMoveFolderInOrder = onMoveFolderInOrder,
         onDeleteFolder = onDeleteFolder,
         onFolderExpandedChange = onFolderExpandedChange,
         onViewModeChange = onViewModeChange,
@@ -288,6 +294,7 @@ private fun LibraryArchiveScreen(
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
+    onMoveFolderInOrder: (folderId: String, direction: Int) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
@@ -822,6 +829,14 @@ private fun LibraryArchiveScreen(
                 LibraryAction("Move", Icons.Rounded.DriveFileMove) {
                     actionDialogOpen = false
                     moveDialogOpen = true
+                },
+                LibraryAction("Move up", Icons.Rounded.KeyboardArrowUp) {
+                    selectedFolder?.let { onMoveFolderInOrder(it.id, -1) }
+                    actionDialogOpen = false
+                },
+                LibraryAction("Move down", Icons.Rounded.KeyboardArrowDown) {
+                    selectedFolder?.let { onMoveFolderInOrder(it.id, 1) }
+                    actionDialogOpen = false
                 },
                 LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     actionDialogOpen = false

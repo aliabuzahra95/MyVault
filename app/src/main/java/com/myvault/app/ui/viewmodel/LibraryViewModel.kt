@@ -231,7 +231,7 @@ class LibraryViewModel @Inject constructor(
             .groupBy { it.libraryFolderId }
             .mapValues { (_, files) ->
                 files.mapNotNull { fileItemsById[it.id] }
-                    .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenBy { it.name.lowercase() })
+                    .sortedWith(compareBy<LibraryFileItem> { it.name.lowercase() }.thenBy { it.id })
             }
         val fileCounts = activeFiles
             .mapNotNull { it.libraryFolderId }
@@ -249,7 +249,7 @@ class LibraryViewModel @Inject constructor(
         val currentFiles = activeFiles.filter { it.libraryFolderId == currentParentId }
         val currentFileItems = currentFiles
             .mapNotNull { fileItemsById[it.id] }
-            .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta })
+            .sortedWith(compareBy<LibraryFileItem> { it.name.lowercase() }.thenBy { it.id })
         val continueReadingItems = (if (folderId == null) activeFiles else currentFiles)
             .mapNotNull { fileItemsById[it.id] }
         val currentFileIds = (if (folderId == null) activeFiles else currentFiles).map { it.id }.toSet()
@@ -343,6 +343,10 @@ class LibraryViewModel @Inject constructor(
 
     fun moveFolder(folderId: String, parentId: String?) {
         viewModelScope.launch { folderRepository.moveFolder(folderId, parentId ?: personalRootFolderIdIfNeeded()) }
+    }
+
+    fun moveFolderInOrder(folderId: String, direction: Int) {
+        viewModelScope.launch { folderRepository.moveFolderWithinSiblings(folderId, direction) }
     }
 
     fun deleteFolder(folderId: String) {
