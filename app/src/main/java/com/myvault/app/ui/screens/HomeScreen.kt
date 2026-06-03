@@ -179,7 +179,7 @@ fun HomeScreen(
     var sortMode by remember { mutableStateOf(WorkspaceSortMode.FoldersFirst) }
     val selectedItemIds = remember { mutableStateMapOf<String, Boolean>() }
     val selectedItems = remember(uiState.workspace, selectedItemIds.keys.toList()) {
-        uiState.workspace.flatMap { it.flattenItems() }.filter { selectedItemIds[it.id] == true }
+        uiState.workspace.selectedTreeItems(selectedItemIds)
     }
     val selectedNotes = selectedItems.filter { it.type == VaultTreeItemType.Note }
     val selectedFolders = selectedItems.filter { it.type == VaultTreeItemType.Folder }
@@ -1556,8 +1556,19 @@ private fun VaultTreeItem.flattenFolders(): List<VaultTreeItem> =
         emptyList()
     }
 
-private fun VaultTreeItem.flattenItems(): List<VaultTreeItem> =
-    listOf(this) + children.flatMap { it.flattenItems() }
+private fun List<VaultTreeItem>.selectedTreeItems(selectedItemIds: Map<String, Boolean>): List<VaultTreeItem> {
+    val selected = mutableListOf<VaultTreeItem>()
+    forEach { it.collectSelectedItems(selectedItemIds, selected) }
+    return selected
+}
+
+private fun VaultTreeItem.collectSelectedItems(
+    selectedItemIds: Map<String, Boolean>,
+    selected: MutableList<VaultTreeItem>,
+) {
+    if (selectedItemIds[id] == true) selected += this
+    children.forEach { it.collectSelectedItems(selectedItemIds, selected) }
+}
 
 private fun VaultTreeItem.flattenNotes(): List<VaultTreeItem> =
     if (type == VaultTreeItemType.Note) {

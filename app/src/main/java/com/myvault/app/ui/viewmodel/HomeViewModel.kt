@@ -263,16 +263,14 @@ private fun HomeContent.toUiState(
     showFullNoteTitles: Boolean,
     quranReflectionSummary: QuranReflectionSummary,
 ): HomeUiState {
-    val visibleItems = tree.flatMap { it.flattenItems() }
-    val visibleNoteIds = visibleItems.filter { it.type == VaultTreeItemType.Note }.map { it.id }.toSet()
-    val visibleFolderIds = visibleItems.filter { it.type == VaultTreeItemType.Folder }.map { it.id }.toSet()
+    val visibleIds = tree.visibleTreeIds()
     return HomeUiState(
-        pinnedNotes = pinnedNotes.filter { it.id in visibleNoteIds },
+        pinnedNotes = pinnedNotes.filter { it.id in visibleIds.noteIds },
         attachments = attachments,
         workspace = tree,
         searchQuery = query,
-        searchNotes = results.first.filter { it.id in visibleNoteIds },
-        searchFolders = results.second.filter { it.id in visibleFolderIds },
+        searchNotes = results.first.filter { it.id in visibleIds.noteIds },
+        searchFolders = results.second.filter { it.id in visibleIds.folderIds },
         searchAttachments = attachments.filter {
             query.isNotBlank() &&
                 (it.name.contains(query, ignoreCase = true) || it.note.contains(query, ignoreCase = true))
@@ -285,8 +283,25 @@ private fun HomeContent.toUiState(
     )
 }
 
-private fun VaultTreeItem.flattenItems(): List<VaultTreeItem> =
-    listOf(this) + children.flatMap { it.flattenItems() }
+private data class VisibleTreeIds(
+    val noteIds: Set<String>,
+    val folderIds: Set<String>,
+)
+
+private fun List<VaultTreeItem>.visibleTreeIds(): VisibleTreeIds {
+    val noteIds = LinkedHashSet<String>()
+    val folderIds = LinkedHashSet<String>()
+    forEach { item -> item.collectVisibleIds(noteIds, folderIds) }
+    return VisibleTreeIds(noteIds = noteIds, folderIds = folderIds)
+}
+
+private fun VaultTreeItem.collectVisibleIds(noteIds: MutableSet<String>, folderIds: MutableSet<String>) {
+    when (type) {
+        VaultTreeItemType.Note -> noteIds += id
+        VaultTreeItemType.Folder -> folderIds += id
+    }
+    children.forEach { it.collectVisibleIds(noteIds, folderIds) }
+}
 
 private fun String.toPreviewLines(): Int = when (this) {
     "one" -> 1
