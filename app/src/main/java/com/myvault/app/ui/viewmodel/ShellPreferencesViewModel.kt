@@ -24,7 +24,7 @@ class ShellPreferencesViewModel @Inject constructor(
         preferences.userPreferences.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            VaultUserPreferences(),
+            preferences.cachedStartupPreferences(),
         )
 
     fun setTheme(mode: VaultThemeMode) {

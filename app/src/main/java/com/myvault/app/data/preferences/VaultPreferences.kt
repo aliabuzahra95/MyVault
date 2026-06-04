@@ -60,6 +60,8 @@ data class VaultUserPreferences(
 
 @Singleton
 class VaultPreferences @Inject constructor(@param:ApplicationContext private val context: Context) {
+    private val startupCache = context.getSharedPreferences("vault_startup_preferences", Context.MODE_PRIVATE)
+
     val userPreferences: Flow<VaultUserPreferences> =
         context.vaultDataStore.data.map { preferences ->
             VaultUserPreferences(
@@ -101,8 +103,19 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                         if (separator <= 0) null else entry.substring(0, separator) to entry.substring(separator + 1)
                     }
                     .toMap(),
-            )
+            ).also(::cacheStartupPreferences)
         }
+
+    fun cachedStartupPreferences(): VaultUserPreferences =
+        VaultUserPreferences(
+            dashboardFontSize = startupCache.getString(Keys.CachedDashboardFontSize, null) ?: "medium",
+        )
+
+    private fun cacheStartupPreferences(preferences: VaultUserPreferences) {
+        startupCache.edit()
+            .putString(Keys.CachedDashboardFontSize, preferences.dashboardFontSize)
+            .apply()
+    }
 
     suspend fun setTheme(theme: VaultThemeMode) {
         context.vaultDataStore.edit { preferences ->
@@ -129,6 +142,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setDashboardFontSize(fontSize: String) {
+        startupCache.edit().putString(Keys.CachedDashboardFontSize, fontSize).apply()
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.DashboardFontSize] = fontSize
         }
@@ -352,6 +366,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
+        const val CachedDashboardFontSize: String = "dashboard_font_size"
     }
 }
 
