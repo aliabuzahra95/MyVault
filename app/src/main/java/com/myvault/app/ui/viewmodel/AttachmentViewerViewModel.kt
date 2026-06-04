@@ -12,13 +12,18 @@ import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.PdfAnnotationRepository
 import com.myvault.app.data.repository.PdfReadingProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class AttachmentViewerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val attachmentRepository: AttachmentRepository,
@@ -29,18 +34,35 @@ class AttachmentViewerViewModel @Inject constructor(
     val initialPageIndex: Int = savedStateHandle["page"] ?: -1
     private var lastSavedPdfPage: Int? = null
     private var lastSavedPdfPageCount: Int? = null
+    private val pdfSecondaryDataEnabled = MutableStateFlow(false)
 
     val attachment: StateFlow<AttachmentEntity?> =
         attachmentRepository.observeAttachment(attachmentId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val pdfProgress: StateFlow<PdfReadingProgressEntity?> =
-        pdfReadingProgressRepository.observeForAttachment(attachmentId)
+        pdfSecondaryDataEnabled.flatMapLatest { enabled ->
+            if (enabled) {
+                pdfReadingProgressRepository.observeForAttachment(attachmentId)
+            } else {
+                flowOf(null)
+            }
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val pdfAnnotations: StateFlow<List<PdfAnnotationEntity>> =
-        pdfAnnotationRepository.observeForAttachment(attachmentId)
+        pdfSecondaryDataEnabled.flatMapLatest { enabled ->
+            if (enabled) {
+                pdfAnnotationRepository.observeForAttachment(attachmentId)
+            } else {
+                flowOf(emptyList())
+            }
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun loadPdfSecondaryData() {
+        pdfSecondaryDataEnabled.value = true
+    }
 
     fun updatePdfProgress(pageIndex: Int, pageCount: Int) {
         if (lastSavedPdfPage == pageIndex && lastSavedPdfPageCount == pageCount) return

@@ -889,6 +889,7 @@ fun VaultNavHost(
                 initialPageIndex = viewModel.initialPageIndex,
                 onBackClick = { navController.popBackStack() },
                 onPdfProgressChanged = viewModel::updatePdfProgress,
+                onPdfFirstLoaded = viewModel::loadPdfSecondaryData,
                 onAddPdfHighlight = viewModel::addPdfHighlight,
                 onUpdatePdfHighlightColor = viewModel::updatePdfHighlightColor,
                 onUpdatePdfAnnotationNote = viewModel::updatePdfAnnotationNote,
