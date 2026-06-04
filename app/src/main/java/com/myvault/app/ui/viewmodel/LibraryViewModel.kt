@@ -24,14 +24,18 @@ import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.toRelativeTime
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import javax.inject.Inject
 
@@ -116,6 +120,7 @@ data class PdfDuplicateImportUiState(
 )
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val folderRepository: FolderRepository,
@@ -131,14 +136,21 @@ class LibraryViewModel @Inject constructor(
     private val initialLibraryMode: String = savedStateHandle["libraryMode"] ?: FOLDER_MODE_LIBRARY
     private val hasExplicitInitialMode: Boolean = savedStateHandle.contains("libraryMode")
     private val requestedLibraryMode = MutableStateFlow(initialLibraryMode)
+    private val secondaryLibraryReady = MutableStateFlow(false)
     private val libraryMode: String get() = requestedLibraryMode.value
     private val isPersonalLibrary: Boolean get() = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
     private val viewModeLocationKey: String get() = "$libraryMode:${folderId ?: LIBRARY_ROOT_VIEW_MODE_KEY}"
     private val importState = MutableStateFlow(LibraryImportState())
-    private val pdfLayer = combine(
-        pdfReadingProgressRepository.observeAll(),
-        pdfAnnotationRepository.observeAll(),
-    ) { progress, annotations -> progress to annotations }
+    private val pdfLayer = secondaryLibraryReady.flatMapLatest { ready ->
+        if (ready) {
+            combine(
+                pdfReadingProgressRepository.observeAll(),
+                pdfAnnotationRepository.observeAll(),
+            ) { progress, annotations -> progress to annotations }
+        } else {
+            flowOf(emptyList<PdfReadingProgressEntity>() to emptyList<PdfAnnotationEntity>())
+        }
+    }
     private val libraryDataLayer = combine(
         folderRepository.observeLibraryFolders(),
         attachmentRepository.observeLibraryFiles(),
@@ -149,18 +161,25 @@ class LibraryViewModel @Inject constructor(
         vaultPreferences.userPreferences,
         importState,
     ) { preferences, importing -> preferences to importing }
-    private val knowledgeLayer = combine(
-        knowledgeRepository.observeLibraryReferences(),
-        knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAttachment),
-        knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAnnotation),
-    ) { references, attachmentTags, annotationTags ->
-        LibraryKnowledgeLayer(references, attachmentTags, annotationTags, emptyList(), studyNotesLoading = false)
+    private val knowledgeLayer = secondaryLibraryReady.flatMapLatest { ready ->
+        if (ready) {
+            combine(
+                knowledgeRepository.observeLibraryReferences(),
+                knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAttachment),
+                knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAnnotation),
+            ) { references, attachmentTags, annotationTags ->
+                LibraryKnowledgeLayer(references, attachmentTags, annotationTags, emptyList(), studyNotesLoading = false)
+            }
+        } else {
+            flowOf(LibraryKnowledgeLayer(emptyList(), emptyMap(), emptyMap(), emptyList(), studyNotesLoading = false))
+        }
     }
     private val studyNoteLinks = MutableStateFlow(LibraryStudyNoteLinks())
     private val librarySupportLayer = combine(knowledgeLayer, studyNoteLinks) { knowledge, studyNotes ->
         knowledge.copy(studyNotes = studyNotes.items, studyNotesLoading = studyNotes.loading)
     }
     private var studyNoteLinksJob: Job? = null
+    private var secondaryHydrationJob: Job? = null
 
     private val _uiState = MutableStateFlow(
         if (hasExplicitInitialMode || folderId != null) {
@@ -314,19 +333,36 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             liveUiState.collect { state ->
                 _uiState.value = state
-                librarySnapshotRepository.save(libraryMode, folderId, state)
+                if (secondaryLibraryReady.value) {
+                    librarySnapshotRepository.save(libraryMode, folderId, state)
+                } else {
+                    scheduleSecondaryHydration()
+                }
             }
         }
     }
 
     fun setLibraryMode(mode: String) {
         val previousMode = requestedLibraryMode.value
+        if (previousMode != mode) {
+            secondaryLibraryReady.value = false
+            secondaryHydrationJob?.cancel()
+            secondaryHydrationJob = null
+        }
         requestedLibraryMode.value = mode
         val snapshot = snapshotFor(mode)
         if (snapshot != null) {
             _uiState.value = snapshot
         } else if (previousMode != mode) {
             _uiState.value = LibraryUiState()
+        }
+    }
+
+    private fun scheduleSecondaryHydration() {
+        if (secondaryHydrationJob?.isActive == true || secondaryLibraryReady.value) return
+        secondaryHydrationJob = viewModelScope.launch {
+            delay(450L)
+            secondaryLibraryReady.value = true
         }
     }
 

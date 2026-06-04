@@ -15,7 +15,6 @@ import com.myvault.app.MainActivity
 import com.myvault.app.R
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,7 +32,6 @@ class QuranAudioDownloadService : Service() {
     private var stateObserverJob: Job? = null
     private var queueProcessorJob: Job? = null
     private var activeDownload: DownloadRequest? = null
-    private var activeCompletionSignal: CompletableDeferred<Unit>? = null
     private var currentTitle = "Preparing Qur'an audio download"
 
     override fun onCreate() {
@@ -49,9 +47,7 @@ class QuranAudioDownloadService : Service() {
             val surahNumbers = intent.getIntArrayExtra(EXTRA_SURAH_NUMBERS) ?: intArrayOf()
             if (reciterId > 0 && reciterName.isNotBlank() && surahNumbers.isNotEmpty()) {
                 val reciter = AudioReciterUiModel(reciterId, reciterName)
-                surahNumbers.forEach { surahNumber ->
-                    if (surahNumber > 0) enqueueDownload(reciter, surahNumber)
-                }
+                enqueueDownloads(reciter, surahNumbers)
             }
         }
         return START_NOT_STICKY
@@ -66,39 +62,42 @@ class QuranAudioDownloadService : Service() {
         super.onDestroy()
     }
 
-    private fun enqueueDownload(reciter: AudioReciterUiModel, surahNumber: Int) {
-        val request = DownloadRequest(reciter, surahNumber)
-        val alreadyQueued = pendingQueue.any { it.downloadKey == request.downloadKey }
-        val alreadyActive = activeDownload?.downloadKey == request.downloadKey
-        val currentState = audioRepository.currentDownloadState(reciter.id, surahNumber)
-        if (
-            alreadyQueued ||
-            alreadyActive ||
-            currentState is SurahDownloadState.Downloaded ||
-            currentState is SurahDownloadState.Downloading ||
-            currentState is SurahDownloadState.Preparing
-        ) {
-            return
+    private fun enqueueDownloads(reciter: AudioReciterUiModel, surahNumbers: IntArray) {
+        surahNumbers
+            .filter { it > 0 }
+            .distinct()
+            .forEach { surahNumber ->
+                val request = DownloadRequest(reciter, surahNumber)
+                val alreadyQueued = pendingQueue.any { it.downloadKey == request.downloadKey }
+                val alreadyActive = activeDownload?.downloadKey == request.downloadKey
+                val currentState = audioRepository.currentDownloadState(reciter.id, surahNumber)
+                if (
+                    !alreadyQueued &&
+                    !alreadyActive &&
+                    currentState !is SurahDownloadState.Downloaded &&
+                    currentState !is SurahDownloadState.Downloading &&
+                    currentState !is SurahDownloadState.Preparing
+                ) {
+                    pendingQueue += request
+                }
+            }
+        if (pendingQueue.isNotEmpty()) {
+            publishQueueStates()
+            startForeground(NOTIFICATION_ID, buildNotification(progress = null, status = queueStatus()))
+            processQueue()
         }
-        pendingQueue += request
-        publishQueueStates()
-        startForeground(NOTIFICATION_ID, buildNotification(progress = null, status = queueStatus()))
-        processQueue()
     }
 
     private fun processQueue() {
         if (queueProcessorJob?.isActive == true) return
-        queueProcessorJob = serviceScope.launch(Dispatchers.IO) {
+        queueProcessorJob = serviceScope.launch {
             while (activeDownload != null || pendingQueue.isNotEmpty()) {
                 if (activeDownload == null) {
                     val next = pendingQueue.removeFirstOrNull() ?: break
                     activeDownload = next
                     publishQueueStates()
                     currentTitle = "Downloading ${next.reciter.name} - Surah ${next.surahNumber}"
-                    activeCompletionSignal = CompletableDeferred()
                     audioRepository.downloadSurah(next.reciter, next.surahNumber)
-                    activeCompletionSignal?.await()
-                    activeCompletionSignal = null
                     activeDownload = null
                     publishQueueStates()
                 }
@@ -138,11 +137,9 @@ class QuranAudioDownloadService : Service() {
                     }
                     SurahDownloadState.Downloaded -> {
                         startForeground(NOTIFICATION_ID, buildNotification(progress = 100, status = "Download complete"))
-                        activeCompletionSignal?.complete(Unit)
                     }
                     is SurahDownloadState.Failed -> {
                         startForeground(NOTIFICATION_ID, buildNotification(progress = null, status = state.message))
-                        activeCompletionSignal?.complete(Unit)
                     }
                     else -> Unit
                 }

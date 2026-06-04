@@ -51,6 +51,7 @@ import com.myvault.app.ui.navigation.VaultNavHost
 import com.myvault.app.ui.screens.parseRichImport
 import com.myvault.app.ui.screens.toJsonArrayString
 import com.myvault.app.ui.theme.VaultTheme
+import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val loadedPreferences by preferences.userPreferences.collectAsStateWithLifecycle(initialValue = null)
-            val userPreferences = loadedPreferences ?: VaultUserPreferences()
+            val userPreferences = loadedPreferences ?: VaultUserPreferences(theme = VaultThemeMode.Dark)
             val lifecycleOwner = LocalLifecycleOwner.current
             var unlocked by rememberSaveable { mutableStateOf(false) }
             var lockGeneration by rememberSaveable { mutableLongStateOf(0L) }
@@ -146,7 +147,12 @@ class MainActivity : ComponentActivity() {
                 accentColorHex = userPreferences.accentColor,
             ) {
                 val locked = loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked
-                Box(modifier = Modifier.fillMaxSize()) {
+                val colors = VaultThemeTokens.colors
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.bg),
+                ) {
                     if (loadedPreferences != null) {
                         Box(
                             modifier = Modifier

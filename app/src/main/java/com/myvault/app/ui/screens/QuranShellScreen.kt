@@ -414,24 +414,6 @@ private fun QuranReaderSurface(
                         },
                     )
                 }
-                if (uiState.recentLocations.isNotEmpty()) {
-                    item(key = "quran_recent_surahs") {
-                        QuranRecentSurahsRow(
-                            recents = uiState.recentLocations,
-                            onOpen = { location ->
-                                val sameSurah = location.surahNumber == uiState.selectedSurah.num
-                                if (sameSurah) {
-                                    onLastReadAyahChanged(location.surahNumber, location.ayahNumber)
-                                    val index = ((location.ayahNumber - 1).coerceAtLeast(0) + readerHeaderItemCount)
-                                        .coerceAtMost(uiState.ayahs.lastIndex + readerHeaderItemCount)
-                                    scope.launch { listState.animateScrollToItem(index) }
-                                } else {
-                                    onOpenBookmark("${location.surahNumber}:${location.ayahNumber}")
-                                }
-                            },
-                        )
-                    }
-                }
                 if (hasBismillahHeader) {
                     item(key = "bismillah_${uiState.selectedSurah.num}") {
                         BismillahHeader(

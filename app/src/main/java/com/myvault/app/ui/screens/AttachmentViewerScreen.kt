@@ -4,13 +4,17 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.pdf.PdfRenderer
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.FrameLayout
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -51,6 +55,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -328,6 +333,21 @@ private fun PdfAttachmentViewer(
     }
     val currentAnnotationsByPageState = rememberUpdatedState(annotationsByPage)
     val surfaceColorArgb = VaultThemeTokens.colors.inset.toArgb()
+    val context = LocalContext.current
+    val previewBitmap by produceState<Bitmap?>(null, attachment.id, attachment.localPath) {
+        value = withContext(Dispatchers.IO) {
+            loadOrCreatePdfFirstPagePreview(
+                context = context,
+                attachmentId = attachment.id,
+                localPath = attachment.localPath,
+            )
+        }
+    }
+    val previewAlpha by animateFloatAsState(
+        targetValue = if (pdfReady) 0f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "pdfFirstPagePreviewAlpha",
+    )
 
     fun finishHighlightDrag() {
         val view = pdfView
@@ -566,8 +586,24 @@ private fun PdfAttachmentViewer(
                     )
                 }
 
+                val cachedPreview = previewBitmap
+                if (cachedPreview != null && previewAlpha > 0.01f) {
+                    Image(
+                        bitmap = cachedPreview.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(VaultThemeTokens.colors.inset)
+                            .graphicsLayer { alpha = previewAlpha }
+                            .zIndex(1f),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+
                 if (!pdfReady) {
-                    AttachmentViewerEmpty("Loading PDF...")
+                    if (cachedPreview == null) {
+                        AttachmentViewerEmpty("Loading PDF...")
+                    }
                 } else {
                     PdfDocumentTitleOverlay(attachment = attachment)
                     PdfReadingProgressOverlay(
@@ -1163,6 +1199,51 @@ private fun AttachmentViewerEmpty(text: String) {
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = VaultThemeTokens.colors.textMuted)
+    }
+}
+
+private fun loadOrCreatePdfFirstPagePreview(
+    context: Context,
+    attachmentId: String,
+    localPath: String,
+): Bitmap? = runCatching {
+    val source = File(localPath)
+    if (!source.exists() || !source.isFile) return@runCatching null
+
+    val previewDir = File(context.cacheDir, "pdf_first_page_previews").apply { mkdirs() }
+    val previewFile = File(
+        previewDir,
+        "${attachmentId}_${source.length()}_${source.lastModified()}.png",
+    )
+    if (previewFile.exists() && previewFile.length() > 0L) {
+        BitmapFactory.decodeFile(previewFile.absolutePath)?.let { return@runCatching it }
+    }
+
+    previewDir.listFiles()
+        ?.filter { it.name.startsWith("${attachmentId}_") && it.name != previewFile.name }
+        ?.forEach { it.delete() }
+
+    val bitmap = renderPdfFirstPagePreview(source) ?: return@runCatching null
+    previewFile.outputStream().use { output ->
+        bitmap.compress(Bitmap.CompressFormat.PNG, 92, output)
+    }
+    bitmap
+}.getOrNull()
+
+private fun renderPdfFirstPagePreview(file: File): Bitmap? {
+    val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+    descriptor.use {
+        PdfRenderer(it).use { renderer ->
+            if (renderer.pageCount == 0) return null
+            renderer.openPage(0).use { page ->
+                val width = 720
+                val height = (width * page.height.toFloat() / page.width.toFloat()).toInt().coerceAtLeast(1)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                return bitmap
+            }
+        }
     }
 }
 

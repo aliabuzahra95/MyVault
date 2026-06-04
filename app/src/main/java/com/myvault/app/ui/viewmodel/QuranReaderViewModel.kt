@@ -429,10 +429,14 @@ class QuranReaderViewModel @Inject constructor(
         audioProgressJob = viewModelScope.launch {
             while (quranAudioPlayer.hasActiveMedia()) {
                 val current = _uiState.value
-                _uiState.value = current.copy(
-                    miniPlayer = current.buildMiniPlayer(quranAudioPlayer.playbackState.value),
+                val playback = quranAudioPlayer.playbackState.value.copy(
+                    currentPositionMs = quranAudioPlayer.currentPositionMs(),
+                    durationMs = quranAudioPlayer.durationMs(),
                 )
-                kotlinx.coroutines.delay(500L)
+                _uiState.value = current.copy(
+                    miniPlayer = current.buildMiniPlayer(playback),
+                )
+                kotlinx.coroutines.delay(250L)
             }
         }
     }

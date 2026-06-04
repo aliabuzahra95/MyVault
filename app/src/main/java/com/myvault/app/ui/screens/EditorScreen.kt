@@ -334,7 +334,7 @@ fun EditorScreen(
         if (noteId != null && loadedNoteId != noteId) {
             val noteTitle = uiState.note.title
             title = TextFieldValue(noteTitle, TextRange(noteTitle.length))
-            bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(uiState.richText.text, TextRange.Zero))
+            bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(uiState.richText.text, TextRange(uiState.richText.text.length)))
             styleMarks = sanitizeVaultStyleMarks(uiState.richText.styleMarks, uiState.richText.text.length)
             noteLinks = sanitizeVaultNoteLinks(uiState.richText.noteLinks, uiState.richText.text.length)
             pendingInlineStyles = emptySet()
