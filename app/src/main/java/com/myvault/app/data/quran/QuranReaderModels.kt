@@ -44,6 +44,8 @@ data class QuranReaderUiState(
     val tafsirByVerse: Map<String, String> = emptyMap(),
     val loadingTafsirVerseKeys: Set<String> = emptySet(),
     val bookmarkedVerseKeys: Set<String> = emptySet(),
+    val reflectionsByVerse: Map<String, List<QuranReflectionItem>> = emptyMap(),
+    val pendingScrollVerseKey: String? = null,
     val recentLocations: List<QuranRecentLocation> = emptyList(),
     val availableReciters: List<AudioReciterUiModel> = emptyList(),
     val reciterPickerAyah: AudioPickerAyah? = null,

@@ -8,6 +8,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -44,7 +46,10 @@ import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
@@ -99,7 +104,6 @@ import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
-import com.myvault.app.ui.components.WorkspaceHeader
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultTheme
 import com.myvault.app.ui.theme.VaultThemeMode
@@ -164,7 +168,8 @@ fun HomeScreen(
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
     var noteTitleInput by remember { mutableStateOf("") }
     var sortMenuOpen by remember { mutableStateOf(false) }
-    var pinnedOverflowOpen by remember { mutableStateOf(false) }
+    var pinnedExpanded by remember { mutableStateOf(false) }
+    var utilityMenuOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var manageMenuOpen by remember { mutableStateOf(false) }
     var manageRenameFolderOpen by remember { mutableStateOf(false) }
@@ -271,6 +276,11 @@ fun HomeScreen(
                                 contentDescription = "Settings",
                                 onClick = onSettingsClick,
                             )
+                            IconBtn(
+                                icon = Icons.Rounded.MoreVert,
+                                contentDescription = "Manage workspace",
+                                onClick = { utilityMenuOpen = true },
+                            )
                         }
                     }
                 }
@@ -315,38 +325,62 @@ fun HomeScreen(
                 }
 
                 item(key = "study_pinned") {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    SectionLabel(
-                        label = "Pinned",
-                        actionLabel = if (uiState.pinnedNotes.isNotEmpty()) "View all" else null,
-                        onActionClick = { pinnedOverflowOpen = true },
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    if (uiState.pinnedNotes.isEmpty()) {
-                        EmptyHomeState(
-                            icon = Icons.Rounded.PushPin,
-                            text = "Pinned notes will appear here",
-                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                        )
-                    } else {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { pinnedExpanded = !pinnedExpanded }
+                            .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            items(uiState.pinnedNotes, key = { it.id }) { note ->
-                                PinnedNoteCard(note = note, previewLines = uiState.notePreviewLines, showFullTitle = uiState.showFullNoteTitles, onClick = { onNoteClick(note.id) })
+                            Text(
+                                text = "PINNED (${uiState.pinnedNotes.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textMuted,
+                            )
+                            Icon(
+                                imageVector = if (pinnedExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = if (pinnedExpanded) "Collapse pinned notes" else "Expand pinned notes",
+                                tint = colors.textSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = pinnedExpanded,
+                        enter = expandVertically(
+                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            expandFrom = Alignment.Top,
+                        ) + fadeIn(animationSpec = tween(durationMillis = 120)),
+                        exit = shrinkVertically(
+                            animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                            shrinkTowards = Alignment.Top,
+                        ) + fadeOut(animationSpec = tween(durationMillis = 100)),
+                    ) {
+                        if (uiState.pinnedNotes.isEmpty()) {
+                            EmptyHomeState(
+                                icon = Icons.Rounded.PushPin,
+                                text = "Pinned notes will appear here",
+                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                            )
+                        } else {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                            ) {
+                                items(uiState.pinnedNotes, key = { it.id }) { note ->
+                                    PinnedNoteCard(note = note, previewLines = uiState.notePreviewLines, showFullTitle = uiState.showFullNoteTitles, onClick = { onNoteClick(note.id) })
+                                }
                             }
                         }
                     }
                 }
 
                 item(key = "study_workspace_tree") {
-                    Spacer(modifier = Modifier.height(1.dp))
-                    WorkspaceHeader(
-                        onSortClick = { sortMenuOpen = true },
-                        onManageClick = { manageMenuOpen = true },
-                    )
-                    Spacer(modifier = Modifier.height(0.dp))
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -551,16 +585,20 @@ fun HomeScreen(
         )
     }
 
-    if (pinnedOverflowOpen) {
-        PinnedNotesSheet(
-            notes = uiState.pinnedNotes,
-            previewLines = uiState.notePreviewLines,
-            showFullTitles = uiState.showFullNoteTitles,
-            onDismiss = { pinnedOverflowOpen = false },
-            onNoteClick = { noteId ->
-                pinnedOverflowOpen = false
-                onNoteClick(noteId)
-            },
+    if (utilityMenuOpen) {
+        PremiumActionDialog(
+            title = "Manage workspace",
+            onDismiss = { utilityMenuOpen = false },
+            actions = listOf(
+                PremiumAction("Sort workspace", Icons.Rounded.SortByAlpha) {
+                    utilityMenuOpen = false
+                    sortMenuOpen = true
+                },
+                PremiumAction("Manage workspace", Icons.Rounded.SwapVert) {
+                    utilityMenuOpen = false
+                    manageMenuOpen = true
+                },
+            ),
         )
     }
 

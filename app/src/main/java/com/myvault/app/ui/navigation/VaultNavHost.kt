@@ -126,6 +126,16 @@ fun VaultNavHost(
         onPendingOpenNoteConsumed()
     }
 
+    LaunchedEffect(pendingQuranVerseKey, currentRoute, preferences.workspace) {
+        if (
+            pendingQuranVerseKey != null &&
+            currentRoute == VaultDestination.Home.route &&
+            preferences.workspace == WORKSPACE_ISLAMIC_CORPUS
+        ) {
+            selectedIslamicRootMode = VaultRootMode.Quran.name
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
@@ -331,6 +341,7 @@ fun VaultNavHost(
                         onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
                         onSetMemorizationRepeatMode = quranViewModel::setMemorizationRepeatMode,
                         onStopMemorizationRepeat = quranViewModel::stopMemorizationRepeat,
+                        onPendingScrollHandled = quranViewModel::consumePendingScrollVerse,
                     )
                 },
                 memoriseContent = {
@@ -862,9 +873,9 @@ fun VaultNavHost(
                 onBackClick = { navController.popBackStack() },
                 onReflectionClick = { reflection ->
                     pendingQuranVerseKey = reflection.verseKey
-                    selectedIslamicRootMode = VaultRootMode.Quran.name
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
                     navController.popBackStack(VaultDestination.Home.route, false)
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
                 },
             )
         }

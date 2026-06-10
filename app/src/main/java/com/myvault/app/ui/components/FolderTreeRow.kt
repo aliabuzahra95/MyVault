@@ -185,6 +185,12 @@ private fun FolderTreeSingleRow(
     val topLevel = depth == 0
     val isFolder = item.type == VaultTreeItemType.Folder
     val isSubfolder = isFolder && !topLevel
+    val rowVerticalPadding = when {
+        isFolder && topLevel -> 8.dp
+        isFolder -> 7.dp
+        topLevel -> 7.dp
+        else -> 6.dp
+    }
     val subfolderAccent = Color(0xFFE23B3B)
     val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
     val background = if (topLevel && expanded) colors.surface else Color.Transparent
@@ -266,7 +272,7 @@ private fun FolderTreeSingleRow(
                 .fillMaxWidth()
                 .padding(
                     horizontal = if (topLevel) 12.dp else 10.dp,
-                    vertical = if (topLevel) 8.dp else 7.dp,
+                    vertical = rowVerticalPadding,
                 ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -460,12 +466,17 @@ private fun TreeTrailing(item: VaultTreeItem, topLevel: Boolean) {
             }
         }
         else -> Text(
-            text = item.edited?.let { "Edited $it" } ?: "",
+            text = item.edited?.compactEditedTime().orEmpty(),
             style = MaterialTheme.typography.labelMedium,
             color = colors.textMuted,
         )
     }
 }
+
+private fun String.compactEditedTime(): String =
+    removePrefix("Edited ")
+        .removeSuffix(" ago")
+        .trim()
 
 @Preview(name = "FolderTreeRow Light")
 @Composable

@@ -6,6 +6,7 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.quran.QuranCatalogRepository
 import com.myvault.app.data.quran.QuranAyah
+import com.myvault.app.data.quran.QuranReflectionRepository
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.QuranTextRepository
 import com.myvault.app.data.quran.MUKHTASAR_TAFSIR_ID
@@ -38,6 +39,7 @@ class QuranReaderViewModel @Inject constructor(
     private val vaultPreferences: VaultPreferences,
     private val folderRepository: FolderRepository,
     private val noteRepository: NoteRepository,
+    private val quranReflectionRepository: QuranReflectionRepository,
     private val quranAudioRepository: QuranAudioRepository,
     private val quranAudioPlayer: QuranAudioPlayer,
 ) : ViewModel() {
@@ -98,6 +100,11 @@ class QuranReaderViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            quranReflectionRepository.observeReflectionItems().collect { reflections ->
+                _uiState.value = _uiState.value.copy(reflectionsByVerse = reflections.groupBy { it.verseKey })
+            }
+        }
+        viewModelScope.launch {
             vaultPreferences.userPreferences.collect { preferences ->
                 _uiState.value = _uiState.value.copy(
                     memorizationRecords = preferences.quranMemorizationRecords,
@@ -130,6 +137,7 @@ class QuranReaderViewModel @Inject constructor(
         loadSurah(
             surahNumber = surah,
             restoredAyah = ayah,
+            pendingScrollVerseKey = verseKey,
             fontPercent = _uiState.value.arabicFontPercent,
             translationFontPercent = _uiState.value.translationFontPercent,
             translationEnabled = _uiState.value.translationEnabled,
@@ -137,6 +145,12 @@ class QuranReaderViewModel @Inject constructor(
             bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
             recentLocations = _uiState.value.recentLocations,
         )
+    }
+
+    fun consumePendingScrollVerse() {
+        if (_uiState.value.pendingScrollVerseKey != null) {
+            _uiState.value = _uiState.value.copy(pendingScrollVerseKey = null)
+        }
     }
 
     fun updateLastReadPosition(surahNumber: Int, ayahNumber: Int) {
@@ -560,6 +574,7 @@ class QuranReaderViewModel @Inject constructor(
     private fun loadSurah(
         surahNumber: Int,
         restoredAyah: Int,
+        pendingScrollVerseKey: String? = null,
         fontPercent: Int,
         translationFontPercent: Int,
         translationEnabled: Boolean,
@@ -579,6 +594,7 @@ class QuranReaderViewModel @Inject constructor(
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 recentLocations = recentLocations,
+                pendingScrollVerseKey = pendingScrollVerseKey,
                 expandedTafsirVerseKey = null,
                 loading = true,
             )
@@ -593,6 +609,7 @@ class QuranReaderViewModel @Inject constructor(
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 recentLocations = recentLocations,
+                pendingScrollVerseKey = pendingScrollVerseKey,
                 expandedTafsirVerseKey = null,
                 loading = false,
             )

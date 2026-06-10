@@ -2,7 +2,10 @@ package com.myvault.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -81,9 +84,11 @@ fun VaultWorkspaceSwitcher(
 ) {
     val colors = VaultThemeTokens.colors
     var expanded by remember { mutableStateOf(false) }
+    val quickToggleTarget = remember(selectedLabel, options) {
+        options.firstOrNull { it != selectedLabel }
+    }
 
     Surface(
-        onClick = { expanded = true },
         modifier = modifier,
         shape = VaultShapes.pill,
         color = colors.surface,
@@ -93,21 +98,42 @@ fun VaultWorkspaceSwitcher(
         shadowElevation = 0.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = selectedLabel,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
-                color = colors.text,
-            )
-            Icon(
-                imageVector = Icons.Rounded.KeyboardArrowDown,
-                contentDescription = "Switch workspace",
-                modifier = Modifier.size(18.dp),
-                tint = colors.textSecondary,
-            )
+            Box(
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        enabled = quickToggleTarget != null,
+                    ) {
+                        quickToggleTarget?.let(onSelected)
+                    }
+                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
+            ) {
+                Text(
+                    text = selectedLabel,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
+                    color = colors.text,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        expanded = true
+                    }
+                    .padding(start = 5.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = "Open workspace menu",
+                    modifier = Modifier.size(18.dp),
+                    tint = colors.textSecondary,
+                )
+            }
         }
         DropdownMenu(
             expanded = expanded,

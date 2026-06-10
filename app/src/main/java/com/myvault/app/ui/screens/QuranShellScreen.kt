@@ -111,6 +111,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.R
 import com.myvault.app.data.quran.QuranAyah
+import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.SurahInfo
 import com.myvault.app.data.quran.TafsirSourceUiModel
@@ -189,6 +190,7 @@ fun QuranShellScreen(
     onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
     onSetMemorizationRepeatMode: (QuranAyah, MemorizationRepeatMode) -> Unit,
     onStopMemorizationRepeat: () -> Unit,
+    onPendingScrollHandled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -258,6 +260,7 @@ fun QuranShellScreen(
                 onSetMemorizationConcealAmount = onSetMemorizationConcealAmount,
                 onSetMemorizationRepeatMode = onSetMemorizationRepeatMode,
                 onStopMemorizationRepeat = onStopMemorizationRepeat,
+                onPendingScrollHandled = onPendingScrollHandled,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -317,6 +320,7 @@ private fun QuranReaderSurface(
     onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
     onSetMemorizationRepeatMode: (QuranAyah, MemorizationRepeatMode) -> Unit,
     onStopMemorizationRepeat: () -> Unit,
+    onPendingScrollHandled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -364,6 +368,16 @@ private fun QuranReaderSurface(
             val targetIndex = ((uiState.restoredAyah - 1).coerceAtLeast(0) + readerHeaderItemCount)
                 .coerceAtMost(uiState.ayahs.lastIndex + readerHeaderItemCount)
             listState.scrollToItem(targetIndex)
+        }
+    }
+
+    LaunchedEffect(uiState.pendingScrollVerseKey, uiState.loading, uiState.ayahs.size) {
+        val verseKey = uiState.pendingScrollVerseKey ?: return@LaunchedEffect
+        if (uiState.loading || uiState.ayahs.isEmpty()) return@LaunchedEffect
+        val ayahIndex = uiState.ayahs.indexOfFirst { it.verseKey == verseKey }
+        if (ayahIndex >= 0) {
+            listState.scrollToItem((ayahIndex + readerHeaderItemCount).coerceAtLeast(0))
+            onPendingScrollHandled()
         }
     }
 
@@ -444,6 +458,7 @@ private fun QuranReaderSurface(
                         translation = ayah.translation,
                         translationTextSize = uiState.translationTextSize,
                         translationEnabled = uiState.translationEnabled,
+                        reflections = uiState.reflectionsByVerse[ayah.verseKey].orEmpty(),
                         tafsir = uiState.tafsirByVerse[tafsirCacheKey(ayah.verseKey, uiState.selectedTafsirSourceId)].orEmpty(),
                         tafsirSources = uiState.availableTafsirSources,
                         selectedTafsirSourceId = uiState.selectedTafsirSourceId,
@@ -1257,6 +1272,7 @@ private fun AyahRow(
     translation: String,
     translationTextSize: androidx.compose.ui.unit.TextUnit,
     translationEnabled: Boolean,
+    reflections: List<QuranReflectionItem>,
     tafsir: String,
     tafsirSources: List<TafsirSourceUiModel>,
     selectedTafsirSourceId: Int,
@@ -1690,6 +1706,14 @@ private fun AyahRow(
                 }
             }
 
+            if (reflections.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    reflections.forEach { reflection ->
+                        QuranAyahReflectionCard(reflection = reflection)
+                    }
+                }
+            }
+
             AnimatedVisibility(
                 visible = isTafsirExpanded,
                 enter = fadeIn(animationSpec = tween(durationMillis = 170)) + expandVertically(animationSpec = tween(durationMillis = 220)),
@@ -1782,6 +1806,51 @@ private fun AyahRow(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuranAyahReflectionCard(reflection: QuranReflectionItem) {
+    val colors = VaultThemeTokens.colors
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.elevated.copy(alpha = 0.78f))
+            .border(1.dp, colors.accentBorder.copy(alpha = 0.55f), shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Edit,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = reflection.title,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (reflection.reflectionPreview.isNotBlank()) {
+            Text(
+                text = reflection.reflectionPreview,
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                color = colors.textSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
