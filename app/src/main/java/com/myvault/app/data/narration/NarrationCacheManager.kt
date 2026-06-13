@@ -51,10 +51,11 @@ class NarrationCacheManager @Inject constructor(
                 }
             }
             if (files.isEmpty()) return null
+            val cues = json.optJSONArray("cues").toNarrationCues()
             if (!complete && totalChunks > 0 && files.size >= totalChunks) {
                 File(dir, "manifest.json").writeText(json.put("isComplete", true).toString())
             }
-            NarrationSession(cacheKey, noteId, noteTitle, model, voice, speed, contentHash, files)
+            NarrationSession(cacheKey, noteId, noteTitle, model, voice, speed, contentHash, files, cues)
         }.getOrNull()
     }
 
@@ -75,6 +76,20 @@ class NarrationCacheManager @Inject constructor(
             .put("speed", session.speed.toDouble())
             .put("contentHash", session.contentHash)
             .put("files", files)
+            .put("cues", JSONArray().apply {
+                session.cues.forEach { cue ->
+                    put(
+                        JSONObject()
+                            .put("chunkIndex", cue.chunkIndex)
+                            .put("startMs", cue.startMs)
+                            .put("endMs", cue.endMs)
+                            .put("textStart", cue.textStart)
+                            .put("textEnd", cue.textEnd)
+                            .put("text", cue.text)
+                            .put("displayText", cue.displayText),
+                    )
+                }
+            })
             .put("isComplete", isComplete)
             .put("totalChunks", totalChunks)
             .put("updatedAt", System.currentTimeMillis())
@@ -88,6 +103,24 @@ class NarrationCacheManager @Inject constructor(
     private fun sha256(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
+    }
+}
+
+private fun JSONArray?.toNarrationCues(): List<NarrationCue> = buildList {
+    val array = this@toNarrationCues ?: return@buildList
+    for (index in 0 until array.length()) {
+        val item = array.optJSONObject(index) ?: continue
+        add(
+            NarrationCue(
+                chunkIndex = item.optInt("chunkIndex"),
+                startMs = item.optLong("startMs"),
+                endMs = item.optLong("endMs"),
+                textStart = item.optInt("textStart"),
+                textEnd = item.optInt("textEnd"),
+                text = item.optString("text"),
+                displayText = item.optString("displayText", item.optString("text")),
+            ),
+        )
     }
 }
 

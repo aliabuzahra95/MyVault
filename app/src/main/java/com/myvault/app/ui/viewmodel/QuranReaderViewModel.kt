@@ -342,6 +342,12 @@ class QuranReaderViewModel @Inject constructor(
 
     fun createReflectionNoteForAyah(ayah: QuranAyah, title: String, body: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
+            val existing = _uiState.value.reflectionsByVerse[ayah.verseKey]?.firstOrNull()
+            if (existing != null) {
+                persistReflection(existing.noteId, ayah, title, body)
+                onCreated(existing.noteId)
+                return@launch
+            }
             val folderId = folderRepository.ensureRootFolderForMode(
                 name = "Quran Reflections",
                 mode = FOLDER_MODE_STUDY,
@@ -350,23 +356,29 @@ class QuranReaderViewModel @Inject constructor(
             val reference = "${surah.name} ${surah.num}:${ayah.ayahNumber}"
             val noteTitle = title.ifBlank { "Reflection on $reference" }
             val noteId = noteRepository.createNote(folderId = folderId, title = noteTitle)
-            val noteBody = buildString {
-                append(noteTitle)
-                append("\n\n")
-                append("Source: ")
-                append(reference)
-                append("\n\n")
-                append(ayah.arabicText)
-                if (ayah.translation.isNotBlank()) {
-                    append("\n\n")
-                    append(ayah.translation)
-                }
-                append("\n\n")
-                append(body.ifBlank { "Reflection:" })
-            }
+            val noteBody = buildReflectionNoteBody(noteTitle, reference, ayah, body)
             noteRepository.saveRichText(noteId = noteId, text = noteBody, styleMarksJson = "[]")
             onCreated(noteId)
         }
+    }
+
+    fun updateReflectionForAyah(noteId: String, ayah: QuranAyah, title: String, body: String) {
+        viewModelScope.launch {
+            persistReflection(noteId, ayah, title, body)
+        }
+    }
+
+    fun deleteReflection(noteId: String) {
+        viewModelScope.launch { noteRepository.deleteNote(noteId) }
+    }
+
+    private suspend fun persistReflection(noteId: String, ayah: QuranAyah, title: String, body: String) {
+        val surah = _uiState.value.selectedSurah
+        val reference = "${surah.name} ${surah.num}:${ayah.ayahNumber}"
+        val noteTitle = title.ifBlank { "Reflection on $reference" }
+        val noteBody = buildReflectionNoteBody(noteTitle, reference, ayah, body)
+        noteRepository.updateTitle(noteId, noteTitle)
+        noteRepository.saveRichText(noteId = noteId, text = noteBody, styleMarksJson = "[]")
     }
 
     private fun setArabicFontPercent(percent: Int) {
@@ -498,13 +510,16 @@ class QuranReaderViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             val currentRecords = vaultPreferences.userPreferences.first().quranMemorizationRecords
             val existingByVerse = currentRecords.associateBy { it.verseKey }
+            val shouldUnmark = (1..surah.ayat).all { ayahNumber ->
+                existingByVerse["${surah.num}:$ayahNumber"]?.isMemorized == true
+            }
             val surahRecords = (1..surah.ayat).map { ayahNumber ->
                 val verseKey = "${surah.num}:$ayahNumber"
                 val existing = existingByVerse[verseKey]
                 existing?.copy(
                     lastReviewedAt = now,
                     reviewCount = if (existing.reviewCount == 0) 1 else existing.reviewCount,
-                    memorizedAt = existing.memorizedAt ?: now,
+                    memorizedAt = if (shouldUnmark) null else existing.memorizedAt ?: now,
                     updatedAt = now,
                 ) ?: MemorizationRecord(
                     verseKey = verseKey,
@@ -513,7 +528,7 @@ class QuranReaderViewModel @Inject constructor(
                     startedAt = now,
                     lastReviewedAt = now,
                     reviewCount = 1,
-                    memorizedAt = now,
+                    memorizedAt = if (shouldUnmark) null else now,
                     isRevision = false,
                     isWeak = false,
                     updatedAt = now,
@@ -682,3 +697,17 @@ private fun QuranAyah.toMemorizationRecord(now: Long): MemorizationRecord =
         isWeak = false,
         updatedAt = now,
     )
+
+private fun buildReflectionNoteBody(title: String, reference: String, ayah: QuranAyah, body: String): String = buildString {
+    append(title)
+    append("\n\nSource: ")
+    append(reference)
+    append("\n\n")
+    append(ayah.arabicText)
+    if (ayah.translation.isNotBlank()) {
+        append("\n\n")
+        append(ayah.translation)
+    }
+    append("\n\n")
+    append(body.ifBlank { "Reflection:" })
+}

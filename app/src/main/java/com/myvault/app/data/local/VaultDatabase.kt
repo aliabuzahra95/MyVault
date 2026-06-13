@@ -8,6 +8,7 @@ import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.FolderStickyNoteDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
@@ -22,6 +23,7 @@ import com.myvault.app.data.local.entity.AiConversationEntity
 import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.data.local.entity.KnowledgeTagEntity
 import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
@@ -37,6 +39,7 @@ import com.myvault.app.data.local.entity.TagEntity
 @Database(
     entities = [
         FolderEntity::class,
+        FolderStickyNoteEntity::class,
         NoteEntity::class,
         BlockEntity::class,
         TagEntity::class,
@@ -53,11 +56,12 @@ import com.myvault.app.data.local.entity.TagEntity
         KnowledgeTagLinkEntity::class,
         NoteVersionEntity::class,
     ],
-    version = 13,
+    version = 16,
     exportSchema = false,
 )
 abstract class VaultDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
+    abstract fun folderStickyNoteDao(): FolderStickyNoteDao
     abstract fun noteDao(): NoteDao
     abstract fun blockDao(): BlockDao
     abstract fun tagDao(): TagDao
@@ -288,6 +292,39 @@ abstract class VaultDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_note_versions_noteId_createdAt ON note_versions(noteId, createdAt)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN parentNoteId TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notes_parentNoteId_deletedAt_updatedAt ON notes(parentNoteId, deletedAt, updatedAt)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS folder_sticky_notes (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        folderId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_folder_sticky_notes_folderId_updatedAt ON folder_sticky_notes(folderId, updatedAt)")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE folders ADD COLUMN description TEXT")
+            }
+        }
+
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE notes ADD COLUMN isFolderPinned INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE notes ADD COLUMN orderIndex INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_notes_folderId_parentNoteId_orderIndex ON notes(folderId, parentNoteId, orderIndex)")
             }
         }
     }

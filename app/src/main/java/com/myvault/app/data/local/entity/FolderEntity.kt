@@ -21,6 +21,7 @@ data class FolderEntity(
     @PrimaryKey val id: String,
     val parentId: String?,
     val name: String,
+    val description: String? = null,
     val orderIndex: Int,
     val isFavourite: Boolean,
     val mode: String = FOLDER_MODE_STUDY,

@@ -13,6 +13,9 @@ class PdfReadingProgressRepository @Inject constructor(
 
     fun observeForAttachment(attachmentId: String) = progressDao.observeForAttachment(attachmentId)
 
+    suspend fun getForAttachment(attachmentId: String): PdfReadingProgressEntity? =
+        progressDao.getByAttachmentId(attachmentId)
+
     suspend fun updateProgress(attachmentId: String, pageIndex: Int, pageCount: Int) {
         if (attachmentId.isBlank() || pageCount <= 0) return
         val safePage = pageIndex.coerceIn(0, pageCount - 1)

@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.myvault.app.ui.theme.VaultThemeMode
+import com.myvault.app.data.narration.AzureNarrationConfig
+import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.quran.QuranRecentLocation
 import com.myvault.app.data.quran.memorization.MemorizationRecord
 import com.myvault.app.data.quran.memorization.toMemorizationRecordOrNull
@@ -34,6 +36,7 @@ data class VaultUserPreferences(
     val showFullNoteTitles: Boolean = false,
     val showFullFileTitles: Boolean = false,
     val defaultNoteView: String = "reading",
+    val narrationProvider: String = NarrationProvider.Device.storedValue,
     val autoTagSuggestions: Boolean = true,
     val securityLockEnabled: Boolean = false,
     val securityLockTimeoutMs: Long = 30_000L,
@@ -58,6 +61,13 @@ data class VaultUserPreferences(
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
 )
 
+data class AzureSpeechSettings(
+    val apiKey: String = "",
+    val region: String = AzureNarrationConfig.DEFAULT_REGION,
+    val voice: String = AzureNarrationConfig.DEFAULT_VOICE,
+    val arabicVoice: String = AzureNarrationConfig.DEFAULT_ARABIC_VOICE,
+)
+
 @Singleton
 class VaultPreferences @Inject constructor(@param:ApplicationContext private val context: Context) {
     private val startupCache = context.getSharedPreferences("vault_startup_preferences", Context.MODE_PRIVATE)
@@ -75,6 +85,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 showFullNoteTitles = preferences[Keys.ShowFullNoteTitles] ?: false,
                 showFullFileTitles = preferences[Keys.ShowFullFileTitles] ?: false,
                 defaultNoteView = preferences[Keys.DefaultNoteView] ?: "reading",
+                narrationProvider = preferences[Keys.NarrationProvider] ?: NarrationProvider.Device.storedValue,
                 autoTagSuggestions = preferences[Keys.AutoTagSuggestions] ?: true,
                 securityLockEnabled = preferences[Keys.SecurityLockEnabled] ?: false,
                 securityLockTimeoutMs = preferences[Keys.SecurityLockTimeoutMs] ?: 30_000L,
@@ -104,6 +115,21 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                     }
                     .toMap(),
             ).also(::cacheStartupPreferences)
+        }
+
+    val azureSpeechSettings: Flow<AzureSpeechSettings> =
+        context.vaultDataStore.data.map { preferences ->
+            val legacyVoice = preferences[Keys.AzureSpeechVoice]
+            AzureSpeechSettings(
+                apiKey = preferences[Keys.AzureSpeechApiKey].orEmpty(),
+                region = preferences[Keys.AzureSpeechRegion] ?: AzureNarrationConfig.DEFAULT_REGION,
+                voice = legacyVoice
+                    ?.takeIf { it in AzureNarrationConfig.EnglishVoiceOptions }
+                    ?: AzureNarrationConfig.DEFAULT_VOICE,
+                arabicVoice = preferences[Keys.AzureSpeechArabicVoice]
+                    ?: legacyVoice?.takeIf { it in AzureNarrationConfig.ArabicVoiceOptions }
+                    ?: AzureNarrationConfig.DEFAULT_ARABIC_VOICE,
+            )
         }
 
     fun cachedStartupPreferences(): VaultUserPreferences =
@@ -157,6 +183,21 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     suspend fun setDefaultNoteView(defaultNoteView: String) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.DefaultNoteView] = defaultNoteView
+        }
+    }
+
+    suspend fun setNarrationProvider(provider: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.NarrationProvider] = NarrationProvider.fromStoredValue(provider).storedValue
+        }
+    }
+
+    suspend fun setAzureSpeechSettings(apiKey: String, region: String, voice: String, arabicVoice: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.AzureSpeechApiKey] = apiKey.trim()
+            preferences[Keys.AzureSpeechRegion] = region.trim().lowercase().ifBlank { AzureNarrationConfig.DEFAULT_REGION }
+            preferences[Keys.AzureSpeechVoice] = voice.trim().ifBlank { AzureNarrationConfig.DEFAULT_VOICE }
+            preferences[Keys.AzureSpeechArabicVoice] = arabicVoice.trim().ifBlank { AzureNarrationConfig.DEFAULT_ARABIC_VOICE }
         }
     }
 
@@ -344,6 +385,11 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val ShowFullNoteTitles: Preferences.Key<Boolean> = booleanPreferencesKey("show_full_note_titles")
         val ShowFullFileTitles: Preferences.Key<Boolean> = booleanPreferencesKey("show_full_file_titles")
         val DefaultNoteView: Preferences.Key<String> = stringPreferencesKey("default_note_view")
+        val NarrationProvider: Preferences.Key<String> = stringPreferencesKey("narration_provider")
+        val AzureSpeechApiKey: Preferences.Key<String> = stringPreferencesKey("azure_speech_api_key")
+        val AzureSpeechRegion: Preferences.Key<String> = stringPreferencesKey("azure_speech_region")
+        val AzureSpeechVoice: Preferences.Key<String> = stringPreferencesKey("azure_speech_voice")
+        val AzureSpeechArabicVoice: Preferences.Key<String> = stringPreferencesKey("azure_speech_arabic_voice")
         val AutoTagSuggestions: Preferences.Key<Boolean> = booleanPreferencesKey("auto_tag_suggestions")
         val SecurityLockEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("security_lock_enabled")
         val SecurityLockTimeoutMs: Preferences.Key<Long> = longPreferencesKey("security_lock_timeout_ms")

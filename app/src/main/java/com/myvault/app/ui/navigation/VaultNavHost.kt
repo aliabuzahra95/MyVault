@@ -38,8 +38,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -119,11 +123,24 @@ fun VaultNavHost(
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, narrationViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) narrationViewModel.saveProgress()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
         navController.navigate(VaultDestination.Editor.route(noteId))
         onPendingOpenNoteConsumed()
+    }
+
+    LaunchedEffect(currentRoute) {
+        narrationViewModel.saveProgress()
     }
 
     LaunchedEffect(pendingQuranVerseKey, currentRoute, preferences.workspace) {
@@ -206,18 +223,20 @@ fun VaultNavHost(
                         onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
-                        onFolderClick = {},
+                        onFolderClick = { folderId ->
+                            navController.navigate(VaultDestination.FolderView.route(folderId))
+                        },
                         onNoteClick = openNote,
                         onNewNoteClick = { folderId ->
                             homeViewModel.createNote(folderId = folderId, mode = FOLDER_MODE_STUDY) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
-                        onNewFolderClick = { parentId, name ->
-                            homeViewModel.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_STUDY) { }
+                        onNewFolderClick = { parentId, name, description ->
+                            homeViewModel.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_STUDY, description = description) { }
                         },
-                        onRenameFolderClick = { folderId, name ->
-                            homeViewModel.renameFolder(folderId, name)
+                        onRenameFolderClick = { folderId, name, description ->
+                            homeViewModel.updateFolderDetails(folderId, name, description)
                         },
                         onMoveFolderClick = { folderId, parentId ->
                             homeViewModel.moveFolder(folderId, parentId)
@@ -251,6 +270,11 @@ fun VaultNavHost(
                         },
                         onSetNoteFavouriteClick = { noteId, favourite ->
                             homeViewModel.setNoteFavourite(noteId, favourite)
+                        },
+                        onCreateSubNoteClick = { parentNoteId ->
+                            homeViewModel.createSubNote(parentNoteId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
                         },
                         onImportFileClick = { uri ->
                             homeViewModel.importDocument(uri, mode = FOLDER_MODE_STUDY) { noteId ->
@@ -320,6 +344,8 @@ fun VaultNavHost(
                                 Toast.makeText(context, "Reflection saved", Toast.LENGTH_SHORT).show()
                             }
                         },
+                        onUpdateReflection = quranViewModel::updateReflectionForAyah,
+                        onDeleteReflection = quranViewModel::deleteReflection,
                         onOpenBookmark = quranViewModel::openBookmarkedAyah,
                         onOpenReciterPicker = quranViewModel::openReciterPicker,
                         onDismissReciterPicker = quranViewModel::dismissReciterPicker,
@@ -464,11 +490,11 @@ fun VaultNavHost(
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
-                        onNewFolderClick = { parentId, name ->
-                            homeViewModel.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_PERSONAL) { }
+                        onNewFolderClick = { parentId, name, description ->
+                            homeViewModel.createFolder(parentId = parentId, name = name, mode = FOLDER_MODE_PERSONAL, description = description) { }
                         },
-                        onRenameFolderClick = { folderId, name ->
-                            homeViewModel.renameFolder(folderId, name)
+                        onRenameFolderClick = { folderId, name, description ->
+                            homeViewModel.updateFolderDetails(folderId, name, description)
                         },
                         onMoveFolderClick = { folderId, parentId ->
                             homeViewModel.moveFolder(folderId, parentId)
@@ -502,6 +528,11 @@ fun VaultNavHost(
                         },
                         onSetNoteFavouriteClick = { noteId, favourite ->
                             homeViewModel.setNoteFavourite(noteId, favourite)
+                        },
+                        onCreateSubNoteClick = { parentNoteId ->
+                            homeViewModel.createSubNote(parentNoteId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
                         },
                         onImportFileClick = { uri ->
                             homeViewModel.importDocument(uri, mode = FOLDER_MODE_PERSONAL) { noteId ->
@@ -693,12 +724,36 @@ fun VaultNavHost(
                         navController.navigate(VaultDestination.Editor.route(noteId))
                     }
                 },
-                onNewSubfolderClick = { name ->
-                    viewModel.createSubfolder(name) { folderId ->
+                onNewSubfolderClick = { name, description ->
+                    viewModel.createSubfolder(name, description) { folderId ->
                         navController.navigate(VaultDestination.FolderView.route(folderId))
                     }
                 },
+                onUpdateFolderClick = viewModel::updateFolderDetails,
+                onMoveCurrentFolderClick = viewModel::moveCurrentFolder,
+                onDeleteCurrentFolderClick = {
+                    viewModel.deleteCurrentFolder { navController.popBackStack() }
+                },
+                onFolderExpandedChange = viewModel::setFolderExpanded,
+                onMoveItemInOrderClick = viewModel::moveItemInOrder,
+                onRenameNoteClick = viewModel::renameNote,
+                onMoveNoteClick = viewModel::moveNote,
+                onMoveNoteToModeClick = viewModel::moveNoteToMode,
+                onDeleteNoteClick = viewModel::deleteNote,
+                onSetNotePinnedClick = viewModel::setNotePinned,
+                onSetNoteFolderPinnedClick = viewModel::setNoteFolderPinned,
+                onSetNoteFavouriteClick = viewModel::setNoteFavourite,
+                onCreateSubNoteClick = { parentNoteId ->
+                    viewModel.createSubNote(parentNoteId) { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                    }
+                },
+                onNewStickyNoteClick = viewModel::createStickyNote,
+                onUpdateStickyNoteClick = viewModel::updateStickyNote,
+                onDeleteStickyNoteClick = viewModel::deleteStickyNote,
                 notePreviewLines = preferences.notePreview.toPreviewLines(),
+                showFullNoteTitles = preferences.showFullNoteTitles,
+                dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
             )
         }
         composable(
@@ -737,6 +792,7 @@ fun VaultNavHost(
                         navController.navigate(VaultDestination.AskAi.route(noteId, selectedText))
                     }
                 },
+                onAzureListenFromHere = viewModel::startAzureNarrationFromSelection,
                 onAttachDocument = viewModel::attachDocument,
                 onAttachmentClick = { attachmentId ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
@@ -765,10 +821,12 @@ fun VaultNavHost(
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val aiState by viewModel.aiState.collectAsStateWithLifecycle()
             val narrationState by viewModel.narrationState.collectAsStateWithLifecycle()
+            val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
             ReadingScreen(
                 uiState = uiState,
                 aiState = aiState,
                 narrationState = narrationState,
+                azureNarrationProgress = azureNarrationProgress,
                 onBackClick = { navController.popBackStack() },
                 onEditClick = {
                     uiState.note?.id?.let { noteId ->
@@ -791,7 +849,10 @@ fun VaultNavHost(
                     }
                 },
                 onListenClick = viewModel::startNarration,
+                onAzureListenClick = viewModel::startAzureNarration,
+                onAzureResumeClick = viewModel::resumeAzureNarration,
                 onDeviceListenClick = viewModel::startDeviceNarration,
+                defaultNarrationProvider = preferences.narrationProvider,
                 onDeleteNote = {
                     viewModel.deleteNote {
                         navController.popBackStack(VaultDestination.Home.route, false)
@@ -891,13 +952,23 @@ fun VaultNavHost(
         ) {
             val viewModel: AttachmentViewerViewModel = hiltViewModel()
             val attachment by viewModel.attachment.collectAsStateWithLifecycle()
+            val resolvedInitialPageIndex by viewModel.resolvedInitialPageIndex.collectAsStateWithLifecycle()
             val pdfProgress by viewModel.pdfProgress.collectAsStateWithLifecycle()
             val pdfAnnotations by viewModel.pdfAnnotations.collectAsStateWithLifecycle()
+            val documentText by viewModel.documentText.collectAsStateWithLifecycle()
+            val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
             AttachmentViewerScreen(
                 attachment = attachment,
                 pdfProgress = pdfProgress,
                 pdfAnnotations = pdfAnnotations,
-                initialPageIndex = viewModel.initialPageIndex,
+                documentText = documentText.text,
+                documentTextLoading = documentText.isLoading,
+                documentTextError = documentText.error,
+                activeNarrationSentence = narrationState.activeSentence.takeIf {
+                    it.isNotBlank() && narrationState.noteId == attachment?.id?.let { id -> "attachment:$id" }
+                }.orEmpty(),
+                azureNarrationProgress = azureNarrationProgress,
+                initialPageIndex = resolvedInitialPageIndex,
                 onBackClick = { navController.popBackStack() },
                 onPdfProgressChanged = viewModel::updatePdfProgress,
                 onPdfFirstLoaded = viewModel::loadPdfSecondaryData,
@@ -916,6 +987,9 @@ fun VaultNavHost(
                         Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                     }
                 },
+                onAzureListenClick = viewModel::startAzureNarration,
+                onAzureResumeClick = viewModel::resumeAzureNarration,
+                onAzureListenFromHere = viewModel::startAzureNarrationFromSelection,
             )
         }
         composable(
@@ -936,6 +1010,7 @@ fun VaultNavHost(
         composable(VaultDestination.Settings.route) {
             val viewModel: SettingsViewModel = hiltViewModel()
             val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+            val azureSpeechSettings by viewModel.azureSpeechSettings.collectAsStateWithLifecycle()
             val storageLabel by viewModel.storageLabel.collectAsStateWithLifecycle()
             val recentlyDeleted by viewModel.recentlyDeleted.collectAsStateWithLifecycle()
             val recentlyDeletedLoaded by viewModel.recentlyDeletedLoaded.collectAsStateWithLifecycle()
@@ -958,6 +1033,9 @@ fun VaultNavHost(
                 onShowFullNoteTitlesChanged = viewModel::setShowFullNoteTitles,
                 onShowFullFileTitlesChanged = viewModel::setShowFullFileTitles,
                 onDefaultNoteViewSelected = viewModel::setDefaultNoteView,
+                azureSpeechSettings = azureSpeechSettings,
+                onNarrationProviderSelected = viewModel::setNarrationProvider,
+                onAzureSpeechSettingsSaved = viewModel::setAzureSpeechSettings,
                 onSecurityLockChanged = viewModel::setSecurityLockEnabled,
                 onSecurityLockTimeoutSelected = viewModel::setSecurityLockTimeout,
                 storageLabel = storageLabel,
@@ -1020,6 +1098,7 @@ fun VaultNavHost(
                 onStop = narrationViewModel::stop,
                 onSpeedChange = narrationViewModel::setSpeed,
                 onSeek = narrationViewModel::seekTo,
+                onSkipBy = narrationViewModel::skipBy,
                 onProgressTick = narrationViewModel::refreshProgress,
             )
         }

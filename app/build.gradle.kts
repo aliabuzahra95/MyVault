@@ -89,6 +89,7 @@ dependencies {
     implementation(libs.firebase.ai)
     implementation(libs.hilt.android)
     implementation(libs.play.services.auth)
+    implementation(libs.azure.speech)
 
     ksp(libs.androidx.room.compiler)
     ksp(libs.hilt.compiler)

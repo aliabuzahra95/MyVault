@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -61,6 +62,9 @@ import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.data.preferences.VaultUserPreferences
+import com.myvault.app.data.preferences.AzureSpeechSettings
+import com.myvault.app.data.narration.AzureNarrationConfig
+import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.sync.DriveConflictMessage
 import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.DriveRestoreStage
@@ -85,6 +89,9 @@ fun SettingsScreen(
     onShowFullNoteTitlesChanged: (Boolean) -> Unit = {},
     onShowFullFileTitlesChanged: (Boolean) -> Unit = {},
     onDefaultNoteViewSelected: (String) -> Unit = {},
+    azureSpeechSettings: AzureSpeechSettings = AzureSpeechSettings(),
+    onNarrationProviderSelected: (String) -> Unit = {},
+    onAzureSpeechSettingsSaved: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onSecurityLockChanged: (Boolean) -> Unit = {},
     onSecurityLockTimeoutSelected: (Long) -> Unit = {},
     storageLabel: String = "Calculating...",
@@ -115,6 +122,8 @@ fun SettingsScreen(
     var noteFontSizeDialogOpen by remember { mutableStateOf(false) }
     var notePreviewDialogOpen by remember { mutableStateOf(false) }
     var defaultViewDialogOpen by remember { mutableStateOf(false) }
+    var narrationProviderDialogOpen by remember { mutableStateOf(false) }
+    var azureSpeechDialogOpen by remember { mutableStateOf(false) }
     var lockTimerDialogOpen by remember { mutableStateOf(false) }
     var recentlyDeletedOpen by remember { mutableStateOf(false) }
     var permanentDeleteTarget by remember { mutableStateOf<DeletedTarget?>(null) }
@@ -171,6 +180,8 @@ fun SettingsScreen(
                     onShowFullNoteTitlesChanged = onShowFullNoteTitlesChanged,
                     onShowFullFileTitlesChanged = onShowFullFileTitlesChanged,
                     onDefaultViewClick = { defaultViewDialogOpen = true },
+                    onNarrationProviderClick = { narrationProviderDialogOpen = true },
+                    onAzureSpeechClick = { azureSpeechDialogOpen = true },
                 )
             }
             item {
@@ -358,6 +369,30 @@ fun SettingsScreen(
             onSelect = {
                 onDefaultNoteViewSelected(it)
                 defaultViewDialogOpen = false
+            },
+        )
+    }
+
+    if (narrationProviderDialogOpen) {
+        SettingsChoiceDialog(
+            title = "Default Listen provider",
+            options = NarrationProvider.entries.map { SettingsChoice(it.storedValue, it.label) },
+            selectedValue = preferences.narrationProvider,
+            onDismiss = { narrationProviderDialogOpen = false },
+            onSelect = {
+                onNarrationProviderSelected(it)
+                narrationProviderDialogOpen = false
+            },
+        )
+    }
+
+    if (azureSpeechDialogOpen) {
+        AzureSpeechSettingsDialog(
+            settings = azureSpeechSettings,
+            onDismiss = { azureSpeechDialogOpen = false },
+            onSave = { apiKey, region, voice, arabicVoice ->
+                onAzureSpeechSettingsSaved(apiKey, region, voice, arabicVoice)
+                azureSpeechDialogOpen = false
             },
         )
     }
@@ -555,6 +590,8 @@ private fun SettingsGroupEditor(
     onShowFullNoteTitlesChanged: (Boolean) -> Unit,
     onShowFullFileTitlesChanged: (Boolean) -> Unit,
     onDefaultViewClick: () -> Unit,
+    onNarrationProviderClick: () -> Unit,
+    onAzureSpeechClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
@@ -565,7 +602,77 @@ private fun SettingsGroupEditor(
         SettingsRow(Icons.Rounded.Visibility, "Show full note titles", if (preferences.showFullNoteTitles) "On" else "Off", onClick = { onShowFullNoteTitlesChanged(!preferences.showFullNoteTitles) })
         SettingsRow(Icons.Rounded.Visibility, "Show full file titles", if (preferences.showFullFileTitles) "On" else "Off", onClick = { onShowFullFileTitlesChanged(!preferences.showFullFileTitles) })
         SettingsRow(Icons.Rounded.Visibility, "Default note view", preferences.defaultNoteView.displayPreference(), onClick = onDefaultViewClick)
+        SettingsRow(Icons.Rounded.VolumeUp, "Default Listen provider", NarrationProvider.fromStoredValue(preferences.narrationProvider).label, onClick = onNarrationProviderClick)
+        SettingsRow(Icons.Rounded.VolumeUp, "Azure Speech", "API key, region, English and Arabic voices", onClick = onAzureSpeechClick)
     }
+}
+
+@Composable
+private fun AzureSpeechSettingsDialog(
+    settings: AzureSpeechSettings,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String) -> Unit,
+) {
+    var apiKey by remember(settings.apiKey) { mutableStateOf(settings.apiKey) }
+    var region by remember(settings.region) { mutableStateOf(settings.region) }
+    var voice by remember(settings.voice) { mutableStateOf(settings.voice) }
+    var arabicVoice by remember(settings.arabicVoice) { mutableStateOf(settings.arabicVoice) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Azure Speech") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("Azure Speech API Key") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = region,
+                    onValueChange = { region = it },
+                    label = { Text("Azure Region") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("ENGLISH VOICE", style = MaterialTheme.typography.labelSmall, color = VaultThemeTokens.colors.accent)
+                AzureNarrationConfig.EnglishVoiceOptions.forEach { option ->
+                    SettingsRow(
+                        icon = if (option == voice) Icons.Rounded.VolumeUp else Icons.Rounded.Visibility,
+                        label = option,
+                        value = if (option == voice) "Selected" else "",
+                        onClick = { voice = option },
+                    )
+                }
+                Text("ARABIC VOICE", style = MaterialTheme.typography.labelSmall, color = VaultThemeTokens.colors.accent)
+                AzureNarrationConfig.ArabicVoiceOptions.forEach { option ->
+                    SettingsRow(
+                        icon = if (option == arabicVoice) Icons.Rounded.VolumeUp else Icons.Rounded.Visibility,
+                        label = option,
+                        value = if (option == arabicVoice) "Selected" else "",
+                        onClick = { arabicVoice = option },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(apiKey, region, voice, arabicVoice) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable

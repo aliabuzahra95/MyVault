@@ -7,6 +7,7 @@ import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.FolderStickyNoteDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
@@ -43,11 +44,17 @@ object AppModule {
                 VaultDatabase.MIGRATION_10_11,
                 VaultDatabase.MIGRATION_11_12,
                 VaultDatabase.MIGRATION_12_13,
+                VaultDatabase.MIGRATION_13_14,
+                VaultDatabase.MIGRATION_14_15,
+                VaultDatabase.MIGRATION_15_16,
             )
             .build()
 
     @Provides
     fun provideFolderDao(database: VaultDatabase): FolderDao = database.folderDao()
+
+    @Provides
+    fun provideFolderStickyNoteDao(database: VaultDatabase): FolderStickyNoteDao = database.folderStickyNoteDao()
 
     @Provides
     fun provideNoteDao(database: VaultDatabase): NoteDao = database.noteDao()

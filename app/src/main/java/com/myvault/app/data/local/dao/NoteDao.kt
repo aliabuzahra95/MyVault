@@ -21,13 +21,16 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeDeleted(): Flow<List<NoteEntity>>
 
-    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deletedAt IS NULL ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE folderId = :folderId AND parentNoteId IS NULL AND deletedAt IS NULL ORDER BY updatedAt DESC")
     fun observeForFolder(folderId: String): Flow<List<NoteEntity>>
 
-    @Query("SELECT * FROM notes WHERE isPinned = 1 AND deletedAt IS NULL ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE parentNoteId = :parentNoteId AND deletedAt IS NULL ORDER BY updatedAt DESC")
+    fun observeChildren(parentNoteId: String): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE isPinned = 1 AND parentNoteId IS NULL AND deletedAt IS NULL ORDER BY updatedAt DESC")
     fun observePinned(): Flow<List<NoteEntity>>
 
-    @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY updatedAt DESC LIMIT :limit")
+    @Query("SELECT * FROM notes WHERE parentNoteId IS NULL AND deletedAt IS NULL ORDER BY updatedAt DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE id = :id AND deletedAt IS NULL")
@@ -47,6 +50,12 @@ interface NoteDao {
 
     @Query("UPDATE notes SET isPinned = :isPinned, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updatePinned(id: String, isPinned: Boolean, updatedAt: Long)
+
+    @Query("UPDATE notes SET isFolderPinned = :isFolderPinned, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateFolderPinned(id: String, isFolderPinned: Boolean, updatedAt: Long)
+
+    @Query("UPDATE notes SET orderIndex = :orderIndex, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateOrderIndex(id: String, orderIndex: Int, updatedAt: Long)
 
     @Query("UPDATE notes SET isFavourite = :isFavourite, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateFavourite(id: String, isFavourite: Boolean, updatedAt: Long)

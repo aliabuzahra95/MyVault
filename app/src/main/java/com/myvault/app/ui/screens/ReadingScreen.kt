@@ -33,6 +33,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.ArrowOutward
@@ -59,17 +62,27 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,6 +92,8 @@ import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.narration.NarrationConfig
+import com.myvault.app.data.narration.AzureNarrationProgress
+import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
@@ -104,6 +119,7 @@ fun ReadingScreen(
     uiState: NoteUiState,
     aiState: NoteAiUiState = NoteAiUiState(),
     narrationState: NarrationUiState = NarrationUiState(),
+    azureNarrationProgress: AzureNarrationProgress? = null,
     onBackClick: () -> Unit,
     onEditClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -117,7 +133,11 @@ fun ReadingScreen(
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: () -> Unit = {},
     onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
+    onAzureListenClick: (title: String, body: String) -> Unit = { _, _ -> },
+    onAzureResumeClick: (title: String, body: String) -> Unit = { _, _ -> },
     onDeviceListenClick: (title: String, body: String) -> Unit = { _, _ -> },
+    defaultNarrationProvider: String = NarrationProvider.Device.storedValue,
+    azureNarrationVoice: String = "",
     onDeleteNote: () -> Unit = {},
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
@@ -144,6 +164,19 @@ fun ReadingScreen(
     var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
     var tagDraft by remember { mutableStateOf("") }
     var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
+    var followAudio by remember { mutableStateOf(true) }
+    var followAudioPausedUntil by remember { mutableLongStateOf(0L) }
+    val readingListState = rememberLazyListState()
+    val userScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    followAudioPausedUntil = System.currentTimeMillis() + FollowAudioPauseMs
+                }
+                return Offset.Zero
+            }
+        }
+    }
     val exportTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let(onExportText)
     }
@@ -183,9 +216,11 @@ fun ReadingScreen(
         },
     ) { innerPadding ->
         LazyColumn(
+            state = readingListState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .nestedScroll(userScrollConnection),
             contentPadding = PaddingValues(bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
@@ -247,6 +282,14 @@ fun ReadingScreen(
                 }
             }
             item {
+                if (narrationState.noteId == note?.id && narrationState.activeSentence.isNotBlank()) {
+                    TextButton(
+                        onClick = { followAudio = !followAudio },
+                        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                    ) {
+                        Text(if (followAudio) "Follow audio: On" else "Follow audio: Off")
+                    }
+                }
                 RichNoteBody(
                     html = uiState.richHtml,
                     fallbackText = note?.bodyPlainText.orEmpty(),
@@ -254,6 +297,9 @@ fun ReadingScreen(
                     onNoteLinkClick = onNoteLinkClick,
                     onDoubleTapEdit = onEditClick,
                     bodyFontSizeSp = bodyFontSizeSp,
+                    activeSentence = narrationState.activeSentence.takeIf { narrationState.noteId == note?.id }.orEmpty(),
+                    followAudio = followAudio,
+                    followAudioPausedUntil = followAudioPausedUntil,
                     modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                 )
             }
@@ -390,24 +436,43 @@ fun ReadingScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    ListenModeChoice(
-                        title = "AI narration",
-                        subtitle = "Natural OpenAI voice. Uses cached audio when available.",
-                        icon = Icons.Rounded.AutoAwesome,
-                        onClick = {
-                            listenModeOpen = false
-                            onListenClick(noteTitle, noteBody, selectedNarrationVoice)
-                        },
-                    )
-                    ListenModeChoice(
-                        title = "Device voice",
-                        subtitle = "Fast built-in phone voice. No OpenAI cost.",
-                        icon = Icons.Rounded.PlayArrow,
-                        onClick = {
+                    azureNarrationProgress?.takeIf { it.positionMs >= 5_000L }?.let { progress ->
+                        ListenModeChoice(
+                            title = "Continue listening",
+                            subtitle = "Resume from ${progress.positionMs.toPlaybackTime()}",
+                            icon = Icons.Rounded.PlayArrow,
+                            onClick = {
+                                listenModeOpen = false
+                                onAzureResumeClick(noteTitle, noteBody)
+                            },
+                        )
+                    }
+                    val choices = listOf(
+                        NarrationProvider.Device to {
                             listenModeOpen = false
                             onDeviceListenClick(noteTitle, noteBody)
                         },
-                    )
+                        NarrationProvider.Azure to {
+                            listenModeOpen = false
+                            onAzureListenClick(noteTitle, noteBody)
+                        },
+                        NarrationProvider.OpenAi to {
+                            listenModeOpen = false
+                            onListenClick(noteTitle, noteBody, selectedNarrationVoice)
+                        },
+                    ).sortedByDescending { it.first.storedValue == defaultNarrationProvider }
+                    choices.forEach { (provider, action) ->
+                        ListenModeChoice(
+                            title = provider.label,
+                            subtitle = when (provider) {
+                                NarrationProvider.Device -> "Fast built-in phone voice. No network required."
+                                NarrationProvider.Azure -> "Azure ${azureNarrationVoice.ifBlank { "neural voice" }}. Uses cached audio."
+                                NarrationProvider.OpenAi -> "Natural OpenAI voice. Uses cached audio when available."
+                            },
+                            icon = if (provider == NarrationProvider.Device) Icons.Rounded.PlayArrow else Icons.Rounded.AutoAwesome,
+                            onClick = action,
+                        )
+                    }
                 }
             },
             confirmButton = {},
@@ -835,10 +900,31 @@ private fun RichNoteBody(
     onNoteLinkClick: (String) -> Unit,
     onDoubleTapEdit: () -> Unit,
     bodyFontSizeSp: Float,
+    activeSentence: String,
+    followAudio: Boolean,
+    followAudioPausedUntil: Long,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     val bodyText = richText.text.ifBlank { fallbackText.ifBlank { html.stripHtml() } }
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val activeStart = activeSentence.takeIf { it.isNotBlank() }?.let(bodyText::indexOf) ?: -1
+
+    LaunchedEffect(activeSentence, followAudio, followAudioPausedUntil, textLayout) {
+        val layout = textLayout ?: return@LaunchedEffect
+        if (!followAudio || activeStart < 0 || System.currentTimeMillis() < followAudioPausedUntil) return@LaunchedEffect
+        val startBox = layout.getBoundingBox(activeStart)
+        val endBox = layout.getBoundingBox((activeStart + activeSentence.length - 1).coerceIn(activeStart, bodyText.lastIndex))
+        bringIntoViewRequester.bringIntoView(
+            Rect(
+                left = minOf(startBox.left, endBox.left),
+                top = minOf(startBox.top, endBox.top) - FollowAudioPaddingPx,
+                right = maxOf(startBox.right, endBox.right),
+                bottom = maxOf(startBox.bottom, endBox.bottom) + FollowAudioPaddingPx,
+            ),
+        )
+    }
 
     if (bodyText.isBlank()) {
         Text(
@@ -848,8 +934,19 @@ private fun RichNoteBody(
             color = colors.textMuted,
         )
     } else {
-        val annotated = remember(bodyText, richText.styleMarks, richText.noteLinks, colors) {
-            buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
+        val annotated = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeSentence) {
+            val base = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
+            if (activeStart < 0) {
+                base
+            } else {
+                AnnotatedString.Builder(base).apply {
+                    addStyle(
+                        SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
+                        activeStart,
+                        (activeStart + activeSentence.length).coerceAtMost(bodyText.length),
+                    )
+                }.toAnnotatedString()
+            }
         }
         SelectionContainer(
             modifier = modifier
@@ -860,8 +957,11 @@ private fun RichNoteBody(
         ) {
             ClickableText(
                 text = annotated,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(bringIntoViewRequester),
                 style = MaterialTheme.typography.bodyLarge.copy(color = colors.text, fontSize = bodyFontSizeSp.sp),
+                onTextLayout = { textLayout = it },
                 onClick = { offset ->
                     annotated.getStringAnnotations("noteLink", offset, offset).firstOrNull()?.let {
                         onNoteLinkClick(it.item)
@@ -870,6 +970,17 @@ private fun RichNoteBody(
             )
         }
     }
+}
+
+private const val FollowAudioPauseMs = 5_000L
+private const val FollowAudioPaddingPx = 48f
+
+private fun Long.toPlaybackTime(): String {
+    val totalSeconds = (this / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }
 
 @Composable

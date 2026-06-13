@@ -32,7 +32,8 @@ fun buildTree(
     }
     val visibleNoteIds = visibleNotes.map { it.id }.toHashSet()
     val foldersByParent = visibleFolders.groupBy { it.parentId }
-    val notesByFolder = visibleNotes.groupBy { it.folderId }
+    val notesByFolder = visibleNotes.filter { it.parentNoteId == null }.groupBy { it.folderId }
+    val notesByParent = visibleNotes.filter { it.parentNoteId != null }.groupBy { it.parentNoteId }
     val attachmentsByNote = attachments
         .asSequence()
         .filter { it.noteId in visibleNoteIds }
@@ -44,55 +45,69 @@ fun buildTree(
     val countCache = mutableMapOf<String, Int>()
 
     fun folderItem(folder: FolderEntity, depth: Int): VaultTreeItem {
-        val childFolders = foldersByParent[folder.id].orEmpty().sortedBy { it.orderIndex }.map { folderItem(it, depth + 1) }
+        val childFolders = foldersByParent[folder.id].orEmpty().map { folderItem(it, depth + 1) }
         val childNotes = notesByFolder[folder.id].orEmpty().map { note ->
-            note.toTreeItem(attachmentsByNote, tablesByNote)
+            note.toTreeItem(attachmentsByNote, tablesByNote, notesByParent)
         }
-        val children = childFolders + childNotes
+        val children = (childFolders + childNotes).sortedBy { it.orderIndex }
         return VaultTreeItem(
             id = folder.id,
             name = folder.name,
             type = VaultTreeItemType.Folder,
-            count = countNotes(folder, foldersByParent, notesByFolder, countCache),
+            description = folder.description,
+            orderIndex = folder.orderIndex,
+            count = countNotes(folder, foldersByParent, notesByFolder, notesByParent, countCache),
             updatedAt = folder.updatedAt,
             favourite = folder.isFavourite,
             children = children,
         )
     }
 
-    val rootFolders = foldersByParent[null].orEmpty().sortedBy { it.orderIndex }.map { folderItem(it, 0) }
-    val rootNotes = notesByFolder[null].orEmpty().map { note -> note.toTreeItem(attachmentsByNote, tablesByNote) }
-    return rootFolders + rootNotes
+    val rootFolders = foldersByParent[null].orEmpty().map { folderItem(it, 0) }
+    val rootNotes = notesByFolder[null].orEmpty().map { note -> note.toTreeItem(attachmentsByNote, tablesByNote, notesByParent) }
+    return (rootFolders + rootNotes).sortedBy { it.orderIndex }
 }
 
 private fun NoteEntity.toTreeItem(
     attachmentsByNote: Map<String, List<AttachmentEntity>>,
     tablesByNote: Map<String, List<NoteTableEntity>>,
+    notesByParent: Map<String?, List<NoteEntity>>,
 ): VaultTreeItem =
     VaultTreeItem(
         id = id,
         name = title,
         type = VaultTreeItemType.Note,
+        orderIndex = orderIndex,
         edited = updatedAt.toRelativeTime(),
         updatedAt = updatedAt,
         attachmentCount = attachmentsByNote[id].orEmpty().size,
         tableCount = tablesByNote[id].orEmpty().size,
         pinned = isPinned,
+        folderPinned = isFolderPinned,
         favourite = isFavourite,
         preview = bodyPlainText.previewText(),
+        children = notesByParent[id].orEmpty()
+            .sortedBy { it.orderIndex }
+            .map { it.toTreeItem(attachmentsByNote, tablesByNote, notesByParent) },
     )
 
 private fun countNotes(
     folder: FolderEntity,
     foldersByParent: Map<String?, List<FolderEntity>>,
     notesByFolder: Map<String?, List<NoteEntity>>,
+    notesByParent: Map<String?, List<NoteEntity>>,
     cache: MutableMap<String, Int>,
 ): Int {
     cache[folder.id]?.let { return it }
-    val own = notesByFolder[folder.id].orEmpty().size
-    val childCount = foldersByParent[folder.id].orEmpty().sumOf { countNotes(it, foldersByParent, notesByFolder, cache) }
+    val own = notesByFolder[folder.id].orEmpty().sumOf { 1 + it.descendantNoteCount(notesByParent) }
+    val childCount = foldersByParent[folder.id].orEmpty().sumOf {
+        countNotes(it, foldersByParent, notesByFolder, notesByParent, cache)
+    }
     return (own + childCount).also { cache[folder.id] = it }
 }
+
+private fun NoteEntity.descendantNoteCount(notesByParent: Map<String?, List<NoteEntity>>): Int =
+    notesByParent[id].orEmpty().sumOf { 1 + it.descendantNoteCount(notesByParent) }
 
 fun BlockEntity.toEditorBlock(): EditorBlock = when (type) {
     "rich_html" -> EditorBlock(EditorBlockType.Paragraph, content.stripHtml(), id = id)

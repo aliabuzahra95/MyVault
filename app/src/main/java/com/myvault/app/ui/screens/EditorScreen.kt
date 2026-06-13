@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -153,6 +154,7 @@ fun EditorScreen(
     onAiModelSelected: (NoteAiModel) -> Unit = {},
     onAiQuestionChange: (String) -> Unit = {},
     onAskAiClick: (selectedText: String?) -> Unit = {},
+    onAzureListenFromHere: (title: String, body: String, startOffset: Int) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     onAttachDocument: (Uri) -> Unit,
     onAttachmentClick: (String) -> Unit = {},
@@ -873,8 +875,14 @@ fun EditorScreen(
                         )
 
                         selectedTextChipText?.let { selectedText ->
-                            Surface(
-                                onClick = {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                            ) {
+                                Surface(
+                                    onClick = {
                                     val currentStart = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
                                         .coerceIn(0, safeBodyValue.text.length)
                                     val currentEnd = maxOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
@@ -890,30 +898,38 @@ fun EditorScreen(
                                     onClearSelectedTextAi()
                                     onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(AiSuggestion.Explain, selectedTextMode = true))
                                     onAskAiClick(selectedText)
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(bottom = 12.dp),
-                                color = colors.accentSoft,
-                                shape = VaultShapes.pill,
-                                border = BorderStroke(1.dp, colors.accentBorder),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    },
+                                    color = colors.accentSoft,
+                                    shape = VaultShapes.pill,
+                                    border = BorderStroke(1.dp, colors.accentBorder),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.AutoAwesome,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = colors.accent,
-                                    )
-                                    Text(
-                                        text = "Ask AI about selection",
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                                        color = colors.accent,
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = colors.accent)
+                                        Text("Ask AI", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800), color = colors.accent)
+                                    }
+                                }
+                                Surface(
+                                    onClick = {
+                                        val start = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
+                                            .coerceIn(0, safeBodyValue.text.length)
+                                        onAzureListenFromHere(title.text, safeBodyValue.text, start)
+                                    },
+                                    color = colors.accentSoft,
+                                    shape = VaultShapes.pill,
+                                    border = BorderStroke(1.dp, colors.accentBorder),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp), tint = colors.accent)
+                                        Text("Listen from here", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800), color = colors.accent)
+                                    }
                                 }
                             }
                         }

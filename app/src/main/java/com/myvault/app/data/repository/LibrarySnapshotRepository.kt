@@ -87,6 +87,7 @@ private fun FolderEntity.toJson(): JSONObject = JSONObject()
     .put("id", id)
     .put("parentId", parentId)
     .put("name", name)
+    .put("description", description)
     .put("orderIndex", orderIndex)
     .put("isFavourite", isFavourite)
     .put("mode", mode)
@@ -98,6 +99,7 @@ private fun JSONObject.toFolderEntity(): FolderEntity = FolderEntity(
     id = optString("id"),
     parentId = nullableString("parentId"),
     name = optString("name"),
+    description = nullableString("description"),
     orderIndex = optInt("orderIndex", 0),
     isFavourite = optBoolean("isFavourite", false),
     mode = optString("mode", FOLDER_MODE_LIBRARY),

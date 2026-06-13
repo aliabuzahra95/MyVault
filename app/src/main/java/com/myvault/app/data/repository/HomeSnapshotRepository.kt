@@ -111,6 +111,8 @@ private fun JSONObject.toAttachmentSample(): AttachmentSample = AttachmentSample
 private fun VaultTreeItem.toJson(): JSONObject = JSONObject()
     .put("id", id)
     .put("name", name)
+    .put("description", description)
+    .put("orderIndex", orderIndex)
     .put("type", type.name)
     .put("count", count)
     .put("edited", edited)
@@ -118,6 +120,7 @@ private fun VaultTreeItem.toJson(): JSONObject = JSONObject()
     .put("attachmentCount", attachmentCount)
     .put("tableCount", tableCount)
     .put("pinned", pinned)
+    .put("folderPinned", folderPinned)
     .put("favourite", favourite)
     .put("preview", preview)
     .put("children", children.toJsonArray { it.toJson() })
@@ -125,6 +128,8 @@ private fun VaultTreeItem.toJson(): JSONObject = JSONObject()
 private fun JSONObject.toVaultTreeItem(): VaultTreeItem = VaultTreeItem(
     id = optString("id"),
     name = optString("name"),
+    description = optString("description").ifBlank { null },
+    orderIndex = optInt("orderIndex", 0),
     type = runCatching { VaultTreeItemType.valueOf(optString("type")) }.getOrDefault(VaultTreeItemType.Note),
     count = optInt("count", 0),
     edited = optString("edited").ifBlank { null },
@@ -132,6 +137,7 @@ private fun JSONObject.toVaultTreeItem(): VaultTreeItem = VaultTreeItem(
     attachmentCount = optInt("attachmentCount", 0),
     tableCount = optInt("tableCount", 0),
     pinned = optBoolean("pinned", false),
+    folderPinned = optBoolean("folderPinned", false),
     favourite = optBoolean("favourite", false),
     preview = optString("preview"),
     children = optJSONArray("children").orEmptyJsonArray().mapObjects { it.toVaultTreeItem() },

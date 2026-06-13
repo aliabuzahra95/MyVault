@@ -115,6 +115,8 @@ class NoteRepository @Inject constructor(
 
     fun observeForFolder(folderId: String) = noteDao.observeForFolder(folderId)
 
+    fun observeSubNotes(noteId: String) = noteDao.observeChildren(noteId)
+
     fun observeNote(noteId: String) = noteDao.observeById(noteId)
 
     fun observeFolderPath(noteId: String) = combine(noteDao.observeById(noteId), folderDao.observeAll()) { note, folders ->
@@ -137,18 +139,28 @@ class NoteRepository @Inject constructor(
         tags.map { it.name }
     }
 
-    suspend fun createNote(folderId: String?, title: String = "Untitled note"): String {
+    suspend fun createNote(folderId: String?, title: String = "Untitled note", parentNoteId: String? = null): String {
         val now = System.currentTimeMillis()
         val noteId = UUID.randomUUID().toString()
+        val notes = noteDao.getAll()
+        val orderIndex = if (parentNoteId != null) {
+            notes.filter { it.parentNoteId == parentNoteId }.maxOfOrNull { it.orderIndex }?.plus(1) ?: 0
+        } else {
+            val noteMax = notes.filter { it.folderId == folderId && it.parentNoteId == null }.maxOfOrNull { it.orderIndex } ?: -1
+            val folderMax = folderDao.getAll().filter { it.parentId == folderId }.maxOfOrNull { it.orderIndex } ?: -1
+            maxOf(noteMax, folderMax) + 1
+        }
         noteDao.upsertAll(
             listOf(
                 NoteEntity(
                     id = noteId,
                     folderId = folderId,
+                    parentNoteId = parentNoteId,
                     title = title,
                     bodyPlainText = "",
                     isPinned = false,
                     isFavourite = false,
+                    orderIndex = orderIndex,
                     createdAt = now,
                     updatedAt = now,
                 ),
@@ -168,6 +180,8 @@ class NoteRepository @Inject constructor(
     suspend fun updateTitle(noteId: String, title: String) {
         noteDao.updateTitle(noteId, title.ifBlank { "Untitled note" }, System.currentTimeMillis())
     }
+
+    suspend fun getNote(noteId: String): NoteEntity? = noteDao.getById(noteId)
 
     private suspend fun importFolderId(): String {
         val folders = folderDao.getAll()
@@ -239,6 +253,10 @@ class NoteRepository @Inject constructor(
 
     suspend fun setPinned(noteId: String, pinned: Boolean) {
         noteDao.updatePinned(noteId, pinned, System.currentTimeMillis())
+    }
+
+    suspend fun setFolderPinned(noteId: String, pinned: Boolean) {
+        noteDao.updateFolderPinned(noteId, pinned, System.currentTimeMillis())
     }
 
     suspend fun setFavourite(noteId: String, favourite: Boolean) {

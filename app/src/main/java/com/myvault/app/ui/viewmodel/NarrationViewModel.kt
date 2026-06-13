@@ -27,8 +27,16 @@ class NarrationViewModel @Inject constructor(
         narrationController.seekTo(positionMs)
     }
 
+    fun skipBy(deltaMs: Long) {
+        narrationController.skipBy(deltaMs)
+    }
+
     fun refreshProgress() {
         narrationController.refreshProgress()
+    }
+
+    fun saveProgress() {
+        narrationController.saveProgress()
     }
 
     fun restartWithVoice(voice: String) {

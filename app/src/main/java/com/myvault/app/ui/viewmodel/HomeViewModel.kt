@@ -186,14 +186,20 @@ class HomeViewModel @Inject constructor(
         searchQuery.value = query
     }
 
-    fun createFolder(parentId: String? = null, name: String, mode: String = FOLDER_MODE_STUDY, onCreated: (String) -> Unit) {
+    fun createFolder(
+        parentId: String? = null,
+        name: String,
+        mode: String = FOLDER_MODE_STUDY,
+        description: String? = null,
+        onCreated: (String) -> Unit,
+    ) {
         viewModelScope.launch {
-            onCreated(folderRepository.createFolder(parentId = parentId, name = name, mode = mode))
+            onCreated(folderRepository.createFolder(parentId = parentId, name = name, mode = mode, description = description))
         }
     }
 
-    fun renameFolder(folderId: String, name: String) {
-        viewModelScope.launch { folderRepository.renameFolder(folderId, name) }
+    fun updateFolderDetails(folderId: String, name: String, description: String?) {
+        viewModelScope.launch { folderRepository.updateFolderDetails(folderId, name, description) }
     }
 
     fun moveFolder(folderId: String, parentId: String?) {
@@ -226,6 +232,19 @@ class HomeViewModel @Inject constructor(
 
     fun renameNote(noteId: String, title: String) {
         viewModelScope.launch { noteRepository.updateTitle(noteId, title) }
+    }
+
+    fun createSubNote(parentNoteId: String, onCreated: (String) -> Unit) {
+        viewModelScope.launch {
+            val parent = noteRepository.getNote(parentNoteId) ?: return@launch
+            onCreated(
+                noteRepository.createNote(
+                    folderId = parent.folderId,
+                    title = "Untitled sub-note",
+                    parentNoteId = parent.id,
+                ),
+            )
+        }
     }
 
     fun moveNote(noteId: String, folderId: String?) {

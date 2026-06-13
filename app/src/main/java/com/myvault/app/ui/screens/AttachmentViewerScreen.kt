@@ -21,6 +21,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -40,8 +45,10 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.StickyNote2
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -54,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -62,14 +70,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -85,8 +104,10 @@ import com.ahmer.pdfviewer.util.FitPolicy
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
+import com.myvault.app.data.narration.AzureNarrationProgress
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
+import com.myvault.app.data.repository.DocumentTextExtractor
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -156,7 +177,12 @@ fun AttachmentViewerScreen(
     attachment: AttachmentEntity?,
     pdfProgress: PdfReadingProgressEntity? = null,
     pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
-    initialPageIndex: Int = -1,
+    documentText: String = "",
+    documentTextLoading: Boolean = false,
+    documentTextError: String? = null,
+    activeNarrationSentence: String = "",
+    azureNarrationProgress: AzureNarrationProgress? = null,
+    initialPageIndex: Int? = null,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
     onPdfProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit = { _, _ -> },
@@ -167,6 +193,9 @@ fun AttachmentViewerScreen(
     onDeletePdfAnnotation: (annotationId: String) -> Unit = {},
     onDeleteAttachment: () -> Unit = {},
     onExportAttachment: (Uri) -> Unit = {},
+    onAzureListenClick: () -> Unit = {},
+    onAzureResumeClick: () -> Unit = {},
+    onAzureListenFromHere: (Int) -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
@@ -208,7 +237,7 @@ fun AttachmentViewerScreen(
                     AttachmentViewerHeader(attachment)
                 }
                 when {
-                    isPdf -> PdfAttachmentViewer(
+                    isPdf && initialPageIndex != null -> PdfAttachmentViewer(
                         attachment = attachment,
                         progress = pdfProgress,
                         annotations = pdfAnnotations,
@@ -220,7 +249,18 @@ fun AttachmentViewerScreen(
                         onUpdateAnnotationNote = onUpdatePdfAnnotationNote,
                         onDeleteAnnotation = onDeletePdfAnnotation,
                     )
+                    isPdf -> AttachmentCanvas {}
                     attachment.mimeType.startsWith("image/") -> ImageAttachmentViewer(attachment)
+                    DocumentTextExtractor.isSupported(attachment.fileName, attachment.mimeType) -> DocumentAttachmentViewer(
+                        text = documentText,
+                        isLoading = documentTextLoading,
+                        error = documentTextError,
+                        activeSentence = activeNarrationSentence,
+                        azureNarrationProgress = azureNarrationProgress,
+                        onAzureListenClick = onAzureListenClick,
+                        onAzureResumeClick = onAzureResumeClick,
+                        onAzureListenFromHere = onAzureListenFromHere,
+                    )
                     else -> UnsupportedAttachmentViewer(attachment)
                 }
             }
@@ -271,6 +311,150 @@ private fun AttachmentViewerHeader(attachment: AttachmentEntity) {
             color = colors.textMuted,
         )
     }
+}
+
+@Composable
+private fun DocumentAttachmentViewer(
+    text: String,
+    isLoading: Boolean,
+    error: String?,
+    activeSentence: String,
+    azureNarrationProgress: AzureNarrationProgress?,
+    onAzureListenClick: () -> Unit,
+    onAzureResumeClick: () -> Unit,
+    onAzureListenFromHere: (Int) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val scrollState = rememberScrollState()
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var followAudio by remember { mutableStateOf(true) }
+    var followAudioPausedUntil by remember { mutableLongStateOf(0L) }
+    var selectableText by remember(text) { mutableStateOf(TextFieldValue(text)) }
+    val activeStart = activeSentence.takeIf { it.isNotBlank() }?.let(text::indexOf) ?: -1
+    val userScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    followAudioPausedUntil = System.currentTimeMillis() + DocumentFollowAudioPauseMs
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
+    LaunchedEffect(activeSentence, followAudio, followAudioPausedUntil, textLayout) {
+        val layout = textLayout ?: return@LaunchedEffect
+        if (!followAudio || activeStart < 0 || System.currentTimeMillis() < followAudioPausedUntil) return@LaunchedEffect
+        val startBox = layout.getBoundingBox(activeStart)
+        val endBox = layout.getBoundingBox((activeStart + activeSentence.length - 1).coerceIn(activeStart, text.lastIndex))
+        bringIntoViewRequester.bringIntoView(
+            Rect(
+                left = minOf(startBox.left, endBox.left),
+                top = (minOf(startBox.top, endBox.top) - DocumentFollowAudioPaddingPx).coerceAtLeast(0f),
+                right = maxOf(startBox.right, endBox.right),
+                bottom = maxOf(startBox.bottom, endBox.bottom) + DocumentFollowAudioPaddingPx,
+            ),
+        )
+    }
+
+    AttachmentCanvas {
+        when {
+            isLoading -> CircularProgressIndicator(
+                modifier = Modifier.padding(top = 48.dp),
+                color = colors.accent,
+                strokeWidth = 2.dp,
+            )
+            error != null -> AttachmentViewerEmpty(error)
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .nestedScroll(userScrollConnection),
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+            ) {
+                Button(
+                    onClick = onAzureListenClick,
+                    enabled = text.isNotBlank(),
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.VolumeUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = "Listen with Azure",
+                        modifier = Modifier.padding(start = VaultSpacing.xs),
+                    )
+                }
+                azureNarrationProgress?.takeIf { it.positionMs >= 5_000L }?.let { progress ->
+                    TextButton(
+                        onClick = onAzureResumeClick,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text("Continue from ${progress.positionMs.toDocumentPlaybackTime()}")
+                    }
+                }
+                if (!selectableText.selection.collapsed) {
+                    TextButton(
+                        onClick = {
+                            onAzureListenFromHere(minOf(selectableText.selection.start, selectableText.selection.end))
+                        },
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Icon(Icons.Rounded.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("Listen from here", modifier = Modifier.padding(start = VaultSpacing.xs))
+                    }
+                }
+                if (activeSentence.isNotBlank()) {
+                    TextButton(
+                        onClick = { followAudio = !followAudio },
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text(if (followAudio) "Follow audio: On" else "Follow audio: Off")
+                    }
+                }
+                BasicTextField(
+                    value = selectableText,
+                    onValueChange = { value -> selectableText = value.copy(text = text) },
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(bringIntoViewRequester),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
+                    visualTransformation = remember(text, activeSentence, colors) {
+                        VisualTransformation { value ->
+                            val displayedText = if (activeStart < 0) {
+                                AnnotatedString(value.text)
+                            } else {
+                                AnnotatedString.Builder(value.text).apply {
+                                    addStyle(
+                                        SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
+                                        activeStart,
+                                        (activeStart + activeSentence.length).coerceAtMost(value.text.length),
+                                    )
+                                }.toAnnotatedString()
+                            }
+                            TransformedText(displayedText, OffsetMapping.Identity)
+                        }
+                    },
+                    onTextLayout = { textLayout = it },
+                )
+            }
+        }
+    }
+}
+
+private const val DocumentFollowAudioPauseMs = 5_000L
+private const val DocumentFollowAudioPaddingPx = 48f
+
+private fun Long.toDocumentPlaybackTime(): String {
+    val totalSeconds = (this / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }
 
 @Composable

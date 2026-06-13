@@ -70,6 +70,8 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -99,6 +101,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.Font
@@ -169,6 +174,8 @@ fun QuranShellScreen(
     onSelectTafsirSource: (Int) -> Unit,
     onToggleBookmark: (String) -> Unit,
     onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
+    onUpdateReflection: (String, QuranAyah, String, String) -> Unit,
+    onDeleteReflection: (String) -> Unit,
     onOpenBookmark: (String) -> Unit,
     onOpenReciterPicker: (QuranAyah) -> Unit,
     onDismissReciterPicker: () -> Unit,
@@ -197,6 +204,7 @@ fun QuranShellScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var typeFilter by rememberSaveable { mutableStateOf("All") }
     var selectorOpen by rememberSaveable { mutableStateOf(false) }
+    var utilityMenuOpen by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = selectorOpen) {
         selectorOpen = false
@@ -222,9 +230,38 @@ fun QuranShellScreen(
                     )
                 },
             ) {
-                IconBtn(Icons.Rounded.WbSunny, "Toggle theme", active = true, onClick = onThemeClick)
-                IconBtn(Icons.Rounded.Backup, "Quick cloud backup", active = quickBackupRecommended, onClick = onQuickBackupClick)
-                IconBtn(Icons.Rounded.Settings, "Settings", onClick = onSettingsClick)
+                Box {
+                    IconBtn(Icons.Rounded.MoreVert, "Qur'an actions", onClick = { utilityMenuOpen = true })
+                    DropdownMenu(
+                        expanded = utilityMenuOpen,
+                        onDismissRequest = { utilityMenuOpen = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Toggle theme") },
+                            leadingIcon = { Icon(Icons.Rounded.WbSunny, null) },
+                            onClick = {
+                                utilityMenuOpen = false
+                                onThemeClick()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Quick cloud backup") },
+                            leadingIcon = { Icon(Icons.Rounded.Backup, null, tint = if (quickBackupRecommended) colors.accent else colors.textSecondary) },
+                            onClick = {
+                                utilityMenuOpen = false
+                                onQuickBackupClick()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("App settings") },
+                            leadingIcon = { Icon(Icons.Rounded.Settings, null) },
+                            onClick = {
+                                utilityMenuOpen = false
+                                onSettingsClick()
+                            },
+                        )
+                    }
+                }
             }
 
             QuranReaderSurface(
@@ -239,6 +276,8 @@ fun QuranShellScreen(
                 onSelectTafsirSource = onSelectTafsirSource,
                 onToggleBookmark = onToggleBookmark,
                 onCreateReflectionNote = onCreateReflectionNote,
+                onUpdateReflection = onUpdateReflection,
+                onDeleteReflection = onDeleteReflection,
                 onOpenBookmark = onOpenBookmark,
                 onOpenReciterPicker = onOpenReciterPicker,
                 onDismissReciterPicker = onDismissReciterPicker,
@@ -299,6 +338,8 @@ private fun QuranReaderSurface(
     onSelectTafsirSource: (Int) -> Unit,
     onToggleBookmark: (String) -> Unit,
     onCreateReflectionNote: (QuranAyah, String, String) -> Unit,
+    onUpdateReflection: (String, QuranAyah, String, String) -> Unit,
+    onDeleteReflection: (String) -> Unit,
     onOpenBookmark: (String) -> Unit,
     onOpenReciterPicker: (QuranAyah) -> Unit,
     onDismissReciterPicker: () -> Unit,
@@ -334,6 +375,7 @@ private fun QuranReaderSurface(
     var readerOptionsOpen by rememberSaveable { mutableStateOf(false) }
     var ayahActionsTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var reflectionTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var reflectionEditTargetId by rememberSaveable { mutableStateOf<String?>(null) }
     var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
     var audioDownloadsOpen by rememberSaveable { mutableStateOf(false) }
     var memorizationPanelVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -398,7 +440,11 @@ private fun QuranReaderSurface(
                 onOpenBookmarks = { bookmarksOpen = true },
                 onMarkSurahMemorized = {
                     onMarkCurrentSurahMemorized()
-                    readingPositionSavedMessage = "${uiState.selectedSurah.name} marked memorised"
+                    readingPositionSavedMessage = if (currentSurahMemorized) {
+                        "${uiState.selectedSurah.name} removed from memorised"
+                    } else {
+                        "${uiState.selectedSurah.name} marked memorised"
+                    }
                 },
                 onOpenSearch = onOpenSelector,
             )
@@ -467,7 +513,14 @@ private fun QuranReaderSurface(
                         onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
                         onSelectTafsirSource = onSelectTafsirSource,
                         onOpenActions = { ayahActionsTarget = ayah.verseKey },
-                        onCreateReflectionNote = { reflectionTarget = ayah.verseKey },
+                        onCreateReflectionNote = {
+                            reflectionEditTargetId = uiState.reflectionsByVerse[ayah.verseKey]?.firstOrNull()?.noteId
+                            reflectionTarget = ayah.verseKey
+                        },
+                        onEditReflection = { reflection ->
+                            reflectionEditTargetId = reflection.noteId
+                            reflectionTarget = ayah.verseKey
+                        },
                         onSaveReadingPosition = {
                             onLastReadAyahChanged(uiState.selectedSurah.num, ayah.ayahNumber)
                             readingPositionSavedMessage = "Saved as current reading position"
@@ -625,6 +678,10 @@ private fun QuranReaderSurface(
                 ayahActionsTarget = null
             },
             onCreateReflectionNote = {
+                reflectionEditTargetId = selectedAyah?.verseKey
+                    ?.let(uiState.reflectionsByVerse::get)
+                    ?.firstOrNull()
+                    ?.noteId
                 reflectionTarget = selectedAyah?.verseKey
                 ayahActionsTarget = null
             },
@@ -633,13 +690,34 @@ private fun QuranReaderSurface(
         val reflectionAyah = remember(reflectionTarget, uiState.ayahs) {
             uiState.ayahs.firstOrNull { it.verseKey == reflectionTarget }
         }
+        val reflectionEditTarget = remember(reflectionTarget, reflectionEditTargetId, uiState.reflectionsByVerse) {
+            reflectionTarget
+                ?.let(uiState.reflectionsByVerse::get)
+                ?.firstOrNull { it.noteId == reflectionEditTargetId }
+        }
         ReflectionEditorSheet(
             ayah = reflectionAyah,
             surah = uiState.selectedSurah,
-            onDismiss = { reflectionTarget = null },
-            onSave = { title, body ->
-                reflectionAyah?.let { onCreateReflectionNote(it, title, body) }
+            existingReflection = reflectionEditTarget,
+            onDismiss = {
                 reflectionTarget = null
+                reflectionEditTargetId = null
+            },
+            onSave = { title, body ->
+                reflectionAyah?.let { ayah ->
+                    if (reflectionEditTarget != null) {
+                        onUpdateReflection(reflectionEditTarget.noteId, ayah, title, body)
+                    } else {
+                        onCreateReflectionNote(ayah, title, body)
+                    }
+                }
+                reflectionTarget = null
+                reflectionEditTargetId = null
+            },
+            onDelete = {
+                reflectionEditTarget?.let { onDeleteReflection(it.noteId) }
+                reflectionTarget = null
+                reflectionEditTargetId = null
             },
         )
 
@@ -684,6 +762,7 @@ private fun QuranTopBar(
     onOpenSearch: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    var overflowOpen by rememberSaveable { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -747,14 +826,6 @@ private fun QuranTopBar(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            ReaderTopIconButton(onClick = onOpenSettings) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = "Qur'an settings",
-                    tint = colors.textSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
             ReaderTopIconButton(onClick = onOpenSearch) {
                 Icon(
                     imageVector = Icons.Rounded.Search,
@@ -762,6 +833,29 @@ private fun QuranTopBar(
                     tint = colors.textSecondary,
                     modifier = Modifier.size(16.dp),
                 )
+            }
+            Box {
+                ReaderTopIconButton(onClick = { overflowOpen = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "More Qur'an actions",
+                        tint = colors.textSecondary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = overflowOpen,
+                    onDismissRequest = { overflowOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Qur'an settings") },
+                        leadingIcon = { Icon(Icons.Rounded.Settings, null) },
+                        onClick = {
+                            overflowOpen = false
+                            onOpenSettings()
+                        },
+                    )
+                }
             }
         }
     }
@@ -1282,6 +1376,7 @@ private fun AyahRow(
     onSelectTafsirSource: (Int) -> Unit,
     onOpenActions: () -> Unit,
     onCreateReflectionNote: () -> Unit,
+    onEditReflection: (QuranReflectionItem) -> Unit,
     onSaveReadingPosition: () -> Unit,
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
@@ -1709,7 +1804,7 @@ private fun AyahRow(
             if (reflections.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     reflections.forEach { reflection ->
-                        QuranAyahReflectionCard(reflection = reflection)
+                        QuranAyahReflectionCard(reflection = reflection, onClick = { onEditReflection(reflection) })
                     }
                 }
             }
@@ -1811,7 +1906,7 @@ private fun AyahRow(
 }
 
 @Composable
-private fun QuranAyahReflectionCard(reflection: QuranReflectionItem) {
+private fun QuranAyahReflectionCard(reflection: QuranReflectionItem, onClick: () -> Unit) {
     val colors = VaultThemeTokens.colors
     val shape = RoundedCornerShape(12.dp)
     Column(
@@ -1820,6 +1915,7 @@ private fun QuranAyahReflectionCard(reflection: QuranReflectionItem) {
             .clip(shape)
             .background(colors.elevated.copy(alpha = 0.78f))
             .border(1.dp, colors.accentBorder.copy(alpha = 0.55f), shape)
+            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -2903,15 +2999,21 @@ private fun AyahActionRow(
 private fun ReflectionEditorSheet(
     ayah: QuranAyah?,
     surah: SurahInfo,
+    existingReflection: QuranReflectionItem?,
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit,
+    onDelete: () -> Unit,
 ) {
     if (ayah == null) return
 
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var title by rememberSaveable(ayah.verseKey) { mutableStateOf("Reflection on ${surah.name} ${surah.num}:${ayah.ayahNumber}") }
-    var body by rememberSaveable(ayah.verseKey) { mutableStateOf("") }
+    var title by rememberSaveable(ayah.verseKey, existingReflection?.noteId) {
+        mutableStateOf(existingReflection?.title ?: "Reflection on ${surah.name} ${surah.num}:${ayah.ayahNumber}")
+    }
+    var body by rememberSaveable(ayah.verseKey, existingReflection?.noteId) {
+        mutableStateOf(existingReflection?.reflectionBody.orEmpty())
+    }
     val fieldShape = RoundedCornerShape(16.dp)
 
     ModalBottomSheet(
@@ -2949,7 +3051,7 @@ private fun ReflectionEditorSheet(
             ) {
                 Column {
                     Text(
-                        text = "Add reflection",
+                        text = if (existingReflection == null) "Add reflection" else "Edit reflection",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
                         color = colors.text,
                     )
@@ -3045,6 +3147,9 @@ private fun ReflectionEditorSheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
             ) {
+                if (existingReflection != null) {
+                    ReflectionSheetButton(label = "Delete", onClick = onDelete)
+                }
                 ReflectionSheetButton(label = "Close", onClick = onDismiss)
                 ReflectionSheetButton(
                     label = "Save",
@@ -3268,6 +3373,8 @@ private fun QuranSurahSelectorOverlay(
     val panelInteraction = remember { MutableInteractionSource() }
     val listState: LazyListState = rememberLazyListState()
     val panelShape = RoundedCornerShape(24.dp)
+    val searchFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var ayahSearchIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(visible) {
         if (visible && ayahSearchIndex.isEmpty()) {
@@ -3276,6 +3383,13 @@ private fun QuranSurahSelectorOverlay(
                     context.assets.open("qpc_hafs.json").bufferedReader().use { it.readText() },
                 ).toAyahSearchIndex()
             }
+        }
+    }
+    LaunchedEffect(visible) {
+        if (visible) {
+            delay(30L)
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
         }
     }
     val ayahResults = remember(search, typeFilter, ayahSearchIndex) {
@@ -3371,7 +3485,11 @@ private fun QuranSurahSelectorOverlay(
                         .padding(bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    QuranSearchBar(query = search, onQueryChange = onSearchChange)
+                    QuranSearchBar(
+                        query = search,
+                        onQueryChange = onSearchChange,
+                        focusRequester = searchFocusRequester,
+                    )
                     QuranTypeFilters(selected = typeFilter, onSelected = onTypeFilterChange)
                 }
 
@@ -3424,6 +3542,7 @@ private fun QuranSurahSelectorOverlay(
 private fun QuranSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
+    focusRequester: FocusRequester? = null,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
@@ -3448,7 +3567,9 @@ private fun QuranSearchBar(
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
             cursorBrush = SolidColor(colors.accent),
             singleLine = true,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
                     Text(

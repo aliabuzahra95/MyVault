@@ -1022,6 +1022,7 @@ private fun FolderEntity.toJson(): JSONObject =
         .put("id", id)
         .put("parentId", parentId)
         .put("name", name)
+        .put("description", description)
         .put("orderIndex", orderIndex)
         .put("isFavourite", isFavourite)
         .put("mode", mode)
@@ -1033,10 +1034,13 @@ private fun NoteEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("folderId", folderId)
+        .put("parentNoteId", parentNoteId)
         .put("title", title)
         .put("bodyPlainText", bodyPlainText)
         .put("isPinned", isPinned)
+        .put("isFolderPinned", isFolderPinned)
         .put("isFavourite", isFavourite)
+        .put("orderIndex", orderIndex)
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .put("deletedAt", deletedAt)
@@ -1172,6 +1176,7 @@ private fun JSONObject.toFolderEntity(): FolderEntity =
         id = getString("id"),
         parentId = optNullableString("parentId"),
         name = getString("name"),
+        description = optNullableString("description"),
         orderIndex = getInt("orderIndex"),
         isFavourite = getBoolean("isFavourite"),
         mode = optString("mode").ifBlank { "study" },
@@ -1184,10 +1189,13 @@ private fun JSONObject.toNoteEntity(): NoteEntity =
     NoteEntity(
         id = getString("id"),
         folderId = optNullableString("folderId"),
+        parentNoteId = optNullableString("parentNoteId"),
         title = getString("title"),
         bodyPlainText = getString("bodyPlainText"),
         isPinned = getBoolean("isPinned"),
+        isFolderPinned = optBoolean("isFolderPinned", false),
         isFavourite = getBoolean("isFavourite"),
+        orderIndex = optInt("orderIndex", 0),
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
         deletedAt = optNullableLong("deletedAt"),

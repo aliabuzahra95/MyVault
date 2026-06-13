@@ -20,6 +20,7 @@ import javax.inject.Singleton
 @Singleton
 class NarrationPlayerManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val progressStore: NarrationProgressStore,
 ) {
     private var mediaPlayer: MediaPlayer? = null
     private var textToSpeech: TextToSpeech? = null
@@ -43,6 +44,8 @@ class NarrationPlayerManager @Inject constructor(
 
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
+    val azureProgress: StateFlow<Map<String, AzureNarrationProgress>> = progressStore.progress
+    private var lastProgressSavedAt = 0L
 
     fun playDevice(noteId: String, noteTitle: String, narrationText: String) {
         stopInternal(resetState = FalseResetState)
@@ -123,7 +126,7 @@ class NarrationPlayerManager @Inject constructor(
         playChunk(0)
     }
 
-    fun startStreaming(session: NarrationSession, totalChunks: Int) {
+    fun startStreaming(session: NarrationSession, totalChunks: Int, initialPositionMs: Long = 0L) {
         stopInternal(resetState = FalseResetState)
         activeSession = session
         activeFiles = session.files
@@ -137,7 +140,21 @@ class NarrationPlayerManager @Inject constructor(
             markGenerating(session.noteId, session.noteTitle, 1, expectedChunks)
             return
         }
-        playChunk(0)
+        if (initialPositionMs > 0L) {
+            pendingSeekMs = initialPositionMs
+            resumePendingSeekIfReady()
+            if (pendingSeekMs != null) {
+                waitingForNextChunk = true
+                _state.value = _state.value.copy(
+                    status = NarrationPlaybackStatus.Generating,
+                    label = "Loading saved position...",
+                    totalPositionMs = initialPositionMs,
+                    totalDurationMs = estimatedTotalDurationMs(),
+                )
+            }
+        } else {
+            playChunk(0)
+        }
     }
 
     fun appendStreamingChunk(session: NarrationSession, totalChunks: Int) {
@@ -203,6 +220,7 @@ class NarrationPlayerManager @Inject constructor(
         }
         mediaPlayer?.takeIf { it.isPlaying }?.pause()
         updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
+        persistAzureProgress(force = true)
     }
 
     fun resume() {
@@ -224,6 +242,7 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     fun stop() {
+        persistAzureProgress(force = true)
         stopInternal(resetState = true)
     }
 
@@ -266,8 +285,19 @@ class NarrationPlayerManager @Inject constructor(
         val status = _state.value.status
         if (status == NarrationPlaybackStatus.Playing || status == NarrationPlaybackStatus.Paused || status == NarrationPlaybackStatus.Preparing) {
             updatePlaybackState(status, _state.value.label)
+            persistAzureProgress()
         }
     }
+
+    fun saveProgress() {
+        updatePlaybackState(_state.value.status, _state.value.label)
+        persistAzureProgress(force = true)
+    }
+
+    fun resumePositionFor(session: NarrationSession): Long? =
+        progressStore.get(session.noteId)
+            ?.takeIf { it.cacheKey == session.cacheKey && it.positionMs > ResumeMinimumMs }
+            ?.positionMs
 
     fun showError(noteId: String?, noteTitle: String, message: String) {
         stopInternal(resetState = FalseResetState)
@@ -450,6 +480,7 @@ class NarrationPlayerManager @Inject constructor(
                         totalDurationMs = estimatedTotalDurationMs(),
                     )
                 } else {
+                    progressStore.clear(session.noteId)
                     _state.value = NarrationUiState(
                         status = NarrationPlaybackStatus.Stopped,
                         noteId = session.noteId,
@@ -481,6 +512,13 @@ class NarrationPlayerManager @Inject constructor(
         val chunkDuration = player?.duration?.takeIf { it > 0 }?.toLong()
             ?: activeDurationsMs.getOrNull(activeChunkIndex)
             ?: 0L
+        val activeSentence = session?.cues
+            ?.lastOrNull { cue ->
+                cue.chunkIndex == activeChunkIndex && chunkPosition >= cue.startMs
+            }
+            ?.takeIf { cue -> chunkPosition <= cue.endMs + SentenceCueGraceMs }
+            ?.displayText
+            .orEmpty()
         _state.value = _state.value.copy(
             status = status,
             noteId = session?.noteId ?: _state.value.noteId,
@@ -495,7 +533,9 @@ class NarrationPlayerManager @Inject constructor(
             durationMs = chunkDuration,
             totalPositionMs = pendingSeekMs ?: globalPositionMs(chunkPosition),
             totalDurationMs = estimatedTotalDurationMs().takeIf { it > 0L } ?: chunkDuration,
+            activeSentence = activeSentence,
         )
+        persistAzureProgress()
     }
 
     private fun applyPlaybackSpeed(player: MediaPlayer) {
@@ -597,6 +637,26 @@ class NarrationPlayerManager @Inject constructor(
         if (resetState) _state.value = NarrationUiState(speed = speed)
     }
 
+    private fun persistAzureProgress(force: Boolean = false) {
+        val session = activeSession?.takeIf { it.model.startsWith("azure-speech-") } ?: return
+        val state = _state.value
+        val now = System.currentTimeMillis()
+        if (!force && now - lastProgressSavedAt < ProgressSaveIntervalMs) return
+        val position = state.totalPositionMs.coerceAtLeast(0L)
+        if (position < ResumeMinimumMs) return
+        progressStore.save(
+            AzureNarrationProgress(
+                sourceId = session.noteId,
+                cacheKey = session.cacheKey,
+                positionMs = position,
+                durationMs = state.totalDurationMs.coerceAtLeast(0L),
+                activeSentence = state.activeSentence,
+                updatedAt = now,
+            ),
+        )
+        lastProgressSavedAt = now
+    }
+
     private fun releaseCurrentPlayer() {
         mediaPlayer?.runCatching {
             if (isPlaying) stop()
@@ -642,5 +702,8 @@ class NarrationPlayerManager @Inject constructor(
         const val FalseResetState = false
         const val DeviceNarrationVoice = "device"
         const val DeviceTtsMaxChunkChars = 900
+        const val SentenceCueGraceMs = 180L
+        const val ProgressSaveIntervalMs = 5_000L
+        const val ResumeMinimumMs = 5_000L
     }
 }

@@ -28,6 +28,7 @@ data class QuranReflectionItem(
     val arabicPreview: String,
     val translationPreview: String,
     val reflectionPreview: String,
+    val reflectionBody: String,
     val updatedAt: Long,
 )
 
@@ -65,6 +66,8 @@ class QuranReflectionRepository @Inject constructor(
                         translationPreview = ayah?.translation.orEmpty(),
                         reflectionPreview = reflection.note.bodyPlainText
                             .reflectionBodyPreview(ayah?.arabicText.orEmpty(), ayah?.translation.orEmpty()),
+                        reflectionBody = reflection.note.bodyPlainText
+                            .reflectionBody(ayah?.arabicText.orEmpty(), ayah?.translation.orEmpty()),
                         updatedAt = reflection.note.updatedAt,
                     )
                 }
@@ -121,7 +124,15 @@ class QuranReflectionRepository @Inject constructor(
 }
 
 private fun String.reflectionBodyPreview(arabic: String, translation: String): String {
-    var value = this
+    var value = reflectionBody(arabic, translation)
+    if (value.isBlank()) {
+        value = lines().map { it.trim() }.filter { it.isNotBlank() }.takeLast(2).joinToString(" ")
+    }
+    return value.replace(Regex("\\s+"), " ").trim()
+}
+
+private fun String.reflectionBody(arabic: String, translation: String): String =
+    this
         .replace(Regex("""(?m)^Source:\s*.*$"""), "")
         .replace(arabic, "")
         .replace(translation, "")
@@ -129,11 +140,5 @@ private fun String.reflectionBodyPreview(arabic: String, translation: String): S
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .drop(1)
-        .joinToString(" ")
-        .replace(Regex("\\s+"), " ")
+        .joinToString("\n\n")
         .trim()
-    if (value.isBlank()) {
-        value = lines().map { it.trim() }.filter { it.isNotBlank() }.takeLast(2).joinToString(" ")
-    }
-    return value
-}

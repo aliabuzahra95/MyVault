@@ -12,6 +12,36 @@ object NarrationConfig {
     val SpeedOptions = listOf(0.75f, 1f, 1.25f, 1.5f)
 }
 
+object AzureNarrationConfig {
+    const val DEFAULT_REGION = "australiaeast"
+    const val DEFAULT_VOICE = "en-AU-NatashaNeural"
+    const val DEFAULT_ARABIC_VOICE = "ar-SA-HamedNeural"
+    val EnglishVoiceOptions = listOf(
+        "en-AU-NatashaNeural",
+        "en-AU-WilliamNeural",
+        "en-US-JennyNeural",
+        "en-US-GuyNeural",
+    )
+    val ArabicVoiceOptions = listOf(
+        "ar-SA-HamedNeural",
+        "ar-SA-ZariyahNeural",
+        "ar-EG-SalmaNeural",
+        "ar-EG-ShakirNeural",
+    )
+    val VoiceOptions = EnglishVoiceOptions + ArabicVoiceOptions
+}
+
+enum class NarrationProvider(val storedValue: String, val label: String) {
+    Device("device", "Device TTS"),
+    Azure("azure", "Azure Speech TTS"),
+    OpenAi("openai", "OpenAI TTS");
+
+    companion object {
+        fun fromStoredValue(value: String): NarrationProvider =
+            entries.firstOrNull { it.storedValue == value } ?: Device
+    }
+}
+
 enum class NarrationPlaybackStatus {
     Idle,
     Preparing,
@@ -36,10 +66,21 @@ data class NarrationUiState(
     val durationMs: Long = 0L,
     val totalPositionMs: Long = 0L,
     val totalDurationMs: Long = 0L,
+    val activeSentence: String = "",
 ) {
     val isActive: Boolean
         get() = status != NarrationPlaybackStatus.Idle
 }
+
+data class NarrationCue(
+    val chunkIndex: Int,
+    val startMs: Long,
+    val endMs: Long,
+    val textStart: Int,
+    val textEnd: Int,
+    val text: String,
+    val displayText: String = text,
+)
 
 data class NarrationSession(
     val cacheKey: String,
@@ -50,4 +91,5 @@ data class NarrationSession(
     val speed: Float,
     val contentHash: String,
     val files: List<File>,
+    val cues: List<NarrationCue> = emptyList(),
 )

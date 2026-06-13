@@ -75,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -125,8 +126,8 @@ fun HomeScreen(
     onFolderClick: (String) -> Unit,
     onNoteClick: (String) -> Unit,
     onNewNoteClick: (folderId: String?) -> Unit = {},
-    onNewFolderClick: (parentId: String?, name: String) -> Unit = { _, _ -> },
-    onRenameFolderClick: (folderId: String, name: String) -> Unit = { _, _ -> },
+    onNewFolderClick: (parentId: String?, name: String, description: String?) -> Unit = { _, _, _ -> },
+    onRenameFolderClick: (folderId: String, name: String, description: String?) -> Unit = { _, _, _ -> },
     onMoveFolderClick: (folderId: String, parentId: String?) -> Unit = { _, _ -> },
     onMoveFolderInOrderClick: (folderId: String, direction: Int) -> Unit = { _, _ -> },
     onMoveFolderToModeClick: (folderId: String, mode: String) -> Unit = { _, _ -> },
@@ -138,6 +139,7 @@ fun HomeScreen(
     onDeleteNoteClick: (noteId: String) -> Unit = {},
     onSetNotePinnedClick: (noteId: String, pinned: Boolean) -> Unit = { _, _ -> },
     onSetNoteFavouriteClick: (noteId: String, favourite: Boolean) -> Unit = { _, _ -> },
+    onCreateSubNoteClick: (parentNoteId: String) -> Unit = {},
     onImportFileClick: (Uri) -> Unit = {},
     onAttachmentClick: (String) -> Unit = {},
     onOpenAttachmentsClick: () -> Unit = {},
@@ -157,6 +159,7 @@ fun HomeScreen(
     var fabExpanded by remember { mutableStateOf(false) }
     var folderDialogMode by remember { mutableStateOf<FolderDialogMode?>(null) }
     var newFolderName by remember { mutableStateOf("") }
+    var folderDescriptionInput by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<VaultTreeItem?>(null) }
     var folderActionsOpen by remember { mutableStateOf(false) }
     var moveFolderDialogOpen by remember { mutableStateOf(false) }
@@ -168,7 +171,7 @@ fun HomeScreen(
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
     var noteTitleInput by remember { mutableStateOf("") }
     var sortMenuOpen by remember { mutableStateOf(false) }
-    var pinnedExpanded by remember { mutableStateOf(false) }
+    var pinnedExpanded by rememberSaveable(currentFolderMode) { mutableStateOf(false) }
     var utilityMenuOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var manageMenuOpen by remember { mutableStateOf(false) }
@@ -378,6 +381,9 @@ fun HomeScreen(
                             }
                         }
                     }
+                    if (pinnedExpanded) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
                 }
 
                 item(key = "study_workspace_tree") {
@@ -407,6 +413,7 @@ fun HomeScreen(
                                         onToggle = { folder ->
                                             onFolderExpandedChange(folderExpansionKey(folder.id), !isFolderExpanded(folder.id))
                                         },
+                                        onOpenFolder = { folder -> onFolderClick(folder.id) },
                                         onOpenNote = { note -> onNoteClick(note.id) },
                                         onLongPress = { item ->
                                             if (manageSelectionMode) {
@@ -530,6 +537,7 @@ fun HomeScreen(
                             "New Folder" -> {
                                 selectedFolder = null
                                 newFolderName = ""
+                                folderDescriptionInput = ""
                                 folderDialogMode = FolderDialogMode.CreateRoot
                             }
                             "Import File" -> importPicker.launch(arrayOf("*/*"))
@@ -555,11 +563,13 @@ fun HomeScreen(
                 PremiumAction("+ Subfolder", Icons.Rounded.CreateNewFolder) {
                     folderActionsOpen = false
                     newFolderName = ""
+                    folderDescriptionInput = ""
                     folderDialogMode = FolderDialogMode.CreateSubfolder
                 },
                 PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) {
                     folderActionsOpen = false
                     newFolderName = folder?.name.orEmpty()
+                    folderDescriptionInput = folder?.description.orEmpty()
                     folderDialogMode = FolderDialogMode.Rename
                 },
                 PremiumAction("Organise", Icons.Rounded.SwapVert) {
@@ -648,6 +658,10 @@ fun HomeScreen(
                 PremiumAction("Move", Icons.Rounded.Folder) {
                     noteActionsOpen = false
                     moveNoteDialogOpen = true
+                },
+                PremiumAction("Create Sub-note", Icons.AutoMirrored.Rounded.NoteAdd) {
+                    note?.let { onCreateSubNoteClick(it.id) }
+                    noteActionsOpen = false
                 },
                 PremiumAction("Move to $oppositeModeLabel", Icons.Rounded.LocalOffer) {
                     note?.let { onMoveNoteToModeClick(it.id, oppositeMode) }
@@ -909,6 +923,7 @@ fun HomeScreen(
             actions = folders.toPremiumFolderActions(Icons.Rounded.DriveFileRenameOutline) { folder ->
                 selectedFolder = folder
                 newFolderName = folder.name
+                folderDescriptionInput = folder.description.orEmpty()
                 manageRenameFolderOpen = false
                 folderDialogMode = FolderDialogMode.Rename
             },
@@ -983,22 +998,34 @@ fun HomeScreen(
                 )
             },
             text = {
-                OutlinedTextField(
-                    value = newFolderName,
-                    onValueChange = { newFolderName = it },
-                    singleLine = true,
-                    label = { Text("Folder name") },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        singleLine = true,
+                        label = { Text("Folder name") },
+                    )
+                    OutlinedTextField(
+                        value = folderDescriptionInput,
+                        onValueChange = { folderDescriptionInput = it },
+                        label = { Text("Description (optional)") },
+                        minLines = 2,
+                        maxLines = 3,
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         when (dialogMode) {
-                            FolderDialogMode.CreateRoot -> onNewFolderClick(null, newFolderName)
-                            FolderDialogMode.CreateSubfolder -> onNewFolderClick(selectedFolder?.id, newFolderName)
-                            FolderDialogMode.Rename -> selectedFolder?.let { onRenameFolderClick(it.id, newFolderName) }
+                            FolderDialogMode.CreateRoot -> onNewFolderClick(null, newFolderName, folderDescriptionInput)
+                            FolderDialogMode.CreateSubfolder -> onNewFolderClick(selectedFolder?.id, newFolderName, folderDescriptionInput)
+                            FolderDialogMode.Rename -> selectedFolder?.let {
+                                onRenameFolderClick(it.id, newFolderName, folderDescriptionInput)
+                            }
                         }
                         newFolderName = ""
+                        folderDescriptionInput = ""
                         folderDialogMode = null
                     },
                 ) {
@@ -1048,7 +1075,7 @@ private enum class FolderDialogMode {
     Rename,
 }
 
-private data class PremiumAction(
+internal data class PremiumAction(
     val label: String,
     val icon: ImageVector,
     val destructive: Boolean = false,
@@ -1194,43 +1221,34 @@ private fun QuranReflectionsEntryCard(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+        color = Color.Transparent,
+        shape = VaultShapes.sm,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                color = colors.accentSoft,
-                shape = VaultShapes.md,
-                border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.AutoStories,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(9.dp)
-                        .size(18.dp),
-                    tint = colors.accent,
-                )
-            }
+            Icon(
+                imageVector = Icons.Rounded.AutoStories,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = colors.accent,
+            )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 Text(
                     text = "Qur'an Reflections ($count)",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W800),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
                     color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = if (latestReference.isBlank()) "No reflections yet" else "Last updated: $latestReference",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1527,7 +1545,7 @@ private fun InlineAttachmentResult(
 }
 
 @Composable
-private fun PremiumActionDialog(
+internal fun PremiumActionDialog(
     title: String,
     actions: List<PremiumAction>,
     onDismiss: () -> Unit,

@@ -33,6 +33,9 @@ interface FolderDao {
     @Query("UPDATE folders SET name = :name, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateName(id: String, name: String, updatedAt: Long)
 
+    @Query("UPDATE folders SET name = :name, description = :description, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateDetails(id: String, name: String, description: String?, updatedAt: Long)
+
     @Query("UPDATE folders SET parentId = :parentId, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateParent(id: String, parentId: String?, updatedAt: Long)
 

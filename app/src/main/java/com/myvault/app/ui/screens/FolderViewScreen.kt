@@ -1,31 +1,30 @@
 package com.myvault.app.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ViewList
-import androidx.compose.material.icons.rounded.CalendarToday
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Done
+import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StickyNote2
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -45,11 +44,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
+import com.myvault.app.data.local.entity.FolderStickyNoteEntity
+import com.myvault.app.ui.components.Breadcrumb
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
-import com.myvault.app.ui.components.Breadcrumb
-import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.FolderTreeRow
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultTreeItem
+import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -64,52 +68,85 @@ fun FolderViewScreen(
     onNoteClick: (String) -> Unit,
     onFolderClick: (String) -> Unit = {},
     onNewNoteClick: () -> Unit = {},
-    onNewSubfolderClick: (String) -> Unit = {},
+    onNewSubfolderClick: (String, String?) -> Unit = { _, _ -> },
+    onUpdateFolderClick: (String, String?) -> Unit = { _, _ -> },
+    onMoveCurrentFolderClick: (String?) -> Unit = {},
+    onDeleteCurrentFolderClick: () -> Unit = {},
+    onFolderExpandedChange: (String, Boolean) -> Unit = { _, _ -> },
+    onMoveItemInOrderClick: (String, VaultTreeItemType, Int) -> Unit = { _, _, _ -> },
+    onRenameNoteClick: (String, String) -> Unit = { _, _ -> },
+    onMoveNoteClick: (String, String?) -> Unit = { _, _ -> },
+    onMoveNoteToModeClick: (String, String) -> Unit = { _, _ -> },
+    onDeleteNoteClick: (String) -> Unit = {},
+    onSetNotePinnedClick: (String, Boolean) -> Unit = { _, _ -> },
+    onSetNoteFolderPinnedClick: (String, Boolean) -> Unit = { _, _ -> },
+    onSetNoteFavouriteClick: (String, Boolean) -> Unit = { _, _ -> },
+    onCreateSubNoteClick: (String) -> Unit = {},
+    onNewStickyNoteClick: (String) -> Unit = {},
+    onUpdateStickyNoteClick: (String, String) -> Unit = { _, _ -> },
+    onDeleteStickyNoteClick: (String) -> Unit = {},
     notePreviewLines: Int = 0,
+    showFullNoteTitles: Boolean = false,
+    dashboardFontSizeSp: Float = 14f,
 ) {
     val colors = VaultThemeTokens.colors
+    val expansionPrefix = "folder:${uiState.folder?.id}:"
+    fun isExpanded(id: String) = "$expansionPrefix$id" in uiState.expandedFolderIds
     var fabExpanded by remember { mutableStateOf(false) }
+    var folderActionsOpen by remember { mutableStateOf(false) }
+    var organizeMode by remember { mutableStateOf(false) }
     var folderDialogOpen by remember { mutableStateOf(false) }
-    var newFolderName by remember { mutableStateOf("") }
-    var noteFilter by remember { mutableStateOf(FolderNoteFilter.All) }
-    var noteSort by remember { mutableStateOf(FolderNoteSort.Recent) }
-    val visibleNotes = remember(uiState.notes, noteFilter, noteSort) {
-        uiState.notes
-            .filter { note ->
-                when (noteFilter) {
-                    FolderNoteFilter.All -> true
-                    FolderNoteFilter.Pinned -> note.pinned
-                    FolderNoteFilter.Favourites -> note.favourite
-                }
-            }
-            .let { notes ->
-                when (noteSort) {
-                    FolderNoteSort.Recent -> notes
-                    FolderNoteSort.Title -> notes.sortedBy { it.title.lowercase() }
-                }
-            }
-    }
+    var renameFolderDialogOpen by remember { mutableStateOf(false) }
+    var editDescriptionDialogOpen by remember { mutableStateOf(false) }
+    var moveFolderDialogOpen by remember { mutableStateOf(false) }
+    var deleteFolderDialogOpen by remember { mutableStateOf(false) }
+    var folderNameDraft by remember { mutableStateOf("") }
+    var folderDescriptionDraft by remember { mutableStateOf("") }
+    var stickyDialogOpen by remember { mutableStateOf(false) }
+    var stickyDraft by remember { mutableStateOf("") }
+    var selectedStickyNote by remember { mutableStateOf<FolderStickyNoteEntity?>(null) }
+    var selectedNote by remember { mutableStateOf<VaultTreeItem?>(null) }
+    var noteActionsOpen by remember { mutableStateOf(false) }
+    var renameNoteDialogOpen by remember { mutableStateOf(false) }
+    var moveNoteDialogOpen by remember { mutableStateOf(false) }
+    var deleteNoteDialogOpen by remember { mutableStateOf(false) }
+    var noteTitleDraft by remember { mutableStateOf("") }
     val createActions = remember {
         listOf(
             FloatingAction("New Note", Icons.Rounded.Description),
             FloatingAction("New Subfolder", Icons.Rounded.CreateNewFolder),
+            FloatingAction("New Sticky Note", Icons.Rounded.StickyNote2),
         )
+    }
+    val pinnedNotes = remember(uiState.contents) {
+        uiState.contents.filter { it.type == VaultTreeItemType.Note }.flatMap { it.flattenNoteTree() }.filter { it.folderPinned }
+    }
+    val folderStats = remember(uiState.contents, uiState.stickyNotes) {
+        val subfolderCount = uiState.contents.count { it.type == VaultTreeItemType.Folder }
+        val noteCount = uiState.contents.sumOf { it.noteCount() }
+        listOfNotNull(
+            subfolderCount.takeIf { it > 0 }?.let { "$it subfolder${if (it == 1) "" else "s"}" },
+            noteCount.takeIf { it > 0 }?.let { "$it note${if (it == 1) "" else "s"}" },
+            uiState.stickyNotes.size.takeIf { it > 0 }?.let { "$it sticky note${if (it == 1) "" else "s"}" },
+        ).ifEmpty { listOf("Empty folder") }.joinToString(" • ")
     }
 
     Scaffold(modifier = modifier.fillMaxSize(), containerColor = colors.bg) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 112.dp),
-                verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
             ) {
                 item {
                     ScreenTopBar(onBackClick = onBackClick) {
-                        SearchMoreActions(onSearchClick = onSearchClick)
+                        if (organizeMode) {
+                            TextButton(onClick = { organizeMode = false }) {
+                                Icon(Icons.Rounded.Done, null, modifier = Modifier.size(15.dp))
+                                Text("Done")
+                            }
+                        } else {
+                            SearchMoreActions(onSearchClick = onSearchClick, onMoreClick = { folderActionsOpen = true })
+                        }
                     }
                 }
                 item {
@@ -120,57 +157,73 @@ fun FolderViewScreen(
                 }
                 item {
                     Column(modifier = Modifier.padding(horizontal = VaultSpacing.screen)) {
-                        Text(uiState.folder?.name ?: "Folder", style = MaterialTheme.typography.headlineSmall, color = colors.text)
-                        Text("${uiState.notes.size} notes · ${uiState.subfolders.size} subfolders", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                        Text(
+                            text = uiState.folder?.name ?: "Folder",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = colors.text,
+                        )
+                        uiState.folder?.description?.takeIf { it.isNotBlank() }?.let { description ->
+                            Text(text = description, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                        }
+                        Text(text = folderStats, style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                    }
+                }
+                if (pinnedNotes.isNotEmpty()) {
+                    item { SectionLabel(label = "Pinned Notes") }
+                    items(pinnedNotes, key = { "folder-pin-${it.id}" }) { note ->
+                        FolderPinnedNoteRow(note = note, onClick = { onNoteClick(note.id) })
+                    }
+                }
+                if (uiState.stickyNotes.isNotEmpty()) {
+                    item { SectionLabel(label = "Sticky Notes") }
+                    items(uiState.stickyNotes, key = { "sticky-${it.id}" }) { stickyNote ->
+                        FolderStickyNoteRow(stickyNote = stickyNote) {
+                            selectedStickyNote = stickyNote
+                            stickyDraft = stickyNote.text
+                            stickyDialogOpen = true
+                        }
                     }
                 }
                 item {
-                    FolderControls(
-                        filter = noteFilter,
-                        sort = noteSort,
-                        onFilterChange = { noteFilter = it },
-                        onSortChange = { noteSort = it },
-                    )
-                }
-                if (uiState.subfolders.isEmpty() && visibleNotes.isEmpty()) {
-                    item {
-                        EmptyFolderState()
-                    }
-                } else {
-                    items(uiState.subfolders, key = { it.id }) { folder ->
-                        SubfolderCard(folder, onClick = { onFolderClick(folder.id) })
-                    }
-                }
-                item {
-                    Spacer(modifier = Modifier.height(VaultSpacing.xs))
-                    SectionLabel(label = "Notes")
-                }
-                if (visibleNotes.isEmpty() && uiState.subfolders.isNotEmpty()) {
-                    item {
-                        EmptyFolderState(text = if (uiState.notes.isEmpty()) "No notes in this folder yet" else "No notes match this filter")
-                    }
-                } else {
-                    items(visibleNotes, key = { it.id }) { note ->
-                        NoteListRow(note = note, notePreviewLines = notePreviewLines, onClick = { onNoteClick(note.id) })
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.xs)) {
+                        uiState.contents.forEachIndexed { index, item ->
+                            FolderTreeRow(
+                                item = item,
+                                depth = 0,
+                                expanded = isExpanded(item.id),
+                                isChildExpanded = ::isExpanded,
+                                onToggle = { folder -> onFolderExpandedChange(folder.id, !isExpanded(folder.id)) },
+                                onOpenFolder = { folder -> onFolderClick(folder.id) },
+                                onOpenNote = { note -> onNoteClick(note.id) },
+                                onLongPress = { item ->
+                                    if (item.type == VaultTreeItemType.Note) {
+                                        selectedNote = item
+                                        noteActionsOpen = true
+                                    }
+                                },
+                                organizeMode = organizeMode,
+                                organizeAllItems = true,
+                                notePreviewLines = notePreviewLines,
+                                showFullNoteTitles = showFullNoteTitles,
+                                dashboardFontSizeSp = dashboardFontSizeSp,
+                                canMoveUp = index > 0,
+                                canMoveDown = index < uiState.contents.lastIndex,
+                                onMoveFolder = { movedItem, direction ->
+                                    onMoveItemInOrderClick(movedItem.id, movedItem.type, direction)
+                                },
+                            )
+                        }
                     }
                 }
             }
 
-            if (fabExpanded) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.scrim),
-                )
-            }
-
-            FloatingActionMenu(
+            if (fabExpanded && !organizeMode) Box(modifier = Modifier.fillMaxSize().background(colors.scrim))
+            if (!organizeMode) FloatingActionMenu(
                 expanded = fabExpanded,
                 actions = createActions,
                 mainButtonSize = 48.dp,
                 actionButtonSize = 38.dp,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
+                modifier = Modifier.align(Alignment.BottomEnd)
                     .padding(end = VaultSpacing.screen, bottom = VaultSpacing.screen)
                     .size(width = 220.dp, height = 220.dp),
                 onToggle = { fabExpanded = !fabExpanded },
@@ -178,7 +231,16 @@ fun FolderViewScreen(
                     fabExpanded = false
                     when (action.label) {
                         "New Note" -> onNewNoteClick()
-                        "New Subfolder" -> folderDialogOpen = true
+                        "New Subfolder" -> {
+                            folderNameDraft = ""
+                            folderDescriptionDraft = ""
+                            folderDialogOpen = true
+                        }
+                        "New Sticky Note" -> {
+                            selectedStickyNote = null
+                            stickyDraft = ""
+                            stickyDialogOpen = true
+                        }
                     }
                 },
             )
@@ -186,31 +248,243 @@ fun FolderViewScreen(
     }
 
     if (folderDialogOpen) {
+        FolderDetailsDialog(
+            title = "New subfolder",
+            confirmLabel = "Create",
+            name = folderNameDraft,
+            description = folderDescriptionDraft,
+            onNameChange = { folderNameDraft = it },
+            onDescriptionChange = { folderDescriptionDraft = it },
+            onDismiss = { folderDialogOpen = false },
+            onConfirm = {
+                onNewSubfolderClick(folderNameDraft, folderDescriptionDraft)
+                folderDialogOpen = false
+            },
+        )
+    }
+    if (folderActionsOpen) {
+        PremiumActionDialog(
+            title = uiState.folder?.name.orEmpty(),
+            onDismiss = { folderActionsOpen = false },
+            actions = listOf(
+                PremiumAction("Rename Folder", Icons.Rounded.DriveFileRenameOutline) {
+                    folderNameDraft = uiState.folder?.name.orEmpty()
+                    folderActionsOpen = false
+                    renameFolderDialogOpen = true
+                },
+                PremiumAction("Edit Description", Icons.Rounded.Description) {
+                    folderDescriptionDraft = uiState.folder?.description.orEmpty()
+                    folderActionsOpen = false
+                    editDescriptionDialogOpen = true
+                },
+                PremiumAction("Move Folder", Icons.Rounded.Folder) {
+                    folderActionsOpen = false
+                    moveFolderDialogOpen = true
+                },
+                PremiumAction("Organise", Icons.Rounded.SwapVert) {
+                    folderActionsOpen = false
+                    organizeMode = true
+                },
+                PremiumAction("Delete Folder", Icons.Rounded.Delete, destructive = true) {
+                    folderActionsOpen = false
+                    deleteFolderDialogOpen = true
+                },
+            ),
+        )
+    }
+    if (renameFolderDialogOpen) {
         AlertDialog(
-            onDismissRequest = { folderDialogOpen = false },
-            title = { Text("New subfolder") },
+            onDismissRequest = { renameFolderDialogOpen = false },
+            title = { Text("Rename folder") },
             text = {
                 OutlinedTextField(
-                    value = newFolderName,
-                    onValueChange = { newFolderName = it },
+                    value = folderNameDraft,
+                    onValueChange = { folderNameDraft = it },
                     singleLine = true,
                     label = { Text("Folder name") },
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        onNewSubfolderClick(newFolderName)
-                        newFolderName = ""
-                        folderDialogOpen = false
-                    },
-                ) {
-                    Text("Create")
-                }
+                Button(onClick = {
+                    onUpdateFolderClick(folderNameDraft, uiState.folder?.description)
+                    renameFolderDialogOpen = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renameFolderDialogOpen = false }) { Text("Cancel") } },
+        )
+    }
+    if (editDescriptionDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { editDescriptionDialogOpen = false },
+            title = { Text("Edit description") },
+            text = {
+                OutlinedTextField(
+                    value = folderDescriptionDraft,
+                    onValueChange = { folderDescriptionDraft = it },
+                    minLines = 2,
+                    maxLines = 5,
+                    label = { Text("Description (optional)") },
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onUpdateFolderClick(uiState.folder?.name.orEmpty(), folderDescriptionDraft)
+                    editDescriptionDialogOpen = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editDescriptionDialogOpen = false }) { Text("Cancel") } },
+        )
+    }
+    if (moveFolderDialogOpen) {
+        val excludedIds = remember(uiState.workspace, uiState.folder?.id) {
+            uiState.workspace.findItem(uiState.folder?.id.orEmpty())?.collectFolderIds().orEmpty()
+        }
+        PremiumActionDialog(
+            title = "Move ${uiState.folder?.name.orEmpty()}",
+            onDismiss = { moveFolderDialogOpen = false },
+            actions = listOf(PremiumAction("My Vault", Icons.Rounded.Folder) {
+                onMoveCurrentFolderClick(null)
+                moveFolderDialogOpen = false
+            }) + uiState.workspace.folderPathActions(excludedIds = excludedIds) { targetId ->
+                onMoveCurrentFolderClick(targetId)
+                moveFolderDialogOpen = false
+            },
+        )
+    }
+    if (deleteFolderDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteFolderDialogOpen = false },
+            title = { Text("Move ${uiState.folder?.name.orEmpty()} to Recently Deleted?") },
+            text = { Text("Its contained folders and notes will also be moved to Recently Deleted.") },
+            confirmButton = {
+                Button(onClick = {
+                    deleteFolderDialogOpen = false
+                    onDeleteCurrentFolderClick()
+                }) { Text("Move") }
+            },
+            dismissButton = { TextButton(onClick = { deleteFolderDialogOpen = false }) { Text("Keep") } },
+        )
+    }
+
+    if (noteActionsOpen && selectedNote != null) {
+        val note = selectedNote
+        val oppositeMode = if (uiState.folder?.mode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
+        val oppositeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
+        PremiumActionDialog(
+            title = note?.name.orEmpty(),
+            onDismiss = { noteActionsOpen = false },
+            actions = listOf(
+                PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) {
+                    noteTitleDraft = note?.name.orEmpty()
+                    noteActionsOpen = false
+                    renameNoteDialogOpen = true
+                },
+                PremiumAction("Move", Icons.Rounded.Folder) {
+                    noteActionsOpen = false
+                    moveNoteDialogOpen = true
+                },
+                PremiumAction("Create Sub-note", Icons.Rounded.NoteAdd) {
+                    note?.let { onCreateSubNoteClick(it.id) }
+                    noteActionsOpen = false
+                },
+                PremiumAction("Move to $oppositeLabel", Icons.Rounded.LocalOffer) {
+                    note?.let { onMoveNoteToModeClick(it.id, oppositeMode) }
+                    noteActionsOpen = false
+                },
+                PremiumAction(if (note?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
+                    note?.let { onSetNotePinnedClick(it.id, !it.pinned) }
+                    noteActionsOpen = false
+                },
+                PremiumAction(if (note?.folderPinned == true) "Unpin Note" else "Pin Note", Icons.Rounded.PushPin) {
+                    note?.let { onSetNoteFolderPinnedClick(it.id, !it.folderPinned) }
+                    noteActionsOpen = false
+                },
+                PremiumAction(if (note?.favourite == true) "Unfavourite" else "Favourite", Icons.Rounded.Star) {
+                    note?.let { onSetNoteFavouriteClick(it.id, !it.favourite) }
+                    noteActionsOpen = false
+                },
+                PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    noteActionsOpen = false
+                    deleteNoteDialogOpen = true
+                },
+            ),
+        )
+    }
+    if (moveNoteDialogOpen && selectedNote != null) {
+        PremiumActionDialog(
+            title = "Move ${selectedNote?.name.orEmpty()}",
+            onDismiss = { moveNoteDialogOpen = false },
+            actions = listOf(PremiumAction("My Vault", Icons.Rounded.Folder) {
+                selectedNote?.let { onMoveNoteClick(it.id, null) }
+                moveNoteDialogOpen = false
+            }) + uiState.workspace.folderPathActions { folderId ->
+                selectedNote?.let { onMoveNoteClick(it.id, folderId) }
+                moveNoteDialogOpen = false
+            },
+        )
+    }
+    if (renameNoteDialogOpen && selectedNote != null) {
+        AlertDialog(
+            onDismissRequest = { renameNoteDialogOpen = false },
+            title = { Text("Rename note") },
+            text = { OutlinedTextField(noteTitleDraft, { noteTitleDraft = it }, singleLine = true, label = { Text("Note title") }) },
+            confirmButton = {
+                Button(onClick = {
+                    selectedNote?.let { onRenameNoteClick(it.id, noteTitleDraft) }
+                    renameNoteDialogOpen = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renameNoteDialogOpen = false }) { Text("Cancel") } },
+        )
+    }
+    if (deleteNoteDialogOpen && selectedNote != null) {
+        AlertDialog(
+            onDismissRequest = { deleteNoteDialogOpen = false },
+            title = { Text("Move ${selectedNote?.name.orEmpty()} to Recently Deleted?") },
+            text = { Text("You can restore this note from Settings.") },
+            confirmButton = {
+                Button(onClick = {
+                    selectedNote?.let { onDeleteNoteClick(it.id) }
+                    selectedNote = null
+                    deleteNoteDialogOpen = false
+                }) { Text("Move") }
+            },
+            dismissButton = { TextButton(onClick = { deleteNoteDialogOpen = false }) { Text("Keep") } },
+        )
+    }
+
+    if (stickyDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { stickyDialogOpen = false },
+            title = { Text(if (selectedStickyNote == null) "New Sticky Note" else "Edit Sticky Note") },
+            text = {
+                OutlinedTextField(
+                    value = stickyDraft,
+                    onValueChange = { stickyDraft = it },
+                    minLines = 2,
+                    maxLines = 5,
+                    label = { Text("Study reminder") },
+                )
+            },
+            confirmButton = {
+                Button(enabled = stickyDraft.isNotBlank(), onClick = {
+                    selectedStickyNote?.let { onUpdateStickyNoteClick(it.id, stickyDraft) }
+                        ?: onNewStickyNoteClick(stickyDraft)
+                    stickyDialogOpen = false
+                }) { Text("Save") }
             },
             dismissButton = {
-                TextButton(onClick = { folderDialogOpen = false }) {
-                    Text("Cancel")
+                Row {
+                    selectedStickyNote?.let { stickyNote ->
+                        TextButton(onClick = {
+                            onDeleteStickyNoteClick(stickyNote.id)
+                            stickyDialogOpen = false
+                        }) {
+                            Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp))
+                            Text("Delete")
+                        }
+                    }
+                    TextButton(onClick = { stickyDialogOpen = false }) { Text("Cancel") }
                 }
             },
         )
@@ -218,173 +492,127 @@ fun FolderViewScreen(
 }
 
 @Composable
-private fun EmptyFolderState(
-    text: String = "This folder is empty",
+private fun FolderDetailsDialog(
+    title: String,
+    confirmLabel: String,
+    name: String,
+    description: String,
+    onNameChange: (String) -> Unit,
+    onDescriptionChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
 ) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Folder, null, modifier = Modifier.size(16.dp), tint = colors.textMuted)
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
-                color = colors.textSecondary,
-            )
-        }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                OutlinedTextField(name, onNameChange, singleLine = true, label = { Text("Folder name") })
+                OutlinedTextField(
+                    description,
+                    onDescriptionChange,
+                    label = { Text("Description (optional)") },
+                    minLines = 2,
+                    maxLines = 3,
+                )
+            }
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text(confirmLabel) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun List<VaultTreeItem>.folderPathActions(
+    parentPath: String = "",
+    excludedIds: Set<String> = emptySet(),
+    onClick: (String) -> Unit,
+): List<PremiumAction> = flatMap { item ->
+    if (item.type != VaultTreeItemType.Folder || item.id in excludedIds) {
+        emptyList()
+    } else {
+        val path = if (parentPath.isBlank()) item.name else "$parentPath / ${item.name}"
+        listOf(PremiumAction(path, Icons.Rounded.Folder) { onClick(item.id) }) +
+            item.children.folderPathActions(path, excludedIds, onClick)
     }
 }
 
-@Composable
-private fun FolderControls(
-    filter: FolderNoteFilter,
-    sort: FolderNoteSort,
-    onFilterChange: (FolderNoteFilter) -> Unit,
-    onSortChange: (FolderNoteSort) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-            FilterChip("All", Icons.Rounded.FilterList, selected = filter == FolderNoteFilter.All) {
-                onFilterChange(FolderNoteFilter.All)
-            }
-            FilterChip("Pinned", Icons.Rounded.PushPin, selected = filter == FolderNoteFilter.Pinned) {
-                onFilterChange(FolderNoteFilter.Pinned)
-            }
-            FilterChip("Favourites", Icons.Rounded.Star, selected = filter == FolderNoteFilter.Favourites) {
-                onFilterChange(FolderNoteFilter.Favourites)
-            }
-        }
-        Surface(color = VaultThemeTokens.colors.surface, shape = VaultShapes.pill, border = BorderStroke(1.dp, VaultThemeTokens.colors.border)) {
-            Row(modifier = Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                IconBtn(Icons.Rounded.CalendarToday, "Recent", active = sort == FolderNoteSort.Recent) {
-                    onSortChange(FolderNoteSort.Recent)
-                }
-                IconBtn(Icons.AutoMirrored.Rounded.ViewList, "Title", active = sort == FolderNoteSort.Title) {
-                    onSortChange(FolderNoteSort.Title)
-                }
-            }
-        }
-    }
+private fun VaultTreeItem.findItem(id: String): VaultTreeItem? {
+    if (this.id == id) return this
+    children.forEach { child -> child.findItem(id)?.let { return it } }
+    return null
 }
 
+private fun List<VaultTreeItem>.findItem(id: String): VaultTreeItem? {
+    forEach { item -> item.findItem(id)?.let { return it } }
+    return null
+}
+
+private fun VaultTreeItem.collectFolderIds(): Set<String> =
+    buildSet {
+        if (type == VaultTreeItemType.Folder) add(id)
+        children.forEach { addAll(it.collectFolderIds()) }
+    }
+
+private fun VaultTreeItem.flattenNoteTree(): List<VaultTreeItem> =
+    if (type != VaultTreeItemType.Note) emptyList() else listOf(this) + children.flatMap { it.flattenNoteTree() }
+
+private fun VaultTreeItem.noteCount(): Int =
+    (if (type == VaultTreeItemType.Note) 1 else 0) + children.sumOf { it.noteCount() }
+
 @Composable
-private fun FilterChip(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selected: Boolean,
+private fun FolderPinnedNoteRow(
+    note: VaultTreeItem,
     onClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        color = if (selected) colors.accentSoft else colors.surface,
-        shape = VaultShapes.pill,
-        border = BorderStroke(1.dp, if (selected) colors.accentBorder else colors.border),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen),
+        color = colors.surface,
+        shape = VaultShapes.sm,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(icon, null, modifier = Modifier.size(13.dp), tint = if (selected) colors.accent else colors.textSecondary)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = if (selected) colors.accent else colors.textSecondary)
-        }
-    }
-}
-
-private enum class FolderNoteFilter {
-    All,
-    Pinned,
-    Favourites,
-}
-
-private enum class FolderNoteSort {
-    Recent,
-    Title,
-}
-
-@Composable
-private fun SubfolderCard(folder: FolderCardSample, onClick: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
-        color = colors.elevated,
-        shape = VaultShapes.lg,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(VaultSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-        ) {
-            Surface(modifier = Modifier.size(36.dp), color = colors.accentSoft, shape = VaultShapes.sm, border = BorderStroke(1.dp, colors.accentBorder)) {
-                Icon(Icons.Rounded.Folder, null, modifier = Modifier.size(18.dp), tint = colors.accent)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(folder.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600), color = colors.text)
-                Text(folder.count, style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-            }
-            Icon(Icons.Rounded.ChevronRight, null, modifier = Modifier.size(18.dp), tint = colors.textMuted)
-        }
-    }
-}
-
-@Composable
-private fun NoteListRow(note: FolderNoteSample, notePreviewLines: Int, onClick: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(width = 10.dp, height = 1.5.dp)
-                    .background(
-                        color = colors.textMuted,
-                        shape = VaultShapes.pill,
-                    ),
+            Icon(Icons.Rounded.PushPin, null, modifier = Modifier.size(14.dp), tint = colors.accent)
+            Text(
+                text = note.name,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(note.title, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (note.pinned) Icon(Icons.Rounded.PushPin, null, modifier = Modifier.size(11.dp), tint = colors.accent)
-                    if (note.favourite) Icon(Icons.Rounded.Star, null, modifier = Modifier.size(11.dp), tint = colors.warning)
-                }
-                if (notePreviewLines > 0 && note.preview.isNotBlank()) {
-                    Text(note.preview, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = notePreviewLines, overflow = TextOverflow.Ellipsis)
-                }
-                Text(note.meta, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Icon(Icons.Rounded.MoreHoriz, null, modifier = Modifier.size(18.dp), tint = colors.textMuted)
+        }
+    }
+}
+
+@Composable
+private fun FolderStickyNoteRow(
+    stickyNote: FolderStickyNoteEntity,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen),
+        color = colors.surface,
+        shape = VaultShapes.sm,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.StickyNote2, null, modifier = Modifier.size(14.dp), tint = colors.accent)
+            Text(
+                text = stickyNote.text,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
+                color = colors.text,
+            )
         }
     }
 }

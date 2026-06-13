@@ -486,11 +486,11 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
-                if (currentFolderId == null && uiState.recentFiles.isNotEmpty()) {
+                if (currentFolderId == null && uiState.annotations.isNotEmpty()) {
                     item {
-                        RecentLibraryFilesRow(
-                            files = uiState.recentFiles,
-                            onAttachmentClick = onAttachmentClick,
+                        RecentLibraryAnnotationsRow(
+                            annotations = uiState.annotations,
+                            onAnnotationClick = onAnnotationClick,
                         )
                     }
                 }
@@ -628,7 +628,7 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
-                if (uiState.annotations.isNotEmpty()) {
+                if (currentFolderId != null && uiState.annotations.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
                         SectionLabel(label = "Annotations")
@@ -1634,9 +1634,9 @@ private fun String.toAnnotationColor(): Color =
     }
 
 @Composable
-private fun RecentLibraryFilesRow(
-    files: List<LibraryFileItem>,
-    onAttachmentClick: (String) -> Unit,
+private fun RecentLibraryAnnotationsRow(
+    annotations: List<LibraryAnnotationItem>,
+    onAnnotationClick: (String, Int) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Column(
@@ -1646,7 +1646,7 @@ private fun RecentLibraryFilesRow(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            text = "Recent files",
+            text = "Annotations",
             modifier = Modifier.padding(horizontal = VaultSpacing.screen),
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
             color = colors.textMuted,
@@ -1655,64 +1655,45 @@ private fun RecentLibraryFilesRow(
             contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(files.take(5), key = { it.id }) { file ->
-                RecentLibraryFileCard(
-                    file = file,
-                    onClick = { onAttachmentClick(file.id) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecentLibraryFileCard(
-    file: LibraryFileItem,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    val progress = file.progressPercent?.let { "${(it.coerceIn(0f, 1f) * 100).toInt()}%" }.orEmpty()
-    Surface(
-        onClick = onClick,
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.size(width = 104.dp, height = 64.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            AttachmentThumbnail(
-                mimeType = file.mimeType,
-                localPath = file.localPath,
-                kind = file.kind,
-                size = 22.dp,
-                renderPdfPreview = false,
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W800),
-                    color = colors.text,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = listOf(file.kind, progress).filter { it.isNotBlank() }.joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            items(annotations.take(8), key = { it.id }) { annotation ->
+                Surface(
+                    onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
+                    color = colors.surface,
+                    shape = VaultShapes.md,
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    modifier = Modifier.size(width = 220.dp, height = 72.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.StickyNote2,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = annotation.color.toAnnotationColor(),
+                        )
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                                color = colors.text,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

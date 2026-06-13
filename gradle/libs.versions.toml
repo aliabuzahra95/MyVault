@@ -17,6 +17,7 @@ work = "2.11.0"
 ksp = "2.3.7"
 firebaseBom = "34.12.0"
 googleServices = "4.4.4"
+azureSpeech = "1.50.0"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
@@ -45,6 +46,7 @@ hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt"
 hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-ai = { module = "com.google.firebase:firebase-ai" }
+azure-speech = { module = "com.microsoft.cognitiveservices.speech:client-sdk", version.ref = "azureSpeech" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

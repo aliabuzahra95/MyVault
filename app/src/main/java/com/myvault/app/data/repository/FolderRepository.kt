@@ -16,6 +16,8 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.ui.components.VaultTreeItem
+import com.myvault.app.ui.components.VaultTreeItemType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.io.File
@@ -56,6 +58,29 @@ class FolderRepository @Inject constructor(
 
     fun observeFolder(id: String): Flow<FolderEntity?> = folderDao.observeById(id)
 
+    fun observeFolderContents(id: String): Flow<List<VaultTreeItem>> = combine(
+        folderDao.observeAll(),
+        noteDao.observeAll(),
+        attachmentDao.observeAll(),
+        noteTableDao.observeAll(),
+    ) { folders, notes, attachments, tables ->
+        val mode = folders.firstOrNull { it.id == id }?.mode ?: FOLDER_MODE_STUDY
+        buildTree(folders, notes, attachments, tables, mode)
+            .findTreeItem(id)
+            ?.children
+            .orEmpty()
+    }
+
+    fun observeWorkspaceTreeForFolder(id: String): Flow<List<VaultTreeItem>> = combine(
+        folderDao.observeAll(),
+        noteDao.observeAll(),
+        attachmentDao.observeAll(),
+        noteTableDao.observeAll(),
+    ) { folders, notes, attachments, tables ->
+        val mode = folders.firstOrNull { it.id == id }?.mode ?: FOLDER_MODE_STUDY
+        buildTree(folders, notes, attachments, tables, mode)
+    }
+
     fun observeSubfolders(id: String) = folderDao.observeChildren(id)
 
     fun observeLibraryFolders() = folderDao.observeAll()
@@ -64,15 +89,16 @@ class FolderRepository @Inject constructor(
 
     fun observeAllFoldersIncludingDeleted() = folderDao.observeAllIncludingDeleted()
 
-    suspend fun createFolder(parentId: String?, name: String, mode: String = FOLDER_MODE_STUDY): String {
+    suspend fun createFolder(parentId: String?, name: String, mode: String = FOLDER_MODE_STUDY, description: String? = null): String {
         val now = System.currentTimeMillis()
         val folderId = UUID.randomUUID().toString()
         val folders = folderDao.getAll()
         val folderMode = parentId?.let { parent -> folders.firstOrNull { it.id == parent }?.mode } ?: mode
-        val orderIndex = folders
-            .filter { it.parentId == parentId }
-            .maxOfOrNull { it.orderIndex }
-            ?.plus(1) ?: 0
+        val folderMax = folders.filter { it.parentId == parentId }.maxOfOrNull { it.orderIndex } ?: -1
+        val noteMax = noteDao.getAll()
+            .filter { it.folderId == parentId && it.parentNoteId == null }
+            .maxOfOrNull { it.orderIndex } ?: -1
+        val orderIndex = maxOf(folderMax, noteMax) + 1
 
         folderDao.upsertAll(
             listOf(
@@ -80,6 +106,7 @@ class FolderRepository @Inject constructor(
                     id = folderId,
                     parentId = parentId,
                     name = name.ifBlank { "New Folder" },
+                    description = description?.trim()?.takeIf { it.isNotEmpty() },
                     orderIndex = orderIndex,
                     isFavourite = false,
                     mode = folderMode,
@@ -106,6 +133,15 @@ class FolderRepository @Inject constructor(
         folderDao.updateName(folderId, name.ifBlank { "Untitled folder" }, System.currentTimeMillis())
     }
 
+    suspend fun updateFolderDetails(folderId: String, name: String, description: String?) {
+        folderDao.updateDetails(
+            id = folderId,
+            name = name.ifBlank { "Untitled folder" },
+            description = description?.trim()?.takeIf { it.isNotEmpty() },
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
     suspend fun moveFolder(folderId: String, parentId: String?) {
         val folders = folderDao.getAll()
         val folder = folders.firstOrNull { it.id == folderId } ?: return
@@ -113,10 +149,13 @@ class FolderRepository @Inject constructor(
         val descendantIds = descendantFolderIds(folderId, folders).toSet()
         if (parentId == folderId || parentId in descendantIds) return
 
-        val orderIndex = folders
+        val folderMax = folders
             .filter { it.parentId == parentId && it.id != folderId }
-            .maxOfOrNull { it.orderIndex }
-            ?.plus(1) ?: 0
+            .maxOfOrNull { it.orderIndex } ?: -1
+        val noteMax = noteDao.getAll()
+            .filter { it.folderId == parentId && it.parentNoteId == null }
+            .maxOfOrNull { it.orderIndex } ?: -1
+        val orderIndex = maxOf(folderMax, noteMax) + 1
         folderDao.updateParentAndOrder(folderId, parentId, orderIndex, System.currentTimeMillis())
         normalizeOrderIndexes(oldParentId)
         normalizeOrderIndexes(parentId)
@@ -138,6 +177,46 @@ class FolderRepository @Inject constructor(
         val moved = reordered.removeAt(currentIndex)
         reordered.add(targetIndex, moved)
         persistSiblingOrder(reordered)
+    }
+
+    suspend fun moveTreeItemWithinSiblings(itemId: String, type: VaultTreeItemType, direction: Int) {
+        val folders = folderDao.getAll()
+        val notes = noteDao.getAll()
+        val siblings: List<Pair<VaultTreeItemType, String>> = when (type) {
+            VaultTreeItemType.Folder -> {
+                val folder = folders.firstOrNull { it.id == itemId } ?: return
+                (
+                    folders.filter { it.parentId == folder.parentId }.map { Triple(VaultTreeItemType.Folder, it.id, it.orderIndex) } +
+                        notes.filter { it.folderId == folder.parentId && it.parentNoteId == null }
+                            .map { Triple(VaultTreeItemType.Note, it.id, it.orderIndex) }
+                    ).sortedBy { it.third }.map { it.first to it.second }
+            }
+            VaultTreeItemType.Note -> {
+                val note = notes.firstOrNull { it.id == itemId } ?: return
+                if (note.parentNoteId != null) {
+                    notes.filter { it.parentNoteId == note.parentNoteId }
+                        .sortedBy { it.orderIndex }
+                        .map { VaultTreeItemType.Note to it.id }
+                } else {
+                    (
+                        folders.filter { it.parentId == note.folderId }.map { Triple(VaultTreeItemType.Folder, it.id, it.orderIndex) } +
+                            notes.filter { it.folderId == note.folderId && it.parentNoteId == null }
+                                .map { Triple(VaultTreeItemType.Note, it.id, it.orderIndex) }
+                        ).sortedBy { it.third }.map { it.first to it.second }
+                }
+            }
+        }
+        val currentIndex = siblings.indexOfFirst { it.second == itemId }
+        if (currentIndex == -1) return
+        val targetIndex = (currentIndex + direction).coerceIn(0, siblings.lastIndex)
+        if (targetIndex == currentIndex) return
+        val reordered = siblings.toMutableList()
+        reordered.add(targetIndex, reordered.removeAt(currentIndex))
+        val now = System.currentTimeMillis()
+        reordered.forEachIndexed { index, (itemType, id) ->
+            if (itemType == VaultTreeItemType.Folder) folderDao.updateOrderIndex(id, index, now)
+            else noteDao.updateOrderIndex(id, index, now)
+        }
     }
 
     suspend fun moveFolderToMode(folderId: String, mode: String) {
@@ -283,6 +362,14 @@ class FolderRepository @Inject constructor(
             }
         }
     }
+}
+
+private fun List<VaultTreeItem>.findTreeItem(id: String): VaultTreeItem? {
+    for (item in this) {
+        if (item.id == id) return item
+        item.children.findTreeItem(id)?.let { return it }
+    }
+    return null
 }
 
 private fun String?.isLibraryFolderMode(): Boolean =

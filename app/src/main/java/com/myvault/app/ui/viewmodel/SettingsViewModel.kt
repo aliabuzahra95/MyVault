@@ -10,6 +10,7 @@ import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.StorageRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
+import com.myvault.app.data.preferences.AzureSpeechSettings
 import com.myvault.app.data.sync.DriveSyncResult
 import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
@@ -47,6 +48,12 @@ class SettingsViewModel @Inject constructor(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
             VaultUserPreferences(),
+        )
+    val azureSpeechSettings: StateFlow<AzureSpeechSettings> =
+        preferences.azureSpeechSettings.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            AzureSpeechSettings(),
         )
     private val _storageLabel = MutableStateFlow("Calculating...")
     val storageLabel: StateFlow<String> = _storageLabel
@@ -136,6 +143,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setDefaultNoteView(defaultNoteView: String) {
         viewModelScope.launch { preferences.setDefaultNoteView(defaultNoteView) }
+    }
+
+    fun setNarrationProvider(provider: String) {
+        viewModelScope.launch { preferences.setNarrationProvider(provider) }
+    }
+
+    fun setAzureSpeechSettings(apiKey: String, region: String, voice: String, arabicVoice: String) {
+        viewModelScope.launch { preferences.setAzureSpeechSettings(apiKey, region, voice, arabicVoice) }
     }
 
     fun setSecurityLockEnabled(enabled: Boolean) {

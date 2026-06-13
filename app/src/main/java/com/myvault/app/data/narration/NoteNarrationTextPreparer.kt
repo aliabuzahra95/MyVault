@@ -7,6 +7,15 @@ import javax.inject.Singleton
 
 @Singleton
 class NoteNarrationTextPreparer @Inject constructor() {
+    fun prepareAzureNarration(text: String): String =
+        normalizePlainText(stripHtmlPreservingBreaks(text))
+            .lines()
+            .map(::cleanAzureNarrationLine)
+            .filterNot { it.isBlank() }
+            .joinToString("\n")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .trim()
+
     fun prepare(title: String, body: String): String {
         val cleanTitle = normalizePlainText(title)
         val cleanBody = normalizePlainText(stripHtmlPreservingBreaks(body))
@@ -94,6 +103,19 @@ class NoteNarrationTextPreparer @Inject constructor() {
         .replace(Regex("[ \\t]{2,}"), " ")
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
+
+    private fun cleanAzureNarrationLine(line: String): String {
+        val trimmed = line.trim()
+        if (trimmed.matches(Regex("\\d{1,4}"))) return ""
+        return trimmed
+            .replace(Regex("https?://\\S+|www\\.\\S+", RegexOption.IGNORE_CASE), " link omitted ")
+            .replace(Regex("\\[(\\d{1,3})]"), "")
+            .replace(Regex("(?<![A-Za-z0-9])\\((\\d{1,3})\\)(?![A-Za-z0-9])"), "")
+            .replace(Regex("\\bpp?\\.\\s*(\\d{1,4})\\s*[-–]\\s*(\\d{1,4})\\b", RegexOption.IGNORE_CASE), "pages $1 to $2")
+            .replace(Regex("\\bpp?\\.\\s*(\\d{1,4})\\b", RegexOption.IGNORE_CASE), "page $1")
+            .replace(Regex("[ \\t]{2,}"), " ")
+            .trim()
+    }
 }
 
 private fun String.chunkedByWordBoundary(maxChars: Int): List<String> {

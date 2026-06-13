@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -75,6 +76,7 @@ fun FolderTreeRow(
     expanded: Boolean,
     isChildExpanded: (String) -> Boolean,
     onToggle: (VaultTreeItem) -> Unit,
+    onOpenFolder: (VaultTreeItem) -> Unit = {},
     onOpenNote: (VaultTreeItem) -> Unit,
     modifier: Modifier = Modifier,
     onLongPress: (VaultTreeItem) -> Unit = {},
@@ -82,6 +84,7 @@ fun FolderTreeRow(
     isSelected: (String) -> Boolean = { false },
     onSelectionToggle: (VaultTreeItem) -> Unit = {},
     organizeMode: Boolean = false,
+    organizeAllItems: Boolean = false,
     notePreviewLines: Int = 0,
     showFullNoteTitles: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
@@ -90,7 +93,10 @@ fun FolderTreeRow(
     onMoveFolder: (VaultTreeItem, Int) -> Unit = { _, _ -> },
 ) {
     val isFolder = item.type == VaultTreeItemType.Folder
-    val folderChildren = remember(item.children) { item.children.filter { it.type == VaultTreeItemType.Folder } }
+    val childItems = remember(item.children, organizeAllItems) {
+        if (organizeAllItems) item.children else item.children.filter { it.type == VaultTreeItemType.Folder }
+    }
+    val movable = isFolder || organizeAllItems
 
     Column(modifier = modifier.fillMaxWidth()) {
         FolderTreeSingleRow(
@@ -98,20 +104,22 @@ fun FolderTreeRow(
             depth = depth,
             expanded = expanded,
             onClick = {
-                if (organizeMode && isFolder) {
+                if (organizeMode && movable) {
                     Unit
                 } else if (selectionMode) {
                     onSelectionToggle(item)
                 } else if (isFolder) {
-                    onToggle(item)
+                    onOpenFolder(item)
                 } else {
                     onOpenNote(item)
                 }
             },
+            onToggleClick = { onToggle(item) },
             onLongPress = { if (!organizeMode) onLongPress(item) },
             selectionMode = selectionMode,
             selected = isSelected(item.id),
             organizeMode = organizeMode,
+            organizeAllItems = organizeAllItems,
             notePreviewLines = notePreviewLines,
             showFullNoteTitles = showFullNoteTitles,
             dashboardFontSizeSp = dashboardFontSizeSp,
@@ -135,24 +143,57 @@ fun FolderTreeRow(
             Column {
                 item.children.forEach { child ->
                     key(child.id) {
-                        val childFolderIndex = folderChildren.indexOfFirst { it.id == child.id }
+                        val childIndex = childItems.indexOfFirst { it.id == child.id }
                         FolderTreeRow(
                             item = child,
                             depth = depth + 1,
                             expanded = isChildExpanded(child.id),
                             isChildExpanded = isChildExpanded,
                             onToggle = onToggle,
+                            onOpenFolder = onOpenFolder,
                             onOpenNote = onOpenNote,
                             onLongPress = onLongPress,
                             selectionMode = selectionMode,
                             isSelected = isSelected,
                             onSelectionToggle = onSelectionToggle,
-                        organizeMode = organizeMode,
-                        notePreviewLines = notePreviewLines,
-                        showFullNoteTitles = showFullNoteTitles,
-                        dashboardFontSizeSp = dashboardFontSizeSp,
-                            canMoveUp = childFolderIndex > 0,
-                            canMoveDown = childFolderIndex in 0 until folderChildren.lastIndex,
+                            organizeMode = organizeMode,
+                            organizeAllItems = organizeAllItems,
+                            notePreviewLines = notePreviewLines,
+                            showFullNoteTitles = showFullNoteTitles,
+                            dashboardFontSizeSp = dashboardFontSizeSp,
+                            canMoveUp = childIndex > 0,
+                            canMoveDown = childIndex in 0 until childItems.lastIndex,
+                            onMoveFolder = onMoveFolder,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!isFolder && item.children.isNotEmpty()) {
+            Column {
+                item.children.forEach { child ->
+                    key(child.id) {
+                        val childIndex = item.children.indexOfFirst { it.id == child.id }
+                        FolderTreeRow(
+                            item = child,
+                            depth = depth + 1,
+                            expanded = false,
+                            isChildExpanded = isChildExpanded,
+                            onToggle = onToggle,
+                            onOpenFolder = onOpenFolder,
+                            onOpenNote = onOpenNote,
+                            onLongPress = onLongPress,
+                            selectionMode = selectionMode,
+                            isSelected = isSelected,
+                            onSelectionToggle = onSelectionToggle,
+                            organizeMode = organizeMode,
+                            organizeAllItems = organizeAllItems,
+                            notePreviewLines = notePreviewLines,
+                            showFullNoteTitles = showFullNoteTitles,
+                            dashboardFontSizeSp = dashboardFontSizeSp,
+                            canMoveUp = childIndex > 0,
+                            canMoveDown = childIndex in 0 until item.children.lastIndex,
                             onMoveFolder = onMoveFolder,
                         )
                     }
@@ -169,10 +210,12 @@ private fun FolderTreeSingleRow(
     depth: Int,
     expanded: Boolean,
     onClick: () -> Unit,
+    onToggleClick: () -> Unit,
     onLongPress: () -> Unit,
     selectionMode: Boolean,
     selected: Boolean,
     organizeMode: Boolean,
+    organizeAllItems: Boolean,
     notePreviewLines: Int,
     showFullNoteTitles: Boolean,
     dashboardFontSizeSp: Float,
@@ -184,6 +227,7 @@ private fun FolderTreeSingleRow(
     val colors = VaultThemeTokens.colors
     val topLevel = depth == 0
     val isFolder = item.type == VaultTreeItemType.Folder
+    val movable = isFolder || organizeAllItems
     val isSubfolder = isFolder && !topLevel
     val rowVerticalPadding = when {
         isFolder && topLevel -> 8.dp
@@ -229,7 +273,7 @@ private fun FolderTreeSingleRow(
             )
             .clip(rowShape)
             .graphicsLayer {
-                rotationZ = if (organizeMode && isFolder) shakeRotation else 0f
+                rotationZ = if (organizeMode && movable) shakeRotation else 0f
             }
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -238,7 +282,7 @@ private fun FolderTreeSingleRow(
                 onLongClick = onLongPress,
             )
             .then(
-                if (organizeMode && isFolder) {
+                if (organizeMode && movable) {
                     Modifier.pointerInput(item.id, canMoveUp, canMoveDown) {
                         detectVerticalDragGestures(
                             onDragCancel = { dragCarry = 0f },
@@ -290,6 +334,7 @@ private fun FolderTreeSingleRow(
                     contentDescription = null,
                     modifier = Modifier
                         .size(if (topLevel) 14.dp else 12.dp)
+                        .clickable(onClick = onToggleClick)
                         .graphicsLayer { rotationZ = chevronRotation },
                     tint = colors.textMuted,
                 )
@@ -359,7 +404,7 @@ private fun FolderTreeSingleRow(
                 )
             }
 
-            if (organizeMode && isFolder) {
+            if (organizeMode && movable) {
                 Icon(
                     imageVector = Icons.Rounded.DragIndicator,
                     contentDescription = null,
@@ -374,7 +419,7 @@ private fun FolderTreeSingleRow(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowUp,
-                            contentDescription = "Move folder up",
+                            contentDescription = "Move item up",
                             modifier = Modifier.size(18.dp),
                             tint = if (canMoveUp) colors.accent else colors.textMuted,
                         )
@@ -386,7 +431,7 @@ private fun FolderTreeSingleRow(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "Move folder down",
+                            contentDescription = "Move item down",
                             modifier = Modifier.size(18.dp),
                             tint = if (canMoveDown) colors.accent else colors.textMuted,
                         )

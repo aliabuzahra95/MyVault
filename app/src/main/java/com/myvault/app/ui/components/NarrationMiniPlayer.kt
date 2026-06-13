@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.narration.NarrationConfig
+import com.myvault.app.data.narration.AzureNarrationConfig
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.ui.theme.VaultShapes
@@ -50,6 +53,7 @@ fun NarrationMiniPlayer(
     onStop: () -> Unit,
     onSpeedChange: (Float) -> Unit,
     onSeek: (Long) -> Unit,
+    onSkipBy: (Long) -> Unit,
     onProgressTick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,7 +76,7 @@ fun NarrationMiniPlayer(
     LaunchedEffect(state.status) {
         while (state.status == NarrationPlaybackStatus.Playing || state.status == NarrationPlaybackStatus.Paused) {
             onProgressTick()
-            delay(700L)
+            delay(250L)
         }
     }
 
@@ -200,6 +204,47 @@ fun NarrationMiniPlayer(
                             color = colors.textMuted,
                         )
                     }
+                    if (state.voice != DeviceNarrationVoice) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Surface(
+                                onClick = { onSkipBy(-10_000L) },
+                                modifier = Modifier.size(34.dp),
+                                color = colors.surface,
+                                shape = VaultShapes.pill,
+                                border = BorderStroke(1.dp, colors.border),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Replay10,
+                                        contentDescription = "Rewind 10 seconds",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = colors.textSecondary,
+                                    )
+                                }
+                            }
+                            Box(modifier = Modifier.size(width = 18.dp, height = 1.dp))
+                            Surface(
+                                onClick = { onSkipBy(10_000L) },
+                                modifier = Modifier.size(34.dp),
+                                color = colors.surface,
+                                shape = VaultShapes.pill,
+                                border = BorderStroke(1.dp, colors.border),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Forward10,
+                                        contentDescription = "Forward 10 seconds",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = colors.textSecondary,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Row(
@@ -215,10 +260,15 @@ fun NarrationMiniPlayer(
                         onClick = {},
                     )
                 } else {
-                    NarrationConfig.VoiceOptions.forEach { voice ->
+                    val voiceOptions = if (state.voice in AzureNarrationConfig.VoiceOptions) {
+                        AzureNarrationConfig.EnglishVoiceOptions
+                    } else {
+                        NarrationConfig.VoiceOptions
+                    }
+                    voiceOptions.forEach { voice ->
                         val selected = selectedVoice.equals(voice, ignoreCase = true)
                         CompactChoiceChip(
-                            label = voice.replaceFirstChar { it.uppercase() },
+                            label = voice.removeSuffix("Neural").replaceFirstChar { it.uppercase() },
                             selected = selected,
                             enabled = !isBusy,
                             onClick = { if (!selected) onVoiceChange(voice) },

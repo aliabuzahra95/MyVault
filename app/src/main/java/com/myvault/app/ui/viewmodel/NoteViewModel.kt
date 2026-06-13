@@ -312,6 +312,9 @@ class NoteViewModel @Inject constructor(
     private val _selectedTextAiState = MutableStateFlow(SelectedTextAiUiState())
     val selectedTextAiState: StateFlow<SelectedTextAiUiState> = _selectedTextAiState
     val narrationState: StateFlow<com.myvault.app.data.narration.NarrationUiState> = narrationController.state
+    val azureNarrationProgress =
+        narrationController.progressFor(noteId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private var aiGenerationJob: Job? = null
 
     init {
@@ -373,6 +376,18 @@ class NoteViewModel @Inject constructor(
 
     fun startDeviceNarration(title: String, body: String) {
         narrationController.startDevice(noteId, title, body)
+    }
+
+    fun startAzureNarration(title: String, body: String) {
+        narrationController.startAzure(noteId, title, body)
+    }
+
+    fun resumeAzureNarration(title: String, body: String) {
+        narrationController.startAzure(noteId, title, body, resume = true)
+    }
+
+    fun startAzureNarrationFromSelection(title: String, body: String, startOffset: Int) {
+        narrationController.startAzure(noteId, title, body, bodyStartOffset = startOffset)
     }
 
     fun toggleNarrationPlayback() {
