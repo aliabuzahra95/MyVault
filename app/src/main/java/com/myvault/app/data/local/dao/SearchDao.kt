@@ -19,6 +19,22 @@ interface SearchDao {
     @Query(
         """
         SELECT notes.id AS id, notes.title AS title, notes.bodyPlainText AS bodyPlainText, folders.name AS folderName
+        FROM notes
+        LEFT JOIN folders ON folders.id = notes.folderId
+        WHERE notes.deletedAt IS NULL
+        AND (
+            notes.title LIKE :pattern ESCAPE '\' COLLATE NOCASE OR
+            notes.bodyPlainText LIKE :pattern ESCAPE '\' COLLATE NOCASE
+        )
+        ORDER BY notes.updatedAt DESC
+        LIMIT :limit
+        """,
+    )
+    fun searchActiveNotes(pattern: String, limit: Int): Flow<List<NoteSearchResult>>
+
+    @Query(
+        """
+        SELECT notes.id AS id, notes.title AS title, notes.bodyPlainText AS bodyPlainText, folders.name AS folderName
         FROM notes_fts
         INNER JOIN notes ON notes_fts.title = notes.title
         LEFT JOIN folders ON folders.id = notes.folderId

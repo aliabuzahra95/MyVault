@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.components.AttachmentThumbnail
@@ -87,6 +88,8 @@ import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.PinnedNoteCard
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultActionModal
+import com.myvault.app.ui.components.VaultModalAction
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
@@ -115,6 +118,7 @@ fun LibraryScreen(
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
     onLinkAnnotationToStudyNote: (String, String) -> Unit,
+    onCreateStudyNoteFromAnnotation: (String) -> Unit,
     onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
@@ -161,6 +165,7 @@ fun LibraryScreen(
         onDeleteAnnotationNote = onDeleteAnnotationNote,
         onDeleteAnnotation = onDeleteAnnotation,
         onLinkAnnotationToStudyNote = onLinkAnnotationToStudyNote,
+        onCreateStudyNoteFromAnnotation = onCreateStudyNoteFromAnnotation,
         onPrepareStudyNoteLinks = onPrepareStudyNoteLinks,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
@@ -204,6 +209,7 @@ fun LibraryFolderScreen(
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
     onLinkAnnotationToStudyNote: (String, String) -> Unit,
+    onCreateStudyNoteFromAnnotation: (String) -> Unit,
     onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
@@ -244,6 +250,7 @@ fun LibraryFolderScreen(
         onDeleteAnnotationNote = onDeleteAnnotationNote,
         onDeleteAnnotation = onDeleteAnnotation,
         onLinkAnnotationToStudyNote = onLinkAnnotationToStudyNote,
+        onCreateStudyNoteFromAnnotation = onCreateStudyNoteFromAnnotation,
         onPrepareStudyNoteLinks = onPrepareStudyNoteLinks,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
@@ -290,6 +297,7 @@ private fun LibraryArchiveScreen(
     onDeleteAnnotationNote: (String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
     onLinkAnnotationToStudyNote: (String, String) -> Unit,
+    onCreateStudyNoteFromAnnotation: (String) -> Unit,
     onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
@@ -1080,7 +1088,7 @@ private fun LibraryArchiveScreen(
     if (annotationActionDialogOpen && selectedAnnotation != null) {
         val annotation = selectedAnnotation
         LibraryActionDialog(
-            title = annotation?.displayTitle ?: annotation?.notePreview?.take(40).orEmpty().ifBlank { "Annotation note" },
+            title = annotation?.displayTitle ?: annotation?.notePreview?.take(40).orEmpty().ifBlank { "PDF highlight" },
             actions = listOf(
                 LibraryAction("Open source PDF", Icons.Rounded.MenuBook) {
                     annotation?.let { onAnnotationClick(it.attachmentId, it.pageIndex) }
@@ -1099,6 +1107,10 @@ private fun LibraryArchiveScreen(
                     onPrepareStudyNoteLinks()
                     annotationActionDialogOpen = false
                     annotationLinkDialogOpen = true
+                },
+                LibraryAction("Create Study note", Icons.Rounded.Description) {
+                    annotation?.let { onCreateStudyNoteFromAnnotation(it.id) }
+                    annotationActionDialogOpen = false
                 },
                 LibraryAction("Add tag", Icons.Rounded.LocalOffer) {
                     annotationActionDialogOpen = false
@@ -1462,7 +1474,7 @@ private fun LibraryAnnotationRow(
 ) {
     LibraryHierarchyRow(
         depth = 0,
-        title = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
+        title = annotation.displayTitle ?: annotation.notePreview.ifBlank { annotation.defaultAnnotationTitle() },
         subtitle = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
         leading = {
             Icon(
@@ -1663,41 +1675,46 @@ private fun RecentLibraryAnnotationsRow(
                     border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
                     tonalElevation = 0.dp,
                     shadowElevation = 0.dp,
-                    modifier = Modifier.size(width = 220.dp, height = 72.dp),
+                    modifier = Modifier.size(width = 104.dp, height = 64.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.Top,
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.StickyNote2,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(12.dp),
                             tint = annotation.color.toAnnotationColor(),
                         )
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
-                                color = colors.text,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        Text(
+                            text = annotation.displayTitle ?: annotation.notePreview.ifBlank { annotation.defaultAnnotationTitle() },
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                            color = colors.text,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
         }
     }
 }
+
+private fun LibraryAnnotationItem.defaultAnnotationTitle(): String =
+    if (annotationType == "page_note") "Page note" else "Highlight"
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1864,7 +1881,7 @@ private fun LibraryNestedAnnotationRow(
 ) {
     LibraryHierarchyRow(
         depth = depth,
-        title = annotation.displayTitle ?: annotation.notePreview.ifBlank { "Annotation" },
+        title = annotation.displayTitle ?: annotation.notePreview.ifBlank { annotation.defaultAnnotationTitle() },
         subtitle = if (tags.isEmpty()) {
             "${annotation.fileName} · p. ${annotation.pageIndex + 1}"
         } else {
@@ -2044,37 +2061,18 @@ private fun LibraryActionDialog(
     actions: List<LibraryAction>,
     onDismiss: () -> Unit,
 ) {
-    val colors = VaultThemeTokens.colors
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title, color = colors.text) },
-        text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(actions) { action ->
-                    Surface(
-                        onClick = action.onClick,
-                        color = if (action.selected) colors.accentSoft else colors.surface,
-                        shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, if (action.selected) colors.accentBorder else colors.border),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Icon(action.icon, null, modifier = Modifier.size(17.dp), tint = if (action.destructive) colors.warning else colors.accent)
-                            Text(action.label, color = if (action.destructive) colors.warning else colors.text, fontWeight = FontWeight.W700)
-                        }
-                    }
-                }
-            }
+    VaultActionModal(
+        title = title,
+        onDismiss = onDismiss,
+        actions = actions.map { action ->
+            VaultModalAction(
+                label = action.label,
+                icon = action.icon,
+                destructive = action.destructive,
+                selected = action.selected,
+                onClick = action.onClick,
+            )
         },
-        confirmButton = {},
     )
 }
 

@@ -10,6 +10,7 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
+import com.myvault.app.data.local.entity.isCurrentPdfAnnotation
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
@@ -83,6 +84,7 @@ data class LibraryAnnotationItem(
     val fileName: String,
     val pageIndex: Int,
     val color: String,
+    val annotationType: String,
     val displayTitle: String?,
     val displayFolderId: String?,
     val notePreview: String,
@@ -224,20 +226,20 @@ class LibraryViewModel @Inject constructor(
                 }
             }
         val attachmentsById = activeFiles.associateBy { it.id }
-        val annotationStatsByAttachment = annotations
+        val currentAnnotations = annotations.filter { it.isCurrentPdfAnnotation() }
+        val annotationStatsByAttachment = currentAnnotations
             .filter { it.attachmentId in attachmentsById }
             .groupBy { it.attachmentId }
             .mapValues { (_, items) ->
                 LibraryAnnotationStats(
-                    highlightCount = items.size,
+                    highlightCount = items.count { it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT },
                     annotationNoteCount = items.count { !it.noteText.isNullOrBlank() },
                 )
             }
         val fileItemsById = activeFiles.associate { file ->
             file.id to file.toLibraryFileItem(progressByAttachment[file.id], annotationStatsByAttachment[file.id])
         }
-        val annotationItemsByFolder = annotations
-            .filter { !it.noteText.isNullOrBlank() }
+        val annotationItemsByFolder = currentAnnotations
             .mapNotNull { annotation ->
                 attachmentsById[annotation.attachmentId]?.let { attachment ->
                     (annotation.displayFolderId ?: annotation.libraryFolderId) to annotation.toLibraryAnnotationItem(attachment)
@@ -282,17 +284,16 @@ class LibraryViewModel @Inject constructor(
                 .filter { it.isPinned }
                 .mapNotNull { fileItemsById[it.id] }
                 .sortedWith(compareByDescending<LibraryFileItem> { it.lastOpenedAt }.thenByDescending { it.meta }),
-            annotations = annotations
+            annotations = currentAnnotations
                 .filter {
-                    !it.noteText.isNullOrBlank() &&
-                        if (folderId == null) {
-                            (it.displayFolderId == null && it.attachmentId in currentFileIds) ||
-                                it.displayFolderId == currentParentId ||
-                                it.attachmentId in currentFileIds
-                        } else {
-                            it.displayFolderId == folderId ||
-                                (it.displayFolderId == null && it.attachmentId in currentFileIds)
-                        }
+                    if (folderId == null) {
+                        (it.displayFolderId == null && it.attachmentId in currentFileIds) ||
+                            it.displayFolderId == currentParentId ||
+                            it.attachmentId in currentFileIds
+                    } else {
+                        it.displayFolderId == folderId ||
+                            (it.displayFolderId == null && it.attachmentId in currentFileIds)
+                    }
                 }
                 .mapNotNull { annotation ->
                     attachmentsById[annotation.attachmentId]?.let { attachment ->
@@ -330,6 +331,9 @@ class LibraryViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch {
+            pdfAnnotationRepository.cleanupLegacyIncompatibleAnnotations()
+        }
         viewModelScope.launch {
             liveUiState.collect { state ->
                 _uiState.value = state
@@ -513,6 +517,30 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotationId) }
     }
 
+    fun createStudyNoteFromAnnotation(annotationId: String, onCreated: (String) -> Unit = {}) {
+        val annotation = _uiState.value.findAnnotation(annotationId) ?: return
+        viewModelScope.launch {
+            val title = annotation.displayTitle
+                ?: annotation.notePreview.takeIf { it.isNotBlank() }?.take(48)
+                ?: "PDF highlight - page ${annotation.pageIndex + 1}"
+            val body = buildString {
+                appendLine(title)
+                appendLine()
+                appendLine("Source: ${annotation.fileName}")
+                appendLine("Page: ${annotation.pageIndex + 1}")
+                appendLine()
+                if (annotation.notePreview.isNotBlank()) {
+                    appendLine(annotation.notePreview)
+                    appendLine()
+                }
+                appendLine("Notes:")
+            }
+            val noteId = noteRepository.createImportedRichTextNote(title = title, text = body, styleMarksJson = "[]")
+            knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotation.id)
+            onCreated(noteId)
+        }
+    }
+
     fun addAttachmentTag(fileId: String, name: String) {
         viewModelScope.launch { knowledgeRepository.addTag(KnowledgeRepository.TargetAttachment, fileId, name) }
     }
@@ -614,6 +642,7 @@ private fun PdfAnnotationEntity.toLibraryAnnotationItem(attachment: AttachmentEn
         fileName = attachment.fileName,
         pageIndex = pageIndex,
         color = color,
+        annotationType = annotationType,
         displayTitle = displayTitle,
         displayFolderId = displayFolderId,
         notePreview = noteText.orEmpty(),
@@ -621,6 +650,19 @@ private fun PdfAnnotationEntity.toLibraryAnnotationItem(attachment: AttachmentEn
     )
 
 private fun Int?.orZero(): Int = this ?: 0
+
+private fun LibraryUiState.findAnnotation(annotationId: String): LibraryAnnotationItem? =
+    sequence {
+        yieldAll(annotations)
+        allFolders.forEach { folder ->
+            folder.flattenLibraryFolders().forEach { nested ->
+                yieldAll(nested.annotations)
+            }
+        }
+    }.firstOrNull { it.id == annotationId }
+
+private fun LibraryFolderItem.flattenLibraryFolders(): List<LibraryFolderItem> =
+    listOf(this) + children.flatMap { it.flattenLibraryFolders() }
 
 private data class LibraryImportState(
     val active: Boolean = false,

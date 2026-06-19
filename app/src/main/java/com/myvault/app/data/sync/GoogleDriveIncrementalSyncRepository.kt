@@ -77,7 +77,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Exporting changed metadata"))
             backupRepository.exportMetadataForDriveSync(metadataDir)
             val remoteEntries = remoteManifest.toRemoteEntryMap()
-            val entries = metadataDir.toMetadataDriveEntries() + localFileDriveEntries(remoteEntries)
+            val localFileEntries = localFileDriveEntries(remoteEntries)
+            metadataDir.reconcileAttachmentFileClaims(localFileEntries.map { it.backupEntry }.toSet())
+            val entries = metadataDir.toMetadataDriveEntries() + localFileEntries
             var uploadedMetadata = 0
             var uploadedFiles = 0
             var skippedFiles = 0
@@ -224,8 +226,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Finalising, message = "Finalising restore"))
             val cloudVersion = manifest.optLong("cloudVersion", System.currentTimeMillis())
             preferences.markGoogleDriveSync(cloudVersion)
+            val missingFilesMessage = if (restored.missingAttachmentCount > 0) {
+                " ${restored.missingAttachmentCount} unavailable attachment file(s) were skipped; all other vault data was restored."
+            } else {
+                ""
+            }
             DriveSyncResult.Success(
-                "Drive pull complete: ${restored.noteCount} notes, ${restored.attachmentCount} attachments. $downloadedFiles file(s) downloaded, $reusedLocalFiles reused locally.",
+                "Drive pull complete: ${restored.noteCount} notes, ${restored.attachmentCount} attachments. " +
+                    "$downloadedFiles file(s) downloaded, $reusedLocalFiles reused locally.$missingFilesMessage",
             )
         } catch (error: Throwable) {
             DriveSyncResult.Failure(error.driveMessage("Drive pull failed"))
@@ -277,10 +285,22 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             }
             .orEmpty()
 
+    private fun File.reconcileAttachmentFileClaims(availableBackupEntries: Set<String>) {
+        val attachmentsFile = resolve("attachments.json")
+        if (!attachmentsFile.exists()) return
+        val attachments = JSONArray(attachmentsFile.readText())
+        for (index in 0 until attachments.length()) {
+            val attachment = attachments.getJSONObject(index)
+            val id = attachment.getString("id")
+            val backupEntry = "files/$id"
+            attachment.put("fileEntry", if (backupEntry in availableBackupEntries) backupEntry else "")
+        }
+        attachmentsFile.writeText(attachments.toString())
+    }
+
     private suspend fun localFileDriveEntries(remoteEntries: Map<String, RemoteEntry>): List<DriveEntry> {
         val attachments = attachmentDao.getAllIncludingDeleted()
         return attachments
-            .filter { it.deletedAt == null }
             .mapNotNull { attachment ->
                 val file = File(attachment.localPath)
                 if (!file.exists() || !file.isFile) return@mapNotNull null

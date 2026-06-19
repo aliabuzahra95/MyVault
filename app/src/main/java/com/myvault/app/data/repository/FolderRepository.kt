@@ -3,11 +3,14 @@ package com.myvault.app.data.repository
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
+import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.FolderStickyNoteDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
+import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
@@ -28,12 +31,15 @@ import javax.inject.Singleton
 @Singleton
 class FolderRepository @Inject constructor(
     private val database: VaultDatabase,
+    private val aiConversationDao: AiConversationDao,
     private val folderDao: FolderDao,
+    private val folderStickyNoteDao: FolderStickyNoteDao,
     private val noteDao: NoteDao,
     private val attachmentDao: AttachmentDao,
     private val blockDao: BlockDao,
     private val tagDao: TagDao,
     private val noteTableDao: NoteTableDao,
+    private val noteVersionDao: NoteVersionDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
@@ -314,6 +320,9 @@ class FolderRepository @Inject constructor(
                 sourceBacklinkDao.deleteForNotes(noteIds)
                 knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, noteIds)
                 noteTableDao.deleteForNotes(noteIds)
+                noteVersionDao.deleteForNotes(noteIds)
+                aiConversationDao.deleteMessagesForNotes(noteIds)
+                aiConversationDao.deleteConversationsForNotes(noteIds)
                 attachmentDao.deleteForNotes(noteIds)
                 noteDao.deleteByIds(noteIds)
             }
@@ -331,6 +340,7 @@ class FolderRepository @Inject constructor(
                 }
                 attachmentDao.deleteByIds(libraryAttachmentIds)
             }
+            folderStickyNoteDao.deleteForFolders(folderIds)
             folderDao.deleteByIds(folderIds)
         }
         (noteAttachments + libraryAttachments).deleteLocalFiles()

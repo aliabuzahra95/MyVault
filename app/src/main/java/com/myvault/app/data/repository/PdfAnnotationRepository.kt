@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import java.util.UUID
 import javax.inject.Inject
@@ -15,10 +16,21 @@ class PdfAnnotationRepository @Inject constructor(
     private val database: VaultDatabase,
     private val annotationDao: PdfAnnotationDao,
     private val knowledgeTagDao: KnowledgeTagDao,
+    private val sourceBacklinkDao: SourceBacklinkDao,
 ) {
     fun observeAll() = annotationDao.observeAll()
 
     fun observeForAttachment(attachmentId: String) = annotationDao.observeForAttachment(attachmentId)
+
+    suspend fun cleanupLegacyIncompatibleAnnotations() {
+        val ids = annotationDao.getLegacyIncompatibleIds()
+        if (ids.isEmpty()) return
+        database.withTransaction {
+            annotationDao.deleteByIds(ids)
+            sourceBacklinkDao.deleteForAnnotations(ids)
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, ids)
+        }
+    }
 
     suspend fun addHighlight(
         attachmentId: String,
@@ -34,13 +46,17 @@ class PdfAnnotationRepository @Inject constructor(
             Log.w("MyVaultPdfHighlight", "Repository rejected highlight: blank attachmentId")
             return false
         }
-        val normalizedLeft = minOf(left, right).coerceIn(0f, 1f)
-        val normalizedRight = maxOf(left, right).coerceIn(0f, 1f)
-        val normalizedTop = minOf(top, bottom).coerceIn(0f, 1f)
-        val normalizedBottom = maxOf(top, bottom).coerceIn(0f, 1f)
+        val normalizedLeft = minOf(left, right)
+        val normalizedRight = maxOf(left, right)
+        val normalizedTop = minOf(top, bottom)
+        val normalizedBottom = maxOf(top, bottom)
+        if (!isValidPdfAnnotationRect(normalizedLeft, normalizedTop, normalizedRight, normalizedBottom)) {
+            Log.w("MyVaultPdfHighlight", "Repository rejected highlight: invalid rect=$left,$top,$right,$bottom")
+            return false
+        }
         val width = normalizedRight - normalizedLeft
         val height = normalizedBottom - normalizedTop
-        if (width < 0.003f || height < 0.003f) {
+        if (width < 0.5f || height < 0.5f) {
             Log.w("MyVaultPdfHighlight", "Repository rejected highlight: too small width=$width height=$height")
             return false
         }
@@ -55,8 +71,9 @@ class PdfAnnotationRepository @Inject constructor(
             top = normalizedTop,
             right = normalizedRight,
             bottom = normalizedBottom,
-            color = color,
+            color = color.sanitizedPdfAnnotationColor(defaultColor = "yellow"),
             noteText = null,
+            annotationType = PdfAnnotationEntity.TYPE_HIGHLIGHT,
             displayTitle = null,
             displayFolderId = libraryFolderId,
             createdAt = now,
@@ -72,14 +89,118 @@ class PdfAnnotationRepository @Inject constructor(
         return true
     }
 
+    suspend fun addTextBox(
+        attachmentId: String,
+        libraryFolderId: String?,
+        pageIndex: Int,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        text: String,
+        color: String,
+        textSize: Float,
+        backgroundColor: String,
+    ): Boolean {
+        val cleanText = text.trim()
+        if (attachmentId.isBlank() || cleanText.isBlank()) return false
+        val normalizedLeft = minOf(left, right)
+        val normalizedRight = maxOf(left, right)
+        val normalizedTop = minOf(top, bottom)
+        val normalizedBottom = maxOf(top, bottom)
+        if (!isValidPdfAnnotationRect(normalizedLeft, normalizedTop, normalizedRight, normalizedBottom)) return false
+        if (normalizedRight - normalizedLeft < 2f || normalizedBottom - normalizedTop < 2f) return false
+
+        val now = System.currentTimeMillis()
+        annotationDao.upsert(
+            PdfAnnotationEntity(
+                id = UUID.randomUUID().toString(),
+                attachmentId = attachmentId,
+                libraryFolderId = libraryFolderId,
+                pageIndex = pageIndex.coerceAtLeast(0),
+                left = normalizedLeft,
+                top = normalizedTop,
+                right = normalizedRight,
+                bottom = normalizedBottom,
+                color = color.sanitizedPdfAnnotationColor(defaultColor = "black"),
+                noteText = cleanText,
+                annotationType = PdfAnnotationEntity.TYPE_TEXT_BOX,
+                textSize = textSize.coerceIn(10f, 36f),
+                backgroundColor = backgroundColor.sanitizedPdfTextBoxBackground(),
+                displayTitle = cleanText.take(60),
+                displayFolderId = libraryFolderId,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+        return true
+    }
+
+
+    suspend fun addPageNote(
+        attachmentId: String,
+        libraryFolderId: String?,
+        pageIndex: Int,
+        noteText: String,
+    ): Boolean {
+        val cleanText = noteText.trim()
+        if (attachmentId.isBlank() || cleanText.isBlank()) return false
+        val now = System.currentTimeMillis()
+        annotationDao.upsert(
+            PdfAnnotationEntity(
+                id = UUID.randomUUID().toString(),
+                attachmentId = attachmentId,
+                libraryFolderId = libraryFolderId,
+                pageIndex = pageIndex.coerceAtLeast(0),
+                left = 0f,
+                top = 0f,
+                right = 1f,
+                bottom = 1f,
+                color = "yellow",
+                noteText = cleanText,
+                annotationType = PdfAnnotationEntity.TYPE_PAGE_NOTE,
+                displayTitle = cleanText.take(60),
+                displayFolderId = libraryFolderId,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+        return true
+    }
+
     suspend fun updateColor(id: String, color: String) {
         if (id.isBlank()) return
-        annotationDao.updateColor(id, color, System.currentTimeMillis())
+        annotationDao.updateColor(id, color.sanitizedPdfAnnotationColor(defaultColor = "yellow"), System.currentTimeMillis())
     }
 
     suspend fun updateNote(id: String, noteText: String) {
         if (id.isBlank()) return
         annotationDao.updateNote(id, noteText.trim().ifBlank { null }, System.currentTimeMillis())
+    }
+
+    suspend fun updateTextBox(id: String, text: String, color: String, textSize: Float, backgroundColor: String) {
+        val cleanText = text.trim()
+        if (id.isBlank() || cleanText.isBlank()) return
+        annotationDao.updateTextBox(
+            id = id,
+            text = cleanText,
+            color = color.sanitizedPdfAnnotationColor(defaultColor = "black"),
+            textSize = textSize.coerceIn(10f, 36f),
+            backgroundColor = backgroundColor.sanitizedPdfTextBoxBackground(),
+            updatedAt = System.currentTimeMillis(),
+        )
+        annotationDao.updateDisplayTitle(id, cleanText.take(60), System.currentTimeMillis())
+    }
+
+    suspend fun updateBounds(id: String, left: Float, top: Float, right: Float, bottom: Float) {
+        if (id.isBlank()) return
+        val normalizedLeft = minOf(left, right)
+        val normalizedRight = maxOf(left, right)
+        val normalizedTop = minOf(top, bottom)
+        val normalizedBottom = maxOf(top, bottom)
+        if (!isValidPdfAnnotationRect(normalizedLeft, normalizedTop, normalizedRight, normalizedBottom)) return
+        if (normalizedRight - normalizedLeft < 2f || normalizedBottom - normalizedTop < 2f) return
+        annotationDao.updateBounds(id, normalizedLeft, normalizedTop, normalizedRight, normalizedBottom, System.currentTimeMillis())
     }
 
     suspend fun updateDisplayTitle(id: String, displayTitle: String) {
@@ -103,7 +224,28 @@ class PdfAnnotationRepository @Inject constructor(
         if (id.isBlank()) return
         database.withTransaction {
             annotationDao.deleteById(id)
+            sourceBacklinkDao.deleteForAnnotations(listOf(id))
             knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, listOf(id))
         }
     }
 }
+
+internal fun String.sanitizedPdfAnnotationColor(defaultColor: String): String =
+    when (lowercase()) {
+        "yellow", "blue", "green", "red", "black" -> lowercase()
+        else -> defaultColor
+    }
+
+internal fun String.sanitizedPdfTextBoxBackground(): String =
+    when (lowercase()) {
+        PdfAnnotationEntity.BACKGROUND_NONE, "white", "yellow", "blue", "green", "red" -> lowercase()
+        else -> PdfAnnotationEntity.BACKGROUND_NONE
+    }
+
+internal fun isValidPdfAnnotationRect(left: Float, top: Float, right: Float, bottom: Float): Boolean =
+    left.isFinite() &&
+        top.isFinite() &&
+        right.isFinite() &&
+        bottom.isFinite() &&
+        left < right &&
+        top < bottom

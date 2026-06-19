@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
+import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.FolderStickyNoteDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
@@ -18,10 +19,17 @@ import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
+import com.myvault.app.ai.home.HomeChatHistoryDao
+import com.myvault.app.ai.home.HomeChatHistoryEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.AiConversationEntity
 import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
+import com.myvault.app.data.local.entity.CourseConceptCardEntity
+import com.myvault.app.data.local.entity.CourseEntity
+import com.myvault.app.data.local.entity.CourseFolderEntity
+import com.myvault.app.data.local.entity.CourseNoteEntity
+import com.myvault.app.data.local.entity.CourseStickyNoteEntity
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.data.local.entity.KnowledgeTagEntity
@@ -55,9 +63,15 @@ import com.myvault.app.data.local.entity.TagEntity
         KnowledgeTagEntity::class,
         KnowledgeTagLinkEntity::class,
         NoteVersionEntity::class,
+        CourseEntity::class,
+        CourseFolderEntity::class,
+        CourseNoteEntity::class,
+        CourseStickyNoteEntity::class,
+        CourseConceptCardEntity::class,
+        HomeChatHistoryEntity::class,
     ],
-    version = 16,
-    exportSchema = false,
+    version = 21,
+    exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
@@ -74,6 +88,8 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun sourceBacklinkDao(): SourceBacklinkDao
     abstract fun knowledgeTagDao(): KnowledgeTagDao
     abstract fun noteVersionDao(): NoteVersionDao
+    abstract fun courseDao(): CourseDao
+    abstract fun homeChatHistoryDao(): HomeChatHistoryDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -327,5 +343,140 @@ abstract class VaultDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_notes_folderId_parentNoteId_orderIndex ON notes(folderId, parentNoteId, orderIndex)")
             }
         }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS courses (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        lastOpenedNoteId TEXT,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS course_folders (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        courseId TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        sortOrder INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_course_folders_courseId_sortOrder ON course_folders(courseId, sortOrder)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS course_notes (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        courseId TEXT NOT NULL,
+                        folderId TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        body TEXT NOT NULL,
+                        sortOrder INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        lastOpenedAt INTEGER
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_course_notes_courseId_folderId_sortOrder ON course_notes(courseId, folderId, sortOrder)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_course_notes_lastOpenedAt ON course_notes(lastOpenedAt)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS course_sticky_notes (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        courseId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        sortOrder INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_course_sticky_notes_courseId_sortOrder ON course_sticky_notes(courseId, sortOrder)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS course_concept_cards (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        courseId TEXT NOT NULL,
+                        term TEXT NOT NULL,
+                        arabicTerm TEXT,
+                        definition TEXT NOT NULL,
+                        details TEXT,
+                        sortOrder INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_course_concept_cards_courseId_sortOrder ON course_concept_cards(courseId, sortOrder)")
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE courses ADD COLUMN rootFolderId TEXT")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN annotationType TEXT NOT NULL DEFAULT 'highlight'")
+                db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN textSize REAL NOT NULL DEFAULT 16")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN backgroundColor TEXT NOT NULL DEFAULT 'none'")
+            }
+        }
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS home_chat_history (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        userQuery TEXT NOT NULL,
+                        assistantAnswer TEXT NOT NULL,
+                        attachedTitles TEXT NOT NULL,
+                        modelId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_home_chat_history_createdAt ON home_chat_history(createdAt)")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9,
+            MIGRATION_9_10,
+            MIGRATION_10_11,
+            MIGRATION_11_12,
+            MIGRATION_12_13,
+            MIGRATION_13_14,
+            MIGRATION_14_15,
+            MIGRATION_15_16,
+            MIGRATION_16_17,
+            MIGRATION_17_18,
+            MIGRATION_18_19,
+            MIGRATION_19_20,
+            MIGRATION_20_21,
+        )
     }
 }

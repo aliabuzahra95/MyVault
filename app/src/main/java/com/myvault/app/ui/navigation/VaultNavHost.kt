@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocalLibrary
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -76,6 +77,7 @@ import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
 import com.myvault.app.ui.screens.AskAiScreen
+import com.myvault.app.ui.screens.CoursesScreen
 import com.myvault.app.ui.screens.EditorScreen
 import com.myvault.app.ui.screens.FolderViewScreen
 import com.myvault.app.ui.screens.HomeScreen
@@ -93,6 +95,7 @@ import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.AttachmentsViewModel
 import com.myvault.app.ui.viewmodel.AttachmentViewerViewModel
+import com.myvault.app.ui.viewmodel.CoursesViewModel
 import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
 import com.myvault.app.ui.viewmodel.LibraryViewModel
@@ -212,6 +215,61 @@ fun VaultNavHost(
                     homeViewModel.createNote(folderId = null, mode = mode) { noteId ->
                         navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
                     }
+                },
+                coursesContent = {
+                    val coursesViewModel: CoursesViewModel = hiltViewModel()
+                    val coursesState by coursesViewModel.uiState.collectAsStateWithLifecycle()
+                    CoursesScreen(
+                        uiState = coursesState,
+                        onSelectCourse = coursesViewModel::selectCourse,
+                        onCreateCourse = coursesViewModel::createCourse,
+                        onRenameCourse = coursesViewModel::renameCourse,
+                        onDeleteCourse = coursesViewModel::deleteCourse,
+                        onOpenNote = { noteId ->
+                            coursesViewModel.openNote(noteId)
+                            openNote(noteId)
+                        },
+                        onOpenFolder = { folderId -> navController.navigate(VaultDestination.FolderView.route(folderId)) },
+                        onNewNote = {
+                            coursesViewModel.createNote { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
+                        },
+                        onNewFolder = coursesViewModel::createSubfolder,
+                        onFolderExpandedChange = coursesViewModel::setFolderExpanded,
+                        onMoveItemInOrder = coursesViewModel::moveItemInOrder,
+                        onRenameNote = coursesViewModel::renameNote,
+                        onMoveNote = coursesViewModel::moveNote,
+                        onMoveNoteToMode = coursesViewModel::moveNoteToMode,
+                        onDeleteNote = coursesViewModel::deleteNote,
+                        onSetNotePinned = coursesViewModel::setNotePinned,
+                        onSetNoteFolderPinned = coursesViewModel::setNoteFolderPinned,
+                        onSetNoteFavourite = coursesViewModel::setNoteFavourite,
+                        onCreateSubNote = { parentId ->
+                            coursesViewModel.createSubNote(parentId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
+                        },
+                        onCreateSticky = coursesViewModel::createSticky,
+                        onUpdateSticky = coursesViewModel::updateSticky,
+                        onDeleteSticky = coursesViewModel::deleteSticky,
+                        onCreateConcept = coursesViewModel::createConcept,
+                        onSaveConcept = coursesViewModel::saveConcept,
+                        onDeleteConcept = coursesViewModel::deleteConcept,
+                        dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
+                        onThemeClick = {
+                            shellViewModel.setTheme(
+                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                            )
+                        },
+                        onQuickBackupClick = {
+                            shellViewModel.pushGoogleDriveSync {
+                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        quickBackupRecommended = preferences.quickBackupRecommended(),
+                    )
                 },
                 studyContent = {
                     val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
@@ -429,6 +487,11 @@ fun VaultNavHost(
                         onDeleteAnnotationNote = libraryViewModel::deleteAnnotationNote,
                         onDeleteAnnotation = libraryViewModel::deleteAnnotation,
                         onLinkAnnotationToStudyNote = libraryViewModel::linkAnnotationToStudyNote,
+                        onCreateStudyNoteFromAnnotation = { annotationId ->
+                            libraryViewModel.createStudyNoteFromAnnotation(annotationId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
                         onPrepareStudyNoteLinks = libraryViewModel::prepareStudyNoteLinks,
                         onCreateFolder = { parentId, name ->
                             libraryViewModel.createFolder(parentId = parentId, name = name)
@@ -588,6 +651,11 @@ fun VaultNavHost(
                         onDeleteAnnotationNote = personalLibraryViewModel::deleteAnnotationNote,
                         onDeleteAnnotation = personalLibraryViewModel::deleteAnnotation,
                         onLinkAnnotationToStudyNote = personalLibraryViewModel::linkAnnotationToStudyNote,
+                        onCreateStudyNoteFromAnnotation = { annotationId ->
+                            personalLibraryViewModel.createStudyNoteFromAnnotation(annotationId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId))
+                            }
+                        },
                         onPrepareStudyNoteLinks = personalLibraryViewModel::prepareStudyNoteLinks,
                         onCreateFolder = { parentId, name ->
                             personalLibraryViewModel.createFolder(parentId = parentId, name = name)
@@ -667,6 +735,11 @@ fun VaultNavHost(
                 onDeleteAnnotationNote = viewModel::deleteAnnotationNote,
                 onDeleteAnnotation = viewModel::deleteAnnotation,
                 onLinkAnnotationToStudyNote = viewModel::linkAnnotationToStudyNote,
+                onCreateStudyNoteFromAnnotation = { annotationId ->
+                    viewModel.createStudyNoteFromAnnotation(annotationId) { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId))
+                    }
+                },
                 onPrepareStudyNoteLinks = viewModel::prepareStudyNoteLinks,
                 onCreateFolder = { parentId, name ->
                     viewModel.createFolder(parentId = parentId, name = name)
@@ -710,6 +783,7 @@ fun VaultNavHost(
                 onBackClick = { navController.popBackStack() },
                 onSearchClick = { navController.navigate(VaultDestination.Search.route) },
                 onNoteClick = { noteId ->
+                    viewModel.recordCourseNoteOpened(noteId)
                     navController.navigate(
                         if (preferences.defaultNoteView == "editing") {
                             VaultDestination.Editor.route(noteId)
@@ -975,6 +1049,10 @@ fun VaultNavHost(
                 onAddPdfHighlight = viewModel::addPdfHighlight,
                 onUpdatePdfHighlightColor = viewModel::updatePdfHighlightColor,
                 onUpdatePdfAnnotationNote = viewModel::updatePdfAnnotationNote,
+                onAddPdfPageNote = viewModel::addPdfPageNote,
+                onAddPdfTextBox = viewModel::addPdfTextBox,
+                onUpdatePdfTextBox = viewModel::updatePdfTextBox,
+                onUpdatePdfTextBoxBounds = viewModel::updatePdfTextBoxBounds,
                 onDeletePdfAnnotation = viewModel::deletePdfAnnotation,
                 onDeleteAttachment = {
                     viewModel.deleteAttachment {
@@ -1120,6 +1198,7 @@ private fun String.workspaceValue(): String =
     }
 
 private enum class VaultRootMode(val label: String, val icon: ImageVector) {
+    Courses("Courses", Icons.Rounded.School),
     Study("Study", Icons.Rounded.MenuBook),
     Library("Library", Icons.Rounded.LocalLibrary),
     Quran("Qur'an", Icons.Rounded.AutoStories),
@@ -1134,6 +1213,7 @@ private fun StudyLibraryPersonalShell(
     onRootModeChanged: (VaultRootMode) -> Unit,
     rootBackHandlerEnabled: Boolean,
     onQuickNoteMode: (String) -> Unit,
+    coursesContent: @Composable () -> Unit,
     studyContent: @Composable () -> Unit,
     quranContent: @Composable () -> Unit,
     memoriseContent: @Composable () -> Unit,
@@ -1145,13 +1225,14 @@ private fun StudyLibraryPersonalShell(
         if (workspace == WORKSPACE_PERSONAL) {
             listOf(VaultRootMode.Personal, VaultRootMode.Library)
         } else {
-            listOf(VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
+            listOf(VaultRootMode.Courses, VaultRootMode.Study, VaultRootMode.Library, VaultRootMode.Quran, VaultRootMode.Memorise)
         }
     }
     val requestedPage = remember(modes, selectedRootModeName) {
         modes.indexOfFirst { it.name == selectedRootModeName }.takeIf { it >= 0 } ?: 0
     }
     val pagerState = rememberPagerState(initialPage = requestedPage) { modes.size }
+    val studyPage = remember(modes) { modes.indexOf(VaultRootMode.Study).takeIf { it >= 0 } ?: 0 }
     val scope = rememberCoroutineScope()
     val colors = VaultThemeTokens.colors
     var visualSelectedPage by rememberSaveable(modes) { mutableStateOf(requestedPage) }
@@ -1177,11 +1258,11 @@ private fun StudyLibraryPersonalShell(
             }
     }
 
-    BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage > 0) {
+    BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage != studyPage) {
         scope.launch {
-            visualSelectedPage = 0
+            visualSelectedPage = studyPage
             pagerState.animateScrollToPage(
-                page = 0,
+                page = studyPage,
                 animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
             )
         }
@@ -1203,6 +1284,7 @@ private fun StudyLibraryPersonalShell(
             ),
         ) { page ->
             when (modes[page]) {
+                VaultRootMode.Courses -> coursesContent()
                 VaultRootMode.Study -> studyContent()
                 VaultRootMode.Quran -> quranContent()
                 VaultRootMode.Memorise -> memoriseContent()

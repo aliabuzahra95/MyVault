@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -71,6 +72,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -101,8 +104,14 @@ import com.myvault.app.ui.components.SearchBar
 import com.myvault.app.ui.components.SearchResultCard
 import com.myvault.app.ui.components.SearchResultData
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultActionModal
+import com.myvault.app.ui.components.VaultConfirmModal
+import com.myvault.app.ui.components.VaultFormModal
+import com.myvault.app.ui.components.VaultModalAction
+import com.myvault.app.ui.components.VaultTextField
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
+import com.myvault.app.ui.home.HomeInlineAiPanel
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.theme.VaultSpacing
@@ -112,6 +121,8 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.util.openAttachment
 import com.myvault.app.ui.viewmodel.HomeUiState
+import com.myvault.app.ai.home.HomeInlineAiViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun HomeScreen(
@@ -151,6 +162,8 @@ fun HomeScreen(
     currentFolderMode: String = FOLDER_MODE_STUDY,
 ) {
     val colors = VaultThemeTokens.colors
+    val homeInlineAiViewModel: HomeInlineAiViewModel = hiltViewModel()
+    val homeInlineAiState by homeInlineAiViewModel.state.collectAsState()
     BackHandler(enabled = uiState.searchQuery.isNotBlank()) {
         onSearchQueryChange("")
     }
@@ -544,7 +557,36 @@ fun HomeScreen(
                         }
                     },
                 )
+                HomeInlineAiPill(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 78.dp, bottom = 98.dp),
+                    onClick = { homeInlineAiViewModel.openPanel() },
+                )
             }
+
+            HomeInlineAiPanel(
+                state = homeInlineAiState,
+                onInputChange = homeInlineAiViewModel::setInput,
+                onAttachClick = homeInlineAiViewModel::openPicker,
+                onSuggestionClick = homeInlineAiViewModel::attachSuggestion,
+                onDetachClick = homeInlineAiViewModel::detachItem,
+                onSendClick = homeInlineAiViewModel::send,
+                onStopClick = homeInlineAiViewModel::stopStreaming,
+                onProviderSelected = homeInlineAiViewModel::setProvider,
+                onModelModeSelected = homeInlineAiViewModel::setModelMode,
+                onSettingsClick = homeInlineAiViewModel::toggleSettingsMode,
+                onClearHistoryClick = homeInlineAiViewModel::clearHistory,
+                onHistoryClick = homeInlineAiViewModel::openHistoryItem,
+                onRetryClick = homeInlineAiViewModel::retryLastRequest,
+                onDismissErrorClick = homeInlineAiViewModel::dismissError,
+                onClose = homeInlineAiViewModel::closePanel,
+                onPickerToggle = homeInlineAiViewModel::attachItem,
+                onPickerClose = homeInlineAiViewModel::closePicker,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(80f),
+            )
         }
     }
 
@@ -701,57 +743,41 @@ fun HomeScreen(
     }
 
     if (renameNoteDialogOpen && selectedNote != null) {
-        AlertDialog(
-            onDismissRequest = { renameNoteDialogOpen = false },
-            title = { Text("Rename note") },
-            text = {
-                OutlinedTextField(
-                    value = noteTitleInput,
-                    onValueChange = { noteTitleInput = it },
-                    singleLine = true,
-                    label = { Text("Note title") },
-                )
+        VaultFormModal(
+            title = "Rename note",
+            confirmLabel = "Save",
+            enabled = noteTitleInput.isNotBlank(),
+            icon = Icons.Rounded.Description,
+            onDismiss = { renameNoteDialogOpen = false },
+            onConfirm = {
+                selectedNote?.let { onRenameNoteClick(it.id, noteTitleInput) }
+                noteTitleInput = ""
+                renameNoteDialogOpen = false
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        selectedNote?.let { onRenameNoteClick(it.id, noteTitleInput) }
-                        noteTitleInput = ""
-                        renameNoteDialogOpen = false
-                    },
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { renameNoteDialogOpen = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
+        ) {
+            VaultTextField(
+                value = noteTitleInput,
+                onValueChange = { noteTitleInput = it },
+                label = "Note title",
+                singleLine = true,
+            )
+        }
     }
 
     if (deleteNoteDialogOpen && selectedNote != null) {
         val note = selectedNote
-        AlertDialog(
-            onDismissRequest = { deleteNoteDialogOpen = false },
-            title = { Text("Move ${note?.name.orEmpty()} to Recently Deleted?") },
-            text = { Text("You can restore this note from Settings.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        note?.let { onDeleteNoteClick(it.id) }
-                        deleteNoteDialogOpen = false
-                        selectedNote = null
-                    },
-                ) {
-                    Text("Move")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteNoteDialogOpen = false }) {
-                    Text("Keep")
-                }
+        VaultConfirmModal(
+            title = "Move ${note?.name.orEmpty()}?",
+            message = "This note will move to Recently Deleted. You can restore it from Settings.",
+            confirmLabel = "Move",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { deleteNoteDialogOpen = false },
+            onConfirm = {
+                note?.let { onDeleteNoteClick(it.id) }
+                deleteNoteDialogOpen = false
+                selectedNote = null
             },
         )
     }
@@ -778,25 +804,18 @@ fun HomeScreen(
 
     if (deleteFolderDialogOpen && selectedFolder != null) {
         val folder = selectedFolder
-        AlertDialog(
-            onDismissRequest = { deleteFolderDialogOpen = false },
-            title = { Text("Move ${folder?.name.orEmpty()} to Recently Deleted?") },
-            text = { Text("This will also move its subfolders and notes. You can restore them from Settings.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        folder?.let { onDeleteFolderClick(it.id) }
-                        deleteFolderDialogOpen = false
-                        selectedFolder = null
-                    },
-                ) {
-                    Text("Move")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteFolderDialogOpen = false }) {
-                    Text("Keep")
-                }
+        VaultConfirmModal(
+            title = "Move ${folder?.name.orEmpty()}?",
+            message = "This will also move its subfolders and notes to Recently Deleted. You can restore them from Settings.",
+            confirmLabel = "Move",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { deleteFolderDialogOpen = false },
+            onConfirm = {
+                folder?.let { onDeleteFolderClick(it.id) }
+                deleteFolderDialogOpen = false
+                selectedFolder = null
             },
         )
     }
@@ -885,32 +904,21 @@ fun HomeScreen(
     }
 
     if (deleteSelectedOpen) {
-        AlertDialog(
-            onDismissRequest = { deleteSelectedOpen = false },
-            title = { Text("Move selected items to Recently Deleted?") },
-            text = {
-                Text(
-                    "This will move ${selectedFolders.size} folder${if (selectedFolders.size == 1) "" else "s"} " +
-                        "and ${selectedNotes.size} note${if (selectedNotes.size == 1) "" else "s"} to Recently Deleted.",
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        selectedNotes.forEach { onDeleteNoteClick(it.id) }
-                        selectedFolders.forEach { onDeleteFolderClick(it.id) }
-                        selectedItemIds.clear()
-                        deleteSelectedOpen = false
-                        manageSelectionMode = false
-                    },
-                ) {
-                    Text("Move")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteSelectedOpen = false }) {
-                    Text("Keep")
-                }
+        VaultConfirmModal(
+            title = "Move selected items?",
+            message = "This will move ${selectedFolders.size} folder${if (selectedFolders.size == 1) "" else "s"} " +
+                "and ${selectedNotes.size} note${if (selectedNotes.size == 1) "" else "s"} to Recently Deleted.",
+            confirmLabel = "Move",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { deleteSelectedOpen = false },
+            onConfirm = {
+                selectedNotes.forEach { onDeleteNoteClick(it.id) }
+                selectedFolders.forEach { onDeleteFolderClick(it.id) }
+                selectedItemIds.clear()
+                deleteSelectedOpen = false
+                manageSelectionMode = false
             },
         )
     }
@@ -986,58 +994,43 @@ fun HomeScreen(
 
     val dialogMode = folderDialogMode
     if (dialogMode != null) {
-        AlertDialog(
-            onDismissRequest = { folderDialogMode = null },
-            title = {
-                Text(
-                    when (dialogMode) {
-                        FolderDialogMode.CreateRoot -> "New folder"
-                        FolderDialogMode.CreateSubfolder -> "New subfolder"
-                        FolderDialogMode.Rename -> "Rename folder"
-                    },
-                )
+        VaultFormModal(
+            title = when (dialogMode) {
+                FolderDialogMode.CreateRoot -> "New folder"
+                FolderDialogMode.CreateSubfolder -> "New subfolder"
+                FolderDialogMode.Rename -> "Rename folder"
             },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                    OutlinedTextField(
-                        value = newFolderName,
-                        onValueChange = { newFolderName = it },
-                        singleLine = true,
-                        label = { Text("Folder name") },
-                    )
-                    OutlinedTextField(
-                        value = folderDescriptionInput,
-                        onValueChange = { folderDescriptionInput = it },
-                        label = { Text("Description (optional)") },
-                        minLines = 2,
-                        maxLines = 3,
-                    )
+            confirmLabel = if (dialogMode == FolderDialogMode.Rename) "Save" else "Create",
+            enabled = newFolderName.isNotBlank(),
+            icon = Icons.Rounded.Folder,
+            onDismiss = { folderDialogMode = null },
+            onConfirm = {
+                when (dialogMode) {
+                    FolderDialogMode.CreateRoot -> onNewFolderClick(null, newFolderName, folderDescriptionInput)
+                    FolderDialogMode.CreateSubfolder -> onNewFolderClick(selectedFolder?.id, newFolderName, folderDescriptionInput)
+                    FolderDialogMode.Rename -> selectedFolder?.let {
+                        onRenameFolderClick(it.id, newFolderName, folderDescriptionInput)
+                    }
                 }
+                newFolderName = ""
+                folderDescriptionInput = ""
+                folderDialogMode = null
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        when (dialogMode) {
-                            FolderDialogMode.CreateRoot -> onNewFolderClick(null, newFolderName, folderDescriptionInput)
-                            FolderDialogMode.CreateSubfolder -> onNewFolderClick(selectedFolder?.id, newFolderName, folderDescriptionInput)
-                            FolderDialogMode.Rename -> selectedFolder?.let {
-                                onRenameFolderClick(it.id, newFolderName, folderDescriptionInput)
-                            }
-                        }
-                        newFolderName = ""
-                        folderDescriptionInput = ""
-                        folderDialogMode = null
-                    },
-                ) {
-                    Text(if (dialogMode == FolderDialogMode.Rename) "Save" else "Create")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { folderDialogMode = null }) {
-                    Text("Cancel")
-                }
-            },
-        )
+        ) {
+            VaultTextField(
+                value = newFolderName,
+                onValueChange = { newFolderName = it },
+                label = "Folder name",
+                singleLine = true,
+            )
+            VaultTextField(
+                value = folderDescriptionInput,
+                onValueChange = { folderDescriptionInput = it },
+                label = "Description (optional)",
+                minLines = 2,
+                maxLines = 3,
+            )
+        }
     }
 }
 
@@ -1064,6 +1057,33 @@ private fun EmptyHomeState(
                 text = text,
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
                 color = colors.textSecondary,
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun HomeInlineAiPill(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = modifier.size(44.dp),
+        onClick = onClick,
+        shape = VaultShapes.pill,
+        color = colors.elevated.copy(alpha = 0.98f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
+        shadowElevation = 8.dp,
+        tonalElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.AutoAwesome,
+                contentDescription = "Open Home AI chat",
+                modifier = Modifier.size(20.dp),
+                tint = colors.accent,
             )
         }
     }
@@ -1550,58 +1570,17 @@ internal fun PremiumActionDialog(
     actions: List<PremiumAction>,
     onDismiss: () -> Unit,
 ) {
-    val colors = VaultThemeTokens.colors
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {},
-        title = {
-            Text(
-                text = title,
-                style = androidx.compose.material3.MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
-                color = colors.text,
+    VaultActionModal(
+        title = title,
+        onDismiss = onDismiss,
+        actions = actions.map { action ->
+            VaultModalAction(
+                label = action.label,
+                icon = action.icon,
+                destructive = action.destructive,
+                onClick = action.onClick,
             )
         },
-        text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-            ) {
-                items(actions) { action ->
-                    Surface(
-                        onClick = action.onClick,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = colors.surface,
-                        shape = VaultShapes.md,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(30.dp),
-                                color = colors.accentSoft,
-                                shape = VaultShapes.sm,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(action.icon, null, modifier = Modifier.size(15.dp), tint = colors.accent)
-                                }
-                            }
-                            Text(
-                                text = action.label,
-                                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                                color = if (action.destructive) colors.warning else colors.text,
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        containerColor = colors.elevated,
-        tonalElevation = 0.dp,
     )
 }
 

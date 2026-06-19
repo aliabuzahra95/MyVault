@@ -30,6 +30,9 @@ interface FolderDao {
     @Query("SELECT * FROM folders WHERE id = :id AND deletedAt IS NULL")
     fun observeById(id: String): Flow<FolderEntity?>
 
+    @Query("SELECT * FROM folders WHERE deletedAt IS NULL AND name LIKE :pattern ESCAPE '\' COLLATE NOCASE ORDER BY name ASC LIMIT :limit")
+    fun searchActive(pattern: String, limit: Int): Flow<List<FolderEntity>>
+
     @Query("UPDATE folders SET name = :name, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateName(id: String, name: String, updatedAt: Long)
 

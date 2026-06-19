@@ -183,7 +183,12 @@ class SettingsViewModel @Inject constructor(
             runCatching { backupRepository.restoreBackup(uri) }
                 .onSuccess {
                     refreshStorage()
-                    onComplete("Restore complete: ${it.noteCount} notes, ${it.attachmentCount} attachments")
+                    val missingFilesMessage = if (it.missingAttachmentCount > 0) {
+                        ". ${it.missingAttachmentCount} unavailable attachment file(s) were skipped; all other vault data was restored"
+                    } else {
+                        ""
+                    }
+                    onComplete("Restore complete: ${it.noteCount} notes, ${it.attachmentCount} attachments$missingFilesMessage")
                 }
                 .onFailure {
                     onComplete("Restore failed: ${it.message ?: "Unknown error"}")

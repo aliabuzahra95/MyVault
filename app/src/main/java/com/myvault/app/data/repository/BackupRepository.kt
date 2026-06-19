@@ -7,7 +7,9 @@ import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
+import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
+import com.myvault.app.data.local.dao.FolderStickyNoteDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
@@ -21,7 +23,13 @@ import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.AiConversationEntity
 import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
+import com.myvault.app.data.local.entity.CourseConceptCardEntity
+import com.myvault.app.data.local.entity.CourseEntity
+import com.myvault.app.data.local.entity.CourseFolderEntity
+import com.myvault.app.data.local.entity.CourseNoteEntity
+import com.myvault.app.data.local.entity.CourseStickyNoteEntity
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.data.local.entity.KnowledgeTagEntity
 import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
@@ -59,8 +67,10 @@ class BackupRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val database: VaultDatabase,
     private val folderDao: FolderDao,
+    private val folderStickyNoteDao: FolderStickyNoteDao,
     private val noteDao: NoteDao,
     private val blockDao: BlockDao,
+    private val courseDao: CourseDao,
     private val tagDao: TagDao,
     private val attachmentDao: AttachmentDao,
     private val searchDao: SearchDao,
@@ -167,28 +177,29 @@ class BackupRepository @Inject constructor(
 
     private suspend fun buildBackupSnapshot(): BackupSnapshot {
         val folders = folderDao.getAllIncludingDeleted()
-        val notes = noteDao.getAllIncludingDeleted()
+        val folderIds = folders.map { it.id }.toSet()
+        val folderStickyNotes = folderStickyNoteDao.getAll().filter { it.folderId in folderIds }
+        val notes = NoteRelationshipGraph.sanitizedForPersistence(noteDao.getAllIncludingDeleted())
         val backupNoteIds = notes.map { it.id }.toSet()
         val blocks = blockDao.getAll().filter { it.noteId in backupNoteIds }
         val tags = tagDao.getAll()
         val tagRefs = tagDao.getAllRefs().filter { it.noteId in backupNoteIds }
         val tables = noteTableDao.getAll().filter { it.noteId in backupNoteIds }
         val noteVersions = noteVersionDao.getAll().filter { it.noteId in backupNoteIds }
-        val folderIds = folders.map { it.id }.toSet()
         val attachments = attachmentDao.getAllIncludingDeleted().filter {
             it.noteId in backupNoteIds || it.noteId.isBlank() || it.libraryFolderId in folderIds
         }
         val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
         val aiConversationIds = aiConversations.map { it.id }.toSet()
         val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
-        val activeAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
-        val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in activeAttachmentIds }
-        val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in activeAttachmentIds }
-        val activeAnnotationIds = pdfAnnotations.map { it.id }.toSet()
+        val backupAttachmentIds = attachments.map { it.id }.toSet()
+        val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in backupAttachmentIds }
+        val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in backupAttachmentIds }
+        val backupAnnotationIds = pdfAnnotations.map { it.id }.toSet()
         val sourceBacklinks = sourceBacklinkDao.getAll().filter {
             it.noteId in backupNoteIds &&
-                it.attachmentId in activeAttachmentIds &&
-                (it.annotationId == null || it.annotationId in activeAnnotationIds)
+                it.attachmentId in backupAttachmentIds &&
+                (it.annotationId == null || it.annotationId in backupAnnotationIds)
         }
         val knowledgeTags = knowledgeTagDao.getAllTags()
         val knowledgeTagIds = knowledgeTags.map { it.id }.toSet()
@@ -196,15 +207,28 @@ class BackupRepository @Inject constructor(
             link.tagId in knowledgeTagIds &&
                 when (link.targetType) {
                     KnowledgeRepository.TargetNote -> link.targetId in backupNoteIds
-                    KnowledgeRepository.TargetAttachment -> link.targetId in activeAttachmentIds
-                    KnowledgeRepository.TargetAnnotation -> link.targetId in activeAnnotationIds
+                    KnowledgeRepository.TargetAttachment -> link.targetId in backupAttachmentIds
+                    KnowledgeRepository.TargetAnnotation -> link.targetId in backupAnnotationIds
                     else -> false
                 }
         }
         val preferences = vaultPreferences.userPreferences.first()
+        val courses = courseDao.getAllCourses().filter { it.rootFolderId == null || it.rootFolderId in folderIds }
+        val courseIds = courses.map { it.id }.toSet()
+        val courseConceptCards = courseDao.getAllConceptCards().filter { it.courseId in courseIds }
+        val legacyCourseFolders = courseDao.getAllLegacyFolders().filter { it.courseId in courseIds }
+        val legacyCourseFolderIds = legacyCourseFolders.map { it.id }.toSet()
+        val legacyCourseNotes = courseDao.getAllLegacyNotes().filter { it.courseId in courseIds && it.folderId in legacyCourseFolderIds }
+        val legacyCourseStickyNotes = courseDao.getAllLegacyStickyNotes().filter { it.courseId in courseIds }
 
         return BackupSnapshot(
+            courses = courses,
+            courseConceptCards = courseConceptCards,
+            legacyCourseFolders = legacyCourseFolders,
+            legacyCourseNotes = legacyCourseNotes,
+            legacyCourseStickyNotes = legacyCourseStickyNotes,
             folders = folders,
+            folderStickyNotes = folderStickyNotes,
             notes = notes,
             blocks = blocks,
             tags = tags,
@@ -245,6 +269,7 @@ class BackupRepository @Inject constructor(
 
         validateManifest(entries["manifest.json"])
         val notes = entries.requireJsonArray("notes.json")
+        val folderStickyNotes = entries.optionalJsonArray("folder_sticky_notes.json")
         val blocks = entries.requireJsonArray("blocks.json")
         val tables = entries.requireJsonArray("note_tables.json")
         val aiConversations = entries.optionalJsonArray("ai_conversations.json")
@@ -253,6 +278,11 @@ class BackupRepository @Inject constructor(
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
         val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
         val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
+        val courses = entries.optionalJsonArray("courses.json")
+        val courseConceptCards = entries.optionalJsonArray("course_concept_cards.json")
+        val legacyCourseFolders = entries.optionalJsonArray("course_folders.json")
+        val legacyCourseNotes = entries.optionalJsonArray("course_notes.json")
+        val legacyCourseStickyNotes = entries.optionalJsonArray("course_sticky_notes.json")
         val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json")
         val knowledgeTagLinks = entries.optionalJsonArray("knowledge_tag_links.json")
         entries["settings.json"]?.let { validateBackupSettings(JSONObject(it)) }
@@ -271,11 +301,65 @@ class BackupRepository @Inject constructor(
         val folderIds = List(folderJson.length()) { index ->
             folderJson.getJSONObject(index).getString("id")
         }.toSet()
+        val folderModeById = List(folderJson.length()) { index -> folderJson.getJSONObject(index) }
+            .associate { it.getString("id") to it.optString("mode") }
         check(folderIds.size == folderJson.length()) { "Backup contains duplicate folder IDs." }
         validateFolderHierarchy(folderJson, folderIds)
-
         val noteIds = List(notes.length()) { index -> notes.getJSONObject(index).getString("id") }.toSet()
         check(noteIds.size == notes.length()) { "Backup contains duplicate note IDs." }
+        val courseIds = mutableSetOf<String>()
+        List(courses.length()) { index -> courses.getJSONObject(index) }.forEach { course ->
+            check(courseIds.add(course.getString("id"))) { "Backup contains duplicate course IDs." }
+            val rootFolderId = course.optNullableString("rootFolderId")
+            val lastOpenedNoteId = course.optNullableString("lastOpenedNoteId")
+            check(rootFolderId == null || rootFolderId in folderIds) {
+                "Backup contains a course without a matching workspace folder."
+            }
+            check(rootFolderId == null || folderModeById[rootFolderId] == "course:${course.getString("id")}") {
+                "Backup contains a course linked to the wrong workspace folder."
+            }
+            check(lastOpenedNoteId == null || lastOpenedNoteId in noteIds) {
+                "Backup contains a course Continue lesson without a matching note."
+            }
+        }
+        val conceptIds = mutableSetOf<String>()
+        List(courseConceptCards.length()) { index -> courseConceptCards.getJSONObject(index) }.forEach { concept ->
+            check(conceptIds.add(concept.getString("id"))) { "Backup contains duplicate course concept IDs." }
+            check(concept.getString("courseId") in courseIds) {
+                "Backup contains a concept card without a matching course."
+            }
+            check(concept.getString("term").isNotBlank()) { "Backup contains a concept card without a term." }
+        }
+        val legacyCourseFolderIds = mutableSetOf<String>()
+        List(legacyCourseFolders.length()) { index -> legacyCourseFolders.getJSONObject(index) }.forEach { folder ->
+            check(legacyCourseFolderIds.add(folder.getString("id"))) { "Backup contains duplicate legacy course folder IDs." }
+            check(folder.getString("courseId") in courseIds) { "Backup contains a legacy course folder without a matching course." }
+        }
+        val legacyCourseNoteIds = mutableSetOf<String>()
+        List(legacyCourseNotes.length()) { index -> legacyCourseNotes.getJSONObject(index) }.forEach { note ->
+            check(legacyCourseNoteIds.add(note.getString("id"))) { "Backup contains duplicate legacy course note IDs." }
+            check(note.getString("courseId") in courseIds && note.getString("folderId") in legacyCourseFolderIds) {
+                "Backup contains a legacy course note without its matching course folder."
+            }
+        }
+        val legacyStickyIds = mutableSetOf<String>()
+        List(legacyCourseStickyNotes.length()) { index -> legacyCourseStickyNotes.getJSONObject(index) }.forEach { sticky ->
+            check(legacyStickyIds.add(sticky.getString("id"))) { "Backup contains duplicate legacy course sticky note IDs." }
+            check(sticky.getString("courseId") in courseIds) { "Backup contains a legacy course sticky note without a matching course." }
+        }
+        val stickyNoteIds = mutableSetOf<String>()
+        List(folderStickyNotes.length()) { index -> folderStickyNotes.getJSONObject(index) }.forEach { stickyNote ->
+            check(stickyNoteIds.add(stickyNote.getString("id"))) {
+                "Backup contains duplicate Sticky Note IDs."
+            }
+            check(stickyNote.getString("folderId") in folderIds) {
+                "Backup contains a Sticky Note without a matching folder."
+            }
+            check(stickyNote.getString("text").isNotBlank()) {
+                "Backup contains an empty Sticky Note."
+            }
+        }
+
         List(notes.length()) { index -> notes.getJSONObject(index) }.forEach { note ->
             val folderId = note.optNullableString("folderId")
             check(folderId == null || folderId in folderIds) {
@@ -328,6 +412,7 @@ class BackupRepository @Inject constructor(
             check(message.getString("role").isNotBlank()) { "Backup contains an AI message without a role." }
             check(message.getString("content").isNotBlank()) { "Backup contains an empty AI message." }
         }
+        val missingClaimedAttachmentIds = mutableSetOf<String>()
         List(attachments.length()) { index -> attachments.getJSONObject(index) }.forEach { attachment ->
             val noteId = attachment.optString("noteId")
             val libraryFolderId = attachment.optNullableString("libraryFolderId")
@@ -335,8 +420,12 @@ class BackupRepository @Inject constructor(
                 "Backup contains an attachment without a matching note or library folder."
             }
             val entry = attachment.optString("fileEntry")
-            if (entry.isNotBlank()) {
-                check(entry in fileEntries) { "Backup is missing an attachment file: ${attachment.getString("fileName")}" }
+            if (entry.isBlank()) {
+                missingClaimedAttachmentIds += attachment.getString("id")
+            } else if (entry !in fileEntries) {
+                // Older Drive backups can contain metadata for a file that was not uploaded.
+                // Keep the backup restorable and let restoreBackup report the skipped file count.
+                missingClaimedAttachmentIds += attachment.getString("id")
             }
         }
         check(
@@ -344,12 +433,11 @@ class BackupRepository @Inject constructor(
         ) {
             "Backup contains duplicate attachment IDs."
         }
-        val activeAttachmentIds = List(attachments.length()) { index -> attachments.getJSONObject(index) }
-            .filter { it.optNullableLong("deletedAt") == null }
-            .map { it.getString("id") }
-            .toSet()
+        val backupAttachmentIds = List(attachments.length()) { index ->
+            attachments.getJSONObject(index).getString("id")
+        }.toSet()
         List(pdfReadingProgress.length()) { index -> pdfReadingProgress.getJSONObject(index) }.forEach { progress ->
-            check(progress.getString("attachmentId") in activeAttachmentIds) {
+            check(progress.getString("attachmentId") in backupAttachmentIds) {
                 "Backup contains PDF progress without a matching attachment."
             }
             val pageCount = progress.getInt("pageCount")
@@ -361,7 +449,7 @@ class BackupRepository @Inject constructor(
         val activeAnnotationIds = List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index).getString("id") }.toSet()
         check(activeAnnotationIds.size == pdfAnnotations.length()) { "Backup contains duplicate PDF annotation IDs." }
         List(pdfAnnotations.length()) { index -> pdfAnnotations.getJSONObject(index) }.forEach { annotation ->
-            check(annotation.getString("attachmentId") in activeAttachmentIds) {
+            check(annotation.getString("attachmentId") in backupAttachmentIds) {
                 "Backup contains a PDF annotation without a matching attachment."
             }
             val sourceFolderId = annotation.optNullableString("libraryFolderId")
@@ -372,22 +460,34 @@ class BackupRepository @Inject constructor(
             check(displayFolderId == null || displayFolderId in folderIds) {
                 "Backup contains a PDF annotation display folder without a matching folder."
             }
+            val annotationType = annotation.optString("annotationType", PdfAnnotationEntity.TYPE_HIGHLIGHT).ifBlank {
+                PdfAnnotationEntity.TYPE_HIGHLIGHT
+            }
+            check(annotationType in setOf(PdfAnnotationEntity.TYPE_HIGHLIGHT, PdfAnnotationEntity.TYPE_TEXT_BOX, PdfAnnotationEntity.TYPE_PAGE_NOTE)) {
+                "Backup contains an invalid PDF annotation type."
+            }
             val left = annotation.getDouble("left")
             val top = annotation.getDouble("top")
             val right = annotation.getDouble("right")
             val bottom = annotation.getDouble("bottom")
-            check(left in 0.0..1.0 && top in 0.0..1.0 && right in 0.0..1.0 && bottom in 0.0..1.0 && left < right && top < bottom) {
+            check(left.isFinite() && top.isFinite() && right.isFinite() && bottom.isFinite() && left < right && top < bottom) {
                 "Backup contains an invalid PDF annotation rectangle."
             }
-            check(annotation.getString("color") in setOf("yellow", "blue", "green", "red")) {
+            check(annotation.getString("color") in setOf("yellow", "blue", "green", "red", "black")) {
                 "Backup contains an invalid PDF annotation colour."
+            }
+            check(annotation.optString("backgroundColor", PdfAnnotationEntity.BACKGROUND_NONE) in setOf(PdfAnnotationEntity.BACKGROUND_NONE, "white", "yellow", "blue", "green", "red")) {
+                "Backup contains an invalid PDF text box background."
+            }
+            check(annotation.optDouble("textSize", 16.0).isFinite() && annotation.optDouble("textSize", 16.0) in 6.0..72.0) {
+                "Backup contains an invalid PDF text box size."
             }
         }
         val sourceBacklinkIds = List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index).getString("id") }.toSet()
         check(sourceBacklinkIds.size == sourceBacklinks.length()) { "Backup contains duplicate source reference IDs." }
         List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index) }.forEach { link ->
             check(link.getString("noteId") in noteIds) { "Backup contains a source link without a matching note." }
-            check(link.getString("attachmentId") in activeAttachmentIds) { "Backup contains a source link without a matching attachment." }
+            check(link.getString("attachmentId") in backupAttachmentIds) { "Backup contains a source link without a matching attachment." }
             val annotationId = link.optNullableString("annotationId")
             check(annotationId == null || annotationId in activeAnnotationIds) {
                 "Backup contains a source link without a matching annotation."
@@ -405,7 +505,7 @@ class BackupRepository @Inject constructor(
             }
             when (link.getString("targetType")) {
                 KnowledgeRepository.TargetNote -> check(link.getString("targetId") in noteIds) { "Backup contains a tag link without a matching note." }
-                KnowledgeRepository.TargetAttachment -> check(link.getString("targetId") in activeAttachmentIds) { "Backup contains a tag link without a matching attachment." }
+                KnowledgeRepository.TargetAttachment -> check(link.getString("targetId") in backupAttachmentIds) { "Backup contains a tag link without a matching attachment." }
                 KnowledgeRepository.TargetAnnotation -> check(link.getString("targetId") in activeAnnotationIds) { "Backup contains a tag link without a matching annotation." }
                 else -> error("Backup contains an invalid tag link target.")
             }
@@ -413,7 +513,12 @@ class BackupRepository @Inject constructor(
 
         return BackupVerificationResult(
             valid = true,
-            message = "Backup check passed: ${exported.noteCount} notes, ${exported.attachmentCount} attachments, ${tables.length()} tables.",
+            message = buildString {
+                append("Backup check passed: ${exported.noteCount} notes, ${exported.attachmentCount} attachments, ${tables.length()} tables.")
+                if (missingClaimedAttachmentIds.isNotEmpty()) {
+                    append(" ${missingClaimedAttachmentIds.size} unavailable attachment file(s) will be skipped on restore.")
+                }
+            },
         )
     }
 
@@ -445,8 +550,35 @@ class BackupRepository @Inject constructor(
             validateManifest(entries["manifest.json"])
 
             val folders = entries.requireJsonArray("folders.json").mapJson { it.toFolderEntity() }
-            val notes = entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() }
+            val restoredFolderIds = folders.map { it.id }.toSet()
+            val folderStickyNotes = entries.optionalJsonArray("folder_sticky_notes.json")
+                .mapJson { it.toFolderStickyNoteEntity() }
+                .filter { it.folderId in restoredFolderIds && it.text.isNotBlank() }
+            val notes = NoteRelationshipGraph.sanitizedForPersistence(
+                entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() },
+            )
             val restoredNoteIds = notes.map { it.id }.toSet()
+            val courses = entries.optionalJsonArray("courses.json")
+                .mapJson { it.toCourseEntity() }
+                .filter { it.rootFolderId == null || it.rootFolderId in restoredFolderIds }
+                .map { course ->
+                    if (course.lastOpenedNoteId == null || course.lastOpenedNoteId in restoredNoteIds) course
+                    else course.copy(lastOpenedNoteId = null)
+                }
+            val restoredCourseIds = courses.map { it.id }.toSet()
+            val courseConceptCards = entries.optionalJsonArray("course_concept_cards.json")
+                .mapJson { it.toCourseConceptCardEntity() }
+                .filter { it.courseId in restoredCourseIds && it.term.isNotBlank() }
+            val legacyCourseFolders = entries.optionalJsonArray("course_folders.json")
+                .mapJson { it.toCourseFolderEntity() }
+                .filter { it.courseId in restoredCourseIds }
+            val legacyCourseFolderIds = legacyCourseFolders.map { it.id }.toSet()
+            val legacyCourseNotes = entries.optionalJsonArray("course_notes.json")
+                .mapJson { it.toCourseNoteEntity() }
+                .filter { it.courseId in restoredCourseIds && it.folderId in legacyCourseFolderIds }
+            val legacyCourseStickyNotes = entries.optionalJsonArray("course_sticky_notes.json")
+                .mapJson { it.toCourseStickyNoteEntity() }
+                .filter { it.courseId in restoredCourseIds && it.text.isNotBlank() }
             val blocks = entries.requireJsonArray("blocks.json")
                 .mapJson { it.toBlockEntity() }
                 .filter { it.noteId in restoredNoteIds }
@@ -468,28 +600,27 @@ class BackupRepository @Inject constructor(
                 .mapJson { it.toAiMessageEntity() }
                 .filter { it.noteId in restoredNoteIds && it.conversationId in aiConversationIds }
             val attachmentsJson = entries.requireJsonArray("attachments.json")
-            attachmentsJson.validateAttachmentFiles(restoredFiles.keys)
+            val missingAttachmentFileIds = attachmentsJson.unavailableAttachmentFileIds(restoredFiles.keys)
             val restoredLibraryFolderIds = folders.map { it.id }.toSet()
             val attachments = attachmentsJson
                 .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")]) }
+                .filterNot { it.id in missingAttachmentFileIds }
                 .filter {
                     it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredLibraryFolderIds
                 }
             val restoredAttachmentIds = attachments.map { it.id }.toSet()
-            val activeRestoredAttachmentIds = attachments.filter { it.deletedAt == null }.map { it.id }.toSet()
             val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
                 .mapJson { it.toPdfReadingProgressEntity() }
                 .filter {
-                    it.attachmentId in activeRestoredAttachmentIds &&
+                    it.attachmentId in restoredAttachmentIds &&
                         it.pageCount > 0 &&
                         it.pageIndex in 0 until it.pageCount
                 }
             val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
                 .mapJson { it.toPdfAnnotationEntity() }
                 .filter {
-                    it.attachmentId in activeRestoredAttachmentIds &&
-                        it.left < it.right &&
-                        it.top < it.bottom &&
+                    it.attachmentId in restoredAttachmentIds &&
+                        isValidPdfAnnotationRect(it.left, it.top, it.right, it.bottom) &&
                         (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds) &&
                         (it.displayFolderId == null || it.displayFolderId in restoredLibraryFolderIds)
                 }
@@ -498,7 +629,7 @@ class BackupRepository @Inject constructor(
                 .mapJson { it.toSourceBacklinkEntity() }
                 .filter {
                     it.noteId in restoredNoteIds &&
-                        it.attachmentId in activeRestoredAttachmentIds &&
+                        it.attachmentId in restoredAttachmentIds &&
                         (it.annotationId == null || it.annotationId in restoredAnnotationIds)
                 }
             val knowledgeTags = entries.optionalJsonArray("knowledge_tags.json").mapJson { it.toKnowledgeTagEntity() }
@@ -509,7 +640,7 @@ class BackupRepository @Inject constructor(
                     it.tagId in knowledgeTagIds &&
                         when (it.targetType) {
                             KnowledgeRepository.TargetNote -> it.targetId in restoredNoteIds
-                            KnowledgeRepository.TargetAttachment -> it.targetId in activeRestoredAttachmentIds
+                            KnowledgeRepository.TargetAttachment -> it.targetId in restoredAttachmentIds
                             KnowledgeRepository.TargetAnnotation -> it.targetId in restoredAnnotationIds
                             else -> false
                         }
@@ -520,6 +651,12 @@ class BackupRepository @Inject constructor(
 
             database.withTransaction {
                 if (folders.isNotEmpty()) folderDao.upsertAll(folders)
+                if (courses.isNotEmpty()) courseDao.upsertCourses(courses)
+                if (courseConceptCards.isNotEmpty()) courseDao.upsertConceptCards(courseConceptCards)
+                if (legacyCourseFolders.isNotEmpty()) courseDao.upsertLegacyFolders(legacyCourseFolders)
+                if (legacyCourseNotes.isNotEmpty()) courseDao.upsertLegacyNotes(legacyCourseNotes)
+                if (legacyCourseStickyNotes.isNotEmpty()) courseDao.upsertLegacyStickyNotes(legacyCourseStickyNotes)
+                if (folderStickyNotes.isNotEmpty()) folderStickyNoteDao.upsertAll(folderStickyNotes)
                 if (notes.isNotEmpty()) {
                     noteDao.upsertAll(notes)
                     searchDao.upsertFts(notes.map { NoteFtsEntity(title = it.title, bodyPlainText = it.bodyPlainText) })
@@ -565,6 +702,7 @@ class BackupRepository @Inject constructor(
                 folderCount = folders.size,
                 noteCount = notes.size,
                 attachmentCount = attachments.size,
+                missingAttachmentCount = missingAttachmentFileIds.size,
             )
         } finally {
             restoredFiles.values.forEach { it.delete() }
@@ -770,6 +908,7 @@ data class BackupResult(
     val folderCount: Int,
     val noteCount: Int,
     val attachmentCount: Int,
+    val missingAttachmentCount: Int = 0,
 )
 
 data class BackupVerificationResult(
@@ -778,7 +917,13 @@ data class BackupVerificationResult(
 )
 
 private data class BackupSnapshot(
+    val courses: List<CourseEntity>,
+    val courseConceptCards: List<CourseConceptCardEntity>,
+    val legacyCourseFolders: List<CourseFolderEntity>,
+    val legacyCourseNotes: List<CourseNoteEntity>,
+    val legacyCourseStickyNotes: List<CourseStickyNoteEntity>,
     val folders: List<FolderEntity>,
+    val folderStickyNotes: List<FolderStickyNoteEntity>,
     val notes: List<NoteEntity>,
     val blocks: List<BlockEntity>,
     val tags: List<TagEntity>,
@@ -798,7 +943,13 @@ private data class BackupSnapshot(
     fun writeMetadataFiles(destinationDir: File) {
         destinationDir.writeJsonFile("manifest.json", manifestJson())
         destinationDir.writeJsonFile("settings.json", preferences.toBackupJson())
+        destinationDir.writeJsonFile("courses.json", courses.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("course_concept_cards.json", courseConceptCards.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("course_folders.json", legacyCourseFolders.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("course_notes.json", legacyCourseNotes.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("course_sticky_notes.json", legacyCourseStickyNotes.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("folders.json", folders.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("folder_sticky_notes.json", folderStickyNotes.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("notes.json", notes.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("blocks.json", blocks.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("tags.json", tags.toJsonArray { it.toJson() })
@@ -818,7 +969,13 @@ private data class BackupSnapshot(
     fun writeMetadataToZip(zip: ZipOutputStream) {
         zip.writeJson("manifest.json", manifestJson())
         zip.writeJson("settings.json", preferences.toBackupJson())
+        zip.writeJson("courses.json", courses.toJsonArray { it.toJson() })
+        zip.writeJson("course_concept_cards.json", courseConceptCards.toJsonArray { it.toJson() })
+        zip.writeJson("course_folders.json", legacyCourseFolders.toJsonArray { it.toJson() })
+        zip.writeJson("course_notes.json", legacyCourseNotes.toJsonArray { it.toJson() })
+        zip.writeJson("course_sticky_notes.json", legacyCourseStickyNotes.toJsonArray { it.toJson() })
         zip.writeJson("folders.json", folders.toJsonArray { it.toJson() })
+        zip.writeJson("folder_sticky_notes.json", folderStickyNotes.toJsonArray { it.toJson() })
         zip.writeJson("notes.json", notes.toJsonArray { it.toJson() })
         zip.writeJson("blocks.json", blocks.toJsonArray { it.toJson() })
         zip.writeJson("tags.json", tags.toJsonArray { it.toJson() })
@@ -1012,10 +1169,13 @@ private fun AttachmentEntity.backupFileEntry(): String = "files/$id"
 
 private fun AttachmentEntity.toBackupJson(): JSONObject =
     toJson().also { json ->
-        if (deletedAt == null) {
-            json.put("fileEntry", backupFileEntry())
-        }
+        json.put("fileEntry", backupFileEntryIfAvailable(id, localPath))
     }
+
+internal fun backupFileEntryIfAvailable(id: String, localPath: String): String {
+    val file = File(localPath)
+    return if (file.exists() && file.isFile) "files/$id" else ""
+}
 
 private fun FolderEntity.toJson(): JSONObject =
     JSONObject()
@@ -1029,6 +1189,65 @@ private fun FolderEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .put("deletedAt", deletedAt)
+
+private fun CourseEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("title", title)
+        .put("rootFolderId", rootFolderId)
+        .put("lastOpenedNoteId", lastOpenedNoteId)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+private fun CourseConceptCardEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("courseId", courseId)
+        .put("term", term)
+        .put("arabicTerm", arabicTerm)
+        .put("definition", definition)
+        .put("details", details)
+        .put("sortOrder", sortOrder)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+private fun CourseFolderEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("courseId", courseId)
+        .put("title", title)
+        .put("sortOrder", sortOrder)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+private fun CourseNoteEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("courseId", courseId)
+        .put("folderId", folderId)
+        .put("title", title)
+        .put("body", body)
+        .put("sortOrder", sortOrder)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+        .put("lastOpenedAt", lastOpenedAt)
+
+private fun CourseStickyNoteEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("courseId", courseId)
+        .put("text", text)
+        .put("sortOrder", sortOrder)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+
+private fun FolderStickyNoteEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("folderId", folderId)
+        .put("text", text)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
 
 private fun NoteEntity.toJson(): JSONObject =
     JSONObject()
@@ -1118,6 +1337,9 @@ private fun PdfAnnotationEntity.toJson(): JSONObject =
         .put("bottom", bottom)
         .put("color", color)
         .put("noteText", noteText)
+        .put("annotationType", annotationType)
+        .put("textSize", textSize)
+        .put("backgroundColor", backgroundColor)
         .put("displayTitle", displayTitle)
         .put("displayFolderId", displayFolderId)
         .put("createdAt", createdAt)
@@ -1185,6 +1407,71 @@ private fun JSONObject.toFolderEntity(): FolderEntity =
         deletedAt = optNullableLong("deletedAt"),
     )
 
+private fun JSONObject.toCourseEntity(): CourseEntity =
+    CourseEntity(
+        id = getString("id"),
+        title = getString("title").ifBlank { "Untitled course" },
+        rootFolderId = optNullableString("rootFolderId"),
+        lastOpenedNoteId = optNullableString("lastOpenedNoteId"),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toCourseConceptCardEntity(): CourseConceptCardEntity =
+    CourseConceptCardEntity(
+        id = getString("id"),
+        courseId = getString("courseId"),
+        term = getString("term").trim(),
+        arabicTerm = optNullableString("arabicTerm")?.trim()?.takeIf { it.isNotBlank() },
+        definition = optString("definition").trim(),
+        details = optNullableString("details")?.trim()?.takeIf { it.isNotBlank() },
+        sortOrder = optInt("sortOrder", 0),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toCourseFolderEntity(): CourseFolderEntity =
+    CourseFolderEntity(
+        id = getString("id"),
+        courseId = getString("courseId"),
+        title = getString("title").ifBlank { "Untitled folder" },
+        sortOrder = optInt("sortOrder", 0),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toCourseNoteEntity(): CourseNoteEntity =
+    CourseNoteEntity(
+        id = getString("id"),
+        courseId = getString("courseId"),
+        folderId = getString("folderId"),
+        title = getString("title").ifBlank { "Untitled note" },
+        body = optString("body"),
+        sortOrder = optInt("sortOrder", 0),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+        lastOpenedAt = optNullableLong("lastOpenedAt"),
+    )
+
+private fun JSONObject.toCourseStickyNoteEntity(): CourseStickyNoteEntity =
+    CourseStickyNoteEntity(
+        id = getString("id"),
+        courseId = getString("courseId"),
+        text = getString("text").trim(),
+        sortOrder = optInt("sortOrder", 0),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
+private fun JSONObject.toFolderStickyNoteEntity(): FolderStickyNoteEntity =
+    FolderStickyNoteEntity(
+        id = getString("id"),
+        folderId = getString("folderId"),
+        text = getString("text"),
+        createdAt = getLong("createdAt"),
+        updatedAt = getLong("updatedAt"),
+    )
+
 private fun JSONObject.toNoteEntity(): NoteEntity =
     NoteEntity(
         id = getString("id"),
@@ -1217,12 +1504,21 @@ private fun JSONObject.toPdfAnnotationEntity(): PdfAnnotationEntity =
         attachmentId = getString("attachmentId"),
         libraryFolderId = optNullableString("libraryFolderId"),
         pageIndex = getInt("pageIndex").coerceAtLeast(0),
-        left = optDouble("left", 0.0).toFloat().coerceIn(0f, 1f),
-        top = optDouble("top", 0.0).toFloat().coerceIn(0f, 1f),
-        right = optDouble("right", 0.0).toFloat().coerceIn(0f, 1f),
-        bottom = optDouble("bottom", 0.0).toFloat().coerceIn(0f, 1f),
-        color = optString("color").ifBlank { "yellow" },
+        left = optDouble("left", 0.0).toFloat(),
+        top = optDouble("top", 0.0).toFloat(),
+        right = optDouble("right", 0.0).toFloat(),
+        bottom = optDouble("bottom", 0.0).toFloat(),
+        color = optString("color").sanitizedPdfAnnotationColor(defaultColor = "yellow"),
         noteText = optNullableString("noteText"),
+        annotationType = when (optString("annotationType", PdfAnnotationEntity.TYPE_HIGHLIGHT)) {
+            PdfAnnotationEntity.TYPE_HIGHLIGHT,
+            PdfAnnotationEntity.TYPE_TEXT_BOX,
+            PdfAnnotationEntity.TYPE_PAGE_NOTE,
+            -> optString("annotationType")
+            else -> PdfAnnotationEntity.TYPE_HIGHLIGHT
+        },
+        textSize = optDouble("textSize", 16.0).toFloat().coerceIn(10f, 36f),
+        backgroundColor = optString("backgroundColor", PdfAnnotationEntity.BACKGROUND_NONE).sanitizedPdfTextBoxBackground(),
         displayTitle = optNullableString("displayTitle"),
         displayFolderId = optNullableString("displayFolderId") ?: optNullableString("libraryFolderId"),
         createdAt = getLong("createdAt"),
@@ -1359,18 +1655,44 @@ private fun JSONObject.optNullableLong(name: String): Long? =
 private fun JSONObject.optNullableFloat(name: String): Float? =
     if (!has(name) || isNull(name)) null else optDouble(name).toFloat()
 
-private fun JSONArray.validateAttachmentFiles(restoredFileIds: Set<String>) {
-    mapJson { it }.forEach { attachment ->
-        val entry = attachment.optString("fileEntry")
-        if (entry.isNotBlank()) {
-            val id = attachment.getString("id")
-            validateAttachmentEntryName(id)
-            check(id in restoredFileIds) {
-                "Backup is missing an attachment file: ${attachment.getString("fileName")}"
+internal fun JSONArray.unavailableAttachmentFileIds(restoredFileIds: Set<String>): Set<String> =
+    unavailableAttachmentFileIds(
+        mapJson { attachment ->
+            AttachmentFileRestoreMetadata(
+                id = attachment.getString("id"),
+                fileEntry = attachment.optString("fileEntry"),
+                hasFileEntryField = attachment.has("fileEntry"),
+            )
+        },
+        restoredFileIds,
+    )
+
+internal data class AttachmentFileRestoreMetadata(
+    val id: String,
+    val fileEntry: String,
+    val hasFileEntryField: Boolean,
+)
+
+internal fun unavailableAttachmentFileIds(
+    attachments: List<AttachmentFileRestoreMetadata>,
+    restoredFileIds: Set<String>,
+): Set<String> =
+    buildSet {
+        attachments.forEach { attachment ->
+            validateAttachmentEntryName(attachment.id)
+            val isKnownMissingAtBackupTime = attachment.hasFileEntryField && attachment.fileEntry.isBlank()
+            val isClaimedButNotRestored = attachment.fileEntry.isNotBlank() && attachment.id !in restoredFileIds
+            val isOldMetadataWithoutRestoredFile = !attachment.hasFileEntryField && attachment.id !in restoredFileIds
+            if (isKnownMissingAtBackupTime || isClaimedButNotRestored || isOldMetadataWithoutRestoredFile) {
+                add(attachment.id)
             }
         }
     }
-}
+
+internal fun missingClaimedAttachmentFileIds(
+    claimedFileIds: Set<String>,
+    restoredFileIds: Set<String>,
+): Set<String> = claimedFileIds - restoredFileIds
 
 private fun String.sanitizeBackupFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()

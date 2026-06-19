@@ -3,9 +3,11 @@ package com.myvault.app.di
 import android.content.Context
 import androidx.room.Room
 import com.myvault.app.data.local.VaultDatabase
+import com.myvault.app.ai.home.HomeChatHistoryDao
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
+import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.FolderStickyNoteDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
@@ -31,23 +33,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VaultDatabase =
         Room.databaseBuilder(context, VaultDatabase::class.java, "my_vault.db")
-            .addMigrations(
-                VaultDatabase.MIGRATION_1_2,
-                VaultDatabase.MIGRATION_2_3,
-                VaultDatabase.MIGRATION_3_4,
-                VaultDatabase.MIGRATION_4_5,
-                VaultDatabase.MIGRATION_5_6,
-                VaultDatabase.MIGRATION_6_7,
-                VaultDatabase.MIGRATION_7_8,
-                VaultDatabase.MIGRATION_8_9,
-                VaultDatabase.MIGRATION_9_10,
-                VaultDatabase.MIGRATION_10_11,
-                VaultDatabase.MIGRATION_11_12,
-                VaultDatabase.MIGRATION_12_13,
-                VaultDatabase.MIGRATION_13_14,
-                VaultDatabase.MIGRATION_14_15,
-                VaultDatabase.MIGRATION_15_16,
-            )
+            .addMigrations(*VaultDatabase.ALL_MIGRATIONS)
             .build()
 
     @Provides
@@ -91,4 +77,11 @@ object AppModule {
 
     @Provides
     fun provideKnowledgeTagDao(database: VaultDatabase): KnowledgeTagDao = database.knowledgeTagDao()
+
+    @Provides
+    fun provideCourseDao(database: VaultDatabase): CourseDao = database.courseDao()
+
+
+    @Provides
+    fun provideHomeChatHistoryDao(database: VaultDatabase): HomeChatHistoryDao = database.homeChatHistoryDao()
 }

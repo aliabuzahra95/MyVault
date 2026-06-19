@@ -1,11 +1,11 @@
 package com.myvault.app.data.repository
 
 import com.myvault.app.data.local.dao.FolderDao
-import com.myvault.app.data.local.dao.NoteDao
+import com.myvault.app.data.local.dao.SearchDao
+import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.ui.components.SearchResultData
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlin.math.max
@@ -16,39 +16,45 @@ import javax.inject.Singleton
 @Singleton
 class SearchRepository @Inject constructor(
     private val folderDao: FolderDao,
-    private val noteDao: NoteDao,
+    private val searchDao: SearchDao,
+    private val tagDao: TagDao,
 ) {
     fun searchNotes(query: String): Flow<List<SearchResultData>> {
         if (query.isBlank()) return flowOf(emptyList())
         val normalizedQuery = query.trim()
-        return combine(noteDao.observeAll(), folderDao.observeAll()) { notes, folders ->
-            val folderNames = folders.associate { it.id to it.name }
-            notes
-                .filter {
-                    it.title.contains(normalizedQuery, ignoreCase = true) ||
-                        it.bodyPlainText.contains(normalizedQuery, ignoreCase = true)
-                }
-                .take(40)
-                .map {
+        return searchDao.searchActiveNotes(normalizedQuery.toLikePattern(), limit = 40)
+            .map { notes ->
+                notes.map {
                     SearchResultData(
                         title = it.title,
                         snippet = it.bodyPlainText.compactSearchSnippet(normalizedQuery),
-                        folder = folderNames[it.folderId] ?: "Unfiled",
+                        folder = it.folderName ?: "Unfiled",
                         id = it.id,
                     )
                 }
-        }
+            }
     }
 
     fun searchFolders(query: String): Flow<List<FolderEntity>> {
         if (query.isBlank()) return flowOf(emptyList())
-        return folderDao.observeAll().map { folders ->
-            folders.filter { it.name.contains(query, ignoreCase = true) }
-        }
+        return folderDao.searchActive(query.trim().toLikePattern(), limit = 40)
     }
 
-    fun searchTags(query: String): Flow<List<String>> = flowOf(emptyList())
+    fun searchTags(query: String): Flow<List<String>> {
+        if (query.isBlank()) return flowOf(emptyList())
+        return tagDao.observeAll().map { tags ->
+            tags
+                .asSequence()
+                .map { it.name }
+                .filter { it.contains(query.trim(), ignoreCase = true) }
+                .take(40)
+                .toList()
+        }
+    }
 }
+
+private fun String.toLikePattern(): String =
+    "%${replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")}%"
 
 private fun String.compactSearchSnippet(query: String, radius: Int = 88): String {
     val clean = replace(Regex("\\s+"), " ").trim()

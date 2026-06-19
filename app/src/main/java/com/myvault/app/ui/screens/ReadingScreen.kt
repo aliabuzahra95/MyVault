@@ -198,6 +198,10 @@ fun ReadingScreen(
         val text = uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }
         text.length
     }
+    val noteBodyText = uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty().ifBlank { uiState.richHtml.stripHtml() } }
+    val noteBodyChunks = remember(noteBodyText, uiState.richText.styleMarks, uiState.richText.noteLinks) {
+        noteBodyText.toReadingBodyChunks(uiState.richText.styleMarks, uiState.richText.noteLinks)
+    }
     val numberFormat = remember { NumberFormat.getNumberInstance() }
 
     Scaffold(
@@ -281,8 +285,8 @@ fun ReadingScreen(
                     }
                 }
             }
-            item {
-                if (narrationState.noteId == note?.id && narrationState.activeSentence.isNotBlank()) {
+            if (narrationState.noteId == note?.id && narrationState.activeSentence.isNotBlank()) {
+                item {
                     TextButton(
                         onClick = { followAudio = !followAudio },
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
@@ -290,18 +294,44 @@ fun ReadingScreen(
                         Text(if (followAudio) "Follow audio: On" else "Follow audio: Off")
                     }
                 }
+            }
+            if (noteBodyChunks.isEmpty()) {
+                item {
+                    RichNoteBody(
+                        html = "",
+                        fallbackText = "",
+                        richText = VaultRichTextDocument("", emptyList(), emptyList()),
+                        onNoteLinkClick = onNoteLinkClick,
+                        onDoubleTapEdit = onEditClick,
+                        bodyFontSizeSp = bodyFontSizeSp,
+                        activeSentence = "",
+                        followAudio = false,
+                        followAudioPausedUntil = followAudioPausedUntil,
+                        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                    )
+                }
+            } else {
+                items(noteBodyChunks, key = { "body-${it.start}-${it.end}" }) { chunk ->
+                    val activeSentenceForChunk = narrationState.activeSentence
+                        .takeIf {
+                            narrationState.noteId == note?.id &&
+                                it.isNotBlank() &&
+                                chunk.text.contains(it)
+                        }
+                        .orEmpty()
                 RichNoteBody(
-                    html = uiState.richHtml,
-                    fallbackText = note?.bodyPlainText.orEmpty(),
-                    richText = uiState.richText,
+                        html = "",
+                        fallbackText = chunk.text,
+                        richText = chunk.document,
                     onNoteLinkClick = onNoteLinkClick,
                     onDoubleTapEdit = onEditClick,
                     bodyFontSizeSp = bodyFontSizeSp,
-                    activeSentence = narrationState.activeSentence.takeIf { narrationState.noteId == note?.id }.orEmpty(),
+                        activeSentence = activeSentenceForChunk,
                     followAudio = followAudio,
                     followAudioPausedUntil = followAudioPausedUntil,
                     modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                 )
+                }
             }
             if (uiState.tables.isNotEmpty()) {
                 item { SectionLabel(label = "Tables") }
@@ -974,6 +1004,98 @@ private fun RichNoteBody(
 
 private const val FollowAudioPauseMs = 5_000L
 private const val FollowAudioPaddingPx = 48f
+private const val ReadingBodyChunkTargetChars = 2_800
+private const val ReadingBodyChunkMaxChars = 4_200
+
+private data class ReadingBodyChunk(
+    val start: Int,
+    val end: Int,
+    val text: String,
+    val document: VaultRichTextDocument,
+)
+
+private fun String.toReadingBodyChunks(
+    marks: List<VaultStyleMark>,
+    noteLinks: List<VaultNoteLink>,
+): List<ReadingBodyChunk> {
+    if (isBlank()) return emptyList()
+    if (length <= ReadingBodyChunkMaxChars) {
+        return listOf(
+            ReadingBodyChunk(
+                start = 0,
+                end = length,
+                text = this,
+                document = VaultRichTextDocument(
+                    text = this,
+                    styleMarks = marks,
+                    noteLinks = noteLinks,
+                ),
+            ),
+        )
+    }
+
+    val chunks = mutableListOf<ReadingBodyChunk>()
+    var start = 0
+    while (start < length) {
+        val targetEnd = (start + ReadingBodyChunkTargetChars).coerceAtMost(length)
+        val hardEnd = (start + ReadingBodyChunkMaxChars).coerceAtMost(length)
+        val end = if (hardEnd == length) {
+            length
+        } else {
+            val paragraphBreak = lastIndexOf("\n\n", startIndex = hardEnd - 1).takeIf { it > start + 600 }
+            val lineBreak = lastIndexOf('\n', startIndex = hardEnd - 1).takeIf { it > start + 600 }
+            val sentenceBreak = lastIndexOf('.', startIndex = hardEnd - 1).takeIf { it > start + 600 }
+            val spaceBreak = lastIndexOf(' ', startIndex = hardEnd - 1).takeIf { it > start + 600 }
+            (paragraphBreak ?: lineBreak ?: sentenceBreak ?: spaceBreak ?: targetEnd).coerceIn(start + 1, hardEnd)
+        }
+        val text = substring(start, end).trimStart()
+        val trimOffset = substring(start, end).length - text.length
+        val adjustedStart = start + trimOffset
+        chunks += ReadingBodyChunk(
+            start = adjustedStart,
+            end = end,
+            text = text,
+            document = VaultRichTextDocument(
+                text = text,
+                styleMarks = marks.shiftStyleMarksIntoRange(adjustedStart, end),
+                noteLinks = noteLinks.shiftNoteLinksIntoRange(adjustedStart, end),
+            ),
+        )
+        start = end
+        while (start < length && this[start].isWhitespace()) start += 1
+    }
+    return chunks
+}
+
+private fun List<VaultStyleMark>.shiftStyleMarksIntoRange(start: Int, end: Int): List<VaultStyleMark> =
+    mapNotNull { mark ->
+        val overlapStart = maxOf(mark.start, start)
+        val overlapEnd = minOf(mark.end, end)
+        if (overlapStart >= overlapEnd) {
+            null
+        } else {
+            VaultStyleMark(
+                start = overlapStart - start,
+                end = overlapEnd - start,
+                style = mark.style,
+            )
+        }
+    }
+
+private fun List<VaultNoteLink>.shiftNoteLinksIntoRange(start: Int, end: Int): List<VaultNoteLink> =
+    mapNotNull { link ->
+        val overlapStart = maxOf(link.start, start)
+        val overlapEnd = minOf(link.end, end)
+        if (overlapStart >= overlapEnd) {
+            null
+        } else {
+            VaultNoteLink(
+                start = overlapStart - start,
+                end = overlapEnd - start,
+                noteId = link.noteId,
+            )
+        }
+    }
 
 private fun Long.toPlaybackTime(): String {
     val totalSeconds = (this / 1_000L).coerceAtLeast(0L)

@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FolderStickyNoteDao {
+    @Query("SELECT * FROM folder_sticky_notes ORDER BY folderId ASC, updatedAt DESC")
+    suspend fun getAll(): List<FolderStickyNoteEntity>
+
     @Query("SELECT * FROM folder_sticky_notes WHERE folderId = :folderId ORDER BY updatedAt DESC")
     fun observeForFolder(folderId: String): Flow<List<FolderStickyNoteEntity>>
 
@@ -18,6 +21,12 @@ interface FolderStickyNoteDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(stickyNote: FolderStickyNoteEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(stickyNotes: List<FolderStickyNoteEntity>)
+
     @Query("DELETE FROM folder_sticky_notes WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM folder_sticky_notes WHERE folderId IN (:folderIds)")
+    suspend fun deleteForFolders(folderIds: List<String>)
 }

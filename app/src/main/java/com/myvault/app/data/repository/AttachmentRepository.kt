@@ -7,11 +7,8 @@ import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.FolderDao
-import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
-import com.myvault.app.data.local.dao.PdfReadingProgressDao
-import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.ui.screens.AttachmentSample
@@ -32,9 +29,6 @@ class AttachmentRepository @Inject constructor(
     private val folderDao: FolderDao,
     private val noteDao: NoteDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
-    private val pdfReadingProgressDao: PdfReadingProgressDao,
-    private val sourceBacklinkDao: SourceBacklinkDao,
-    private val knowledgeTagDao: KnowledgeTagDao,
 ) {
     fun observeAllCards() = combine(attachmentDao.observeAll(), noteDao.observeAll()) { attachments, notes ->
         val noteTitles = notes.associate { it.id to it.title }
@@ -232,19 +226,11 @@ class AttachmentRepository @Inject constructor(
     }
 
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
-        database.withTransaction {
-            val annotationIds = pdfAnnotationDao.getAll()
-                .filter { it.attachmentId == attachmentId }
-                .map { it.id }
-            attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
-            pdfAnnotationDao.deleteForAttachments(listOf(attachmentId))
-            pdfReadingProgressDao.deleteForAttachments(listOf(attachmentId))
-            sourceBacklinkDao.deleteForAttachments(listOf(attachmentId))
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAttachment, listOf(attachmentId))
-            if (annotationIds.isNotEmpty()) {
-                knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
-            }
-        }
+        attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
+    }
+
+    suspend fun restoreAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
+        attachmentDao.updateDeletedAt(attachmentId, null)
     }
 
     suspend fun renameAttachment(attachmentId: String, fileName: String) = withContext(Dispatchers.IO) {

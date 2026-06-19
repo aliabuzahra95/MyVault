@@ -32,4 +32,7 @@ interface SourceBacklinkDao {
 
     @Query("DELETE FROM source_backlinks WHERE attachmentId IN (:attachmentIds)")
     suspend fun deleteForAttachments(attachmentIds: List<String>)
+
+    @Query("DELETE FROM source_backlinks WHERE annotationId IN (:annotationIds)")
+    suspend fun deleteForAnnotations(annotationIds: List<String>)
 }

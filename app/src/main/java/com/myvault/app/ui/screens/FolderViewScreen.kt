@@ -1,11 +1,14 @@
 package com.myvault.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,6 +55,9 @@ import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FolderTreeRow
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultConfirmModal
+import com.myvault.app.ui.components.VaultFormModal
+import com.myvault.app.ui.components.VaultTextField
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.theme.VaultShapes
@@ -88,6 +94,9 @@ fun FolderViewScreen(
     notePreviewLines: Int = 0,
     showFullNoteTitles: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
+    showNavigationHeader: Boolean = true,
+    topContent: (@Composable () -> Unit)? = null,
+    bottomContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = VaultThemeTokens.colors
     val expansionPrefix = "folder:${uiState.folder?.id}:"
@@ -105,12 +114,16 @@ fun FolderViewScreen(
     var stickyDialogOpen by remember { mutableStateOf(false) }
     var stickyDraft by remember { mutableStateOf("") }
     var selectedStickyNote by remember { mutableStateOf<FolderStickyNoteEntity?>(null) }
+    var deleteStickyConfirmOpen by remember { mutableStateOf(false) }
     var selectedNote by remember { mutableStateOf<VaultTreeItem?>(null) }
     var noteActionsOpen by remember { mutableStateOf(false) }
     var renameNoteDialogOpen by remember { mutableStateOf(false) }
     var moveNoteDialogOpen by remember { mutableStateOf(false) }
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
     var noteTitleDraft by remember { mutableStateOf("") }
+    BackHandler(enabled = fabExpanded) {
+        fabExpanded = false
+    }
     val createActions = remember {
         listOf(
             FloatingAction("New Note", Icons.Rounded.Description),
@@ -137,37 +150,40 @@ fun FolderViewScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 112.dp),
             ) {
-                item {
-                    ScreenTopBar(onBackClick = onBackClick) {
-                        if (organizeMode) {
-                            TextButton(onClick = { organizeMode = false }) {
-                                Icon(Icons.Rounded.Done, null, modifier = Modifier.size(15.dp))
-                                Text("Done")
+                if (showNavigationHeader) {
+                    item {
+                        ScreenTopBar(onBackClick = onBackClick) {
+                            if (organizeMode) {
+                                TextButton(onClick = { organizeMode = false }) {
+                                    Icon(Icons.Rounded.Done, null, modifier = Modifier.size(15.dp))
+                                    Text("Done")
+                                }
+                            } else {
+                                SearchMoreActions(onSearchClick = onSearchClick, onMoreClick = { folderActionsOpen = true })
                             }
-                        } else {
-                            SearchMoreActions(onSearchClick = onSearchClick, onMoreClick = { folderActionsOpen = true })
                         }
                     }
-                }
-                item {
-                    Breadcrumb(
-                        items = listOf("My Vault", uiState.folder?.name ?: "Folder"),
-                        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                    )
-                }
-                item {
-                    Column(modifier = Modifier.padding(horizontal = VaultSpacing.screen)) {
-                        Text(
-                            text = uiState.folder?.name ?: "Folder",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = colors.text,
+                    item {
+                        Breadcrumb(
+                            items = listOf("My Vault", uiState.folder?.name ?: "Folder"),
+                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                         )
-                        uiState.folder?.description?.takeIf { it.isNotBlank() }?.let { description ->
-                            Text(text = description, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    }
+                    item {
+                        Column(modifier = Modifier.padding(horizontal = VaultSpacing.screen)) {
+                            Text(
+                                text = uiState.folder?.name ?: "Folder",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = colors.text,
+                            )
+                            uiState.folder?.description?.takeIf { it.isNotBlank() }?.let { description ->
+                                Text(text = description, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                            }
+                            Text(text = folderStats, style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
                         }
-                        Text(text = folderStats, style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
                     }
                 }
+                topContent?.let { content -> item { content() } }
                 if (pinnedNotes.isNotEmpty()) {
                     item { SectionLabel(label = "Pinned Notes") }
                     items(pinnedNotes, key = { "folder-pin-${it.id}" }) { note ->
@@ -183,6 +199,7 @@ fun FolderViewScreen(
                             stickyDialogOpen = true
                         }
                     }
+                    item { Spacer(Modifier.size(14.dp)) }
                 }
                 item {
                     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.xs)) {
@@ -215,16 +232,24 @@ fun FolderViewScreen(
                         }
                     }
                 }
+                bottomContent?.let { content -> item { content() } }
             }
 
-            if (fabExpanded && !organizeMode) Box(modifier = Modifier.fillMaxSize().background(colors.scrim))
+            if (fabExpanded && !organizeMode) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.scrim)
+                        .clickable { fabExpanded = false },
+                )
+            }
             if (!organizeMode) FloatingActionMenu(
                 expanded = fabExpanded,
                 actions = createActions,
                 mainButtonSize = 48.dp,
                 actionButtonSize = 38.dp,
                 modifier = Modifier.align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = VaultSpacing.screen)
+                    .padding(end = VaultSpacing.screen, bottom = 92.dp)
                     .size(width = 220.dp, height = 220.dp),
                 onToggle = { fabExpanded = !fabExpanded },
                 onActionClick = { action ->
@@ -293,47 +318,39 @@ fun FolderViewScreen(
         )
     }
     if (renameFolderDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { renameFolderDialogOpen = false },
-            title = { Text("Rename folder") },
-            text = {
-                OutlinedTextField(
-                    value = folderNameDraft,
-                    onValueChange = { folderNameDraft = it },
-                    singleLine = true,
-                    label = { Text("Folder name") },
-                )
+        VaultFormModal(
+            title = "Rename folder",
+            confirmLabel = "Save",
+            enabled = folderNameDraft.isNotBlank(),
+            icon = Icons.Rounded.Folder,
+            onDismiss = { renameFolderDialogOpen = false },
+            onConfirm = {
+                onUpdateFolderClick(folderNameDraft, uiState.folder?.description)
+                renameFolderDialogOpen = false
             },
-            confirmButton = {
-                Button(onClick = {
-                    onUpdateFolderClick(folderNameDraft, uiState.folder?.description)
-                    renameFolderDialogOpen = false
-                }) { Text("Save") }
-            },
-            dismissButton = { TextButton(onClick = { renameFolderDialogOpen = false }) { Text("Cancel") } },
-        )
+        ) {
+            VaultTextField(folderNameDraft, { folderNameDraft = it }, label = "Folder name", singleLine = true)
+        }
     }
     if (editDescriptionDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { editDescriptionDialogOpen = false },
-            title = { Text("Edit description") },
-            text = {
-                OutlinedTextField(
-                    value = folderDescriptionDraft,
-                    onValueChange = { folderDescriptionDraft = it },
-                    minLines = 2,
-                    maxLines = 5,
-                    label = { Text("Description (optional)") },
-                )
+        VaultFormModal(
+            title = "Edit description",
+            confirmLabel = "Save",
+            icon = Icons.Rounded.Description,
+            onDismiss = { editDescriptionDialogOpen = false },
+            onConfirm = {
+                onUpdateFolderClick(uiState.folder?.name.orEmpty(), folderDescriptionDraft)
+                editDescriptionDialogOpen = false
             },
-            confirmButton = {
-                Button(onClick = {
-                    onUpdateFolderClick(uiState.folder?.name.orEmpty(), folderDescriptionDraft)
-                    editDescriptionDialogOpen = false
-                }) { Text("Save") }
-            },
-            dismissButton = { TextButton(onClick = { editDescriptionDialogOpen = false }) { Text("Cancel") } },
-        )
+        ) {
+            VaultTextField(
+                value = folderDescriptionDraft,
+                onValueChange = { folderDescriptionDraft = it },
+                label = "Description (optional)",
+                minLines = 2,
+                maxLines = 5,
+            )
+        }
     }
     if (moveFolderDialogOpen) {
         val excludedIds = remember(uiState.workspace, uiState.folder?.id) {
@@ -352,17 +369,18 @@ fun FolderViewScreen(
         )
     }
     if (deleteFolderDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { deleteFolderDialogOpen = false },
-            title = { Text("Move ${uiState.folder?.name.orEmpty()} to Recently Deleted?") },
-            text = { Text("Its contained folders and notes will also be moved to Recently Deleted.") },
-            confirmButton = {
-                Button(onClick = {
-                    deleteFolderDialogOpen = false
-                    onDeleteCurrentFolderClick()
-                }) { Text("Move") }
+        VaultConfirmModal(
+            title = "Move ${uiState.folder?.name.orEmpty()}?",
+            message = "Its contained folders and notes will also be moved to Recently Deleted.",
+            confirmLabel = "Move",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { deleteFolderDialogOpen = false },
+            onConfirm = {
+                deleteFolderDialogOpen = false
+                onDeleteCurrentFolderClick()
             },
-            dismissButton = { TextButton(onClick = { deleteFolderDialogOpen = false }) { Text("Keep") } },
         )
     }
 
@@ -424,68 +442,79 @@ fun FolderViewScreen(
         )
     }
     if (renameNoteDialogOpen && selectedNote != null) {
-        AlertDialog(
-            onDismissRequest = { renameNoteDialogOpen = false },
-            title = { Text("Rename note") },
-            text = { OutlinedTextField(noteTitleDraft, { noteTitleDraft = it }, singleLine = true, label = { Text("Note title") }) },
-            confirmButton = {
-                Button(onClick = {
-                    selectedNote?.let { onRenameNoteClick(it.id, noteTitleDraft) }
-                    renameNoteDialogOpen = false
-                }) { Text("Save") }
+        VaultFormModal(
+            title = "Rename note",
+            confirmLabel = "Save",
+            enabled = noteTitleDraft.isNotBlank(),
+            icon = Icons.Rounded.Description,
+            onDismiss = { renameNoteDialogOpen = false },
+            onConfirm = {
+                selectedNote?.let { onRenameNoteClick(it.id, noteTitleDraft) }
+                renameNoteDialogOpen = false
             },
-            dismissButton = { TextButton(onClick = { renameNoteDialogOpen = false }) { Text("Cancel") } },
-        )
+        ) {
+            VaultTextField(noteTitleDraft, { noteTitleDraft = it }, label = "Note title", singleLine = true)
+        }
     }
     if (deleteNoteDialogOpen && selectedNote != null) {
-        AlertDialog(
-            onDismissRequest = { deleteNoteDialogOpen = false },
-            title = { Text("Move ${selectedNote?.name.orEmpty()} to Recently Deleted?") },
-            text = { Text("You can restore this note from Settings.") },
-            confirmButton = {
-                Button(onClick = {
-                    selectedNote?.let { onDeleteNoteClick(it.id) }
-                    selectedNote = null
-                    deleteNoteDialogOpen = false
-                }) { Text("Move") }
+        VaultConfirmModal(
+            title = "Move ${selectedNote?.name.orEmpty()}?",
+            message = "You can restore this note from Settings.",
+            confirmLabel = "Move",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { deleteNoteDialogOpen = false },
+            onConfirm = {
+                selectedNote?.let { onDeleteNoteClick(it.id) }
+                selectedNote = null
+                deleteNoteDialogOpen = false
             },
-            dismissButton = { TextButton(onClick = { deleteNoteDialogOpen = false }) { Text("Keep") } },
         )
     }
 
     if (stickyDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { stickyDialogOpen = false },
-            title = { Text(if (selectedStickyNote == null) "New Sticky Note" else "Edit Sticky Note") },
-            text = {
-                OutlinedTextField(
-                    value = stickyDraft,
-                    onValueChange = { stickyDraft = it },
-                    minLines = 2,
-                    maxLines = 5,
-                    label = { Text("Study reminder") },
-                )
-            },
-            confirmButton = {
-                Button(enabled = stickyDraft.isNotBlank(), onClick = {
-                    selectedStickyNote?.let { onUpdateStickyNoteClick(it.id, stickyDraft) }
-                        ?: onNewStickyNoteClick(stickyDraft)
+        VaultFormModal(
+            title = if (selectedStickyNote == null) "New Sticky Note" else "Edit Sticky Note",
+            confirmLabel = "Save",
+            enabled = stickyDraft.isNotBlank(),
+            icon = Icons.Rounded.StickyNote2,
+            destructiveLabel = if (selectedStickyNote == null) null else "Delete",
+            onDestructive = selectedStickyNote?.let {
+                {
                     stickyDialogOpen = false
-                }) { Text("Save") }
-            },
-            dismissButton = {
-                Row {
-                    selectedStickyNote?.let { stickyNote ->
-                        TextButton(onClick = {
-                            onDeleteStickyNoteClick(stickyNote.id)
-                            stickyDialogOpen = false
-                        }) {
-                            Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp))
-                            Text("Delete")
-                        }
-                    }
-                    TextButton(onClick = { stickyDialogOpen = false }) { Text("Cancel") }
+                    deleteStickyConfirmOpen = true
                 }
+            },
+            onDismiss = { stickyDialogOpen = false },
+            onConfirm = {
+                selectedStickyNote?.let { onUpdateStickyNoteClick(it.id, stickyDraft) }
+                    ?: onNewStickyNoteClick(stickyDraft)
+                stickyDialogOpen = false
+            },
+        ) {
+            VaultTextField(
+                value = stickyDraft,
+                onValueChange = { stickyDraft = it },
+                label = "Study reminder",
+                minLines = 6,
+                maxLines = 12,
+            )
+        }
+    }
+    if (deleteStickyConfirmOpen && selectedStickyNote != null) {
+        VaultConfirmModal(
+            title = "Delete sticky note?",
+            message = "This sticky note will be removed from this folder.",
+            confirmLabel = "Delete",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { deleteStickyConfirmOpen = false },
+            onConfirm = {
+                selectedStickyNote?.let { onDeleteStickyNoteClick(it.id) }
+                selectedStickyNote = null
+                deleteStickyConfirmOpen = false
             },
         )
     }
@@ -502,24 +531,23 @@ private fun FolderDetailsDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                OutlinedTextField(name, onNameChange, singleLine = true, label = { Text("Folder name") })
-                OutlinedTextField(
-                    description,
-                    onDescriptionChange,
-                    label = { Text("Description (optional)") },
-                    minLines = 2,
-                    maxLines = 3,
-                )
-            }
-        },
-        confirmButton = { Button(onClick = onConfirm) { Text(confirmLabel) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    VaultFormModal(
+        title = title,
+        confirmLabel = confirmLabel,
+        enabled = name.isNotBlank(),
+        icon = Icons.Rounded.Folder,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    ) {
+        VaultTextField(name, onNameChange, label = "Folder name", singleLine = true)
+        VaultTextField(
+            value = description,
+            onValueChange = onDescriptionChange,
+            label = "Description (optional)",
+            minLines = 2,
+            maxLines = 3,
+        )
+    }
 }
 
 private fun List<VaultTreeItem>.folderPathActions(
@@ -567,7 +595,9 @@ private fun FolderPinnedNoteRow(
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = 3.dp),
         color = colors.surface,
         shape = VaultShapes.sm,
     ) {

@@ -165,6 +165,7 @@ private fun LibraryAnnotationItem.toJson(): JSONObject = JSONObject()
     .put("fileName", fileName)
     .put("pageIndex", pageIndex)
     .put("color", color)
+    .put("annotationType", annotationType)
     .put("displayTitle", displayTitle)
     .put("displayFolderId", displayFolderId)
     .put("notePreview", notePreview)
@@ -176,6 +177,7 @@ private fun JSONObject.toLibraryAnnotationItem(): LibraryAnnotationItem = Librar
     fileName = optString("fileName"),
     pageIndex = optInt("pageIndex", 0),
     color = optString("color"),
+    annotationType = optString("annotationType", "highlight"),
     displayTitle = nullableString("displayTitle"),
     displayFolderId = nullableString("displayFolderId"),
     notePreview = optString("notePreview"),

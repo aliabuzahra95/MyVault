@@ -30,6 +30,12 @@ interface PdfAnnotationDao {
     @Query("UPDATE pdf_annotations SET noteText = :noteText, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateNote(id: String, noteText: String?, updatedAt: Long)
 
+    @Query("UPDATE pdf_annotations SET noteText = :text, color = :color, textSize = :textSize, backgroundColor = :backgroundColor, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateTextBox(id: String, text: String, color: String, textSize: Float, backgroundColor: String, updatedAt: Long)
+
+    @Query("UPDATE pdf_annotations SET left = :left, top = :top, right = :right, bottom = :bottom, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateBounds(id: String, left: Float, top: Float, right: Float, bottom: Float, updatedAt: Long)
+
     @Query("UPDATE pdf_annotations SET displayTitle = :displayTitle, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateDisplayTitle(id: String, displayTitle: String?, updatedAt: Long)
 
@@ -60,6 +66,34 @@ interface PdfAnnotationDao {
     @Query("DELETE FROM pdf_annotations WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("DELETE FROM pdf_annotations WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Query("DELETE FROM pdf_annotations WHERE attachmentId IN (:attachmentIds)")
     suspend fun deleteForAttachments(attachmentIds: List<String>)
+
+    @Query(
+        """
+        SELECT id FROM pdf_annotations
+        WHERE annotationType = 'text_box'
+           OR annotationType NOT IN ('highlight', 'page_note')
+           OR (
+                annotationType = 'highlight'
+                AND (
+                    attachmentId = ''
+                    OR pageIndex < 0
+                    OR right <= left
+                    OR bottom <= top
+                    OR right - left < 0.5
+                    OR bottom - top < 0.5
+                    OR (right <= 1.2 AND bottom <= 1.2)
+                )
+           )
+           OR (
+                annotationType = 'page_note'
+                AND (attachmentId = '' OR pageIndex < 0 OR noteText IS NULL OR TRIM(noteText) = '')
+           )
+        """,
+    )
+    suspend fun getLegacyIncompatibleIds(): List<String>
 }

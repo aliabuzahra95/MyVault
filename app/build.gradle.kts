@@ -12,6 +12,7 @@ plugins {
 android {
     namespace = "com.myvault.app"
     compileSdk = 36
+    compileSdkExtension = 19
 
     val localPropertiesFile = rootProject.file("local.properties")
     val localProperties = Properties().apply {
@@ -37,6 +38,18 @@ android {
             .get()
             .trim()
     }
+    val localGeminiApiKey = localProperties.getProperty("MYVAULT_GEMINI_API_KEY").orEmpty().trim()
+    val geminiApiKey = localGeminiApiKey.ifBlank {
+        providers.environmentVariable("GEMINI_API_KEY")
+            .orElse(providers.gradleProperty("MYVAULT_GEMINI_API_KEY"))
+            .orElse("")
+            .get()
+            .trim()
+    }
+    val openAiFastModel = providers.gradleProperty("MYVAULT_OPENAI_FAST_MODEL").orElse("gpt-5-mini").get().trim()
+    val openAiSmartModel = providers.gradleProperty("MYVAULT_OPENAI_SMART_MODEL").orElse("gpt-5").get().trim()
+    val geminiFastModel = providers.gradleProperty("MYVAULT_GEMINI_FAST_MODEL").orElse("gemini-2.5-flash").get().trim()
+    val geminiSmartModel = providers.gradleProperty("MYVAULT_GEMINI_SMART_MODEL").orElse("gemini-2.5-pro").get().trim()
 
     defaultConfig {
         applicationId = "com.myvault.app"
@@ -52,6 +65,11 @@ android {
         buildConfigField("String", "FIREBASE_APP_ID", "\"$firebaseAppId\"")
         buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$firebaseProjectId\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.escapedForBuildConfig()}\"")
+        buildConfigField("String", "HOME_AI_OPENAI_FAST_MODEL", "\"${openAiFastModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "HOME_AI_OPENAI_SMART_MODEL", "\"${openAiSmartModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "HOME_AI_GEMINI_FAST_MODEL", "\"${geminiFastModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "HOME_AI_GEMINI_SMART_MODEL", "\"${geminiSmartModel.escapedForBuildConfig()}\"")
     }
 
     buildFeatures {
@@ -62,6 +80,10 @@ android {
     kotlin {
         jvmToolchain(21)
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -80,16 +102,16 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.pdf.viewer.fragment)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation("io.github.ahmerafzal1:ahmer-pdfviewer:2.0.1")
-    implementation("io.github.ahmerafzal1:ahmer-pdfium:1.9.1")
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.ai)
     implementation(libs.hilt.android)
     implementation(libs.play.services.auth)
     implementation(libs.azure.speech)
+    implementation(libs.material)
 
     ksp(libs.androidx.room.compiler)
     ksp(libs.hilt.compiler)

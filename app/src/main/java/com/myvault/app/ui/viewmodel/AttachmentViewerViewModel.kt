@@ -15,6 +15,8 @@ import com.myvault.app.data.repository.PdfAnnotationRepository
 import com.myvault.app.data.repository.PdfReadingProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,9 +42,16 @@ class AttachmentViewerViewModel @Inject constructor(
     val resolvedInitialPageIndex: StateFlow<Int?> = _resolvedInitialPageIndex
     private var lastSavedPdfPage: Int? = null
     private var lastSavedPdfPageCount: Int? = null
+    private var pendingPdfPage: Int? = null
+    private var pendingPdfPageCount: Int? = null
+    private var pdfProgressSaveJob: Job? = null
     private val pdfSecondaryDataEnabled = MutableStateFlow(false)
+    private var pdfSecondaryDataJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            pdfAnnotationRepository.cleanupLegacyIncompatibleAnnotations()
+        }
         if (initialPageIndex < 0) {
             viewModelScope.launch {
                 _resolvedInitialPageIndex.value = runCatching {
@@ -105,15 +114,30 @@ class AttachmentViewerViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DocumentTextUiState())
 
     fun loadPdfSecondaryData() {
-        pdfSecondaryDataEnabled.value = true
+        if (pdfSecondaryDataEnabled.value || pdfSecondaryDataJob?.isActive == true) return
+        pdfSecondaryDataJob = viewModelScope.launch {
+            delay(220)
+            pdfSecondaryDataEnabled.value = true
+        }
     }
 
     fun updatePdfProgress(pageIndex: Int, pageCount: Int) {
-        if (lastSavedPdfPage == pageIndex && lastSavedPdfPageCount == pageCount) return
-        lastSavedPdfPage = pageIndex
-        lastSavedPdfPageCount = pageCount
-        viewModelScope.launch {
-            pdfReadingProgressRepository.updateProgress(attachmentId, pageIndex, pageCount)
+        if (pageCount <= 0) return
+        val safePage = pageIndex.coerceIn(0, pageCount - 1)
+        if (lastSavedPdfPage == safePage && lastSavedPdfPageCount == pageCount) return
+        if (pendingPdfPage == safePage && pendingPdfPageCount == pageCount) return
+        pendingPdfPage = safePage
+        pendingPdfPageCount = pageCount
+        pdfProgressSaveJob?.cancel()
+        pdfProgressSaveJob = viewModelScope.launch {
+            delay(PdfProgressSaveDebounceMs)
+            val pageToSave = pendingPdfPage ?: return@launch
+            val countToSave = pendingPdfPageCount ?: return@launch
+            pdfReadingProgressRepository.updateProgress(attachmentId, pageToSave, countToSave)
+            lastSavedPdfPage = pageToSave
+            lastSavedPdfPageCount = countToSave
+            pendingPdfPage = null
+            pendingPdfPageCount = null
         }
     }
 
@@ -179,6 +203,24 @@ class AttachmentViewerViewModel @Inject constructor(
         }
     }
 
+
+    fun addPdfPageNote(
+        libraryFolderId: String?,
+        pageIndex: Int,
+        noteText: String,
+        onSaved: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            val saved = pdfAnnotationRepository.addPageNote(
+                attachmentId = attachmentId,
+                libraryFolderId = libraryFolderId,
+                pageIndex = pageIndex,
+                noteText = noteText,
+            )
+            onSaved(saved)
+        }
+    }
+
     fun updatePdfHighlightColor(annotationId: String, color: String) {
         viewModelScope.launch { pdfAnnotationRepository.updateColor(annotationId, color) }
     }
@@ -187,10 +229,51 @@ class AttachmentViewerViewModel @Inject constructor(
         viewModelScope.launch { pdfAnnotationRepository.updateNote(annotationId, noteText) }
     }
 
+    fun addPdfTextBox(
+        libraryFolderId: String?,
+        pageIndex: Int,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        text: String,
+        color: String,
+        textSize: Float,
+        backgroundColor: String,
+        onSaved: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            val saved = pdfAnnotationRepository.addTextBox(
+                attachmentId = attachmentId,
+                libraryFolderId = libraryFolderId,
+                pageIndex = pageIndex,
+                left = left,
+                top = top,
+                right = right,
+                bottom = bottom,
+                text = text,
+                color = color,
+                textSize = textSize,
+                backgroundColor = backgroundColor,
+            )
+            onSaved(saved)
+        }
+    }
+
+    fun updatePdfTextBox(annotationId: String, text: String, color: String, textSize: Float, backgroundColor: String) {
+        viewModelScope.launch { pdfAnnotationRepository.updateTextBox(annotationId, text, color, textSize, backgroundColor) }
+    }
+
+    fun updatePdfTextBoxBounds(annotationId: String, left: Float, top: Float, right: Float, bottom: Float) {
+        viewModelScope.launch { pdfAnnotationRepository.updateBounds(annotationId, left, top, right, bottom) }
+    }
+
     fun deletePdfAnnotation(annotationId: String) {
         viewModelScope.launch { pdfAnnotationRepository.delete(annotationId) }
     }
 }
+
+private const val PdfProgressSaveDebounceMs = 450L
 
 data class DocumentTextUiState(
     val isSupported: Boolean = false,

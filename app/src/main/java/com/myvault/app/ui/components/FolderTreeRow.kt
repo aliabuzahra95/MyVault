@@ -334,7 +334,11 @@ private fun FolderTreeSingleRow(
                     contentDescription = null,
                     modifier = Modifier
                         .size(if (topLevel) 14.dp else 12.dp)
-                        .clickable(onClick = onToggleClick)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onToggleClick,
+                        )
                         .graphicsLayer { rotationZ = chevronRotation },
                     tint = colors.textMuted,
                 )

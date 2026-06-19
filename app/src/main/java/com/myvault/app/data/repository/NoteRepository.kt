@@ -3,6 +3,7 @@ package com.myvault.app.data.repository
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
+import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.KnowledgeTagDao
@@ -39,6 +40,7 @@ import javax.inject.Singleton
 @Singleton
 class NoteRepository @Inject constructor(
     private val database: VaultDatabase,
+    private val aiConversationDao: AiConversationDao,
     private val noteDao: NoteDao,
     private val folderDao: FolderDao,
     private val blockDao: BlockDao,
@@ -143,19 +145,22 @@ class NoteRepository @Inject constructor(
         val now = System.currentTimeMillis()
         val noteId = UUID.randomUUID().toString()
         val notes = noteDao.getAll()
-        val orderIndex = if (parentNoteId != null) {
-            notes.filter { it.parentNoteId == parentNoteId }.maxOfOrNull { it.orderIndex }?.plus(1) ?: 0
+        val parentNote = parentNoteId?.let { id -> notes.firstOrNull { it.id == id } }
+        val safeParentNoteId = parentNote?.id
+        val safeFolderId = parentNote?.folderId ?: folderId
+        val orderIndex = if (safeParentNoteId != null) {
+            notes.filter { it.parentNoteId == safeParentNoteId }.maxOfOrNull { it.orderIndex }?.plus(1) ?: 0
         } else {
-            val noteMax = notes.filter { it.folderId == folderId && it.parentNoteId == null }.maxOfOrNull { it.orderIndex } ?: -1
-            val folderMax = folderDao.getAll().filter { it.parentId == folderId }.maxOfOrNull { it.orderIndex } ?: -1
+            val noteMax = notes.filter { it.folderId == safeFolderId && it.parentNoteId == null }.maxOfOrNull { it.orderIndex } ?: -1
+            val folderMax = folderDao.getAll().filter { it.parentId == safeFolderId }.maxOfOrNull { it.orderIndex } ?: -1
             maxOf(noteMax, folderMax) + 1
         }
         noteDao.upsertAll(
             listOf(
                 NoteEntity(
                     id = noteId,
-                    folderId = folderId,
-                    parentNoteId = parentNoteId,
+                    folderId = safeFolderId,
+                    parentNoteId = safeParentNoteId,
                     title = title,
                     bodyPlainText = "",
                     isPinned = false,
@@ -207,7 +212,20 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun moveNote(noteId: String, folderId: String?) {
-        noteDao.updateFolder(noteId, folderId, System.currentTimeMillis())
+        database.withTransaction {
+            val notes = noteDao.getAllIncludingDeleted()
+            val note = notes.firstOrNull { it.id == noteId } ?: return@withTransaction
+            val descendantIds = NoteRelationshipGraph.descendantIds(noteId, notes)
+            val now = System.currentTimeMillis()
+            if (note.parentNoteId != null && note.folderId != folderId) {
+                noteDao.updateFolderAndParent(noteId, folderId, null, now)
+            } else {
+                noteDao.updateFolder(noteId, folderId, now)
+            }
+            if (descendantIds.isNotEmpty()) {
+                noteDao.updateFolderForIds(descendantIds, folderId, now)
+            }
+        }
     }
 
     suspend fun moveNoteToMode(noteId: String, mode: String) {
@@ -217,7 +235,18 @@ class NoteRepository @Inject constructor(
                 FOLDER_MODE_STUDY -> null
                 else -> return@withTransaction
             }
-            noteDao.updateFolder(noteId, targetFolderId, System.currentTimeMillis())
+            val notes = noteDao.getAllIncludingDeleted()
+            val note = notes.firstOrNull { it.id == noteId } ?: return@withTransaction
+            val descendantIds = NoteRelationshipGraph.descendantIds(noteId, notes)
+            val now = System.currentTimeMillis()
+            if (note.parentNoteId != null && note.folderId != targetFolderId) {
+                noteDao.updateFolderAndParent(noteId, targetFolderId, null, now)
+            } else {
+                noteDao.updateFolder(noteId, targetFolderId, now)
+            }
+            if (descendantIds.isNotEmpty()) {
+                noteDao.updateFolderForIds(descendantIds, targetFolderId, now)
+            }
         }
     }
 
@@ -265,21 +294,27 @@ class NoteRepository @Inject constructor(
 
     suspend fun deleteNote(noteId: String) {
         database.withTransaction {
+            val notes = noteDao.getAllIncludingDeleted()
+            val noteIds = listOf(noteId) + NoteRelationshipGraph.descendantIds(noteId, notes)
             val now = System.currentTimeMillis()
-            noteDao.updateDeletedAt(listOf(noteId), now, now)
-            attachmentDao.updateDeletedAtForNotes(listOf(noteId), now)
+            noteDao.updateDeletedAt(noteIds, now, now)
+            attachmentDao.updateDeletedAtForNotes(noteIds, now)
         }
     }
 
     suspend fun restoreNote(noteId: String) {
         database.withTransaction {
-            noteDao.updateDeletedAt(listOf(noteId), null, System.currentTimeMillis())
-            attachmentDao.updateDeletedAtForNotes(listOf(noteId), null)
+            val notes = noteDao.getAllIncludingDeleted()
+            val noteIds = listOf(noteId) + NoteRelationshipGraph.descendantIds(noteId, notes)
+            noteDao.updateDeletedAt(noteIds, null, System.currentTimeMillis())
+            attachmentDao.updateDeletedAtForNotes(noteIds, null)
         }
     }
 
     suspend fun permanentlyDeleteNote(noteId: String) {
-        val attachments = attachmentDao.getForNotes(listOf(noteId))
+        val notes = noteDao.getAllIncludingDeleted()
+        val noteIds = listOf(noteId) + NoteRelationshipGraph.descendantIds(noteId, notes)
+        val attachments = attachmentDao.getForNotes(noteIds)
         val attachmentIds = attachments.map { it.id }
         val annotationIds = if (attachmentIds.isEmpty()) {
             emptyList()
@@ -298,14 +333,16 @@ class NoteRepository @Inject constructor(
             if (annotationIds.isNotEmpty()) {
                 knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, annotationIds)
             }
-            blockDao.deleteForNotes(listOf(noteId))
-            tagDao.deleteRefsForNotes(listOf(noteId))
-            sourceBacklinkDao.deleteForNotes(listOf(noteId))
-            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, listOf(noteId))
-            noteTableDao.deleteForNotes(listOf(noteId))
-            noteVersionDao.deleteForNotes(listOf(noteId))
-            attachmentDao.deleteForNotes(listOf(noteId))
-            noteDao.deleteByIds(listOf(noteId))
+            blockDao.deleteForNotes(noteIds)
+            tagDao.deleteRefsForNotes(noteIds)
+            sourceBacklinkDao.deleteForNotes(noteIds)
+            knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, noteIds)
+            noteTableDao.deleteForNotes(noteIds)
+            noteVersionDao.deleteForNotes(noteIds)
+            aiConversationDao.deleteMessagesForNotes(noteIds)
+            aiConversationDao.deleteConversationsForNotes(noteIds)
+            attachmentDao.deleteForNotes(noteIds)
+            noteDao.deleteByIds(noteIds)
         }
         attachments.deleteLocalFiles()
     }

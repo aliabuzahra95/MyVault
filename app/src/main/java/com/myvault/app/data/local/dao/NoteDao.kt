@@ -48,6 +48,12 @@ interface NoteDao {
     @Query("UPDATE notes SET folderId = :folderId, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateFolder(id: String, folderId: String?, updatedAt: Long)
 
+    @Query("UPDATE notes SET folderId = :folderId, updatedAt = :updatedAt WHERE id IN (:ids)")
+    suspend fun updateFolderForIds(ids: List<String>, folderId: String?, updatedAt: Long)
+
+    @Query("UPDATE notes SET folderId = :folderId, parentNoteId = :parentNoteId, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateFolderAndParent(id: String, folderId: String?, parentNoteId: String?, updatedAt: Long)
+
     @Query("UPDATE notes SET isPinned = :isPinned, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updatePinned(id: String, isPinned: Boolean, updatedAt: Long)
 

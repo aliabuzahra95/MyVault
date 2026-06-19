@@ -8,6 +8,7 @@ import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.FolderStickyNoteRepository
+import com.myvault.app.data.repository.CourseRepository
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.ui.components.VaultTreeItem
@@ -37,9 +38,10 @@ class FolderViewModel @Inject constructor(
     private val folderRepository: FolderRepository,
     private val stickyNoteRepository: FolderStickyNoteRepository,
     private val noteRepository: NoteRepository,
+    private val courseRepository: CourseRepository,
     private val vaultPreferences: VaultPreferences,
 ) : ViewModel() {
-    private val folderId: String = savedStateHandle["folderId"] ?: "aqeedah"
+    private val folderId: String = savedStateHandle.get<String>("folderId").orEmpty()
     private val expansionPrefix = "folder:$folderId:"
 
     val uiState: StateFlow<FolderUiState> = combine(
@@ -65,6 +67,15 @@ class FolderViewModel @Inject constructor(
     fun createNote(onCreated: (String) -> Unit) {
         viewModelScope.launch {
             onCreated(noteRepository.createNote(folderId = folderId))
+        }
+    }
+
+    fun recordCourseNoteOpened(noteId: String) {
+        viewModelScope.launch {
+            val mode = uiState.value.folder?.mode.orEmpty()
+            if (mode.startsWith("course:")) {
+                courseRepository.markNoteOpened(mode.removePrefix("course:"), noteId)
+            }
         }
     }
 
