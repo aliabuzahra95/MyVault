@@ -35,7 +35,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Backup
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -46,6 +45,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
@@ -68,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +79,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,12 +89,16 @@ import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.PinnedNoteCard
+import com.myvault.app.ui.components.SearchBar
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultActionModal
 import com.myvault.app.ui.components.VaultModalAction
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
+import com.myvault.app.ui.home.HomeInlineAiPanel
+import com.myvault.app.ai.home.HomeAiAttachmentScope
+import com.myvault.app.ai.home.HomeInlineAiViewModel
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -102,6 +108,7 @@ import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.LibraryFolderItem
 import com.myvault.app.ui.viewmodel.LibraryUiState
 import com.myvault.app.ui.viewmodel.LibraryViewMode
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun LibraryScreen(
@@ -143,8 +150,10 @@ fun LibraryScreen(
     onThemeClick: () -> Unit,
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onShareAiAnswerClick: (String) -> Unit = {},
     quickBackupRecommended: Boolean = false,
     showFullFileTitles: Boolean = false,
+    onViewAllAnnotationsClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LibraryArchiveScreen(
@@ -190,8 +199,10 @@ fun LibraryScreen(
         onThemeClick = onThemeClick,
         onQuickBackupClick = onQuickBackupClick,
         onSettingsClick = onSettingsClick,
+        onShareAiAnswerClick = onShareAiAnswerClick,
         quickBackupRecommended = quickBackupRecommended,
         showFullFileTitles = showFullFileTitles,
+        onViewAllAnnotationsClick = onViewAllAnnotationsClick,
         modifier = modifier,
     )
 }
@@ -231,6 +242,7 @@ fun LibraryFolderScreen(
     onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
     onRemoveAnnotationTag: (String, String) -> Unit,
+    onShareAiAnswerClick: (String) -> Unit = {},
     showFullFileTitles: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -272,7 +284,9 @@ fun LibraryFolderScreen(
         onRemoveAttachmentTag = onRemoveAttachmentTag,
         onAddAnnotationTag = onAddAnnotationTag,
         onRemoveAnnotationTag = onRemoveAnnotationTag,
+        onShareAiAnswerClick = onShareAiAnswerClick,
         showFullFileTitles = showFullFileTitles,
+        onViewAllAnnotationsClick = {},
         modifier = modifier,
     )
 }
@@ -322,12 +336,19 @@ private fun LibraryArchiveScreen(
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    onShareAiAnswerClick: (String) -> Unit = {},
     quickBackupRecommended: Boolean = false,
     showFullFileTitles: Boolean = false,
+    onViewAllAnnotationsClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
+    val libraryInlineAiViewModel: HomeInlineAiViewModel = hiltViewModel()
+    val libraryInlineAiState by libraryInlineAiViewModel.state.collectAsState()
     var fabExpanded by remember { mutableStateOf(false) }
+    BackHandler(enabled = fabExpanded) {
+        fabExpanded = false
+    }
     var folderDialog by remember { mutableStateOf<LibraryFolderDialog?>(null) }
     var folderName by remember { mutableStateOf("") }
     var fileName by remember { mutableStateOf("") }
@@ -354,11 +375,17 @@ private fun LibraryArchiveScreen(
     var displayModeDialogOpen by remember { mutableStateOf(false) }
     var librarySearchOpen by remember { mutableStateOf(false) }
     var librarySearchQuery by remember { mutableStateOf("") }
+    val closeLibrarySearch = {
+        librarySearchOpen = false
+        librarySearchQuery = ""
+    }
+    val toggleLibrarySearch = {
+        if (librarySearchOpen) closeLibrarySearch() else librarySearchOpen = true
+    }
     var annotationTitle by remember { mutableStateOf("") }
     var tagDraft by remember { mutableStateOf("") }
     BackHandler(enabled = librarySearchOpen) {
-        librarySearchOpen = false
-        librarySearchQuery = ""
+        closeLibrarySearch()
     }
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportFiles(uris)
@@ -406,7 +433,7 @@ private fun LibraryArchiveScreen(
                                 icon = Icons.Rounded.Search,
                                 contentDescription = "Search Library",
                                 active = librarySearchOpen,
-                                onClick = { librarySearchOpen = true },
+                                onClick = toggleLibrarySearch,
                             )
                             IconBtn(
                                 icon = Icons.Rounded.ViewList,
@@ -448,7 +475,7 @@ private fun LibraryArchiveScreen(
                                     icon = Icons.Rounded.Search,
                                     contentDescription = "Search folder",
                                     active = librarySearchOpen,
-                                    onClick = { librarySearchOpen = true },
+                                    onClick = toggleLibrarySearch,
                                 )
                                 IconBtn(
                                     icon = Icons.Rounded.ViewList,
@@ -475,10 +502,6 @@ private fun LibraryArchiveScreen(
                         LibrarySearchOverlay(
                             query = librarySearchQuery,
                             onQueryChange = { librarySearchQuery = it },
-                            onClose = {
-                                librarySearchOpen = false
-                                librarySearchQuery = ""
-                            },
                         )
                     }
                     if (librarySearchQuery.isNotBlank()) {
@@ -499,6 +522,7 @@ private fun LibraryArchiveScreen(
                         RecentLibraryAnnotationsRow(
                             annotations = uiState.annotations,
                             onAnnotationClick = onAnnotationClick,
+                            onViewAllClick = onViewAllAnnotationsClick,
                         )
                     }
                 }
@@ -518,6 +542,10 @@ private fun LibraryArchiveScreen(
                                     previewLines = 1,
                                     showFullTitle = showFullFileTitles,
                                     onClick = { onAttachmentClick(file.id) },
+                                    onLongPress = {
+                                        selectedFile = file
+                                        fileActionDialogOpen = true
+                                    },
                                 )
                             }
                         }
@@ -538,9 +566,10 @@ private fun LibraryArchiveScreen(
                         )
                     }
                 } else if (uiState.viewMode == LibraryViewMode.Grid) {
-                    items(uiState.folders.chunked(2), key = { row -> row.joinToString(":") { it.id } }) { row ->
+                    items(uiState.folders.chunked(3), key = { row -> row.joinToString(":") { it.id } }) { row ->
                         LibraryGridRow(
                             items = row,
+                            columns = 3,
                             content = { folder ->
                                 LibraryGridFolderCard(
                                     folder = folder,
@@ -636,23 +665,6 @@ private fun LibraryArchiveScreen(
                     }
                 }
 
-                if (currentFolderId != null && uiState.annotations.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        SectionLabel(label = "Annotations")
-                        Spacer(modifier = Modifier.height(6.dp))
-                    }
-                    items(uiState.annotations, key = { it.id }) { annotation ->
-                        LibraryAnnotationRow(
-                            annotation = annotation,
-                            onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
-                            onLongPress = {
-                                selectedAnnotation = annotation
-                                annotationActionDialogOpen = true
-                            },
-                        )
-                    }
-                }
                 if (uiState.references.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
@@ -694,7 +706,7 @@ private fun LibraryArchiveScreen(
                 actionButtonSize = 38.dp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = 92.dp)
+                    .padding(end = VaultSpacing.screen, bottom = 74.dp)
                     .size(width = 220.dp, height = 230.dp),
                 onToggle = { fabExpanded = !fabExpanded },
                 onActionClick = { action ->
@@ -707,6 +719,39 @@ private fun LibraryArchiveScreen(
                         }
                     }
                 },
+            )
+
+            LibraryInlineAiPill(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 78.dp, bottom = 80.dp),
+                onClick = { libraryInlineAiViewModel.openPanel(HomeAiAttachmentScope.LibraryPdfs) },
+            )
+
+            HomeInlineAiPanel(
+                state = libraryInlineAiState,
+                onInputChange = libraryInlineAiViewModel::setInput,
+                onAttachClick = libraryInlineAiViewModel::openPicker,
+                onSuggestionClick = libraryInlineAiViewModel::attachSuggestion,
+                onDetachClick = libraryInlineAiViewModel::detachItem,
+                onSendClick = libraryInlineAiViewModel::send,
+                onStopClick = libraryInlineAiViewModel::stopStreaming,
+                onProviderSelected = libraryInlineAiViewModel::setProvider,
+                onModelModeSelected = libraryInlineAiViewModel::setModelMode,
+                onWebSearchToggle = libraryInlineAiViewModel::toggleWebSearch,
+                onSettingsClick = libraryInlineAiViewModel::toggleSettingsMode,
+                onClearHistoryClick = libraryInlineAiViewModel::clearHistory,
+                onHistoryClick = libraryInlineAiViewModel::openHistoryItem,
+                onRetryClick = libraryInlineAiViewModel::retryLastRequest,
+                onDismissErrorClick = libraryInlineAiViewModel::dismissError,
+                onShareAnswerClick = onShareAiAnswerClick,
+                onSpeakAnswerClick = libraryInlineAiViewModel::speakAnswer,
+                onClose = libraryInlineAiViewModel::closePanel,
+                onPickerToggle = libraryInlineAiViewModel::attachItem,
+                onPickerClose = libraryInlineAiViewModel::closePicker,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(80f),
             )
         }
     }
@@ -1337,37 +1382,16 @@ private fun LibraryArchiveScreen(
 private fun LibrarySearchOverlay(
     query: String,
     onQueryChange: (String) -> Unit,
-    onClose: () -> Unit,
 ) {
-    val colors = VaultThemeTokens.colors
-    Surface(
+    SearchBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = VaultSpacing.screen, vertical = 4.dp),
-        color = colors.elevated,
-        shape = VaultShapes.lg,
-        border = BorderStroke(1.dp, colors.accentBorder),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(17.dp), tint = colors.accent)
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                placeholder = { Text("Search Library") },
-            )
-            IconBtn(
-                icon = Icons.Rounded.Close,
-                contentDescription = "Close search",
-                onClick = onClose,
-            )
-        }
-    }
+        placeholder = "Search notes and folders...",
+        query = query,
+        active = query.isNotBlank(),
+        onQueryChange = onQueryChange,
+    )
 }
 
 @Composable
@@ -1514,6 +1538,7 @@ private fun LibraryReferenceRow(
 @Composable
 private fun <T> LibraryGridRow(
     items: List<T>,
+    columns: Int = 2,
     content: @Composable (T) -> Unit,
 ) {
     Row(
@@ -1527,7 +1552,7 @@ private fun <T> LibraryGridRow(
                 content(item)
             }
         }
-        if (items.size == 1) {
+        repeat((columns - items.size).coerceAtLeast(0)) {
             Spacer(modifier = Modifier.weight(1f))
         }
     }
@@ -1544,17 +1569,17 @@ private fun LibraryGridFolderCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(106.dp)
+            .height(98.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         color = colors.surface,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, colors.border),
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(22.dp), tint = colors.warning)
+            Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(20.dp), tint = colors.warning)
             Text(
                 text = folder.name,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
@@ -1605,8 +1630,8 @@ private fun LibraryGridFileCard(
                 text = file.name,
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W700),
                 color = colors.text,
-                maxLines = if (showFullTitle) Int.MAX_VALUE else 2,
-                overflow = if (showFullTitle) TextOverflow.Clip else TextOverflow.Ellipsis,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${file.kind} · ${file.size}",
@@ -1649,6 +1674,7 @@ private fun String.toAnnotationColor(): Color =
 private fun RecentLibraryAnnotationsRow(
     annotations: List<LibraryAnnotationItem>,
     onAnnotationClick: (String, Int) -> Unit,
+    onViewAllClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Column(
@@ -1667,6 +1693,39 @@ private fun RecentLibraryAnnotationsRow(
             contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item(key = "view-all") {
+                Surface(
+                    onClick = onViewAllClick,
+                    color = colors.surface,
+                    shape = VaultShapes.md,
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.78f)),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    modifier = Modifier.size(width = 104.dp, height = 64.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Apps,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = colors.accent,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "View All",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                            color = colors.accent,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
             items(annotations.take(8), key = { it.id }) { annotation ->
                 Surface(
                     onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
@@ -1808,16 +1867,6 @@ private fun LibraryFolderRow(
                         tags = attachmentTags[file.id].orEmpty(),
                         onClick = { onAttachmentClick(file.id) },
                         onLongPress = { onFileLongPress(file) },
-                    )
-                }
-                folder.annotations.forEach { annotation ->
-                    LibraryNestedAnnotationRow(
-                        annotation = annotation,
-                        depth = folder.depth + 1,
-                        dense = viewMode == LibraryViewMode.Icons,
-                        tags = annotationTags[annotation.id].orEmpty(),
-                        onClick = { onAnnotationClick(annotation.attachmentId, annotation.pageIndex) },
-                        onLongPress = { onAnnotationLongPress(annotation) },
                     )
                 }
             }
@@ -2079,6 +2128,33 @@ private fun LibraryActionDialog(
 private sealed interface LibraryFolderDialog {
     data class Create(val parentId: String?) : LibraryFolderDialog
     data class Rename(val folderId: String) : LibraryFolderDialog
+}
+
+
+@Composable
+private fun LibraryInlineAiPill(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = modifier.size(44.dp),
+        onClick = onClick,
+        shape = VaultShapes.pill,
+        color = colors.elevated.copy(alpha = 0.98f),
+        border = BorderStroke(1.dp, colors.accentBorder),
+        shadowElevation = 8.dp,
+        tonalElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.AutoAwesome,
+                contentDescription = "Open Library AI chat",
+                modifier = Modifier.size(20.dp),
+                tint = colors.accent,
+            )
+        }
+    }
 }
 
 private data class LibraryAction(

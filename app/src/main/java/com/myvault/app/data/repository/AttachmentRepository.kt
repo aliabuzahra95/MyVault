@@ -96,12 +96,7 @@ class AttachmentRepository @Inject constructor(
         val fileName = resolver.displayName(uri).sanitizeFileName()
         val mimeType = resolver.getType(uri).orEmpty()
         if (!fileName.isPdfFileName() && mimeType != "application/pdf") return@withContext null
-        attachmentDao.getAll()
-            .firstOrNull { attachment ->
-                attachment.libraryFolderId == folderId &&
-                    attachment.fileName.equals(fileName, ignoreCase = true) &&
-                    (attachment.mimeType == "application/pdf" || attachment.fileName.isPdfFileName())
-            }
+        attachmentDao.findDuplicateLibraryPdf(folderId = folderId, fileName = fileName)
     }
 
     suspend fun attachDocument(noteId: String, uri: Uri): String = withContext(Dispatchers.IO) {

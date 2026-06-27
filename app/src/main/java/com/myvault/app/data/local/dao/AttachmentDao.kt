@@ -39,6 +39,18 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE id = :id")
     suspend fun getByIdIncludingDeleted(id: String): AttachmentEntity?
 
+    @Query(
+        """
+        SELECT * FROM attachments
+        WHERE deletedAt IS NULL
+          AND ((:folderId IS NULL AND libraryFolderId IS NULL) OR libraryFolderId = :folderId)
+          AND lower(fileName) = lower(:fileName)
+          AND (lower(mimeType) = 'application/pdf' OR lower(fileName) LIKE '%.pdf')
+        LIMIT 1
+        """,
+    )
+    suspend fun findDuplicateLibraryPdf(folderId: String?, fileName: String): AttachmentEntity?
+
     @Query("SELECT * FROM attachments WHERE noteId IN (:noteIds)")
     suspend fun getForNotes(noteIds: List<String>): List<AttachmentEntity>
 

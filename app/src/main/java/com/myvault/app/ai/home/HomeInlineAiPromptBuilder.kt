@@ -5,11 +5,11 @@ object HomeInlineAiPromptBuilder {
         if (hasContext) {
             """
             You are Ask AI inside the user's private MyVault app.
-            Analyze the attached MyVault notes and context first.
+            Analyze the attached MyVault context and files first.
             Do not claim global vault access.
             If the answer is not inside the attached context, state that clearly.
             Do not invent sources, titles, quotes, page numbers, or attributions.
-            Synthesize across attached notes when useful.
+            Synthesize across attached items when useful.
             Keep answers direct, specific, and useful for serious study.
             """.trimIndent()
         } else {
@@ -25,6 +25,7 @@ object HomeInlineAiPromptBuilder {
     fun buildUserPrompt(
         question: String,
         contexts: List<HomeAiContextItem>,
+        conversationMessages: List<HomeInlineAiMessage> = emptyList(),
     ): String {
         val attachedContext = if (contexts.isEmpty()) {
             "<attached_context empty='true'></attached_context>"
@@ -42,9 +43,29 @@ object HomeInlineAiPromptBuilder {
                 appendLine("</attached_context>")
             }
         }
+        val conversationContext = if (conversationMessages.isEmpty()) {
+            "<conversation_so_far empty='true'></conversation_so_far>"
+        } else {
+            buildString {
+                appendLine("<conversation_so_far>")
+                conversationMessages.takeLast(MaxConversationMessages).forEach { message ->
+                    val role = when (message.role) {
+                        HomeInlineAiRole.User -> "user"
+                        HomeInlineAiRole.Assistant -> "assistant"
+                        HomeInlineAiRole.Error -> "error"
+                    }
+                    appendLine("<message role='$role'>")
+                    appendLine(message.text.trim().take(MaxConversationMessageChars))
+                    appendLine("</message>")
+                }
+                appendLine("</conversation_so_far>")
+            }
+        }
 
         return """
             $attachedContext
+
+            $conversationContext
 
             <user_question>
             ${question.trim()}
@@ -62,4 +83,6 @@ object HomeInlineAiPromptBuilder {
             .replace("\"", "&quot;")
 
     private const val MaxBodyCharsPerAttachment = 16_000
+    private const val MaxConversationMessages = 12
+    private const val MaxConversationMessageChars = 4_000
 }

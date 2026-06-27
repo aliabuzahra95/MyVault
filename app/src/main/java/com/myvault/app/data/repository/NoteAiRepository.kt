@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -75,6 +76,7 @@ enum class NoteAiProvider(
 ) {
     Gemini("Gemini"),
     ChatGPT("ChatGPT"),
+    Kimi("Kimi"),
 }
 
 enum class SelectedTextAiAction {
@@ -231,6 +233,11 @@ class NoteAiRepository @Inject constructor(
                     emit(chunk)
                 }
             }
+            NoteAiProvider.Kimi -> {
+                generateWithKimiPromptStream(model, promptRequest).collect { chunk ->
+                    emit(chunk)
+                }
+            }
         }
     }.flowOn(Dispatchers.IO)
 
@@ -270,6 +277,7 @@ class NoteAiRepository @Inject constructor(
                 body = body,
                 question = selectedText,
             )
+            NoteAiProvider.Kimi -> generateWithKimiPrompt(model, promptRequest)
         }
         return generated.stripChatMarkdown(isHtmlOutput = false).trim()
     }
@@ -286,6 +294,7 @@ class NoteAiRepository @Inject constructor(
         when (provider) {
             NoteAiProvider.Gemini -> generateWithGemini(action, model, title, body, question, history)
             NoteAiProvider.ChatGPT -> generateWithChatGpt(action, model, title, body, question, history)
+            NoteAiProvider.Kimi -> generateWithKimi(action, model, title, body, question, history)
         }
 
     private suspend fun generateIntelligentStructureInChunks(
@@ -399,6 +408,7 @@ class NoteAiRepository @Inject constructor(
                 generateWithGeminiPrompt(model, promptRequest)
             }
             NoteAiProvider.ChatGPT -> generateWithChatGptPrompt(action, model, promptRequest, title, body, question)
+            NoteAiProvider.Kimi -> generateWithKimiPrompt(model, promptRequest)
         }
         traceStructureOnlyRaw(action, raw, context)
         return raw
@@ -672,6 +682,163 @@ class NoteAiRepository @Inject constructor(
         }
     }
 
+    private suspend fun generateWithKimi(
+        action: NoteAiAction,
+        model: NoteAiModel,
+        title: String,
+        body: String,
+        question: String,
+        history: List<NoteAiConversationTurn>,
+    ): String {
+        val promptRequest = AiPromptBuilder.build(
+            action = action,
+            title = title,
+            body = body,
+            question = question,
+            history = history,
+            provider = NoteAiProvider.Kimi,
+            model = model,
+        )
+        traceStructureOnlyPrompt(action, promptRequest, context)
+        val raw = generateWithKimiPrompt(model, promptRequest)
+        traceStructureOnlyRaw(action, raw, context)
+        return raw
+    }
+
+    private suspend fun generateWithKimiPrompt(
+        model: NoteAiModel,
+        promptRequest: AiPromptRequest,
+    ): String = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.KIMI_API_KEY.trim()
+        if (apiKey.isBlank()) {
+            error("Kimi API key is missing. Add MYVAULT_KIMI_API_KEY to local.properties, then rebuild the app.")
+        }
+
+        val connection = URL(KimiChatCompletionsEndpoint).openConnection() as HttpURLConnection
+        runCatching {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 90_000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $apiKey")
+            connection.setRequestProperty("Content-Type", "application/json")
+
+            val bodyJson = kimiChatRequestBody(
+                model = model,
+                promptRequest = promptRequest,
+                stream = false,
+            )
+
+            connection.outputStream.use { it.write(bodyJson.toByteArray(Charsets.UTF_8)) }
+            val responseText = if (connection.responseCode in 200..299) {
+                connection.inputStream.bufferedReader().readText()
+            } else {
+                connection.errorStream?.bufferedReader()?.readText().orEmpty()
+            }
+            val json = JSONObject(responseText.ifBlank { "{}" })
+            if (connection.responseCode !in 200..299) {
+                error(json.kimiErrorMessage().ifBlank { "Kimi request failed. HTTP ${connection.responseCode}." })
+            }
+            json.extractKimiChatText().ifBlank {
+                error("Kimi did not return any text. Please try again.")
+            }
+        }.getOrElse { error ->
+            throw java.lang.IllegalStateException(error.toFriendlyMessage())
+        }.also {
+            connection.disconnect()
+        }
+    }
+
+    private fun generateWithKimiPromptStream(
+        model: NoteAiModel,
+        promptRequest: AiPromptRequest,
+    ): Flow<String> = flow {
+        val apiKey = BuildConfig.KIMI_API_KEY.trim()
+        if (apiKey.isBlank()) {
+            error("Kimi API key is missing. Add MYVAULT_KIMI_API_KEY to local.properties, then rebuild the app.")
+        }
+
+        val connection = URL(KimiChatCompletionsEndpoint).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 120_000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $apiKey")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "text/event-stream")
+
+            val bodyJson = kimiChatRequestBody(
+                model = model,
+                promptRequest = promptRequest,
+                stream = true,
+            )
+            connection.outputStream.use { it.write(bodyJson.toByteArray(Charsets.UTF_8)) }
+
+            if (connection.responseCode !in 200..299) {
+                val responseText = connection.errorStream?.bufferedReader()?.readText().orEmpty()
+                val json = runCatching { JSONObject(responseText.ifBlank { "{}" }) }.getOrNull()
+                error(json?.kimiErrorMessage()?.ifBlank { null } ?: "Kimi request failed. HTTP ${connection.responseCode}.")
+            }
+
+            var emittedAnyText = false
+            val dataBuffer = StringBuilder()
+            suspend fun emitEventData(data: String) {
+                if (data.isBlank() || data == "[DONE]") return
+                val event = runCatching { JSONObject(data) }.getOrNull() ?: return
+                event.optJSONObject("error")?.let { error(it.optString("message").ifBlank { "Kimi streaming failed." }) }
+                val delta = event.extractKimiChatDelta()
+                if (delta.isNotBlank()) {
+                    emittedAnyText = true
+                    emit(delta)
+                }
+            }
+
+            connection.inputStream.bufferedReader().use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    when {
+                        line.isBlank() -> {
+                            emitEventData(dataBuffer.toString().trim())
+                            dataBuffer.clear()
+                        }
+                        line.startsWith("data:") -> {
+                            if (dataBuffer.isNotEmpty()) dataBuffer.append('\n')
+                            dataBuffer.append(line.removePrefix("data:").trim())
+                        }
+                    }
+                }
+            }
+            emitEventData(dataBuffer.toString().trim())
+            if (!emittedAnyText) {
+                error("Kimi did not stream any text. Please try again.")
+            }
+        } catch (error: Throwable) {
+            throw java.lang.IllegalStateException(error.toFriendlyMessage())
+        } finally {
+            connection.disconnect()
+        }
+    }.flowOn(Dispatchers.IO)
+
+    private fun kimiChatRequestBody(
+        model: NoteAiModel,
+        promptRequest: AiPromptRequest,
+        stream: Boolean,
+    ): String =
+        JSONObject()
+            .put("model", model.toKimiModelId())
+            .put(
+                "messages",
+                JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", promptRequest.systemInstruction))
+                    .put(JSONObject().put("role", "user").put("content", promptRequest.prompt)),
+            )
+            .put("temperature", promptRequest.kimiTemperature(model))
+            .put("max_tokens", promptRequest.maxOutputTokens)
+            .put("thinking", JSONObject().put("type", "disabled"))
+            .put("stream", stream)
+            .toString()
+
 private fun String.scopedForAiFunctionPayload(action: NoteAiAction): String {
     val maxChars = when (action) {
         NoteAiAction.QuickSummary -> 5_000
@@ -710,6 +877,38 @@ private fun JSONObject.extractOpenAiTextDelta(): String {
     }
     return ""
 }
+
+private fun JSONObject.extractKimiChatText(): String {
+    val choices = optJSONArray("choices") ?: return ""
+    return buildString {
+        for (index in 0 until choices.length()) {
+            val content = choices
+                .optJSONObject(index)
+                ?.optJSONObject("message")
+                ?.optString("content")
+                .orEmpty()
+            if (content.isNotBlank()) append(content)
+        }
+    }.trim()
+}
+
+private fun JSONObject.extractKimiChatDelta(): String {
+    val choices = optJSONArray("choices") ?: return ""
+    return buildString {
+        for (index in 0 until choices.length()) {
+            val content = choices
+                .optJSONObject(index)
+                ?.optJSONObject("delta")
+                ?.optString("content")
+                .orEmpty()
+            if (content.isNotBlank()) append(content)
+        }
+    }
+}
+
+private fun JSONObject.kimiErrorMessage(): String =
+    optJSONObject("error")?.optString("message").orEmpty()
+        .ifBlank { optString("message") }
 
     private suspend fun authenticatedSupabaseSession(): SupabaseSession {
         val session = sessionStore.session.first()
@@ -771,10 +970,27 @@ private fun JSONObject.extractOpenAiTextDelta(): String {
             NoteAiModel.Gemini25Pro -> "smart"
         }
 
+    private fun NoteAiModel.toKimiModelId(): String =
+        when (this) {
+            NoteAiModel.Gemini25Flash -> BuildConfig.HOME_AI_KIMI_FAST_MODEL
+            NoteAiModel.Gemini25Pro -> BuildConfig.HOME_AI_KIMI_SMART_MODEL
+        }.trim()
+
+    private fun AiPromptRequest.kimiTemperature(model: NoteAiModel): Double =
+        if (model.toKimiModelId().equals("kimi-k2.6", ignoreCase = true)) {
+            0.6
+        } else {
+            temperature.toDouble()
+        }
+
     private fun ensureFirebaseReady() {
         if (FirebaseApp.getApps(context).isNotEmpty()) return
         FirebaseApp.initializeApp(context)
             ?: error("Firebase AI is not connected yet. Make sure google-services.json is configured, then try AI Tools again.")
+    }
+
+    private companion object {
+        const val KimiChatCompletionsEndpoint = "https://api.moonshot.ai/v1/chat/completions"
     }
 
 }
@@ -797,7 +1013,7 @@ private val StructuredEditorActions = setOf(NoteAiAction.StructureOnly, NoteAiAc
 
 private fun NoteAiAction.defaultStructureRequest(): String =
     when (this) {
-        NoteAiAction.StructureOnly -> "Structure and format this note without adding, removing, or rewriting any words."
+        NoteAiAction.StructureOnly -> "Format this note into polished editor-safe HTML like a professional document formatter. Preserve every original word, sentence, paragraph, quote, Arabic phrase, citation, reference, code line, and repeated wording exactly. Improve headings, spacing, hierarchy, bullet formatting, sectioning, blockquotes, and readability only. Do not delete, summarise, paraphrase, rewrite, simplify, merge away, expand, infer, or add content."
         else -> "Intelligently structure this note."
     }
 
@@ -947,18 +1163,24 @@ private fun String.ensureStructureOnlyPreservesContent(originalBody: String): St
     val outputChars = outputPlain.length
     val missingArabicSegments = originalPlain.significantArabicSegments()
         .filterNot { segment -> outputPlain.contains(segment) }
+    val missingOriginalSegments = originalBody.structureOnlyPreservationSegments()
+        .filterNot { segment -> outputPlain.contains(segment) }
 
     val wordRatio = if (originalWords == 0) 1.0 else outputWords.toDouble() / originalWords.toDouble()
     val charRatio = if (originalChars == 0) 1.0 else outputChars.toDouble() / originalChars.toDouble()
+    val unsafeExpansion = (originalWords >= 80 && wordRatio > 1.35) ||
+        (originalChars >= 500 && charRatio > 1.45)
 
     // StructureOnly is formatting, not summarising. If the model/post-processing omitted a
     // substantial amount of text, never apply the shortened result. Fall back to a conservative
     // local HTML wrapper so the editor never loses content.
-    if (wordRatio < 0.96 || charRatio < 0.92 || missingArabicSegments.isNotEmpty()) {
-        Log.w(
-            "MyVaultStructureOnly",
-            "Rejected unsafe StructureOnly output originalWords=$originalWords outputWords=$outputWords originalChars=$originalChars outputChars=$outputChars wordRatio=$wordRatio charRatio=$charRatio missingArabic=${missingArabicSegments.size}",
-        )
+    if (wordRatio < 0.96 || charRatio < 0.92 || unsafeExpansion || missingArabicSegments.isNotEmpty() || missingOriginalSegments.isNotEmpty()) {
+        if (BuildConfig.DEBUG) {
+            Log.w(
+                "MyVaultStructureOnly",
+                "Rejected unsafe StructureOnly output originalWords=$originalWords outputWords=$outputWords originalChars=$originalChars outputChars=$outputChars wordRatio=$wordRatio charRatio=$charRatio unsafeExpansion=$unsafeExpansion missingArabic=${missingArabicSegments.size} missingSegments=${missingOriginalSegments.size}",
+            )
+        }
         return originalBody.toStructureOnlyHtml()
             .normalizeEditorHtmlSafety()
             .normalizeListHtmlSafety()
@@ -988,6 +1210,71 @@ private fun String.significantArabicSegments(): List<String> =
         .distinct()
         .take(60)
         .toList()
+
+private fun String.structureOnlyPreservationSegments(): List<String> {
+    val source = replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|li|h[1-3]|blockquote)>"), "\n")
+        .stripHtmlTags()
+        .decodeCommonHtmlEntities()
+        .replace(Regex("[\\u200E\\u200F\\u202A-\\u202E]"), "")
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+
+    return source.lines()
+        .flatMap { line ->
+            val segment = line.normalizeStructureOnlySourceSegment()
+            when {
+                segment.isBlank() -> emptyList()
+                segment.length <= 280 -> listOf(segment)
+                else -> segment.splitIntoStructureOnlySentenceSegments()
+            }
+        }
+        .map { it.replace(Regex("\\s+"), " ").trim() }
+        .filter { segment ->
+            segment.length >= 12 &&
+                (segment.wordCountForPreservation() >= 3 || segment.contains(Regex("[\\u0600-\\u06FF]")))
+        }
+        .distinct()
+        .take(500)
+}
+
+private fun String.normalizeStructureOnlySourceSegment(): String =
+    trim()
+        .replace(Regex("^#{1,6}\\s+"), "")
+        .replace(Regex("^[-•*+]\\s+"), "")
+        .replace(Regex("^\\d+[.)]\\s+"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+private fun String.splitIntoStructureOnlySentenceSegments(): List<String> {
+    val sentences = Regex("[^.!?؟。]+(?:[.!?؟。]+|$)")
+        .findAll(this)
+        .map { it.value.trim() }
+        .filter { it.isNotBlank() }
+        .flatMap { sentence ->
+            if (sentence.length <= 280) listOf(sentence) else sentence.splitIntoStructureOnlyWordWindows()
+        }
+        .toList()
+
+    return sentences.takeIf { it.isNotEmpty() } ?: splitIntoStructureOnlyWordWindows()
+}
+
+private fun String.splitIntoStructureOnlyWordWindows(): List<String> {
+    val words = split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (words.isEmpty()) return emptyList()
+    val segments = mutableListOf<String>()
+    val current = StringBuilder()
+    words.forEach { word ->
+        if (current.isNotEmpty() && current.length + word.length + 1 > 260) {
+            segments += current.toString().trim()
+            current.clear()
+        }
+        if (current.isNotEmpty()) current.append(' ')
+        current.append(word)
+    }
+    if (current.isNotBlank()) segments += current.toString().trim()
+    return segments
+}
 
 private fun traceStructureOnlyPrompt(action: NoteAiAction, promptRequest: AiPromptRequest, context: Context) {
     if (action != NoteAiAction.StructureOnly || !BuildConfig.DEBUG) return

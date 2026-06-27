@@ -19,6 +19,11 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -162,11 +167,6 @@ class VaultPdfViewerFragment : PdfViewerFragment() {
 
     private fun hideMyVaultUnsupportedToolbox(scheduleFollowUps: Boolean = true) {
         runCatching { isToolboxVisible = false }
-        runCatching {
-            toolboxView.visibility = View.GONE
-            toolboxView.isEnabled = false
-            toolboxView.alpha = 0f
-        }
         view?.hideAndroidxPdfToolboxDescendants()
         if (scheduleFollowUps) {
             view?.postDelayed({ hideMyVaultUnsupportedToolbox(scheduleFollowUps = false) }, 80L)
@@ -249,6 +249,7 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!drawMode && !textMode && !selectMode) return false
+        if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
         val x = event.x
         val y = event.y
         when {
@@ -348,7 +349,6 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
                     if (rect != null) onAddHighlight(rect, highlightColor)
                 }
                 resetGestureState()
-                performClick()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -408,7 +408,6 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
                     }
                 }
                 textDragState = null
-                performClick()
                 postInvalidateOnAnimation()
                 return true
             }
@@ -425,7 +424,6 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
     private fun handleSelectTouch(event: MotionEvent, x: Float, y: Float): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_UP) {
             annotationAt(x, y)?.let(onSelectAnnotation)
-            performClick()
         }
         return true
     }
@@ -792,6 +790,11 @@ private fun DocumentAttachmentViewer(
 private const val DocumentFollowAudioPauseMs = 5_000L
 private const val DocumentFollowAudioPaddingPx = 48f
 
+private enum class PdfAnnotationsPanelMode {
+    CurrentPage,
+    WholePdf,
+}
+
 private fun Long.toDocumentPlaybackTime(): String {
     val totalSeconds = (this / 1_000L).coerceAtLeast(0L)
     val hours = totalSeconds / 3_600L
@@ -859,6 +862,7 @@ private fun PdfAttachmentViewer(
     var savedPageApplied by remember(attachment.id) { mutableStateOf(initialPageIndex == null || initialPageIndex <= 0) }
     var userMovedPdf by remember(attachment.id) { mutableStateOf(false) }
     var showAnnotationsPanel by remember(attachment.id) { mutableStateOf(false) }
+    var annotationsPanelMode by remember(attachment.id) { mutableStateOf(PdfAnnotationsPanelMode.WholePdf) }
     var annotationPickMode by remember(attachment.id) { mutableStateOf(false) }
     var highlightSaveMessage by remember(attachment.id) { mutableStateOf<String?>(null) }
     var drawHighlightMode by remember(attachment.id) { mutableStateOf(false) }
@@ -875,6 +879,9 @@ private fun PdfAttachmentViewer(
     val visiblePdfAnnotations = remember(annotations) {
         annotations.filter { it.isCurrentPdfAnnotation() }
     }
+    val currentPagePdfAnnotations = remember(visiblePdfAnnotations, pageIndex) {
+        visiblePdfAnnotations.filter { it.pageIndex == pageIndex }
+    }
     var pdfPageLocations by remember(attachment.id) { mutableStateOf<Map<Int, RectF>>(emptyMap()) }
     var pdfPageSizes by remember(attachment.id) { mutableStateOf<Map<Int, PdfPageSize>>(emptyMap()) }
     var pdfGestureActive by remember(attachment.id) { mutableStateOf(false) }
@@ -882,6 +889,16 @@ private fun PdfAttachmentViewer(
     val insetColorArgb = VaultThemeTokens.colors.inset.toArgb()
     val file = remember(attachment.localPath) { File(attachment.localPath) }
     var previewBitmap by remember(attachment.id, attachment.localPath) { mutableStateOf<Bitmap?>(null) }
+    val showCurrentPageActivityCard = pdfReady &&
+        currentPagePdfAnnotations.isNotEmpty() &&
+        !showAnnotationsPanel &&
+        !drawHighlightMode &&
+        !annotationPickMode &&
+        !textBoxPlacementMode &&
+        selectedAnnotation == null &&
+        noteDialogAnnotation == null &&
+        !pageNoteDialogOpen &&
+        textBoxDialog == null
 
     LaunchedEffect(attachment.id, attachment.localPath) {
         previewBitmap = withContext(Dispatchers.IO) {
@@ -1167,6 +1184,15 @@ private fun PdfAttachmentViewer(
                         pageIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
                         pageCount = pageCount,
                     )
+                    PdfCurrentPageActivityCard(
+                        visible = showCurrentPageActivityCard,
+                        annotations = currentPagePdfAnnotations,
+                        pageIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0)),
+                        onClick = {
+                            annotationsPanelMode = PdfAnnotationsPanelMode.CurrentPage
+                            showAnnotationsPanel = true
+                        },
+                    )
                     PdfReaderControls(
                         modifier = Modifier.zIndex(3f),
                         highlightColor = highlightColor,
@@ -1190,7 +1216,10 @@ private fun PdfAttachmentViewer(
                             pageNoteDialogOpen = true
                         },
                         onHighlightColorChange = { highlightColor = it },
-                        onShowAnnotations = { showAnnotationsPanel = true },
+                        onShowAnnotations = {
+                            annotationsPanelMode = PdfAnnotationsPanelMode.WholePdf
+                            showAnnotationsPanel = true
+                        },
                         onAnnotationPickModeChange = {
                             annotationPickMode = !annotationPickMode
                             if (annotationPickMode) {
@@ -1210,6 +1239,7 @@ private fun PdfAttachmentViewer(
                     PdfAnnotationsPanel(
                         annotations = visiblePdfAnnotations,
                         currentPageIndex = pageIndex,
+                        mode = annotationsPanelMode,
                         onDismiss = { showAnnotationsPanel = false },
                         onAddPageNote = {
                             noteDraft = ""
@@ -1509,23 +1539,39 @@ private fun AndroidxPdfViewer(
             overlay?.onSelectAnnotation = { latestOnSelectAnnotation.value(it) }
             overlay?.onAddHighlight = { rect, color -> latestOnAddHighlightRect.value(rect, color) }
         },
-        onRelease = {
+        onRelease = { releasedRoot ->
             val activity = context.findFragmentActivity()
-            val fragment = activity
-                ?.supportFragmentManager
-                ?.findFragmentByTag(fragmentTag)
-            if (activity != null && fragment != null) {
-                runCatching {
-                    activity.supportFragmentManager
-                        .beginTransaction()
-                        .remove(fragment)
-                        .commitNowAllowingStateLoss()
-                }
-            }
+            releasedRoot.releaseNativePdfViewer(activity, fragmentTag)
             PdfViewerCallbackRegistry.onPdfViewReady = null
             PdfViewerCallbackRegistry.onPdfLoadError = null
         },
     )
+}
+
+private fun FrameLayout.releaseNativePdfViewer(activity: FragmentActivity?, fragmentTag: String) {
+    findViewWithTag<NativePdfAnnotationOverlayView>(NativePdfAnnotationOverlayTag)?.let { overlay ->
+        runCatching { overlay.pdfView?.setHighlights(emptyList()) }
+        overlay.pdfView = null
+        overlay.annotations = emptyList()
+        overlay.onCreateTextBox = {}
+        overlay.onUpdateTextBoxBounds = { _, _ -> }
+        overlay.onSelectAnnotation = {}
+        overlay.onAddHighlight = { _, _ -> }
+    }
+
+    val fragment = activity
+        ?.supportFragmentManager
+        ?.findFragmentByTag(fragmentTag)
+    if (activity != null && fragment != null) {
+        runCatching {
+            activity.supportFragmentManager
+                .beginTransaction()
+                .remove(fragment)
+                .commitNowAllowingStateLoss()
+        }
+    }
+
+    removeAllViews()
 }
 
 private fun FragmentContainerView.attachPdfFragmentWhenReady(
@@ -1722,6 +1768,92 @@ private fun BoxScope.PdfReadingProgressOverlay(
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
             color = colors.textSecondary,
         )
+    }
+}
+
+@Composable
+private fun BoxScope.PdfCurrentPageActivityCard(
+    visible: Boolean,
+    annotations: List<PdfAnnotationEntity>,
+    pageIndex: Int,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val sortedAnnotations = remember(annotations) {
+        annotations.sortedByDescending { it.updatedAt }
+    }
+    val leadAnnotation = sortedAnnotations.firstOrNull()
+    AnimatedVisibility(
+        visible = visible && leadAnnotation != null,
+        modifier = Modifier
+            .align(Alignment.TopStart)
+            .zIndex(2.8f)
+            .padding(start = VaultSpacing.screen, top = 62.dp, end = VaultSpacing.screen)
+            .widthIn(max = 430.dp),
+        enter = fadeIn(animationSpec = tween(140)) + expandVertically(animationSpec = tween(160)),
+        exit = shrinkVertically(animationSpec = tween(120)) + fadeOut(animationSpec = tween(100)),
+    ) {
+        Surface(
+            onClick = onClick,
+            color = colors.elevated.copy(alpha = 0.95f),
+            shape = VaultShapes.xl,
+            border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.72f)),
+            shadowElevation = 4.dp,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    color = colors.accentSoft,
+                    shape = VaultShapes.lg,
+                    border = BorderStroke(1.dp, colors.accentBorder),
+                ) {
+                    Icon(
+                        Icons.Rounded.StickyNote2,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .size(18.dp),
+                        tint = colors.accent,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "Page ${pageIndex + 1} activity",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+                        color = colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = buildString {
+                            append(annotations.toPdfActivityBreakdownText())
+                            leadAnnotation?.pdfActivityPreviewText()?.takeIf { it.isNotBlank() }?.let { preview ->
+                                append(" · ")
+                                append(preview)
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = annotations.size.toString(),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+                    color = colors.accent,
+                )
+            }
+        }
     }
 }
 
@@ -2073,11 +2205,26 @@ private fun BoxScope.PdfReaderControls(
 private fun BoxScope.PdfAnnotationsPanel(
     annotations: List<PdfAnnotationEntity>,
     currentPageIndex: Int,
+    mode: PdfAnnotationsPanelMode,
     onDismiss: () -> Unit,
     onAddPageNote: () -> Unit,
     onAnnotationSelected: (PdfAnnotationEntity) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    val panelAnnotations = remember(annotations, currentPageIndex, mode) {
+        when (mode) {
+            PdfAnnotationsPanelMode.CurrentPage -> annotations.filter { it.pageIndex == currentPageIndex }
+            PdfAnnotationsPanelMode.WholePdf -> annotations
+        }.sortedWith(compareBy<PdfAnnotationEntity> { it.pageIndex }.thenByDescending { it.updatedAt })
+    }
+    val panelTitle = when (mode) {
+        PdfAnnotationsPanelMode.CurrentPage -> "Page ${currentPageIndex + 1} activity"
+        PdfAnnotationsPanelMode.WholePdf -> "PDF activity"
+    }
+    val panelSubtitle = when (mode) {
+        PdfAnnotationsPanelMode.CurrentPage -> "${panelAnnotations.size.toPdfActivityItemCount()} on this page"
+        PdfAnnotationsPanelMode.WholePdf -> "${panelAnnotations.size.toPdfActivityItemCount()} across this PDF"
+    }
     Surface(
         modifier = Modifier
             .align(Alignment.BottomCenter)
@@ -2101,12 +2248,12 @@ private fun BoxScope.PdfAnnotationsPanel(
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = "PDF notes",
+                        text = panelTitle,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W900),
                         color = colors.text,
                     )
                     Text(
-                        text = "Page ${currentPageIndex + 1}",
+                        text = panelSubtitle,
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.textMuted,
                     )
@@ -2120,9 +2267,25 @@ private fun BoxScope.PdfAnnotationsPanel(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                annotations
-                    .sortedWith(compareBy<PdfAnnotationEntity> { it.pageIndex }.thenByDescending { it.updatedAt })
-                    .forEach { annotation ->
+                if (panelAnnotations.isEmpty()) {
+                    Surface(
+                        color = colors.surface,
+                        shape = VaultShapes.lg,
+                        border = BorderStroke(1.dp, colors.border),
+                    ) {
+                        Text(
+                            text = if (mode == PdfAnnotationsPanelMode.CurrentPage) {
+                                "No saved activity on this page yet."
+                            } else {
+                                "No saved PDF activity yet."
+                            },
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textMuted,
+                        )
+                    }
+                } else {
+                    panelAnnotations.forEach { annotation ->
                         Surface(
                             onClick = { onAnnotationSelected(annotation) },
                             color = colors.surface,
@@ -2144,13 +2307,18 @@ private fun BoxScope.PdfAnnotationsPanel(
                                 ) {}
                                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        text = "Page ${annotation.pageIndex + 1}",
+                                        text = annotation.pdfActivityTitle(),
                                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
                                         color = colors.text,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                     Text(
-                                        text = annotation.noteText?.takeIf { it.isNotBlank() }
-                                            ?: if (annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE) "Page note" else "Highlight",
+                                        text = buildString {
+                                            append("Page ${annotation.pageIndex + 1}")
+                                            append(" · ")
+                                            append(annotation.pdfActivityPreviewText())
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = colors.textMuted,
                                         maxLines = 2,
@@ -2160,10 +2328,37 @@ private fun BoxScope.PdfAnnotationsPanel(
                             }
                         }
                     }
+                }
             }
         }
     }
 }
+
+private fun Int.toPdfActivityItemCount(): String =
+    "$this activity item${if (this == 1) "" else "s"}"
+
+private fun List<PdfAnnotationEntity>.toPdfActivityBreakdownText(): String {
+    val notes = count { it.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE }
+    val highlights = count { it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT }
+    return listOfNotNull(
+        notes.takeIf { it > 0 }?.let { "$it note${if (it == 1) "" else "s"}" },
+        highlights.takeIf { it > 0 }?.let { "$it highlight${if (it == 1) "" else "s"}" },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: size.toPdfActivityItemCount()
+}
+
+private fun PdfAnnotationEntity.pdfActivityTitle(): String =
+    displayTitle?.trim()?.takeIf { it.isNotBlank() } ?: pdfActivityTypeLabel()
+
+private fun PdfAnnotationEntity.pdfActivityPreviewText(): String =
+    noteText?.trim()?.takeIf { it.isNotBlank() } ?: pdfActivityTypeLabel()
+
+private fun PdfAnnotationEntity.pdfActivityTypeLabel(): String =
+    when (annotationType) {
+        PdfAnnotationEntity.TYPE_PAGE_NOTE -> "Page note"
+        PdfAnnotationEntity.TYPE_HIGHLIGHT -> "Highlight"
+        else -> "PDF activity"
+    }
+
 @Composable
 private fun BoxScope.PdfHighlightSaveMessage(message: String) {
     Surface(

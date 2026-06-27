@@ -11,6 +11,7 @@ import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SearchRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.quran.QuranReflectionRepository
+import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.data.quran.QuranReflectionSummary
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
@@ -50,7 +51,9 @@ data class HomeUiState(
     val expandedFolderIds: Set<String> = emptySet(),
     val notePreviewLines: Int = 0,
     val showFullNoteTitles: Boolean = false,
+    val pinnedExpanded: Boolean = false,
     val quranReflectionSummary: QuranReflectionSummary = QuranReflectionSummary(),
+    val quranReflectionItems: List<QuranReflectionItem> = emptyList(),
 )
 
 private val EmptySearchResults = Triple(
@@ -73,7 +76,7 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val debouncedSearchQuery = searchQuery
-        .debounce(180)
+        .debounce(300)
         .distinctUntilChanged()
 
     private val searchResults = debouncedSearchQuery.flatMapLatest { query ->
@@ -102,20 +105,28 @@ class HomeViewModel @Inject constructor(
         )
     }
 
+    private val quranReflectionHomeState = combine(
+        quranReflectionRepository.observeReflectionSummary(),
+        quranReflectionRepository.observeReflectionItems(),
+    ) { summary, items -> summary to items }
+
     val uiState: StateFlow<HomeUiState> = combine(
         homeContentForMode(FOLDER_MODE_STUDY),
         searchQuery,
         searchResults,
         vaultPreferences.userPreferences,
-        quranReflectionRepository.observeReflectionSummary(),
-    ) { content, query, results, preferences, quranReflectionSummary ->
+        quranReflectionHomeState,
+    ) { content, query, results, preferences, quranReflectionHomeState ->
+        val (quranReflectionSummary, quranReflectionItems) = quranReflectionHomeState
         content.toUiState(
             query = query,
             results = results,
             expandedFolderIds = preferences.expandedFolderIds,
             notePreviewLines = preferences.notePreview.toPreviewLines(),
             showFullNoteTitles = preferences.showFullNoteTitles,
+            pinnedExpanded = preferences.pinnedExpandedByMode[FOLDER_MODE_STUDY] ?: false,
             quranReflectionSummary = quranReflectionSummary,
+            quranReflectionItems = quranReflectionItems,
         )
     }
         .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_STUDY, state) }
@@ -137,7 +148,9 @@ class HomeViewModel @Inject constructor(
             expandedFolderIds = preferences.expandedFolderIds,
             notePreviewLines = preferences.notePreview.toPreviewLines(),
             showFullNoteTitles = preferences.showFullNoteTitles,
+            pinnedExpanded = preferences.pinnedExpandedByMode[FOLDER_MODE_PERSONAL] ?: false,
             quranReflectionSummary = QuranReflectionSummary(),
+            quranReflectionItems = emptyList(),
         )
     }
         .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_PERSONAL, state) }
@@ -159,6 +172,28 @@ class HomeViewModel @Inject constructor(
                 null
             }
             onCreated(noteRepository.createNote(folderId = targetFolderId))
+        }
+    }
+
+    fun createNoteFromSharedText(
+        text: String,
+        mode: String = FOLDER_MODE_STUDY,
+        onCreated: (String) -> Unit,
+    ) {
+        val cleaned = text.trim()
+        if (cleaned.isBlank()) return
+        viewModelScope.launch {
+            val targetFolderId = if (mode == FOLDER_MODE_PERSONAL) {
+                folderRepository.ensureRootFolderForMode(name = "Inbox", mode = FOLDER_MODE_PERSONAL)
+            } else {
+                null
+            }
+            val noteId = noteRepository.createNote(
+                folderId = targetFolderId,
+                title = cleaned.firstTitleLine(),
+            )
+            noteRepository.saveRichText(noteId = noteId, text = cleaned, styleMarksJson = "[]")
+            onCreated(noteId)
         }
     }
 
@@ -212,6 +247,10 @@ class HomeViewModel @Inject constructor(
 
     fun moveFolderToMode(folderId: String, mode: String) {
         viewModelScope.launch { folderRepository.moveFolderToMode(folderId, mode) }
+    }
+
+    fun setPinnedExpanded(mode: String, expanded: Boolean) {
+        viewModelScope.launch { vaultPreferences.setPinnedExpanded(mode, expanded) }
     }
 
     fun setFolderExpanded(folderId: String, expanded: Boolean) {
@@ -274,13 +313,24 @@ private data class HomeContent(
     val tree: List<VaultTreeItem>,
 )
 
+private fun String.firstTitleLine(): String {
+    val line = lines()
+        .firstOrNull { it.isNotBlank() }
+        ?.replace(Regex("[#*_`>\\-]+"), "")
+        ?.trim()
+        .orEmpty()
+    return line.ifBlank { "Ask AI answer" }.take(56)
+}
+
 private fun HomeContent.toUiState(
     query: String,
     results: Triple<List<SearchResultData>, List<FolderEntity>, List<String>>,
     expandedFolderIds: Set<String>,
     notePreviewLines: Int,
     showFullNoteTitles: Boolean,
+    pinnedExpanded: Boolean,
     quranReflectionSummary: QuranReflectionSummary,
+    quranReflectionItems: List<QuranReflectionItem>,
 ): HomeUiState {
     val visibleIds = tree.visibleTreeIds()
     return HomeUiState(
@@ -298,7 +348,9 @@ private fun HomeContent.toUiState(
         expandedFolderIds = expandedFolderIds,
         notePreviewLines = notePreviewLines,
         showFullNoteTitles = showFullNoteTitles,
+        pinnedExpanded = pinnedExpanded,
         quranReflectionSummary = quranReflectionSummary,
+        quranReflectionItems = quranReflectionItems.take(8),
     )
 }
 

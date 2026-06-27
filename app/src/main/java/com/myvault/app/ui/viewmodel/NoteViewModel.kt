@@ -495,7 +495,7 @@ class NoteViewModel @Inject constructor(
                 _aiState.update {
                     it.copy(
                         loading = true,
-                        isStreaming = provider == NoteAiProvider.Gemini,
+                        isStreaming = provider == NoteAiProvider.Gemini || provider == NoteAiProvider.Kimi,
                         action = routedAction,
                         provider = provider,
                         model = effectiveModel,

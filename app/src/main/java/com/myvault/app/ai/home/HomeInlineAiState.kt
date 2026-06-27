@@ -4,6 +4,14 @@ enum class HomeAiAttachableType(val label: String) {
     Study("Study"),
     Course("Course"),
     ConceptCard("Concept Card"),
+    Pdf("PDF"),
+    CourseContext("Course Context"),
+}
+
+enum class HomeAiAttachmentScope {
+    Notes,
+    LibraryPdfs,
+    Course,
 }
 
 data class HomeAiAttachableItem(
@@ -24,6 +32,7 @@ enum class HomeAiProvider(
 ) {
     OPENAI("OpenAI"),
     GEMINI("Gemini"),
+    KIMI("Kimi"),
 }
 
 enum class HomeAiModelMode(
@@ -94,12 +103,17 @@ data class HomeInlineAiState(
     val chatInputText: String = "",
     val attachedItems: List<HomeAiAttachableItem> = emptyList(),
     val suggestedTitles: List<HomeAiAttachableItem> = emptyList(),
+    val attachmentScope: HomeAiAttachmentScope = HomeAiAttachmentScope.Notes,
+    val screenContextCourseId: String? = null,
     val isPanelOpen: Boolean = false,
     val isStreaming: Boolean = false,
+    val isPreparingAttachments: Boolean = false,
     val currentStreamingAnswer: String = "",
     val chatMessages: List<HomeInlineAiMessage> = emptyList(),
+    val activeThreadId: String? = null,
     val selectedProvider: HomeAiProvider = HomeAiProvider.GEMINI,
     val selectedModelMode: HomeAiModelMode = HomeAiModelMode.FAST,
+    val webSearchEnabled: Boolean = false,
     val resolvedModelId: String = "",
     val providerStatuses: List<HomeAiProviderStatus> = emptyList(),
     val panelMode: HomeAiPanelMode = HomeAiPanelMode.Chat,

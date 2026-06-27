@@ -15,6 +15,7 @@ import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.BackupRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -22,6 +23,9 @@ import org.json.JSONObject
 import java.io.File
 import java.io.OutputStream
 import java.net.HttpURLConnection
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
@@ -31,6 +35,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 const val DriveConflictMessage = "Cloud contains newer MyVault changes. Pull latest first, then push again."
+
+private fun Throwable.isInterruptedDriveConnection(): Boolean {
+    val text = generateSequence(this) { it.cause }
+        .joinToString(" ") { it.message.orEmpty() }
+    return this is SocketException ||
+        this is SocketTimeoutException ||
+        this is UnknownHostException ||
+        text.contains("Software caused connection abort", ignoreCase = true) ||
+        text.contains("Connection reset", ignoreCase = true) ||
+        text.contains("timeout", ignoreCase = true)
+}
 
 @Singleton
 class GoogleDriveIncrementalSyncRepository @Inject constructor(
@@ -208,13 +223,13 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                         } else {
                             val fileId = entry.cloudFileId.ifBlank { drive.findChild(vault.files.id, entry.fileName)?.id.orEmpty() }
                             if (fileId.isBlank()) error("Missing Drive sync file: ${entry.fileName}")
-                            drive.copyFileTo(fileId, zip)
+                            drive.copyFileToWithRetry(fileId, zip)
                             downloadedFiles += 1
                         }
                     } else {
                         val fileId = entry.cloudFileId.ifBlank { drive.findChild(vault.metadata.id, entry.fileName)?.id.orEmpty() }
                         if (fileId.isBlank()) error("Missing Drive sync metadata: ${entry.fileName}")
-                        drive.copyFileTo(fileId, zip)
+                        drive.copyFileToWithRetry(fileId, zip)
                     }
                     zip.closeEntry()
                 }
@@ -393,14 +408,15 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     }
 
     private fun Throwable.driveMessage(prefix: String): String =
-        when (this) {
-            is UserRecoverableAuthException -> "$prefix: Google Drive needs permission again. Connect Drive, then retry."
+        when {
+            this is UserRecoverableAuthException -> "$prefix: Google Drive needs permission again. Connect Drive, then retry."
+            isInterruptedDriveConnection() -> "$prefix: Google Drive connection was interrupted while downloading. Check Wi-Fi/mobile signal and try Restore again."
             else -> message?.let { "$prefix: $it" } ?: prefix
         }
 
     private fun Throwable.googleSignInMessage(): String =
         if (this is ApiException && statusCode == GoogleSignInStatusCodes.DEVELOPER_ERROR) {
-            "Google Drive sign in is not configured for this signed APK yet. In Google Cloud or Firebase, add an Android OAuth client in project myvault-fbfd1 with package com.myvault.app and release SHA-1 77:D0:EE:6A:B8:DF:03:59:6D:50:B7:13:68:58:03:D7:76:F9:18:16, then retry."
+            "Google Drive sign in is not configured for this signed app yet. Add the matching Android OAuth client in Google Cloud or Firebase, then retry."
         } else if (this is ApiException) {
             "Google Drive sign in failed: ${GoogleSignInStatusCodes.getStatusCodeString(statusCode)} ($statusCode)."
         } else {
@@ -506,6 +522,20 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         fun downloadJsonObject(fileId: String): JSONObject =
             JSONObject(requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null).toString(Charsets.UTF_8))
 
+        suspend fun copyFileToWithRetry(fileId: String, output: OutputStream) {
+            val temp = File.createTempFile("myvault-drive-download-", ".tmp", context.cacheDir)
+            try {
+                retryDriveRequest {
+                    temp.outputStream().buffered().use { tempOutput ->
+                        requestToOutput("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", tempOutput)
+                    }
+                }
+                temp.inputStream().buffered().use { it.copyTo(output) }
+            } finally {
+                temp.delete()
+            }
+        }
+
         fun copyFileTo(fileId: String, output: OutputStream) {
             requestToOutput("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", output)
         }
@@ -589,13 +619,32 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 readTimeout = 120_000
                 setRequestProperty("Authorization", "Bearer ${accessToken()}")
             }
-            val responseCode = connection.responseCode
-            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-            if (responseCode !in 200..299) {
-                val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
-                error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+            try {
+                val responseCode = connection.responseCode
+                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                if (responseCode !in 200..299) {
+                    val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+                    error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+                }
+                stream?.use { it.copyTo(output) }
+            } finally {
+                connection.disconnect()
             }
-            stream?.use { it.copyTo(output) }
+        }
+
+        private suspend fun retryDriveRequest(block: () -> Unit) {
+            var lastError: Throwable? = null
+            repeat(DriveDownloadRetryCount) { attempt ->
+                try {
+                    block()
+                    return
+                } catch (error: Throwable) {
+                    lastError = error
+                    if (!error.isInterruptedDriveConnection() || attempt == DriveDownloadRetryCount - 1) throw error
+                    delay(DriveDownloadRetryDelayMs * (attempt + 1))
+                }
+            }
+            throw lastError ?: IllegalStateException("Google Drive download failed.")
         }
 
         private fun accessToken(): String {
@@ -650,6 +699,8 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private companion object {
         const val MyVaultRoot = "MyVault"
         const val SyncManifestFile = "sync_manifest.json"
+        const val DriveDownloadRetryCount = 3
+        const val DriveDownloadRetryDelayMs = 900L
         const val EntryKindMetadata = "metadata"
         const val EntryKindFile = "file"
         const val DriveScopeUrl = "https://www.googleapis.com/auth/drive.file"

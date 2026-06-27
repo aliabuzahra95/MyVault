@@ -12,6 +12,7 @@ import androidx.work.Data
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.myvault.app.BuildConfig
 import com.myvault.app.R
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -33,7 +34,9 @@ class DriveSyncWorker @AssistedInject constructor(
                 else -> googleDriveSyncRepository.pushToDrive { publishProgress(it) }
             }
         } catch (error: Throwable) {
-            Log.e(Tag, "Google Drive ${operation.operationLabel()} crashed", error)
+            if (BuildConfig.DEBUG) {
+                Log.e(Tag, "Google Drive ${operation.operationLabel()} crashed", error)
+            }
             DriveSyncResult.Failure("Google Drive ${operation.operationLabel()} failed: ${error.message ?: "Unknown error"}")
         }
         val finalStage = when (result) {
@@ -67,7 +70,9 @@ class DriveSyncWorker @AssistedInject constructor(
         runCatching {
             setForeground(createForegroundInfo(operation, progress))
         }.onFailure { error ->
-            Log.e(Tag, "Unable to show Google Drive ${operation.operationLabel()} foreground notification", error)
+            if (BuildConfig.DEBUG) {
+                Log.e(Tag, "Unable to show Google Drive ${operation.operationLabel()} foreground notification", error)
+            }
         }
     }
 

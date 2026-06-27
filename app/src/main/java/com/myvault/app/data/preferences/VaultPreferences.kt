@@ -57,6 +57,7 @@ data class VaultUserPreferences(
     val quranRecentLocations: List<QuranRecentLocation> = emptyList(),
     val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
+    val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
 )
@@ -107,6 +108,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranMemorizationRecords = preferences[Keys.QuranMemorizationRecords].orEmpty()
                     .mapNotNull { it.toMemorizationRecordOrNull() },
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
+                pinnedExpandedByMode = preferences[Keys.PinnedExpandedByMode].orEmpty()
+                    .mapNotNull { entry ->
+                        val separator = entry.indexOf('=')
+                        val value = if (separator <= 0) null else entry.substring(separator + 1).toBooleanStrictOrNull()
+                        if (separator <= 0 || value == null) null else entry.substring(0, separator) to value
+                    }
+                    .toMap(),
                 libraryViewMode = preferences[Keys.LibraryViewMode] ?: "list",
                 libraryViewModesByLocation = preferences[Keys.LibraryViewModesByLocation].orEmpty()
                     .mapNotNull { entry ->
@@ -354,6 +362,20 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setPinnedExpanded(mode: String, expanded: Boolean) {
+        context.vaultDataStore.edit { preferences ->
+            val updated = preferences[Keys.PinnedExpandedByMode].orEmpty()
+                .mapNotNull { entry ->
+                    val separator = entry.indexOf('=')
+                    if (separator <= 0) null else entry.substring(0, separator) to entry.substring(separator + 1)
+                }
+                .toMap()
+                .toMutableMap()
+                .apply { this[mode] = expanded.toString() }
+            preferences[Keys.PinnedExpandedByMode] = updated.map { (key, value) -> "$key=$value" }.toSet()
+        }
+    }
+
     suspend fun setLibraryViewMode(mode: String) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.LibraryViewMode] = mode
@@ -410,6 +432,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranRecentLocations: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_recent_locations")
         val QuranMemorizationRecords: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_memorization_records")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
+        val PinnedExpandedByMode: Preferences.Key<Set<String>> = stringSetPreferencesKey("pinned_expanded_by_mode")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
         const val CachedDashboardFontSize: String = "dashboard_font_size"
@@ -444,6 +467,7 @@ data class VaultBackupPreferences(
     val quranRecentLocations: List<QuranRecentLocation>,
     val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
+    val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
 )

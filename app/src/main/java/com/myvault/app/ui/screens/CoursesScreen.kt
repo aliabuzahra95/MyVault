@@ -6,9 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -41,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,10 +55,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.PopupProperties
+import com.myvault.app.ai.home.HomeAiAttachmentScope
+import com.myvault.app.ai.home.HomeInlineAiViewModel
 import com.myvault.app.data.local.entity.CourseConceptCardEntity
 import com.myvault.app.data.local.entity.CourseEntity
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.home.HomeInlineAiPanel
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultConfirmModal
 import com.myvault.app.ui.components.VaultFormModal
@@ -65,6 +73,7 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.CoursesUiState
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun CoursesScreen(
@@ -98,6 +107,7 @@ fun CoursesScreen(
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     quickBackupRecommended: Boolean = false,
+    onShareAiAnswerClick: (String) -> Unit = {},
 ) {
     var courseDialog by remember { mutableStateOf<CourseEntity?>(null) }
     var creatingCourse by remember { mutableStateOf(false) }
@@ -107,11 +117,14 @@ fun CoursesScreen(
     var conceptDialog by remember { mutableStateOf<CourseConceptCardEntity?>(null) }
     var creatingConcept by remember { mutableStateOf(false) }
     var deleteConceptDialog by remember { mutableStateOf<CourseConceptCardEntity?>(null) }
+    val courseInlineAiViewModel: HomeInlineAiViewModel = hiltViewModel()
+    val courseInlineAiState by courseInlineAiViewModel.state.collectAsState()
 
-    if (uiState.activeCourse == null) {
-        EmptyCoursesScreen(onCreate = { creatingCourse = true })
-    } else {
-        FolderViewScreen(
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (uiState.activeCourse == null) {
+            EmptyCoursesScreen(onCreate = { creatingCourse = true })
+        } else {
+            FolderViewScreen(
             uiState = uiState.folderState,
             onBackClick = {},
             onSearchClick = {},
@@ -165,6 +178,45 @@ fun CoursesScreen(
                 )
             },
         )
+
+            CourseInlineAiPill(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 78.dp, bottom = 80.dp),
+                onClick = {
+                    courseInlineAiViewModel.openPanel(
+                        scope = HomeAiAttachmentScope.Course,
+                        courseId = uiState.activeCourse.id,
+                    )
+                },
+            )
+
+            HomeInlineAiPanel(
+                state = courseInlineAiState,
+                onInputChange = courseInlineAiViewModel::setInput,
+                onAttachClick = courseInlineAiViewModel::openPicker,
+                onSuggestionClick = courseInlineAiViewModel::attachSuggestion,
+                onDetachClick = courseInlineAiViewModel::detachItem,
+                onSendClick = courseInlineAiViewModel::send,
+                onStopClick = courseInlineAiViewModel::stopStreaming,
+                onProviderSelected = courseInlineAiViewModel::setProvider,
+                onModelModeSelected = courseInlineAiViewModel::setModelMode,
+                onWebSearchToggle = courseInlineAiViewModel::toggleWebSearch,
+                onSettingsClick = courseInlineAiViewModel::toggleSettingsMode,
+                onClearHistoryClick = courseInlineAiViewModel::clearHistory,
+                onHistoryClick = courseInlineAiViewModel::openHistoryItem,
+                onRetryClick = courseInlineAiViewModel::retryLastRequest,
+                onDismissErrorClick = courseInlineAiViewModel::dismissError,
+                onShareAnswerClick = onShareAiAnswerClick,
+                onSpeakAnswerClick = courseInlineAiViewModel::speakAnswer,
+                onClose = courseInlineAiViewModel::closePanel,
+                onPickerToggle = courseInlineAiViewModel::attachItem,
+                onPickerClose = courseInlineAiViewModel::closePicker,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(80f),
+            )
+        }
     }
 
     if (creatingCourse || courseDialog != null) {
@@ -246,6 +298,34 @@ fun CoursesScreen(
         )
     }
 }
+
+
+@Composable
+private fun CourseInlineAiPill(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = modifier.size(44.dp),
+        onClick = onClick,
+        shape = VaultShapes.pill,
+        color = colors.elevated.copy(alpha = 0.98f),
+        border = BorderStroke(1.dp, colors.accentBorder),
+        shadowElevation = 8.dp,
+        tonalElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.AutoAwesome,
+                contentDescription = "Open Course AI chat",
+                modifier = Modifier.size(20.dp),
+                tint = colors.accent,
+            )
+        }
+    }
+}
+
 
 @Composable
 private fun CourseHeader(

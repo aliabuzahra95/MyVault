@@ -46,10 +46,21 @@ android {
             .get()
             .trim()
     }
+    val localKimiApiKey = localProperties.getProperty("MYVAULT_KIMI_API_KEY").orEmpty().trim()
+    val kimiApiKey = localKimiApiKey.ifBlank {
+        providers.environmentVariable("KIMI_API_KEY")
+            .orElse(providers.environmentVariable("MOONSHOT_API_KEY"))
+            .orElse(providers.gradleProperty("MYVAULT_KIMI_API_KEY"))
+            .orElse("")
+            .get()
+            .trim()
+    }
     val openAiFastModel = providers.gradleProperty("MYVAULT_OPENAI_FAST_MODEL").orElse("gpt-5-mini").get().trim()
     val openAiSmartModel = providers.gradleProperty("MYVAULT_OPENAI_SMART_MODEL").orElse("gpt-5").get().trim()
     val geminiFastModel = providers.gradleProperty("MYVAULT_GEMINI_FAST_MODEL").orElse("gemini-2.5-flash").get().trim()
     val geminiSmartModel = providers.gradleProperty("MYVAULT_GEMINI_SMART_MODEL").orElse("gemini-2.5-pro").get().trim()
+    val kimiFastModel = providers.gradleProperty("MYVAULT_KIMI_FAST_MODEL").orElse("kimi-k2.6").get().trim()
+    val kimiSmartModel = providers.gradleProperty("MYVAULT_KIMI_SMART_MODEL").orElse("kimi-k2.6").get().trim()
 
     defaultConfig {
         applicationId = "com.myvault.app"
@@ -66,10 +77,24 @@ android {
         buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$firebaseProjectId\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.escapedForBuildConfig()}\"")
+        buildConfigField("String", "KIMI_API_KEY", "\"${kimiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "HOME_AI_OPENAI_FAST_MODEL", "\"${openAiFastModel.escapedForBuildConfig()}\"")
         buildConfigField("String", "HOME_AI_OPENAI_SMART_MODEL", "\"${openAiSmartModel.escapedForBuildConfig()}\"")
         buildConfigField("String", "HOME_AI_GEMINI_FAST_MODEL", "\"${geminiFastModel.escapedForBuildConfig()}\"")
         buildConfigField("String", "HOME_AI_GEMINI_SMART_MODEL", "\"${geminiSmartModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "HOME_AI_KIMI_FAST_MODEL", "\"${kimiFastModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "HOME_AI_KIMI_SMART_MODEL", "\"${kimiSmartModel.escapedForBuildConfig()}\"")
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
     }
 
     buildFeatures {

@@ -18,8 +18,8 @@ class StorageRepository @Inject constructor(
             context.getDatabasePath("my_vault.db-wal"),
             context.getDatabasePath("my_vault.db-shm"),
         ).sumOf { it.safeLength() }
-        val attachmentSize = File(context.filesDir, "attachments").directorySize()
-        (databaseSize + attachmentSize).toSizeLabel()
+        val appFileSize = context.filesDir.directorySize()
+        (databaseSize + appFileSize).toSizeLabel()
     }
 }
 

@@ -1,6 +1,8 @@
 package com.myvault.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,6 +29,7 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PinnedNoteCard(
     note: VaultNoteCardData,
@@ -33,12 +37,15 @@ fun PinnedNoteCard(
     previewLines: Int = 0,
     showFullTitle: Boolean = false,
     onClick: () -> Unit = {},
+    onLongPress: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
 
     Surface(
-        onClick = onClick,
-        modifier = modifier.size(width = 104.dp, height = 64.dp),
+        modifier = modifier
+            .size(width = 104.dp, height = 64.dp)
+            .clip(VaultShapes.md)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         color = colors.surface,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, colors.border),

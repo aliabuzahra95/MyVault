@@ -3,6 +3,8 @@ package com.myvault.app.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import com.myvault.app.ai.home.HomeChatHistoryDao
+import com.myvault.app.ai.home.HomeChatHistoryEntity
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.AiConversationDao
@@ -33,7 +35,6 @@ import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.data.local.entity.KnowledgeTagEntity
 import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
 import com.myvault.app.data.local.entity.NoteEntity
-import com.myvault.app.data.local.entity.NoteFtsEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
@@ -77,6 +78,7 @@ class BackupRepository @Inject constructor(
     private val noteTableDao: NoteTableDao,
     private val noteVersionDao: NoteVersionDao,
     private val aiConversationDao: AiConversationDao,
+    private val homeChatHistoryDao: HomeChatHistoryDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
@@ -192,6 +194,7 @@ class BackupRepository @Inject constructor(
         val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
         val aiConversationIds = aiConversations.map { it.id }.toSet()
         val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
+        val homeChatHistory = homeChatHistoryDao.allHistory()
         val backupAttachmentIds = attachments.map { it.id }.toSet()
         val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in backupAttachmentIds }
         val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in backupAttachmentIds }
@@ -237,6 +240,7 @@ class BackupRepository @Inject constructor(
             noteVersions = noteVersions,
             aiConversations = aiConversations,
             aiMessages = aiMessages,
+            homeChatHistory = homeChatHistory,
             attachments = attachments,
             pdfReadingProgress = pdfReadingProgress,
             pdfAnnotations = pdfAnnotations,
@@ -274,6 +278,7 @@ class BackupRepository @Inject constructor(
         val tables = entries.requireJsonArray("note_tables.json")
         val aiConversations = entries.optionalJsonArray("ai_conversations.json")
         val aiMessages = entries.optionalJsonArray("ai_messages.json")
+        val homeChatHistory = entries.optionalJsonArray("home_chat_history.json")
         val attachments = entries.requireJsonArray("attachments.json")
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
         val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
@@ -411,6 +416,17 @@ class BackupRepository @Inject constructor(
             check(message.getString("conversationId") in aiConversationIds) { "Backup contains an AI message without a matching conversation." }
             check(message.getString("role").isNotBlank()) { "Backup contains an AI message without a role." }
             check(message.getString("content").isNotBlank()) { "Backup contains an empty AI message." }
+        }
+        val homeChatIds = mutableSetOf<String>()
+        List(homeChatHistory.length()) { index -> homeChatHistory.getJSONObject(index) }.forEach { history ->
+            check(homeChatIds.add(history.getString("id"))) { "Backup contains duplicate Ask AI conversations." }
+            check(history.optString("userQuery").isNotBlank()) { "Backup contains an Ask AI conversation without a question." }
+            check(history.optString("modelId").isNotBlank()) { "Backup contains an Ask AI conversation without a model." }
+            check(history.optLong("createdAt", -1L) >= 0L && history.optLong("updatedAt", -1L) >= 0L) {
+                "Backup contains invalid Ask AI conversation timestamps."
+            }
+            history.optString("attachedTitles").ifBlank { "[]" }.toJsonArray()
+            history.optString("messagesJson").ifBlank { "[]" }.toJsonArray()
         }
         val missingClaimedAttachmentIds = mutableSetOf<String>()
         List(attachments.length()) { index -> attachments.getJSONObject(index) }.forEach { attachment ->
@@ -599,6 +615,9 @@ class BackupRepository @Inject constructor(
             val aiMessages = entries.optionalJsonArray("ai_messages.json")
                 .mapJson { it.toAiMessageEntity() }
                 .filter { it.noteId in restoredNoteIds && it.conversationId in aiConversationIds }
+            val homeChatHistory = entries.optionalJsonArray("home_chat_history.json")
+                .mapJson { it.toHomeChatHistoryEntity() }
+                .filter { it.userQuery.isNotBlank() }
             val attachmentsJson = entries.requireJsonArray("attachments.json")
             val missingAttachmentFileIds = attachmentsJson.unavailableAttachmentFileIds(restoredFiles.keys)
             val restoredLibraryFolderIds = folders.map { it.id }.toSet()
@@ -659,7 +678,6 @@ class BackupRepository @Inject constructor(
                 if (folderStickyNotes.isNotEmpty()) folderStickyNoteDao.upsertAll(folderStickyNotes)
                 if (notes.isNotEmpty()) {
                     noteDao.upsertAll(notes)
-                    searchDao.upsertFts(notes.map { NoteFtsEntity(title = it.title, bodyPlainText = it.bodyPlainText) })
                 }
                 if (blocks.isNotEmpty()) blockDao.upsertAll(blocks)
                 if (tags.isNotEmpty()) tagDao.upsertAll(tags)
@@ -668,6 +686,7 @@ class BackupRepository @Inject constructor(
                 if (noteVersions.isNotEmpty()) noteVersionDao.upsertAll(noteVersions)
                 if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
                 if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
+                if (homeChatHistory.isNotEmpty()) homeChatHistoryDao.upsertHistory(homeChatHistory)
                 if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
                 val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
                     emptyList()
@@ -932,6 +951,7 @@ private data class BackupSnapshot(
     val noteVersions: List<NoteVersionEntity>,
     val aiConversations: List<AiConversationEntity>,
     val aiMessages: List<AiMessageEntity>,
+    val homeChatHistory: List<HomeChatHistoryEntity>,
     val attachments: List<AttachmentEntity>,
     val pdfReadingProgress: List<PdfReadingProgressEntity>,
     val pdfAnnotations: List<PdfAnnotationEntity>,
@@ -958,6 +978,7 @@ private data class BackupSnapshot(
         destinationDir.writeJsonFile("note_versions.json", noteVersions.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("home_chat_history.json", homeChatHistory.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("attachments.json", attachments.toJsonArray { it.toBackupJson() })
         destinationDir.writeJsonFile("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
@@ -984,6 +1005,7 @@ private data class BackupSnapshot(
         zip.writeJson("note_versions.json", noteVersions.toJsonArray { it.toJson() })
         zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
         zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
+        zip.writeJson("home_chat_history.json", homeChatHistory.toJsonArray { it.toJson() })
         zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
         zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
         zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
@@ -1316,6 +1338,17 @@ private fun AiMessageEntity.toJson(): JSONObject =
         .put("selectedTextContext", selectedTextContext)
         .put("createdAt", createdAt)
 
+private fun HomeChatHistoryEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("id", id)
+        .put("userQuery", userQuery)
+        .put("assistantAnswer", assistantAnswer)
+        .put("attachedTitles", attachedTitles)
+        .put("modelId", modelId)
+        .put("createdAt", createdAt)
+        .put("updatedAt", updatedAt)
+        .put("messagesJson", messagesJson)
+
 private fun PdfReadingProgressEntity.toJson(): JSONObject =
     JSONObject()
         .put("attachmentId", attachmentId)
@@ -1612,6 +1645,21 @@ private fun JSONObject.toAiMessageEntity(): AiMessageEntity =
         selectedTextContext = optNullableString("selectedTextContext"),
         createdAt = getLong("createdAt"),
     )
+
+private fun JSONObject.toHomeChatHistoryEntity(): HomeChatHistoryEntity {
+    val now = System.currentTimeMillis()
+    val createdAt = optLong("createdAt", now).coerceAtLeast(0L)
+    return HomeChatHistoryEntity(
+        id = getString("id"),
+        userQuery = optString("userQuery"),
+        assistantAnswer = optString("assistantAnswer"),
+        attachedTitles = optString("attachedTitles").ifBlank { "[]" }.toJsonArray().toString(),
+        modelId = optString("modelId").ifBlank { "Unknown" },
+        createdAt = createdAt,
+        updatedAt = optLong("updatedAt", createdAt).coerceAtLeast(0L),
+        messagesJson = optString("messagesJson").ifBlank { "[]" }.toJsonArray().toString(),
+    )
+}
 
 private fun JSONObject.toTagEntity(): TagEntity =
     TagEntity(name = getString("name"))

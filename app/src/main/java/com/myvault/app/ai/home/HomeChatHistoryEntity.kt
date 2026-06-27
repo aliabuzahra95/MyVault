@@ -11,4 +11,6 @@ data class HomeChatHistoryEntity(
     val attachedTitles: String,
     val modelId: String,
     val createdAt: Long,
+    val updatedAt: Long = createdAt,
+    val messagesJson: String = "",
 )

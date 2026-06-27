@@ -1,6 +1,7 @@
 package com.myvault.app.ai.home
 
 import androidx.lifecycle.ViewModel
+import com.myvault.app.data.narration.NarrationController
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -18,6 +20,7 @@ import javax.inject.Inject
 @HiltViewModel
 class HomeInlineAiViewModel @Inject constructor(
     private val repository: HomeInlineAiRepository,
+    private val narrationController: NarrationController,
 ) : ViewModel() {
     private val initialProvider = repository.providerStatuses()
         .firstOrNull { it.provider == HomeAiProvider.GEMINI && it.selectable }
@@ -37,11 +40,27 @@ class HomeInlineAiViewModel @Inject constructor(
 
     private var titleSearchJob: Job? = null
     private var streamJob: Job? = null
+    private val pdfPreparationJobs = mutableMapOf<String, Job>()
 
-    fun openPanel() {
+    fun openPanel(
+        scope: HomeAiAttachmentScope = HomeAiAttachmentScope.Notes,
+        courseId: String? = null,
+    ) {
         refreshProviderState()
         refreshHistory()
-        _state.update { it.copy(isPanelOpen = true, error = null, warning = null) }
+        _state.update {
+            val scopeChanged = it.attachmentScope != scope || it.screenContextCourseId != courseId
+            it.copy(
+                isPanelOpen = true,
+                attachmentScope = scope,
+                screenContextCourseId = courseId,
+                attachedItems = if (scopeChanged) emptyList() else it.attachedItems,
+                suggestedTitles = emptyList(),
+                pickerItems = emptyList(),
+                error = null,
+                warning = null,
+            )
+        }
     }
 
     fun closePanel() {
@@ -76,6 +95,7 @@ class HomeInlineAiViewModel @Inject constructor(
         _state.update {
             it.copy(
                 chatMessages = emptyList(),
+                activeThreadId = null,
                 currentStreamingAnswer = "",
                 chatInputText = "",
                 attachedItems = emptyList(),
@@ -90,25 +110,11 @@ class HomeInlineAiViewModel @Inject constructor(
     fun openHistoryItem(id: String) {
         viewModelScope.launch {
             val item = repository.historyById(id) ?: return@launch
-            val attachedTitles = parseAttachedTitles(item.attachedTitles)
+            val messages = repository.messagesForHistory(item)
             _state.update {
                 it.copy(
-                    chatMessages = listOf(
-                        HomeInlineAiMessage(
-                            id = "${item.id}-user",
-                            role = HomeInlineAiRole.User,
-                            text = item.userQuery,
-                            attachedTitles = attachedTitles,
-                            timestamp = item.createdAt,
-                        ),
-                        HomeInlineAiMessage(
-                            id = "${item.id}-assistant",
-                            role = HomeInlineAiRole.Assistant,
-                            text = item.assistantAnswer,
-                            attachedTitles = attachedTitles,
-                            timestamp = item.createdAt,
-                        ),
-                    ),
+                    chatMessages = messages,
+                    activeThreadId = item.id,
                     chatInputText = "",
                     currentStreamingAnswer = "",
                     isStreaming = false,
@@ -130,7 +136,7 @@ class HomeInlineAiViewModel @Inject constructor(
                 _state.update { it.copy(suggestedTitles = emptyList()) }
                 return@launch
             }
-            val suggestions = repository.searchTitles(token)
+            val suggestions = repository.searchTitles(token, _state.value.attachmentScope, _state.value.screenContextCourseId)
                 .filterNot { candidate -> _state.value.attachedItems.any { it.id == candidate.id && it.type == candidate.type } }
             _state.update { it.copy(suggestedTitles = suggestions) }
         }
@@ -158,6 +164,9 @@ class HomeInlineAiViewModel @Inject constructor(
                 warning = null,
             )
         }
+        if (provider == HomeAiProvider.GEMINI) {
+            _state.value.attachedItems.forEach(::preparePdfAfterAttach)
+        }
     }
 
     fun setModelMode(modelMode: HomeAiModelMode) {
@@ -167,6 +176,17 @@ class HomeInlineAiViewModel @Inject constructor(
                 resolvedModelId = repository.resolvedModelId(it.selectedProvider, modelMode),
                 error = null,
                 warning = null,
+            )
+        }
+    }
+
+    fun toggleWebSearch() {
+        if (_state.value.isStreaming || _state.value.isPreparingAttachments) return
+        _state.update {
+            it.copy(
+                webSearchEnabled = !it.webSearchEnabled,
+                warning = null,
+                error = null,
             )
         }
     }
@@ -189,14 +209,17 @@ class HomeInlineAiViewModel @Inject constructor(
             return
         }
         _state.update { it.copy(attachedItems = it.attachedItems + item, warning = null, error = null) }
+        preparePdfAfterAttach(item)
     }
 
     fun detachItem(item: HomeAiAttachableItem) {
+        pdfPreparationJobs.remove(item.id)?.cancel()
         _state.update { state ->
             state.copy(
                 attachedItems = state.attachedItems.filterNot { it.id == item.id && it.type == item.type },
                 error = null,
                 warning = null,
+                isPreparingAttachments = pdfPreparationJobs.isNotEmpty(),
             )
         }
     }
@@ -206,7 +229,7 @@ class HomeInlineAiViewModel @Inject constructor(
             _state.update {
                 it.copy(
                     panelMode = HomeAiPanelMode.AttachNotes,
-                    pickerItems = repository.pickerItems(),
+                    pickerItems = repository.pickerItems(_state.value.attachmentScope, _state.value.screenContextCourseId),
                     suggestedTitles = emptyList(),
                     error = null,
                 )
@@ -221,7 +244,7 @@ class HomeInlineAiViewModel @Inject constructor(
     fun send() {
         val snapshot = _state.value
         val question = snapshot.chatInputText.trim()
-        if (question.isBlank() || snapshot.isStreaming) return
+        if (question.isBlank() || snapshot.isStreaming || snapshot.isPreparingAttachments) return
         sendRequest(question = question, attachments = snapshot.attachedItems, clearInput = true)
     }
 
@@ -230,7 +253,7 @@ class HomeInlineAiViewModel @Inject constructor(
         val question = snapshot.lastRequestQuestion.ifBlank {
             snapshot.chatMessages.lastOrNull { it.role == HomeInlineAiRole.User }?.text.orEmpty()
         }.trim()
-        if (question.isBlank() || snapshot.isStreaming) return
+        if (question.isBlank() || snapshot.isStreaming || snapshot.isPreparingAttachments) return
         val attachments = snapshot.lastRequestAttachments
         sendRequest(question = question, attachments = attachments, clearInput = false)
     }
@@ -239,12 +262,26 @@ class HomeInlineAiViewModel @Inject constructor(
         _state.update { it.copy(error = null) }
     }
 
+    fun speakAnswer(messageId: String, text: String) {
+        val cleanText = text.cleanForNarration()
+        if (cleanText.isBlank()) {
+            _state.update { it.copy(warning = "This answer has no text to read aloud.") }
+            return
+        }
+        narrationController.startAzure(
+            noteId = "ask-ai:$messageId",
+            title = "AI answer",
+            body = cleanText,
+        )
+    }
+
     private fun sendRequest(
         question: String,
         attachments: List<HomeAiAttachableItem>,
         clearInput: Boolean,
     ) {
         val snapshot = _state.value
+        val priorMessages = snapshot.chatMessages
 
         streamJob?.cancel()
         streamJob = viewModelScope.launch {
@@ -268,22 +305,60 @@ class HomeInlineAiViewModel @Inject constructor(
                 )
             }
 
-            val contexts = repository.loadContexts(attachments)
-            val estimatedChars = repository.estimateContextChars(contexts)
-            if (estimatedChars > SoftContextWarningChars) {
-                _state.update { it.copy(warning = "Large attachment payload. Streaming may take longer.") }
-            }
-
             var answer = ""
             runCatching {
-                repository.streamAnswer(
-                    question = question,
-                    contexts = contexts,
-                    provider = snapshot.selectedProvider,
-                    modelMode = snapshot.selectedModelMode,
-                ).collect { chunk ->
-                    answer += chunk
-                    _state.update { it.copy(currentStreamingAnswer = answer) }
+                val contexts = repository.loadScreenContexts(snapshot.attachmentScope, snapshot.screenContextCourseId) + repository.loadContexts(attachments)
+                val estimatedChars = repository.estimateContextChars(contexts)
+                if (estimatedChars > SoftContextWarningChars) {
+                    _state.update { it.copy(warning = "Large attachment payload. Streaming may take longer.") }
+                }
+                val needsGeminiPdfUpload = snapshot.selectedProvider == HomeAiProvider.GEMINI &&
+                    attachments.any { it.type == HomeAiAttachableType.Pdf }
+                val geminiFiles = if (needsGeminiPdfUpload) {
+                    _state.update { it.copy(isPreparingAttachments = true) }
+                    repository.prepareGeminiPdfFiles(attachments)
+                } else {
+                    emptyList()
+                }
+                _state.update { it.copy(isPreparingAttachments = false) }
+                try {
+                    answer = collectStreamingAnswer(
+                        repository.streamAnswer(
+                            question = question,
+                            contexts = contexts,
+                            provider = snapshot.selectedProvider,
+                            modelMode = snapshot.selectedModelMode,
+                            webSearchEnabled = snapshot.webSearchEnabled,
+                            files = geminiFiles,
+                            conversationMessages = priorMessages,
+                        ),
+                    )
+                } catch (error: HomeInlineAiException) {
+                    if (!needsGeminiPdfUpload || !repository.isLikelyStaleGeminiFileError(error.aiError)) {
+                        throw error
+                    }
+                    answer = ""
+                    _state.update {
+                        it.copy(
+                            currentStreamingAnswer = "",
+                            isPreparingAttachments = true,
+                            warning = "Refreshing PDF link...",
+                        )
+                    }
+                    repository.clearGeminiPdfFileCache(attachments)
+                    val freshGeminiFiles = repository.prepareGeminiPdfFiles(attachments, forceUpload = true)
+                    _state.update { it.copy(isPreparingAttachments = false) }
+                    answer = collectStreamingAnswer(
+                        repository.streamAnswer(
+                            question = question,
+                            contexts = contexts,
+                            provider = snapshot.selectedProvider,
+                            modelMode = snapshot.selectedModelMode,
+                            webSearchEnabled = snapshot.webSearchEnabled,
+                            files = freshGeminiFiles,
+                            conversationMessages = priorMessages,
+                        ),
+                    )
                 }
             }.onSuccess {
                 val assistant = HomeInlineAiMessage(
@@ -292,13 +367,19 @@ class HomeInlineAiViewModel @Inject constructor(
                     text = answer.trim(),
                     attachedTitles = attachments.map { it.title },
                 )
-                repository.saveHistory(question, assistant.text, attachments, snapshot.resolvedModelId)
+                val savedThreadId = repository.saveThread(
+                    threadId = snapshot.activeThreadId,
+                    messages = priorMessages + userMessage + assistant,
+                    modelId = snapshot.resolvedModelId,
+                )
                 refreshHistory()
                 _state.update {
                     it.copy(
                         isStreaming = false,
+                        isPreparingAttachments = false,
                         currentStreamingAnswer = "",
                         chatMessages = it.chatMessages + assistant,
+                        activeThreadId = savedThreadId,
                         warning = null,
                     )
                 }
@@ -307,6 +388,7 @@ class HomeInlineAiViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         isStreaming = false,
+                        isPreparingAttachments = false,
                         currentStreamingAnswer = "",
                         error = aiError,
                     )
@@ -315,10 +397,64 @@ class HomeInlineAiViewModel @Inject constructor(
         }
     }
 
+    private suspend fun collectStreamingAnswer(stream: Flow<String>): String {
+        val buffer = StringBuilder()
+        var lastRenderedLength = 0
+        var lastRenderedAt = 0L
+
+        stream.collect { chunk ->
+            buffer.append(chunk)
+            val now = System.currentTimeMillis()
+            val shouldRender = lastRenderedLength == 0 ||
+                now - lastRenderedAt >= StreamingRenderIntervalMs ||
+                buffer.length - lastRenderedLength >= StreamingRenderCharDelta
+            if (shouldRender) {
+                lastRenderedLength = buffer.length
+                lastRenderedAt = now
+                _state.update { it.copy(currentStreamingAnswer = buffer.toString()) }
+            }
+        }
+
+        if (buffer.length != lastRenderedLength) {
+            _state.update { it.copy(currentStreamingAnswer = buffer.toString()) }
+        }
+        return buffer.toString()
+    }
+
     fun stopStreaming() {
         streamJob?.cancel()
         streamJob = null
-        _state.update { it.copy(isStreaming = false, currentStreamingAnswer = "") }
+        _state.update { it.copy(isStreaming = false, isPreparingAttachments = false, currentStreamingAnswer = "") }
+    }
+
+    private fun preparePdfAfterAttach(item: HomeAiAttachableItem) {
+        val snapshot = _state.value
+        if (
+            item.type != HomeAiAttachableType.Pdf ||
+            snapshot.attachmentScope != HomeAiAttachmentScope.LibraryPdfs ||
+            snapshot.selectedProvider != HomeAiProvider.GEMINI ||
+            pdfPreparationJobs.containsKey(item.id)
+        ) {
+            return
+        }
+        val job = viewModelScope.launch {
+            _state.update { it.copy(isPreparingAttachments = true, error = null) }
+            runCatching {
+                repository.prepareGeminiPdfFiles(listOf(item))
+            }.onFailure { error ->
+                val aiError = (error as? HomeInlineAiException)?.aiError
+                    ?: HomeInlineAiError.Unknown(error.message.orEmpty())
+                _state.update {
+                    it.copy(
+                        error = aiError,
+                        warning = "PDF preparation failed. MyVault will try again when you ask.",
+                    )
+                }
+            }
+            pdfPreparationJobs.remove(item.id)
+            _state.update { it.copy(isPreparingAttachments = pdfPreparationJobs.isNotEmpty()) }
+        }
+        pdfPreparationJobs[item.id] = job
     }
 
     private fun trailingAttachmentToken(text: String): String? {
@@ -368,8 +504,22 @@ class HomeInlineAiViewModel @Inject constructor(
         }
     }
 
+
+    private fun String.cleanForNarration(): String =
+        replace(Regex("```[\\s\\S]*?```"), " ")
+            .replace(Regex("`([^`]*)`"), "$1")
+            .replace(Regex("#{1,6}\\s*"), "")
+            .replace("**", "")
+            .replace("__", "")
+            .replace("*", "")
+            .replace(Regex("\\[(.*?)\\]\\((.*?)\\)"), "$1")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
     private companion object {
         const val MaxAttachments = 5
         const val SoftContextWarningChars = 45_000
+        const val StreamingRenderIntervalMs = 45L
+        const val StreamingRenderCharDelta = 180
     }
 }

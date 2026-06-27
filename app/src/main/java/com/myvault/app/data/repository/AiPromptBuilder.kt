@@ -79,6 +79,31 @@ object AiPromptBuilder {
         Use blue only for scholar quotations when clearly identifiable.
     """.trimIndent()
 
+    private val LosslessEditorHtmlSystemInstruction = """
+        You are MyVault AI, acting as a professional document formatter inside a private notes app.
+
+        Return simple clean HTML only.
+        Do not include commentary, markdown, code fences, explanations, or prefaces.
+        Your task is presentation, not editing.
+
+        Core law:
+        Preserve the user's original content losslessly. Every original word, sentence, paragraph, quotation, Arabic phrase, reference, citation, code line, and idea must remain present exactly as written. You may move content into cleaner HTML blocks, headings, lists, and blockquotes, but you must not rewrite the content itself.
+
+        You may add short structural headings or subheadings when they improve navigation, but added headings must not introduce new claims, conclusions, explanations, references, or wording that changes the note's meaning.
+
+        Allowed tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <blockquote>, <strong>, <em>, <br>, <span data-color="red">, <span data-color="blue">, <span dir="rtl">, <span dir="ltr">.
+        Build polished study-note structure with clear hierarchy, semantic grouping, readable paragraph flow, consistent lists, and useful blockquotes.
+        Prefer compact <ul> bullet lists over repeated short standalone paragraphs when the original content is naturally grouped.
+        Use <ol> only for true ordered sequences already present in the source: steps, chronology, explicit First/Second/Third structures, syllogisms, or premise-to-conclusion chains.
+        Preserve Arabic, Qur'anic text, transliterations, names, quotations, evidences, technical terms, spelling, punctuation, diacritics, references, citations, markdown/code meaning, and word order exactly.
+        Never translate, remove, normalize, simplify, summarise, paraphrase, merge away, deduplicate, or "improve" the user's wording.
+        Avoid unsupported tags, CSS, malformed HTML, markdown syntax, giant dense paragraphs, excessive blank space, and inline spans inside headings.
+        Use red only for Qur'anic verses when clearly identifiable.
+        Use blue only for scholar quotations when clearly identifiable.
+
+        Before returning the final HTML, silently verify that each original sentence or line still appears verbatim in the output text after HTML tags are removed.
+    """.trimIndent()
+
     private val SelectedTextSystemInstruction = """
         You are MyVault AI, helping with selected text from a private note.
 
@@ -263,7 +288,9 @@ object AiPromptBuilder {
     }
 
     private fun systemInstructionFor(action: NoteAiAction): String =
-        when (action.promptMode()) {
+        if (action == NoteAiAction.StructureOnly) {
+            LosslessEditorHtmlSystemInstruction
+        } else when (action.promptMode()) {
             PromptMode.NormalChat -> NormalChatSystemInstruction
             PromptMode.FastNoteAction -> FastNoteSystemInstruction
             PromptMode.DeepAnalysis -> DeepAnalysisSystemInstruction
@@ -351,16 +378,17 @@ object AiPromptBuilder {
                 Remove obvious clutter only if it is formatting noise.
             """.trimIndent()
             NoteAiAction.StructureOnly -> """
-                Structure this note into polished, editor-safe HTML for premium study-note readability.
+                Structure this note into polished, editor-safe HTML for premium study-note readability while preserving the source text losslessly.
 
                 Absolute preservation rule:
-                Every meaningful original sentence, phrase, point, example, quote, Arabic phrase, transliteration, definition, evidence, and repeated wording must remain present in the output. Do not delete, summarise, shorten, merge away, deduplicate, paraphrase, or compress away content. Your job is to wrap and organise the existing content, not to rewrite it.
+                Every original word, sentence, paragraph, phrase, point, example, quote, Arabic phrase, transliteration, definition, evidence, reference, citation, code line, markdown meaning, and repeated wording must remain present in the output exactly as written. Do not delete, summarise, shorten, merge away, deduplicate, paraphrase, simplify, expand, infer, replace, or compress away content. Your job is to wrap and organise the existing content, not to rewrite it.
 
                 Formatting goal:
-                Improve organisation, hierarchy, scanability, and study-note readability while preserving the original body wording as closely as possible.
+                Format the note as if a professional document formatter copied the original text into a clean document and spent time improving the presentation without editing a single sentence.
+                Aim for the same visual organisation quality as Intelligent Structure: excellent hierarchy, clean sectioning, clear grouping, compact lists, readable paragraphs, blockquotes for obvious quotations, and premium study-note presentation.
 
                 You should:
-                - create headings/subheadings from existing phrases, terms, or concepts already present in the note
+                - create short headings/subheadings from existing phrases, terms, or concepts already present in the note, or neutral labels such as Definition, Evidence, Objection, Response, Example, Notes, Key Point, Comparison, or Conclusion when appropriate
                 - group related paragraphs into coherent sections
                 - use compact <ul> lists as the default for grouped concepts, assumptions, distinctions, categories, objections, evidences, consequences, examples, and related study points
                 - use <ol> only when the original content is genuinely ordered: explicit steps, chronology, first/second/third structures, procedures, or clear premise-to-conclusion chains
@@ -375,6 +403,8 @@ object AiPromptBuilder {
                 - use <blockquote> only for obvious quotations, cited passages, or important statements already present in the note
                 - preserve Arabic, Qur'anic text, transliteration, names, quotations, evidences, technical terms, spelling, diacritics, punctuation, and word order exactly
                 - preserve mixed Arabic/English text without translating or transliterating it
+                - split extremely long paragraphs into smaller paragraphs only at natural sentence boundaries and only without changing any wording
+                - keep code-like lines, citations, references, page numbers, URLs, and quoted text exactly intact
 
                 Do not:
                 - remove content under any circumstance
@@ -385,6 +415,7 @@ object AiPromptBuilder {
                 - create numbered lists for unrelated concepts, categories, definitions, examples, objections, explanations, or normal grouped study points
                 - leave obvious grouped items as line / blank space / line / blank space paragraphs
                 - wrap every short sentence as a separate paragraph when it belongs in a compact list
+                - change quotations, Arabic text, citations, references, markdown/code meaning, or technical wording
 
                 Output rules:
                 - Return only clean editor-safe HTML.
@@ -392,6 +423,7 @@ object AiPromptBuilder {
                 - No code fences.
                 - No explanation.
                 - Do not include <html>, <body>, <section>, <article>, CSS, or unsupported styles.
+                - Before finalising, silently check that every original sentence or line can still be found verbatim after removing HTML tags.
             """.trimIndent()
         }
 
@@ -453,7 +485,7 @@ object AiPromptBuilder {
             NoteAiAction.Ask -> "Answer my question about this note."
             NoteAiAction.ExplainNote -> "Explain this note clearly."
             NoteAiAction.GeneralAsk -> "Answer my question."
-            NoteAiAction.StructureOnly -> "Structure this note into clean editor-safe HTML. Preserve every meaningful word, sentence, point, example, quote, Arabic phrase, and repeated wording. Use compact bullet lists by default for grouped study points. Use numbered lists only for genuinely ordered sequences. Do not delete, summarise, shorten, or paraphrase any content."
+            NoteAiAction.StructureOnly -> "Format this note into polished editor-safe HTML like a professional document formatter. Preserve every original word, sentence, paragraph, quote, Arabic phrase, citation, reference, code line, and repeated wording exactly. Improve headings, spacing, hierarchy, bullet formatting, sectioning, blockquotes, and readability only. Do not delete, summarise, paraphrase, rewrite, simplify, merge away, expand, infer, or add content."
             NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
             NoteAiAction.CleanFormat -> "Clean and organise this note."
             NoteAiAction.FormatNote -> "Format this note."
@@ -499,7 +531,7 @@ object AiPromptBuilder {
             else -> when (action.promptMode()) {
                 PromptMode.NormalChat -> 0.45f
                 PromptMode.FastNoteAction -> 0.28f
-                PromptMode.DeepAnalysis -> if (model.isDeepModel || provider == NoteAiProvider.ChatGPT) 0.55f else 0.42f
+                PromptMode.DeepAnalysis -> if (model.isDeepModel || provider == NoteAiProvider.ChatGPT || provider == NoteAiProvider.Kimi) 0.55f else 0.42f
                 PromptMode.EditorHtml -> 0.18f
                 PromptMode.LocalOnly -> 0.0f
             }
@@ -518,11 +550,11 @@ object AiPromptBuilder {
             NoteAiAction.IntelligentStructure -> 4_500
             NoteAiAction.CleanFormat -> 3_000
             NoteAiAction.FormatNote -> 2_400
-            NoteAiAction.StructureOnly -> 12_000
+            NoteAiAction.StructureOnly -> 16_000
         }
         val multiplier = when {
             model.isDeepModel -> 1.25f
-            provider == NoteAiProvider.ChatGPT -> 1.1f
+            provider == NoteAiProvider.ChatGPT || provider == NoteAiProvider.Kimi -> 1.1f
             else -> 1.0f
         }
         return (base * multiplier).toInt()
@@ -559,7 +591,7 @@ object AiPromptBuilder {
         }
         val multiplier = when {
             model.isDeepModel -> 1.2f
-            provider == NoteAiProvider.ChatGPT -> 1.1f
+            provider == NoteAiProvider.ChatGPT || provider == NoteAiProvider.Kimi -> 1.1f
             else -> 1.0f
         }
         return (base * multiplier).toInt()

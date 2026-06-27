@@ -57,7 +57,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -84,6 +83,7 @@ import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
 import com.myvault.app.ui.screens.MemoriseShellScreen
+import com.myvault.app.ui.screens.PdfActivityFeedScreen
 import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.QuranReflectionsHubScreen
 import com.myvault.app.ui.screens.ReadingScreen
@@ -102,6 +102,7 @@ import com.myvault.app.ui.viewmodel.LibraryViewModel
 import com.myvault.app.ui.viewmodel.MemoriseViewModel
 import com.myvault.app.ui.viewmodel.NarrationViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
+import com.myvault.app.ui.viewmodel.PdfActivityFeedViewModel
 import com.myvault.app.ui.viewmodel.QuranReaderViewModel
 import com.myvault.app.ui.viewmodel.QuranReflectionsViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
@@ -134,6 +135,14 @@ fun VaultNavHost(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun switchWorkspace(label: String) {
+        val workspace = label.workspaceValue()
+        if (workspace == WORKSPACE_PERSONAL) {
+            selectedPersonalRootMode = VaultRootMode.Personal.name
+        }
+        shellViewModel.setWorkspace(workspace)
     }
 
     LaunchedEffect(pendingOpenNoteId) {
@@ -195,6 +204,11 @@ fun VaultNavHost(
                         VaultDestination.Reading.route(noteId)
                     },
                 )
+            }
+            val shareAiAnswerToNote: (String, String) -> Unit = { text, mode ->
+                homeViewModel.createNoteFromSharedText(text = text, mode = mode) { noteId ->
+                    navController.navigate(VaultDestination.Editor.route(noteId))
+                }
             }
             StudyLibraryPersonalShell(
                 workspace = preferences.workspace,
@@ -278,7 +292,7 @@ fun VaultNavHost(
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = ::switchWorkspace,
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = { folderId ->
@@ -307,6 +321,9 @@ fun VaultNavHost(
                         },
                         onFolderExpandedChange = { folderId, expanded ->
                             homeViewModel.setFolderExpanded(folderId, expanded)
+                        },
+                        onPinnedExpandedChange = { expanded ->
+                            homeViewModel.setPinnedExpanded(FOLDER_MODE_STUDY, expanded)
                         },
                         onDeleteFolderClick = { folderId ->
                             homeViewModel.deleteFolder(folderId)
@@ -345,6 +362,9 @@ fun VaultNavHost(
                         onOpenAttachmentsClick = {
                             navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_STUDY))
                         },
+                        onShareAiAnswerClick = { text ->
+                            shareAiAnswerToNote(text, FOLDER_MODE_STUDY)
+                        },
                         onQuranReflectionsClick = {
                             navController.navigate(VaultDestination.QuranReflections.route)
                         },
@@ -374,7 +394,7 @@ fun VaultNavHost(
                     QuranShellScreen(
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = ::switchWorkspace,
                         onThemeClick = {
                             shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -435,7 +455,7 @@ fun VaultNavHost(
                         uiState = memoriseState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = ::switchWorkspace,
                         onThemeClick = {
                             shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -469,7 +489,7 @@ fun VaultNavHost(
                         uiState = libraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = ::switchWorkspace,
                         onFolderClick = { folderId ->
                             navController.navigate(VaultDestination.LibraryFolder.route(folderId))
                         },
@@ -532,6 +552,12 @@ fun VaultNavHost(
                             }
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        onShareAiAnswerClick = { text ->
+                            shareAiAnswerToNote(text, FOLDER_MODE_STUDY)
+                        },
+                        onViewAllAnnotationsClick = {
+                            navController.navigate(VaultDestination.PdfActivityFeed.route("library"))
+                        },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         showFullFileTitles = preferences.showFullFileTitles,
                     )
@@ -543,7 +569,7 @@ fun VaultNavHost(
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = ::switchWorkspace,
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = {},
@@ -570,6 +596,9 @@ fun VaultNavHost(
                         },
                         onFolderExpandedChange = { folderId, expanded ->
                             homeViewModel.setFolderExpanded(folderId, expanded)
+                        },
+                        onPinnedExpandedChange = { expanded ->
+                            homeViewModel.setPinnedExpanded(FOLDER_MODE_PERSONAL, expanded)
                         },
                         onDeleteFolderClick = { folderId ->
                             homeViewModel.deleteFolder(folderId)
@@ -608,6 +637,9 @@ fun VaultNavHost(
                         onOpenAttachmentsClick = {
                             navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_PERSONAL))
                         },
+                        onShareAiAnswerClick = { text ->
+                            shareAiAnswerToNote(text, FOLDER_MODE_PERSONAL)
+                        },
                         onThemeClick = {
                             shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -633,7 +665,7 @@ fun VaultNavHost(
                         uiState = personalLibraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = { shellViewModel.setWorkspace(it.workspaceValue()) },
+                        onWorkspaceSelected = ::switchWorkspace,
                         onFolderClick = { folderId ->
                             navController.navigate(VaultDestination.LibraryFolder.route(folderId, FOLDER_MODE_PERSONAL_LIBRARY))
                         },
@@ -696,6 +728,12 @@ fun VaultNavHost(
                             }
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
+                        onShareAiAnswerClick = { text ->
+                            shareAiAnswerToNote(text, FOLDER_MODE_PERSONAL)
+                        },
+                        onViewAllAnnotationsClick = {
+                            navController.navigate(VaultDestination.PdfActivityFeed.route(FOLDER_MODE_PERSONAL_LIBRARY))
+                        },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         showFullFileTitles = preferences.showFullFileTitles,
                     )
@@ -713,6 +751,7 @@ fun VaultNavHost(
             ),
         ) {
             val viewModel: LibraryViewModel = hiltViewModel()
+            val homeViewModel: HomeViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val libraryMode = it.arguments?.getString("libraryMode") ?: "library"
             LibraryFolderScreen(
@@ -769,6 +808,12 @@ fun VaultNavHost(
                 onRemoveAttachmentTag = viewModel::removeAttachmentTag,
                 onAddAnnotationTag = viewModel::addAnnotationTag,
                 onRemoveAnnotationTag = viewModel::removeAnnotationTag,
+                onShareAiAnswerClick = { text ->
+                    val noteMode = if (libraryMode == FOLDER_MODE_PERSONAL_LIBRARY) FOLDER_MODE_PERSONAL else FOLDER_MODE_STUDY
+                    homeViewModel.createNoteFromSharedText(text = text, mode = noteMode) { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId))
+                    }
+                },
                 showFullFileTitles = preferences.showFullFileTitles,
             )
         }
@@ -814,7 +859,9 @@ fun VaultNavHost(
                 onMoveNoteClick = viewModel::moveNote,
                 onMoveNoteToModeClick = viewModel::moveNoteToMode,
                 onDeleteNoteClick = viewModel::deleteNote,
-                onSetNotePinnedClick = viewModel::setNotePinned,
+                onSetNotePinnedClick = { noteId, pinned ->
+                    viewModel.setNotePinned(noteId, pinned)
+                },
                 onSetNoteFolderPinnedClick = viewModel::setNoteFolderPinned,
                 onSetNoteFavouriteClick = viewModel::setNoteFavourite,
                 onCreateSubNoteClick = { parentNoteId ->
@@ -1142,6 +1189,47 @@ fun VaultNavHost(
                 },
             )
         }
+        composable(
+            route = VaultDestination.PdfActivityFeed.route,
+            arguments = listOf(
+                navArgument("libraryMode") {
+                    type = NavType.StringType
+                    defaultValue = "library"
+                }
+            )
+        ) {
+            val viewModel: PdfActivityFeedViewModel = hiltViewModel()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            PdfActivityFeedScreen(
+                uiState = uiState,
+                onBackClick = { navController.popBackStack() },
+                onToggleExpanded = viewModel::toggleExpanded,
+                onSearchQueryChange = viewModel::setSearchQuery,
+                onActivityClick = { attachmentId, pageIndex ->
+                    navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
+                },
+                onToggleSelection = viewModel::toggleSelection,
+                onClearSelection = viewModel::clearSelection,
+                onUpdateActivityDetails = viewModel::updateActivityDetails,
+                onDeleteSelected = viewModel::deleteSelected,
+                onCreateStudyNoteFromSelected = { onCreated ->
+                    viewModel.createStudyNoteFromSelected { noteId ->
+                        onCreated(noteId)
+                    }
+                },
+                onAskAiOnSelected = { onNav ->
+                    viewModel.askAiOnSelected { noteId, text ->
+                        onNav(noteId, text)
+                    }
+                },
+                onNavigateToEditor = { noteId ->
+                    navController.navigate(VaultDestination.Editor.route(noteId))
+                },
+                onNavigateToAskAi = { noteId, text ->
+                    navController.navigate(VaultDestination.AskAi.route(noteId, text))
+                }
+            )
+        }
         }
         AnimatedVisibility(
             visible = narrationState.isActive,
@@ -1412,9 +1500,8 @@ private fun FloatingBottomNavItem(
             )
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.sp,
-                    fontWeight = if (selected) FontWeight.W800 else FontWeight.W600,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = if (selected) FontWeight.W800 else FontWeight.W700,
                 ),
                 color = contentColor,
             )

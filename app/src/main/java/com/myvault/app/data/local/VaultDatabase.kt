@@ -21,6 +21,7 @@ import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.ai.home.HomeChatHistoryDao
 import com.myvault.app.ai.home.HomeChatHistoryEntity
+import com.myvault.app.ai.home.LibraryAiFileCacheEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.AiConversationEntity
 import com.myvault.app.data.local.entity.AiMessageEntity
@@ -69,8 +70,9 @@ import com.myvault.app.data.local.entity.TagEntity
         CourseStickyNoteEntity::class,
         CourseConceptCardEntity::class,
         HomeChatHistoryEntity::class,
+        LibraryAiFileCacheEntity::class,
     ],
-    version = 21,
+    version = 25,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -456,6 +458,71 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS library_ai_file_cache (
+                        attachmentId TEXT NOT NULL,
+                        provider TEXT NOT NULL,
+                        fileResourceName TEXT NOT NULL,
+                        fileUri TEXT NOT NULL,
+                        mimeType TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        localPath TEXT NOT NULL,
+                        sizeBytes INTEGER NOT NULL,
+                        uploadedAt INTEGER NOT NULL,
+                        expiresAt INTEGER NOT NULL,
+                        PRIMARY KEY(attachmentId, provider)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_library_ai_file_cache_expiresAt ON library_ai_file_cache(expiresAt)")
+            }
+        }
+
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE home_chat_history ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE home_chat_history ADD COLUMN messagesJson TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE home_chat_history SET updatedAt = createdAt WHERE updatedAt = 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_home_chat_history_updatedAt ON home_chat_history(updatedAt)")
+            }
+        }
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE library_ai_file_cache ADD COLUMN lastVerifiedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE library_ai_file_cache SET lastVerifiedAt = uploadedAt WHERE lastVerifiedAt = 0")
+            }
+        }
+
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS notes_fts")
+                db.execSQL("DROP TRIGGER IF EXISTS notes_fts_after_insert")
+                db.execSQL("DROP TRIGGER IF EXISTS notes_fts_after_delete")
+                db.execSQL("DROP TRIGGER IF EXISTS notes_fts_after_update")
+                db.execSQL("DROP TRIGGER IF EXISTS room_fts_content_sync_notes_fts_BEFORE_UPDATE")
+                db.execSQL("DROP TRIGGER IF EXISTS room_fts_content_sync_notes_fts_BEFORE_DELETE")
+                db.execSQL("DROP TRIGGER IF EXISTS room_fts_content_sync_notes_fts_AFTER_UPDATE")
+                db.execSQL("DROP TRIGGER IF EXISTS room_fts_content_sync_notes_fts_AFTER_INSERT")
+                db.execSQL(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING FTS4(
+                        title TEXT NOT NULL,
+                        bodyPlainText TEXT NOT NULL,
+                        content='notes',
+                        tokenize=unicode61,
+                        prefix='2,3,4'
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')")
+                createNotesFtsTriggers(db)
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -477,6 +544,43 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_18_19,
             MIGRATION_19_20,
             MIGRATION_20_21,
+            MIGRATION_21_22,
+            MIGRATION_22_23,
+            MIGRATION_23_24,
+            MIGRATION_24_25,
         )
+
+        private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notes_fts_BEFORE_UPDATE BEFORE UPDATE ON notes BEGIN
+                    DELETE FROM notes_fts WHERE docid=OLD.rowid;
+                END
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notes_fts_BEFORE_DELETE BEFORE DELETE ON notes BEGIN
+                    DELETE FROM notes_fts WHERE docid=OLD.rowid;
+                END
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notes_fts_AFTER_UPDATE AFTER UPDATE ON notes BEGIN
+                    INSERT INTO notes_fts(docid, title, bodyPlainText)
+                    VALUES (NEW.rowid, NEW.title, NEW.bodyPlainText);
+                END
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notes_fts_AFTER_INSERT AFTER INSERT ON notes BEGIN
+                    INSERT INTO notes_fts(docid, title, bodyPlainText)
+                    VALUES (NEW.rowid, NEW.title, NEW.bodyPlainText);
+                END
+                """.trimIndent(),
+            )
+        }
     }
 }

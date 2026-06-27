@@ -1,6 +1,7 @@
 package com.myvault.app.data.openai
 
 import android.util.Log
+import com.myvault.app.BuildConfig
 
 object OpenAiRequestGuard {
     private const val LogTag = "MyVaultOpenAI"
@@ -26,18 +27,20 @@ object OpenAiRequestGuard {
         cacheStatus: String,
     ) {
         validate(featureName = featureName, endpointUrl = endpointUrl, model = model)
-        Log.i(
-            LogTag,
-            buildLogMessage(
-                event = "cache",
-                endpointUrl = endpointUrl,
-                model = model,
-                featureName = featureName,
-                noteId = noteId,
-                characterCount = characterCount,
-                cacheStatus = cacheStatus,
-            ),
-        )
+        if (BuildConfig.DEBUG) {
+            Log.i(
+                LogTag,
+                buildLogMessage(
+                    event = "cache",
+                    endpointUrl = endpointUrl,
+                    model = model,
+                    featureName = featureName,
+                    noteId = noteId,
+                    characterCount = characterCount,
+                    cacheStatus = cacheStatus,
+                ),
+            )
+        }
     }
 
     fun validateAndLogRequest(
@@ -49,18 +52,20 @@ object OpenAiRequestGuard {
         cacheStatus: String,
     ) {
         validate(featureName = featureName, endpointUrl = endpointUrl, model = model)
-        Log.w(
-            LogTag,
-            buildLogMessage(
-                event = "request",
-                endpointUrl = endpointUrl,
-                model = model,
-                featureName = featureName,
-                noteId = noteId,
-                characterCount = characterCount,
-                cacheStatus = cacheStatus,
-            ),
-        )
+        if (BuildConfig.DEBUG) {
+            Log.w(
+                LogTag,
+                buildLogMessage(
+                    event = "request",
+                    endpointUrl = endpointUrl,
+                    model = model,
+                    featureName = featureName,
+                    noteId = noteId,
+                    characterCount = characterCount,
+                    cacheStatus = cacheStatus,
+                ),
+            )
+        }
     }
 
     private fun validate(featureName: String, endpointUrl: String, model: String) {

@@ -423,7 +423,8 @@ class QuranAudioRepository @Inject constructor(
 
     private fun resolveAudioUrl(rawUrl: String): String {
         return when {
-            rawUrl.startsWith("http://") || rawUrl.startsWith("https://") -> rawUrl
+            rawUrl.startsWith("https://") -> rawUrl
+            rawUrl.startsWith("http://") -> "https://${rawUrl.removePrefix("http://")}"
             rawUrl.startsWith("//") -> "https:$rawUrl"
             else -> "$verseAudioBaseUrl/$rawUrl"
         }

@@ -32,4 +32,7 @@ sealed class VaultDestination(val route: String, val label: String) {
         fun route(mode: String) = "attachments/$mode"
     }
     data object Settings : VaultDestination("settings", "Settings")
+    data object PdfActivityFeed : VaultDestination("pdf-activity-feed?libraryMode={libraryMode}", "Activity Feed") {
+        fun route(libraryMode: String = "library") = "pdf-activity-feed?libraryMode=$libraryMode"
+    }
 }

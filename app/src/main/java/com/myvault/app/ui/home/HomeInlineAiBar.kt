@@ -103,7 +103,7 @@ fun HomeInlineAiBar(
                 ) {
                     Icon(
                         Icons.Rounded.Add,
-                        contentDescription = if (attachmentTrayOpen) "Close notes" else "Attach notes",
+                        contentDescription = if (attachmentTrayOpen) "Close attachments" else "Attach",
                         modifier = Modifier.size(16.dp),
                         tint = if (attachmentTrayOpen) colors.accent else colors.textSecondary,
                     )
@@ -180,11 +180,15 @@ fun SourceCapsule(type: HomeAiAttachableType) {
         HomeAiAttachableType.Study -> colors.accentSoft
         HomeAiAttachableType.Course -> colors.warningSoft
         HomeAiAttachableType.ConceptCard -> colors.accentSoft
+        HomeAiAttachableType.Pdf -> colors.warningSoft
+        HomeAiAttachableType.CourseContext -> colors.accentSoft
     }
     val content = when (type) {
         HomeAiAttachableType.Study -> colors.accent
         HomeAiAttachableType.Course -> colors.warning
         HomeAiAttachableType.ConceptCard -> colors.text
+        HomeAiAttachableType.Pdf -> colors.warning
+        HomeAiAttachableType.CourseContext -> colors.accent
     }
     Text(
         text = type.label,

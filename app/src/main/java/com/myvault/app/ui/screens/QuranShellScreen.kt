@@ -114,6 +114,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.myvault.app.BuildConfig
 import com.myvault.app.R
 import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReflectionItem
@@ -1413,7 +1414,9 @@ private fun AyahRow(
             )
             buildMemorizationDisplayText(base, memorizationConcealAmount)
         }.getOrElse {
-            Log.w("QuranShellScreen", "Falling back to plain Arabic rendering for ${ayah.verseKey}", it)
+            if (BuildConfig.DEBUG) {
+                Log.w("QuranShellScreen", "Falling back to plain Arabic rendering for ${ayah.verseKey}", it)
+            }
             buildMemorizationDisplayText(
                 buildQuranArabicText(
                 text = ayah.arabicText,

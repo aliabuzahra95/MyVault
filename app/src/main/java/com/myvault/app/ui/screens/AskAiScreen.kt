@@ -544,6 +544,14 @@ private fun CompactActionChip(label: String, enabled: Boolean, onClick: () -> Un
 
 private fun NoteAiModel.chipLabel(provider: NoteAiProvider): String =
     when (this) {
-        NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
-        NoteAiModel.Gemini25Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+        NoteAiModel.Gemini25Flash -> when (provider) {
+            NoteAiProvider.ChatGPT -> "GPT Mini"
+            NoteAiProvider.Kimi -> "Kimi Fast"
+            NoteAiProvider.Gemini -> "Gemini Flash"
+        }
+        NoteAiModel.Gemini25Pro -> when (provider) {
+            NoteAiProvider.ChatGPT -> "GPT Full"
+            NoteAiProvider.Kimi -> "Kimi Smart"
+            NoteAiProvider.Gemini -> "Gemini Pro"
+        }
     }

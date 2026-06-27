@@ -88,7 +88,7 @@ fun HomeAiAttachmentPicker(
                     )
                     if (query.isBlank()) {
                         Text(
-                            text = "Search note titles...",
+                            text = "Search titles...",
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textMuted,
                         )
@@ -104,7 +104,7 @@ fun HomeAiAttachmentPicker(
                     if (filteredItems.isEmpty()) {
                         item(key = "empty") {
                             Text(
-                                text = "No matching note titles",
+                                text = "No matching titles",
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colors.textMuted,

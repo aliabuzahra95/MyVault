@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
@@ -198,7 +199,9 @@ class AttachmentViewerViewModel @Inject constructor(
                 bottom = bottom,
                 color = color,
             )
-            Log.d("MyVaultPdfHighlight", "ViewModel highlight insert result=$saved attachmentId=$attachmentId")
+            if (BuildConfig.DEBUG) {
+                Log.d("MyVaultPdfHighlight", "ViewModel highlight insert result=$saved attachmentId=$attachmentId")
+            }
             onSaved(saved)
         }
     }

@@ -20,6 +20,7 @@ class LibrarySnapshotRepository @Inject constructor(
     @param:ApplicationContext context: Context,
 ) {
     private val preferences = context.getSharedPreferences("library_startup_snapshot", Context.MODE_PRIVATE)
+    private val lastSavedJsonByKey = mutableMapOf<String, String>()
 
     fun load(mode: String, folderId: String?): LibraryUiState? =
         runCatching {
@@ -45,7 +46,19 @@ class LibrarySnapshotRepository @Inject constructor(
             importMessage = null,
             duplicatePdfImport = null,
         )
-        preferences.edit().putString(keyFor(mode, folderId), snapshot.toJson().toString()).apply()
+        val key = keyFor(mode, folderId)
+        val encoded = snapshot.toJson().toString()
+        val changed = synchronized(lastSavedJsonByKey) {
+            if (lastSavedJsonByKey[key] == encoded) {
+                false
+            } else {
+                lastSavedJsonByKey[key] = encoded
+                true
+            }
+        }
+        if (changed) {
+            preferences.edit().putString(key, encoded).apply()
+        }
     }
 
     private fun keyFor(mode: String, folderId: String?): String {

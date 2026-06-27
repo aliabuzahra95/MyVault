@@ -22,7 +22,13 @@ class SearchRepository @Inject constructor(
     fun searchNotes(query: String): Flow<List<SearchResultData>> {
         if (query.isBlank()) return flowOf(emptyList())
         val normalizedQuery = query.trim()
-        return searchDao.searchActiveNotes(normalizedQuery.toLikePattern(), limit = 40)
+        val ftsQuery = normalizedQuery.toFtsQuery()
+        val noteResults = if (ftsQuery != null) {
+            searchDao.searchNotes(ftsQuery, limit = 40)
+        } else {
+            searchDao.searchActiveNotes(normalizedQuery.toLikePattern(), limit = 40)
+        }
+        return noteResults
             .map { notes ->
                 notes.map {
                     SearchResultData(
@@ -55,6 +61,17 @@ class SearchRepository @Inject constructor(
 
 private fun String.toLikePattern(): String =
     "%${replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")}%"
+
+private fun String.toFtsQuery(): String? {
+    val terms = Regex("[\\p{L}\\p{N}]+")
+        .findAll(this)
+        .map { it.value }
+        .filter { it.isNotBlank() }
+        .take(8)
+        .toList()
+    if (terms.isEmpty()) return null
+    return terms.joinToString(separator = " ") { "$it*" }
+}
 
 private fun String.compactSearchSnippet(query: String, radius: Int = 88): String {
     val clean = replace(Regex("\\s+"), " ").trim()

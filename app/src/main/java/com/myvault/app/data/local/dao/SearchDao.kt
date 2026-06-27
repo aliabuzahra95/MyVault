@@ -1,10 +1,7 @@
 package com.myvault.app.data.local.dao
 
 import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.myvault.app.data.local.entity.NoteFtsEntity
 import kotlinx.coroutines.flow.Flow
 
 data class NoteSearchResult(
@@ -18,13 +15,13 @@ data class NoteSearchResult(
 interface SearchDao {
     @Query(
         """
-        SELECT notes.id AS id, notes.title AS title, notes.bodyPlainText AS bodyPlainText, folders.name AS folderName
+        SELECT notes.id AS id, COALESCE(notes.title, '') AS title, COALESCE(notes.bodyPlainText, '') AS bodyPlainText, folders.name AS folderName
         FROM notes
         LEFT JOIN folders ON folders.id = notes.folderId
         WHERE notes.deletedAt IS NULL
         AND (
-            notes.title LIKE :pattern ESCAPE '\' COLLATE NOCASE OR
-            notes.bodyPlainText LIKE :pattern ESCAPE '\' COLLATE NOCASE
+            COALESCE(notes.title, '') COLLATE NOCASE LIKE :pattern ESCAPE char(92) OR
+            COALESCE(notes.bodyPlainText, '') COLLATE NOCASE LIKE :pattern ESCAPE char(92)
         )
         ORDER BY notes.updatedAt DESC
         LIMIT :limit
@@ -34,16 +31,15 @@ interface SearchDao {
 
     @Query(
         """
-        SELECT notes.id AS id, notes.title AS title, notes.bodyPlainText AS bodyPlainText, folders.name AS folderName
+        SELECT notes.id AS id, COALESCE(notes.title, '') AS title, COALESCE(notes.bodyPlainText, '') AS bodyPlainText, folders.name AS folderName
         FROM notes_fts
-        INNER JOIN notes ON notes_fts.title = notes.title
+        INNER JOIN notes ON notes_fts.rowid = notes.rowid
         LEFT JOIN folders ON folders.id = notes.folderId
         WHERE notes_fts MATCH :query
+        AND notes.deletedAt IS NULL
         ORDER BY notes.updatedAt DESC
+        LIMIT :limit
         """,
     )
-    fun searchNotes(query: String): Flow<List<NoteSearchResult>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertFts(notes: List<NoteFtsEntity>)
+    fun searchNotes(query: String, limit: Int): Flow<List<NoteSearchResult>>
 }

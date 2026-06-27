@@ -1150,7 +1150,7 @@ fun EditorScreen(
             onRun = { action ->
                 structureOnlyNotice = null
                 val request = when (action) {
-                    NoteAiAction.StructureOnly -> "Structure this note into clean editor-safe HTML. Preserve every meaningful word, sentence, point, example, quote, Arabic phrase, and repeated wording. Use compact bullet lists by default for grouped study points. Use numbered lists only for genuinely ordered sequences. Do not delete, summarise, shorten, or paraphrase any content."
+                    NoteAiAction.StructureOnly -> "Format this note into polished editor-safe HTML like a professional document formatter. Preserve every original word, sentence, paragraph, quote, Arabic phrase, citation, reference, code line, and repeated wording exactly. Improve headings, spacing, hierarchy, bullet formatting, sectioning, blockquotes, and readability only. Do not delete, summarise, paraphrase, rewrite, simplify, merge away, expand, infer, or add content."
                     NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
                     else -> action.displayName
                 }
@@ -1457,8 +1457,8 @@ private fun IntelligentStructureSheet(
                 Box(modifier = Modifier.height(14.dp).width(1.dp).background(colors.borderStrong))
                 NoteAiModel.entries.forEach { model ->
                     val label = when (model) {
-                        NoteAiModel.Gemini25Flash -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
-                        NoteAiModel.Gemini25Pro -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+                        NoteAiModel.Gemini25Flash -> aiState.provider.noteAiModelLabel(fast = true)
+                        NoteAiModel.Gemini25Pro -> aiState.provider.noteAiModelLabel(fast = false)
                     }
                     CompactChip(
                         label = label,
@@ -1480,7 +1480,7 @@ private fun IntelligentStructureSheet(
                     verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
                     Text(
-                        text = "Choose Structure Only when you want AI to organise the note strongly without changing the wording. Choose Intelligent Structure when you want stronger restructuring.",
+                        text = "Choose Structure Only for lossless formatting: stronger hierarchy, spacing, headings and lists without changing your wording. Choose Intelligent Structure when you want AI to rewrite and reorganise more freely.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.textSecondary,
                     )
@@ -1689,8 +1689,8 @@ fun AskAiSheet(
                 }
                 NoteAiModel.entries.forEach { model ->
                     val label = when (model) {
-                        NoteAiModel.Gemini25Flash -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
-                        NoteAiModel.Gemini25Pro -> if (aiState.provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+                        NoteAiModel.Gemini25Flash -> aiState.provider.noteAiModelLabel(fast = true)
+                        NoteAiModel.Gemini25Pro -> aiState.provider.noteAiModelLabel(fast = false)
                     }
                     AiActionChip(
                         label = label,
@@ -1907,8 +1907,8 @@ private fun SelectedTextAiSheet(
                             color = colors.text,
                         )
                         val label = when (model) {
-                            NoteAiModel.Gemini25Flash -> if (provider == NoteAiProvider.ChatGPT) "GPT Mini" else "Gemini Flash"
-                            NoteAiModel.Gemini25Pro -> if (provider == NoteAiProvider.ChatGPT) "GPT Full" else "Gemini Pro"
+                            NoteAiModel.Gemini25Flash -> provider.noteAiModelLabel(fast = true)
+                            NoteAiModel.Gemini25Pro -> provider.noteAiModelLabel(fast = false)
                         }
                         Text(
                             text = "${provider.displayName} · $label",
@@ -3004,6 +3004,13 @@ private fun decodeEditorPreviewBitmap(localPath: String, maxSize: Int): Bitmap? 
         }
         BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sampleSize })
     }.getOrNull()
+
+private fun NoteAiProvider.noteAiModelLabel(fast: Boolean): String =
+    when (this) {
+        NoteAiProvider.ChatGPT -> if (fast) "GPT Mini" else "GPT Full"
+        NoteAiProvider.Kimi -> if (fast) "Kimi Fast" else "Kimi Smart"
+        NoteAiProvider.Gemini -> if (fast) "Gemini Flash" else "Gemini Pro"
+    }
 
 private fun TextFieldValue.activeMentionRange(): TextRange? {
     if (!selection.collapsed) return null

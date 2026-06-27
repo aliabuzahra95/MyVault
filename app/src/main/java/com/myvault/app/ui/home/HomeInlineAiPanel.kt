@@ -48,12 +48,15 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -66,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -80,6 +84,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -96,6 +101,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import kotlin.math.roundToInt
 import com.myvault.app.ai.home.HomeAiAttachableItem
+import com.myvault.app.ai.home.HomeAiAttachmentScope
 import com.myvault.app.ai.home.HomeAiModelMode
 import com.myvault.app.ai.home.HomeAiPanelMode
 import com.myvault.app.ai.home.HomeAiProvider
@@ -107,7 +113,6 @@ import com.myvault.app.ai.home.HomeInlineAiState
 import com.myvault.app.ui.components.SettingsRow
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
-import kotlinx.coroutines.delay
 
 @Composable
 fun HomeInlineAiPanel(
@@ -120,22 +125,26 @@ fun HomeInlineAiPanel(
     onStopClick: () -> Unit,
     onProviderSelected: (HomeAiProvider) -> Unit,
     onModelModeSelected: (HomeAiModelMode) -> Unit,
+    onWebSearchToggle: () -> Unit,
     onSettingsClick: () -> Unit,
     onClearHistoryClick: () -> Unit,
     onHistoryClick: (String) -> Unit,
     onRetryClick: () -> Unit,
     onDismissErrorClick: () -> Unit,
+    onShareAnswerClick: (String) -> Unit,
+    onSpeakAnswerClick: (String, String) -> Unit,
     onClose: () -> Unit,
     onPickerToggle: (HomeAiAttachableItem) -> Unit,
     onPickerClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
+    val clipboardManager = LocalClipboardManager.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val conversationScrollState = rememberScrollState()
-    val aiBusy = state.isStreaming
+    val conversationListState = rememberLazyListState()
+    val aiBusy = state.isStreaming || state.isPreparingAttachments
     val trayOpen = state.panelMode == HomeAiPanelMode.AttachNotes
     val streamScrollBucket = state.currentStreamingAnswer.length / 320
 
@@ -144,36 +153,44 @@ fun HomeInlineAiPanel(
         keyboard?.hide()
         onClose()
     }
+    val handleBack = {
+        if (state.panelMode == HomeAiPanelMode.Chat) closePanel() else onPickerClose()
+    }
 
     BackHandler(enabled = state.isPanelOpen) {
-        if (state.panelMode == HomeAiPanelMode.Chat) closePanel() else onPickerClose()
+        handleBack()
     }
 
     LaunchedEffect(state.isPanelOpen) {
         if (state.isPanelOpen) {
-            delay(360)
-            runCatching {
-                focusRequester.requestFocus()
-                keyboard?.show()
-            }
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
         } else {
             focusManager.clearFocus(force = true)
             keyboard?.hide()
         }
     }
 
+    LaunchedEffect(state.panelMode) {
+        if (state.panelMode != HomeAiPanelMode.Chat) {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+        }
+    }
+
     LaunchedEffect(state.chatMessages.size, state.isStreaming, streamScrollBucket, state.error) {
-        conversationScrollState.animateScrollTo(conversationScrollState.maxValue)
+        val lastIndex = conversationListState.layoutInfo.totalItemsCount - 1
+        if (lastIndex >= 0) conversationListState.animateScrollToItem(lastIndex)
     }
 
     if (!state.isPanelOpen) return
 
     Dialog(
-        onDismissRequest = closePanel,
+        onDismissRequest = handleBack,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
-            dismissOnBackPress = false,
+            dismissOnBackPress = true,
         ),
     ) {
         AnimatedVisibility(
@@ -192,66 +209,68 @@ fun HomeInlineAiPanel(
             modifier = Modifier.fillMaxSize(),
             containerColor = colors.bg,
             bottomBar = {
-                Column(modifier = Modifier.fillMaxWidth().imePadding()) {
-                    if (state.attachedItems.isNotEmpty()) {
-                        Surface(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            color = colors.elevated,
-                            shape = VaultShapes.sm,
-                            border = BorderStroke(1.dp, colors.border),
-                        ) {
-                            LazyRow(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                if (state.panelMode != HomeAiPanelMode.Settings) {
+                    Column(modifier = Modifier.fillMaxWidth().imePadding()) {
+                        if (state.attachedItems.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                color = colors.elevated,
+                                shape = VaultShapes.sm,
+                                border = BorderStroke(1.dp, colors.border),
                             ) {
-                                items(state.attachedItems, key = { "${it.type}:${it.id}" }) { item ->
-                                    VaultAiChip(
-                                        title = item.title,
-                                        type = null,
-                                        onRemove = { onDetachClick(item) },
-                                    )
+                                LazyRow(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    items(state.attachedItems, key = { "${it.type}:${it.id}" }) { item ->
+                                        VaultAiChip(
+                                            title = item.title,
+                                            type = null,
+                                            onRemove = { onDetachClick(item) },
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    AnimatedVisibility(
-                        visible = trayOpen,
-                        enter = expandVertically(
-                            animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
-                            expandFrom = Alignment.Bottom,
-                        ) + fadeIn(),
-                        exit = shrinkVertically(
-                            animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
-                            shrinkTowards = Alignment.Bottom,
-                        ) + fadeOut(),
-                    ) {
-                        HomeAiAttachmentPicker(
-                            items = state.pickerItems,
-                            selectedItems = state.attachedItems,
-                            onToggle = onPickerToggle,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(216.dp)
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                        AnimatedVisibility(
+                            visible = trayOpen,
+                            enter = expandVertically(
+                                animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
+                                expandFrom = Alignment.Bottom,
+                            ) + fadeIn(),
+                            exit = shrinkVertically(
+                                animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
+                                shrinkTowards = Alignment.Bottom,
+                            ) + fadeOut(),
+                        ) {
+                            HomeAiAttachmentPicker(
+                                items = state.pickerItems,
+                                selectedItems = state.attachedItems,
+                                onToggle = onPickerToggle,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(216.dp)
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
+                        }
+
+                        HomeInlineAiBar(
+                            input = state.chatInputText,
+                            suggestions = state.suggestedTitles,
+                            isStreaming = aiBusy,
+                            attachmentTrayOpen = trayOpen,
+                            focusRequester = focusRequester,
+                            onInputChange = onInputChange,
+                            onAttachClick = {
+                                if (trayOpen) onPickerClose() else onAttachClick()
+                            },
+                            onSuggestionClick = onSuggestionClick,
+                            onSendClick = onSendClick,
+                            onStopClick = onStopClick,
                         )
                     }
-
-                    HomeInlineAiBar(
-                        input = state.chatInputText,
-                        suggestions = state.suggestedTitles,
-                        isStreaming = state.isStreaming,
-                        attachmentTrayOpen = trayOpen,
-                        focusRequester = focusRequester,
-                        onInputChange = onInputChange,
-                        onAttachClick = {
-                            if (trayOpen) onPickerClose() else onAttachClick()
-                        },
-                        onSuggestionClick = onSuggestionClick,
-                        onSendClick = onSendClick,
-                        onStopClick = onStopClick,
-                    )
                 }
             },
         ) { innerPadding ->
@@ -277,7 +296,8 @@ fun HomeInlineAiPanel(
                         Text(
                             text = when {
                                 state.attachedItems.isNotEmpty() -> state.attachedItems.first().title
-                                else -> "Home"
+                                state.attachmentScope == HomeAiAttachmentScope.LibraryPdfs -> "Library PDFs"
+                                else -> "Study"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = colors.textMuted,
@@ -285,7 +305,13 @@ fun HomeInlineAiPanel(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    IconButton(onClick = onSettingsClick) {
+                    IconButton(
+                        onClick = {
+                            focusManager.clearFocus(force = true)
+                            keyboard?.hide()
+                            onSettingsClick()
+                        },
+                    ) {
                         Icon(Icons.Rounded.Settings, contentDescription = "AI settings", tint = colors.textSecondary)
                     }
                     if (state.chatMessages.isNotEmpty()) {
@@ -337,53 +363,80 @@ fun HomeInlineAiPanel(
                             enabled = !aiBusy,
                         ) { onModelModeSelected(mode) }
                     }
+                    Box(modifier = Modifier.height(14.dp).width(1.dp).background(colors.borderStrong))
+                    CompactHomeAiChip(
+                        label = "Web",
+                        active = state.webSearchEnabled,
+                        enabled = !aiBusy,
+                        onClick = onWebSearchToggle,
+                    )
                 }
 
-                Column(
+                LazyColumn(
+                    state = conversationListState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(conversationScrollState)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     if (state.chatMessages.isEmpty() && !aiBusy && state.error == null) {
-                        Text(
-                            text = "Ask naturally. Use the prompt box below for custom questions.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.textMuted,
-                        )
+                        item(key = "empty") {
+                            Text(
+                                text = "Ask naturally. Use the prompt box below for custom questions.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.textMuted,
+                            )
+                        }
                     }
                     state.warning?.let { warning ->
-                        Text(
-                            text = warning,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                            color = colors.warning,
-                            modifier = Modifier.padding(4.dp),
+                        item(key = "warning") {
+                            Text(
+                                text = warning,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
+                                color = colors.warning,
+                                modifier = Modifier.padding(4.dp),
+                            )
+                        }
+                    }
+                    items(state.chatMessages, key = { it.id }) { message ->
+                        HomeAskAiChatBubble(
+                            message = message,
+                            onCopyClick = { clipboardManager.setText(AnnotatedString(message.text)) },
+                            onShareClick = { onShareAnswerClick(message.text) },
+                            onSpeakClick = { onSpeakAnswerClick(message.id, message.text) },
                         )
                     }
-                    state.chatMessages.forEach { message ->
-                        HomeAskAiChatBubble(message = message)
-                    }
                     if (state.isStreaming && state.currentStreamingAnswer.isNotBlank()) {
-                        HomeAskAiStreamingBubble(content = state.currentStreamingAnswer)
+                        item(key = "streaming_answer") {
+                            HomeAskAiStreamingBubble(content = state.currentStreamingAnswer)
+                        }
                     }
                     if (aiBusy && state.currentStreamingAnswer.isBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.accent)
-                            Text("Thinking...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                        item(key = "busy") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.accent)
+                                Text(
+                                    if (state.isPreparingAttachments) "Preparing PDF..." else "Thinking...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.textSecondary,
+                                )
+                            }
                         }
                     }
                     state.error?.let { error ->
-                        Text(
-                            text = error.userMessage,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                            color = colors.warning,
-                            modifier = Modifier.padding(4.dp),
-                        )
+                        item(key = "error") {
+                            Text(
+                                text = error.userMessage,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
+                                color = colors.warning,
+                                modifier = Modifier.padding(4.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -414,7 +467,12 @@ private fun HomeAskAiStreamingBubble(content: String) {
 }
 
 @Composable
-private fun HomeAskAiChatBubble(message: HomeInlineAiMessage) {
+private fun HomeAskAiChatBubble(
+    message: HomeInlineAiMessage,
+    onCopyClick: () -> Unit,
+    onShareClick: () -> Unit,
+    onSpeakClick: () -> Unit,
+) {
     val colors = VaultThemeTokens.colors
     val isUser = message.role == HomeInlineAiRole.User
     Row(
@@ -435,11 +493,84 @@ private fun HomeAskAiChatBubble(message: HomeInlineAiMessage) {
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                 }
-                RichMarkdownText(
-                    text = message.text,
-                    color = if (message.role == HomeInlineAiRole.Error) colors.warning else colors.text,
-                )
+                if (!isUser && message.role == HomeInlineAiRole.Assistant) {
+                    SelectionContainer {
+                        RichMarkdownText(
+                            text = message.text,
+                            color = colors.text,
+                        )
+                    }
+                    AskAiAnswerActions(
+                        onCopyClick = onCopyClick,
+                        onShareClick = onShareClick,
+                        onSpeakClick = onSpeakClick,
+                    )
+                } else {
+                    RichMarkdownText(
+                        text = message.text,
+                        color = if (message.role == HomeInlineAiRole.Error) colors.warning else colors.text,
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun AskAiAnswerActions(
+    onCopyClick: () -> Unit,
+    onShareClick: () -> Unit,
+    onSpeakClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier.padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AskAiAnswerActionButton(
+            label = "Copy",
+            icon = Icons.Rounded.ContentCopy,
+            onClick = onCopyClick,
+        )
+        AskAiAnswerActionButton(
+            label = "Share",
+            icon = Icons.Rounded.Share,
+            onClick = onShareClick,
+        )
+        AskAiAnswerActionButton(
+            label = "Listen",
+            icon = Icons.Rounded.VolumeUp,
+            onClick = onSpeakClick,
+        )
+    }
+}
+
+@Composable
+private fun AskAiAnswerActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        color = colors.elevated,
+        shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, colors.border),
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = colors.textSecondary)
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700),
+                color = colors.textSecondary,
+            )
         }
     }
 }
@@ -736,74 +867,91 @@ private fun HomeInlineAiSettingsContent(
     var modelDialogOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
-        Text(
-            text = "AI SETTINGS",
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.accent,
-        )
-        SettingsRow(
-            icon = Icons.Rounded.AutoAwesome,
-            label = "Provider",
-            value = selectedProvider.label,
-            onClick = { providerDialogOpen = true },
-        )
-        SettingsRow(
-            icon = Icons.Rounded.Settings,
-            label = "Model",
-            value = selectedModelMode.label,
-            onClick = { modelDialogOpen = true },
-        )
-        SettingsRow(
-            icon = Icons.Rounded.Lock,
-            label = "Key status",
-            value = maskedKeyStatus.substringAfter(": ", maskedKeyStatus).ifBlank { "Not configured" },
-        )
-        SettingsRow(
-            icon = Icons.Rounded.Add,
-            label = "New conversation",
-            value = if (confirmClear) "Tap again to clear screen" else "Keeps saved history",
-            onClick = {
-                if (confirmClear) {
-                    onClearHistoryClick()
-                    confirmClear = false
-                } else {
-                    confirmClear = true
-                }
-            },
-        )
-        if (resolvedModelId.isNotBlank()) {
+        item(key = "settings_title") {
             Text(
-                text = "Model: $resolvedModelId",
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                text = "AI SETTINGS",
+                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.accent,
             )
         }
-
-        Text(
-            text = "CONVERSATION HISTORY",
-            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.accent,
-        )
-        if (historyItems.isEmpty()) {
-            Text(
-                text = "No saved Home AI conversations yet.",
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                color = colors.textMuted,
+        item(key = "provider") {
+            SettingsRow(
+                icon = Icons.Rounded.AutoAwesome,
+                label = "Provider",
+                value = selectedProvider.label,
+                onClick = { providerDialogOpen = true },
             )
+        }
+        item(key = "model") {
+            SettingsRow(
+                icon = Icons.Rounded.Settings,
+                label = "Model",
+                value = selectedModelMode.label,
+                onClick = { modelDialogOpen = true },
+            )
+        }
+        item(key = "key_status") {
+            SettingsRow(
+                icon = Icons.Rounded.Lock,
+                label = "Key status",
+                value = maskedKeyStatus.substringAfter(": ", maskedKeyStatus).ifBlank { "Not configured" },
+            )
+        }
+        item(key = "new_conversation") {
+            SettingsRow(
+                icon = Icons.Rounded.Add,
+                label = "New conversation",
+                value = if (confirmClear) "Tap again to clear screen" else "Keeps saved history",
+                onClick = {
+                    if (confirmClear) {
+                        onClearHistoryClick()
+                        confirmClear = false
+                    } else {
+                        confirmClear = true
+                    }
+                },
+            )
+        }
+        if (resolvedModelId.isNotBlank()) {
+            item(key = "resolved_model") {
+                Text(
+                    text = "Model: $resolvedModelId",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        item(key = "history_title") {
+            Text(
+                text = "CONVERSATION HISTORY",
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.accent,
+            )
+        }
+        if (historyItems.isEmpty()) {
+            item(key = "history_empty") {
+                Text(
+                    text = "No saved conversations yet.",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    color = colors.textMuted,
+                )
+            }
         } else {
-            historyItems.forEach { item ->
+            items(historyItems, key = { it.id }) { item ->
                 HomeAiHistoryCard(item = item, onClick = { onHistoryClick(item.id) })
             }
         }

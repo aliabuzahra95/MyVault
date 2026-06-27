@@ -20,6 +20,7 @@ class HomeSnapshotRepository @Inject constructor(
     @param:ApplicationContext context: Context,
 ) {
     private val preferences = context.getSharedPreferences("home_startup_snapshot", Context.MODE_PRIVATE)
+    private val lastSavedJsonByKey = mutableMapOf<String, String>()
 
     fun load(mode: String): HomeUiState? =
         runCatching {
@@ -36,7 +37,19 @@ class HomeSnapshotRepository @Inject constructor(
             searchAttachments = emptyList(),
             searchTags = emptyList(),
         )
-        preferences.edit().putString(keyFor(mode), snapshot.toJson().toString()).apply()
+        val key = keyFor(mode)
+        val encoded = snapshot.toJson().toString()
+        val changed = synchronized(lastSavedJsonByKey) {
+            if (lastSavedJsonByKey[key] == encoded) {
+                false
+            } else {
+                lastSavedJsonByKey[key] = encoded
+                true
+            }
+        }
+        if (changed) {
+            preferences.edit().putString(key, encoded).apply()
+        }
     }
 
     private fun keyFor(mode: String): String =

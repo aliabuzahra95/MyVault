@@ -94,6 +94,7 @@ import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingAction
@@ -143,6 +144,7 @@ fun HomeScreen(
     onMoveFolderInOrderClick: (folderId: String, direction: Int) -> Unit = { _, _ -> },
     onMoveFolderToModeClick: (folderId: String, mode: String) -> Unit = { _, _ -> },
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit = { _, _ -> },
+    onPinnedExpandedChange: (Boolean) -> Unit = {},
     onDeleteFolderClick: (folderId: String) -> Unit = {},
     onRenameNoteClick: (noteId: String, title: String) -> Unit = { _, _ -> },
     onMoveNoteClick: (noteId: String, folderId: String?) -> Unit = { _, _ -> },
@@ -154,6 +156,7 @@ fun HomeScreen(
     onImportFileClick: (Uri) -> Unit = {},
     onAttachmentClick: (String) -> Unit = {},
     onOpenAttachmentsClick: () -> Unit = {},
+    onShareAiAnswerClick: (String) -> Unit = {},
     onQuranReflectionsClick: () -> Unit = {},
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
@@ -170,6 +173,9 @@ fun HomeScreen(
     val context = LocalContext.current
     val isSearching = uiState.searchQuery.isNotBlank()
     var fabExpanded by remember { mutableStateOf(false) }
+    BackHandler(enabled = fabExpanded) {
+        fabExpanded = false
+    }
     var folderDialogMode by remember { mutableStateOf<FolderDialogMode?>(null) }
     var newFolderName by remember { mutableStateOf("") }
     var folderDescriptionInput by remember { mutableStateOf("") }
@@ -184,7 +190,7 @@ fun HomeScreen(
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
     var noteTitleInput by remember { mutableStateOf("") }
     var sortMenuOpen by remember { mutableStateOf(false) }
-    var pinnedExpanded by rememberSaveable(currentFolderMode) { mutableStateOf(false) }
+    val pinnedExpanded = uiState.pinnedExpanded
     var utilityMenuOpen by remember { mutableStateOf(false) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var manageMenuOpen by remember { mutableStateOf(false) }
@@ -344,7 +350,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { pinnedExpanded = !pinnedExpanded }
+                            .clickable { onPinnedExpandedChange(!pinnedExpanded) }
                             .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
@@ -389,7 +395,21 @@ fun HomeScreen(
                                 horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
                             ) {
                                 items(uiState.pinnedNotes, key = { it.id }) { note ->
-                                    PinnedNoteCard(note = note, previewLines = uiState.notePreviewLines, showFullTitle = uiState.showFullNoteTitles, onClick = { onNoteClick(note.id) })
+                                    PinnedNoteCard(
+                                        note = note,
+                                        previewLines = uiState.notePreviewLines,
+                                        showFullTitle = uiState.showFullNoteTitles,
+                                        onClick = { onNoteClick(note.id) },
+                                        onLongPress = {
+                                            selectedNote = VaultTreeItem(
+                                                id = note.id,
+                                                name = note.title,
+                                                type = VaultTreeItemType.Note,
+                                                pinned = true,
+                                            )
+                                            noteActionsOpen = true
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -488,36 +508,32 @@ fun HomeScreen(
                     }
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(28.dp))
-                    SectionLabel(label = "Attachments")
-                    Spacer(modifier = Modifier.height(10.dp))
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                    ) {
-                        item {
-                            AllAttachmentsCard(
-                                count = uiState.attachments.size,
-                                onClick = onOpenAttachmentsClick,
-                            )
-                        }
-                        if (uiState.attachments.isEmpty()) {
-                            item {
-                                EmptyAttachmentPreviewCard()
-                            }
-                        } else {
-                            items(uiState.attachments, key = { item -> item.id.ifBlank { item.name } }) { attachment ->
-                                HomeAttachmentCard(
-                                    attachment = attachment,
-                                    onClick = {
-                                        if (attachment.id.isNotBlank()) {
-                                            onAttachmentClick(attachment.id)
-                                        } else {
-                                            attachment.toEntityOrNull()?.let { openAttachment(context, it) }
-                                        }
-                                    },
-                                )
+                if (currentFolderMode == FOLDER_MODE_STUDY) {
+                    item {
+                        Spacer(modifier = Modifier.height(28.dp))
+                        SectionLabel(label = "Qur’an Reflections")
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                        ) {
+                            if (uiState.quranReflectionItems.isEmpty()) {
+                                item {
+                                    EmptyHomeState(
+                                        icon = Icons.Rounded.AutoStories,
+                                        text = "Reflections you save from Qur’an will appear here",
+                                        modifier = Modifier
+                                            .fillParentMaxWidth()
+                                            .padding(end = VaultSpacing.screen),
+                                    )
+                                }
+                            } else {
+                                items(uiState.quranReflectionItems, key = { it.noteId }) { reflection ->
+                                    HomeQuranReflectionCard(
+                                        reflection = reflection,
+                                        onClick = { onNoteClick(reflection.noteId) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -540,7 +556,7 @@ fun HomeScreen(
                     actionButtonSize = 38.dp,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = VaultSpacing.screen, bottom = 92.dp)
+                        .padding(end = VaultSpacing.screen, bottom = 74.dp)
                         .size(width = 220.dp, height = 320.dp),
                     onToggle = { fabExpanded = !fabExpanded },
                     onActionClick = { action ->
@@ -560,7 +576,7 @@ fun HomeScreen(
                 HomeInlineAiPill(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 78.dp, bottom = 98.dp),
+                        .padding(end = 78.dp, bottom = 80.dp),
                     onClick = { homeInlineAiViewModel.openPanel() },
                 )
             }
@@ -575,11 +591,14 @@ fun HomeScreen(
                 onStopClick = homeInlineAiViewModel::stopStreaming,
                 onProviderSelected = homeInlineAiViewModel::setProvider,
                 onModelModeSelected = homeInlineAiViewModel::setModelMode,
+                onWebSearchToggle = homeInlineAiViewModel::toggleWebSearch,
                 onSettingsClick = homeInlineAiViewModel::toggleSettingsMode,
                 onClearHistoryClick = homeInlineAiViewModel::clearHistory,
                 onHistoryClick = homeInlineAiViewModel::openHistoryItem,
                 onRetryClick = homeInlineAiViewModel::retryLastRequest,
                 onDismissErrorClick = homeInlineAiViewModel::dismissError,
+                onShareAnswerClick = onShareAiAnswerClick,
+                onSpeakAnswerClick = homeInlineAiViewModel::speakAnswer,
                 onClose = homeInlineAiViewModel::closePanel,
                 onPickerToggle = homeInlineAiViewModel::attachItem,
                 onPickerClose = homeInlineAiViewModel::closePicker,
@@ -1055,13 +1074,59 @@ private fun EmptyHomeState(
             Icon(icon, null, modifier = Modifier.size(16.dp), tint = colors.textMuted)
             Text(
                 text = text,
+                modifier = Modifier.weight(1f),
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
                 color = colors.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
+
+
+@Composable
+private fun HomeQuranReflectionCard(
+    reflection: QuranReflectionItem,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(width = 214.dp, height = 132.dp),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "${reflection.surahName} ${reflection.surahNumber}:${reflection.ayahNumber}",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = reflection.title,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = reflection.reflectionPreview.ifBlank { reflection.translationPreview }.ifBlank { "Open reflection" },
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
 
 @Composable
 private fun HomeInlineAiPill(

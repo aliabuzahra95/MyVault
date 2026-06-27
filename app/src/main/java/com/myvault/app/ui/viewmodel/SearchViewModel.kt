@@ -34,7 +34,7 @@ class SearchViewModel @Inject constructor(
     private val query = MutableStateFlow("")
 
     private val searchResults = query
-        .debounce(180)
+        .debounce(300)
         .distinctUntilChanged()
         .flatMapLatest { currentQuery ->
             combine(

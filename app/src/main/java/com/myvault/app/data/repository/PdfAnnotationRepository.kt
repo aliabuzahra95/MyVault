@@ -2,6 +2,7 @@ package com.myvault.app.data.repository
 
 import android.util.Log
 import androidx.room.withTransaction
+import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
@@ -43,7 +44,7 @@ class PdfAnnotationRepository @Inject constructor(
         color: String,
     ): Boolean {
         if (attachmentId.isBlank()) {
-            Log.w("MyVaultPdfHighlight", "Repository rejected highlight: blank attachmentId")
+            if (BuildConfig.DEBUG) Log.w("MyVaultPdfHighlight", "Repository rejected highlight: blank attachmentId")
             return false
         }
         val normalizedLeft = minOf(left, right)
@@ -51,13 +52,13 @@ class PdfAnnotationRepository @Inject constructor(
         val normalizedTop = minOf(top, bottom)
         val normalizedBottom = maxOf(top, bottom)
         if (!isValidPdfAnnotationRect(normalizedLeft, normalizedTop, normalizedRight, normalizedBottom)) {
-            Log.w("MyVaultPdfHighlight", "Repository rejected highlight: invalid rect=$left,$top,$right,$bottom")
+            if (BuildConfig.DEBUG) Log.w("MyVaultPdfHighlight", "Repository rejected highlight: invalid rect=$left,$top,$right,$bottom")
             return false
         }
         val width = normalizedRight - normalizedLeft
         val height = normalizedBottom - normalizedTop
         if (width < 0.5f || height < 0.5f) {
-            Log.w("MyVaultPdfHighlight", "Repository rejected highlight: too small width=$width height=$height")
+            if (BuildConfig.DEBUG) Log.w("MyVaultPdfHighlight", "Repository rejected highlight: too small width=$width height=$height")
             return false
         }
 
@@ -82,10 +83,12 @@ class PdfAnnotationRepository @Inject constructor(
         annotationDao.upsert(
             annotation,
         )
-        Log.d(
-            "MyVaultPdfHighlight",
-            "DAO insert success id=${annotation.id} page=${annotation.pageIndex} rect=${annotation.left},${annotation.top},${annotation.right},${annotation.bottom}",
-        )
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                "MyVaultPdfHighlight",
+                "DAO insert success id=${annotation.id} page=${annotation.pageIndex} rect=${annotation.left},${annotation.top},${annotation.right},${annotation.bottom}",
+            )
+        }
         return true
     }
 
