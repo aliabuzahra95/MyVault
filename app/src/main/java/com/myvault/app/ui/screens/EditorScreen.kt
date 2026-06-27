@@ -108,6 +108,7 @@ import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.EditorTool
 import com.myvault.app.ui.components.EditorToolbar
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.RichMarkdownText
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -2001,14 +2002,13 @@ private fun SelectedTextAiSheet(
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
                                 color = colors.textMuted,
                             )
-                            Text(
+                            RichMarkdownText(
                                 text = state.result,
+                                color = colors.text,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
                                     .verticalScroll(resultScroll),
-                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
-                                color = colors.text,
                             )
                         }
                         else -> {
@@ -2187,11 +2187,19 @@ private fun AiChatBubble(message: NoteAiChatMessage) {
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
                     color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.textMuted,
                 )
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
-                    color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.text,
-                )
+                when (message.role) {
+                    NoteAiMessageRole.Assistant -> RichMarkdownText(
+                        text = message.content,
+                        color = colors.text,
+                    )
+                    NoteAiMessageRole.User,
+                    NoteAiMessageRole.Error,
+                    -> Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
+                        color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.text,
+                    )
+                }
             }
         }
     }

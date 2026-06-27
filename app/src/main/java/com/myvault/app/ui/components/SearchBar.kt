@@ -51,10 +51,12 @@ fun SearchBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(40.dp),
-        color = colors.surface,
+            .height(42.dp),
+        color = colors.elevated,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, borderColor),
+        tonalElevation = 0.dp,
+        shadowElevation = if (active) 2.dp else 1.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = VaultSpacing.sm),

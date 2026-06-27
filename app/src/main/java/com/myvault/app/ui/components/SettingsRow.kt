@@ -1,5 +1,7 @@
 package com.myvault.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,15 +38,27 @@ fun SettingsRow(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        color = colors.surface,
+        color = colors.elevated,
         shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = colors.accent)
+            Surface(
+                modifier = Modifier.size(30.dp),
+                color = colors.accentSoft,
+                shape = VaultShapes.sm,
+                border = BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = colors.accent)
+                }
+            }
             Text(
                 text = label,
                 modifier = Modifier.weight(1f),
@@ -55,14 +69,14 @@ fun SettingsRow(
             )
             Text(
                 text = value,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(0.9f),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.textMuted,
                 textAlign = TextAlign.End,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp), tint = colors.textMuted)
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(17.dp), tint = colors.textMuted)
         }
     }
 }

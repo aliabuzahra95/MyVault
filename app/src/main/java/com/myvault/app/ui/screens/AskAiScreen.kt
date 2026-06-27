@@ -64,6 +64,7 @@ import com.myvault.app.data.repository.NoteAiModel
 import com.myvault.app.data.repository.NoteAiProvider
 import com.myvault.app.data.repository.displayName
 import com.myvault.app.data.repository.toRelativeTime
+import com.myvault.app.ui.components.RichMarkdownText
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -466,9 +467,8 @@ private fun AskAiStreamingBubble(content: String) {
                     Text("My AI", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800), color = colors.text)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
+                RichMarkdownText(
                     text = content,
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                     color = colors.text,
                 )
             }
@@ -498,11 +498,18 @@ private fun AskAiChatBubble(message: NoteAiChatMessage) {
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                 }
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                    color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.text,
-                )
+                if (!isUser && message.role == NoteAiMessageRole.Assistant) {
+                    RichMarkdownText(
+                        text = message.content,
+                        color = colors.text,
+                    )
+                } else {
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                        color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.text,
+                    )
+                }
             }
         }
     }

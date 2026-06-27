@@ -46,6 +46,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1323,9 +1325,9 @@ private fun StudyLibraryPersonalShell(
     val studyPage = remember(modes) { modes.indexOf(VaultRootMode.Study).takeIf { it >= 0 } ?: 0 }
     val scope = rememberCoroutineScope()
     val colors = VaultThemeTokens.colors
-    var visualSelectedPage by rememberSaveable(modes) { mutableStateOf(requestedPage) }
+    var visualSelectedPage by rememberSaveable(modes) { mutableIntStateOf(requestedPage) }
     var lastNavTapMode by remember { mutableStateOf<VaultRootMode?>(null) }
-    var lastNavTapAt by remember { mutableStateOf(0L) }
+    var lastNavTapAt by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(modes, requestedPage) {
         if (pagerState.currentPage != requestedPage) {

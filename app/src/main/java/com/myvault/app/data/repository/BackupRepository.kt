@@ -664,7 +664,7 @@ class BackupRepository @Inject constructor(
                             else -> false
                         }
                 }
-            val backedUpPreferences = entries["settings.json"]?.let { JSONObject(it).toBackupPreferences() }
+            val backedUpPreferences = entries["settings.json"]?.let { JSONObject(it).toValidatedBackupPreferences() }
 
             createEmergencyBackupBeforeRestore()
 
@@ -839,6 +839,11 @@ private fun validateBackupSettings(settings: JSONObject) {
         }
     }
     settings.optJSONArray("quranMemorizationRecords")?.let(::validateQuranMemorizationRecords)
+}
+
+internal fun JSONObject.toValidatedBackupPreferences(): VaultBackupPreferences {
+    validateBackupSettings(this)
+    return toBackupPreferences()
 }
 
 private fun validateQuranMemorizationRecords(records: JSONArray) {

@@ -143,6 +143,7 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20260522")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -29,20 +29,22 @@ fun IconBtn(
 
     Surface(
         onClick = onClick,
-        modifier = modifier.size(38.dp),
-        color = if (active) colors.accentSoft else colors.surface,
+        modifier = modifier.size(40.dp),
+        color = if (active) colors.accentSoft else colors.elevated,
         contentColor = if (active) colors.accent else colors.textSecondary,
         border = BorderStroke(
             width = 1.dp,
-            color = if (active) colors.accentBorder else colors.border,
+            color = if (active) colors.accentBorder else colors.borderStrong,
         ),
-        shape = VaultShapes.sm,
+        shape = VaultShapes.md,
+        tonalElevation = 0.dp,
+        shadowElevation = if (active) 3.dp else 1.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(18.5.dp),
             )
         }
     }

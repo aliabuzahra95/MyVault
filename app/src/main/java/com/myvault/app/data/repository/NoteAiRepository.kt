@@ -480,8 +480,8 @@ class NoteAiRepository @Inject constructor(
                     )
                 generativeModel.generateContentStream(promptRequest.prompt).collect { response ->
                     val chunk = response.text.orEmpty()
-                    if (chunk.isNotBlank()) {
-                        emittedAnyText = true
+                    if (chunk.isNotEmpty()) {
+                        if (chunk.isNotBlank()) emittedAnyText = true
                         emit(chunk)
                     }
                 }
@@ -650,8 +650,8 @@ class NoteAiRepository @Inject constructor(
                     error(event.optJSONObject("error")?.optString("message").orEmpty().ifBlank { "ChatGPT streaming failed." })
                 }
                 val delta = event.extractOpenAiTextDelta()
-                if (delta.isNotBlank()) {
-                    emittedAnyText = true
+                if (delta.isNotEmpty()) {
+                    if (delta.isNotBlank()) emittedAnyText = true
                     emit(delta)
                 }
             }
@@ -788,8 +788,8 @@ class NoteAiRepository @Inject constructor(
                 val event = runCatching { JSONObject(data) }.getOrNull() ?: return
                 event.optJSONObject("error")?.let { error(it.optString("message").ifBlank { "Kimi streaming failed." }) }
                 val delta = event.extractKimiChatDelta()
-                if (delta.isNotBlank()) {
-                    emittedAnyText = true
+                if (delta.isNotEmpty()) {
+                    if (delta.isNotBlank()) emittedAnyText = true
                     emit(delta)
                 }
             }
@@ -887,7 +887,7 @@ private fun JSONObject.extractKimiChatText(): String {
                 ?.optJSONObject("message")
                 ?.optString("content")
                 .orEmpty()
-            if (content.isNotBlank()) append(content)
+            if (content.isNotEmpty()) append(content)
         }
     }.trim()
 }
@@ -901,7 +901,7 @@ private fun JSONObject.extractKimiChatDelta(): String {
                 ?.optJSONObject("delta")
                 ?.optString("content")
                 .orEmpty()
-            if (content.isNotBlank()) append(content)
+            if (content.isNotEmpty()) append(content)
         }
     }
 }

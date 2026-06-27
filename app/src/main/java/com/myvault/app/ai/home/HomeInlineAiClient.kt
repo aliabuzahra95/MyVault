@@ -179,9 +179,9 @@ class HomeInlineAiClient @Inject constructor() {
         val event = runCatching { JSONObject(data) }.getOrNull() ?: return null
         event.optJSONObject("error")?.let { throw HomeInlineAiException(it.toHomeAiError(HomeAiProvider.OPENAI, null)) }
         return when (event.optString("type")) {
-            "response.output_text.delta" -> event.optString("delta").takeIf { it.isNotBlank() }
+            "response.output_text.delta" -> event.optString("delta").takeIf { it.isNotEmpty() }
             "response.failed" -> throw HomeInlineAiException(HomeInlineAiError.Unknown("OpenAI request failed."))
-            else -> event.optString("delta").takeIf { it.isNotBlank() }
+            else -> event.optString("delta").takeIf { it.isNotEmpty() }
         }
     }
 
@@ -193,9 +193,9 @@ class HomeInlineAiClient @Inject constructor() {
             for (index in 0 until choices.length()) {
                 val delta = choices.optJSONObject(index)?.optJSONObject("delta")
                 val text = delta?.optString("content").orEmpty()
-                if (text.isNotBlank()) append(text)
+                if (text.isNotEmpty()) append(text)
             }
-        }.takeIf { it.isNotBlank() }
+        }.takeIf { it.isNotEmpty() }
     }
 
     private fun parseGeminiDelta(data: String): String? {
@@ -207,9 +207,9 @@ class HomeInlineAiClient @Inject constructor() {
         return buildString {
             for (index in 0 until events.length()) {
                 val text = events.optJSONObject(index)?.extractGeminiText().orEmpty()
-                if (text.isNotBlank()) append(text)
+                if (text.isNotEmpty()) append(text)
             }
-        }.takeIf { it.isNotBlank() }
+        }.takeIf { it.isNotEmpty() }
     }
 
     private fun JSONObject.extractGeminiText(): String? {
@@ -223,10 +223,10 @@ class HomeInlineAiClient @Inject constructor() {
                     ?: continue
                 for (partIndex in 0 until parts.length()) {
                     val text = parts.optJSONObject(partIndex)?.optString("text").orEmpty()
-                    if (text.isNotBlank()) append(text)
+                    if (text.isNotEmpty()) append(text)
                 }
             }
-        }.takeIf { it.isNotBlank() }
+        }.takeIf { it.isNotEmpty() }
     }
 
     private fun resolveConfig(

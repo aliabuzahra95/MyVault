@@ -88,11 +88,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -110,6 +107,7 @@ import com.myvault.app.ai.home.HomeInlineAiHistoryItem
 import com.myvault.app.ai.home.HomeInlineAiMessage
 import com.myvault.app.ai.home.HomeInlineAiRole
 import com.myvault.app.ai.home.HomeInlineAiState
+import com.myvault.app.ui.components.RichMarkdownText
 import com.myvault.app.ui.components.SettingsRow
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -1377,211 +1375,6 @@ private fun MessageBubble(message: HomeInlineAiMessage, streaming: Boolean = fal
         }
     }
 }
-
-@Composable
-private fun RichMarkdownText(
-    text: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-) {
-    val blocks = remember(text) { parseMarkdownBlocks(text) }
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        blocks.forEach { block ->
-            when (block) {
-                is MarkdownBlock.Heading -> MarkdownHeading(block)
-                is MarkdownBlock.Paragraph -> MarkdownParagraph(block.text, color)
-                is MarkdownBlock.Bullet -> MarkdownBullet(block.text, color)
-                is MarkdownBlock.ArgumentCard -> MarkdownArgumentCard(block)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MarkdownHeading(block: MarkdownBlock.Heading) {
-    val colors = VaultThemeTokens.colors
-    Text(
-        text = inlineMarkdown(block.text),
-        style = when (block.level) {
-            1 -> MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.W700, lineHeight = 22.sp)
-            2 -> MaterialTheme.typography.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.W700, lineHeight = 22.sp)
-            else -> MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.W600, lineHeight = 16.sp)
-        },
-        color = if (block.level <= 2) colors.text else colors.accent,
-    )
-}
-
-@Composable
-private fun MarkdownParagraph(text: String, color: Color) {
-    Text(
-        text = inlineMarkdown(text),
-        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.W400, lineHeight = 22.sp),
-        color = color,
-    )
-}
-
-@Composable
-private fun MarkdownBullet(text: String, color: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(
-            text = "•",
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.W800, lineHeight = 22.sp),
-            color = VaultThemeTokens.colors.accent,
-        )
-        Text(
-            text = inlineMarkdown(text),
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.W400, lineHeight = 22.sp),
-            color = color,
-        )
-    }
-}
-
-@Composable
-private fun MarkdownArgumentCard(block: MarkdownBlock.ArgumentCard) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = colors.elevated,
-        shape = RoundedCornerShape(12.dp),
-        border = null,
-        tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = inlineMarkdown("${block.number}. ${block.title}"),
-                style = MaterialTheme.typography.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.W700, lineHeight = 22.sp),
-                color = colors.text,
-            )
-            block.children.forEach { child ->
-                when (child) {
-                    is MarkdownBlock.Heading -> MarkdownHeading(child)
-                    is MarkdownBlock.Paragraph -> MarkdownParagraph(child.text, colors.textSecondary)
-                    is MarkdownBlock.Bullet -> MarkdownBullet(child.text, colors.textSecondary)
-                    is MarkdownBlock.ArgumentCard -> MarkdownArgumentCard(child)
-                }
-            }
-        }
-    }
-}
-
-private sealed class MarkdownBlock {
-    data class Heading(val level: Int, val text: String) : MarkdownBlock()
-    data class Paragraph(val text: String) : MarkdownBlock()
-    data class Bullet(val text: String) : MarkdownBlock()
-    data class ArgumentCard(val number: Int, val title: String, val children: List<MarkdownBlock>) : MarkdownBlock()
-}
-
-private fun parseMarkdownBlocks(text: String): List<MarkdownBlock> {
-    val lines = text.lines()
-    val blocks = mutableListOf<MarkdownBlock>()
-    var paragraph = mutableListOf<String>()
-    var activeCardNumber: Int? = null
-    var activeCardTitle = ""
-    var activeCardChildren = mutableListOf<MarkdownBlock>()
-
-    fun flushParagraph(target: MutableList<MarkdownBlock>) {
-        if (paragraph.isNotEmpty()) {
-            target += MarkdownBlock.Paragraph(paragraph.joinToString(" ").trim())
-            paragraph = mutableListOf()
-        }
-    }
-
-    fun currentTarget(): MutableList<MarkdownBlock> = if (activeCardNumber != null) activeCardChildren else blocks
-
-    fun flushCard() {
-        val number = activeCardNumber ?: return
-        flushParagraph(activeCardChildren)
-        blocks += MarkdownBlock.ArgumentCard(number, activeCardTitle, activeCardChildren.toList())
-        activeCardNumber = null
-        activeCardTitle = ""
-        activeCardChildren = mutableListOf()
-    }
-
-    lines.forEach { raw ->
-        val line = raw.trim()
-        if (line.isBlank()) {
-            flushParagraph(currentTarget())
-            return@forEach
-        }
-
-        val numbered = Regex("^(\\d+)\\.\\s+(.+)$").find(line)
-        if (numbered != null) {
-            flushCard()
-            activeCardNumber = numbered.groupValues[1].toIntOrNull() ?: 1
-            activeCardTitle = cleanMarkdownLine(numbered.groupValues[2])
-            activeCardChildren = mutableListOf()
-            return@forEach
-        }
-
-        val headerLevel = markdownHeaderLevel(line)
-        if (headerLevel != null) {
-            flushParagraph(currentTarget())
-            if (activeCardNumber != null && headerLevel <= 2) flushCard()
-            val cleanLine = line.trimStart().drop(headerLevel).trimStart()
-            currentTarget() += MarkdownBlock.Heading(headerLevel, cleanMarkdownLine(cleanLine))
-            return@forEach
-        }
-
-        val bullet = Regex("^([*\\-•])\\s+(.+)$").find(line)
-        if (bullet != null) {
-            flushParagraph(currentTarget())
-            currentTarget() += MarkdownBlock.Bullet(cleanMarkdownLine(bullet.groupValues[2]))
-            return@forEach
-        }
-
-        paragraph += cleanMarkdownLine(line)
-    }
-
-    flushCard()
-    flushParagraph(blocks)
-    return blocks.ifEmpty { listOf(MarkdownBlock.Paragraph(text.trim())) }
-}
-
-
-private fun markdownHeaderLevel(line: String): Int? {
-    val trimmed = line.trimStart()
-    val hashes = trimmed.takeWhile { it == '#' }.length
-    if (hashes !in 1..3) return null
-    return hashes.takeIf { trimmed.getOrNull(it) == ' ' }
-}
-
-private fun inlineMarkdown(text: String): AnnotatedString = buildAnnotatedString {
-    var index = 0
-    var bold = false
-    while (index < text.length) {
-        if (index + 1 < text.length && text[index] == '*' && text[index + 1] == '*') {
-            bold = !bold
-            index += 2
-        } else {
-            val next = text.indexOf("**", startIndex = index).let { if (it == -1) text.length else it }
-            val segment = text.substring(index, next)
-            if (bold) {
-                withStyle(SpanStyle(fontWeight = FontWeight.W900)) { append(segment) }
-            } else {
-                append(segment)
-            }
-            index = next
-        }
-    }
-}
-
-private fun cleanMarkdownLine(text: String): String = text
-    .trim()
-    .removePrefix("- ")
-    .removePrefix("* ")
-    .removePrefix("• ")
 
 @Composable
 private fun Banner(text: String, warning: Boolean) {

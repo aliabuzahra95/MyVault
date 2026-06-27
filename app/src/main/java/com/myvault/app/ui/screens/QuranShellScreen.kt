@@ -87,6 +87,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -2627,7 +2628,7 @@ private fun QuranAudioMiniPlayer(
     val shape = RoundedCornerShape(22.dp)
     val speedOptions = listOf(0.5f, 1f, 1.5f, 2f)
     var sliderPosition by remember(player.progressMs, player.durationMs) {
-        mutableStateOf(player.progressMs.toFloat())
+        mutableFloatStateOf(player.progressMs.toFloat())
     }
 
     Box(

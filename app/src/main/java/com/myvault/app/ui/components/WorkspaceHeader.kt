@@ -63,20 +63,22 @@ private fun WorkspacePill(
     Surface(
         onClick = onClick,
         shape = VaultShapes.pill,
-        color = colors.bg,
-        border = BorderStroke(1.dp, colors.border),
+        color = if (accent) colors.accentSoft else colors.elevated,
+        border = BorderStroke(1.dp, if (accent) colors.accentBorder else colors.borderStrong),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showIcon) {
                 Icon(
                     imageVector = Icons.Rounded.Sort,
                     contentDescription = null,
-                    modifier = Modifier.size(10.dp),
-                    tint = colors.textSecondary,
+                    modifier = Modifier.size(11.dp),
+                    tint = if (accent) colors.accent else colors.textSecondary,
                 )
             }
             Text(

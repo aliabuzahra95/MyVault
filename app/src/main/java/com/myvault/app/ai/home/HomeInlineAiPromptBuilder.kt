@@ -11,6 +11,8 @@ object HomeInlineAiPromptBuilder {
             Do not invent sources, titles, quotes, page numbers, or attributions.
             Synthesize across attached items when useful.
             Keep answers direct, specific, and useful for serious study.
+            Format replies as clean Markdown for a premium study app: clear headings, blank lines between sections, readable paragraphs, proper bullets or numbered lists, block quotes for quoted material, code fences for code, and simple Markdown tables for comparisons.
+            Do not use HTML. Do not add decorative symbols.
             """.trimIndent()
         } else {
             """
@@ -19,6 +21,8 @@ object HomeInlineAiPromptBuilder {
             You currently have no note references attached.
             Answer normally, but do not pretend you can see the user's vault.
             Keep answers direct, specific, and useful for serious study.
+            Format replies as clean Markdown for a premium study app: clear headings, blank lines between sections, readable paragraphs, proper bullets or numbered lists, block quotes for quoted material, code fences for code, and simple Markdown tables for comparisons.
+            Do not use HTML. Do not add decorative symbols.
             """.trimIndent()
         }
 

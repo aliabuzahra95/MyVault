@@ -21,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -79,8 +78,15 @@ fun VaultModal(
             ) {
                 Column(
                     modifier = Modifier.padding(VaultSpacing.md),
-                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .size(width = 42.dp, height = 4.dp),
+                        color = colors.borderStrong,
+                        shape = VaultShapes.pill,
+                    ) {}
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
@@ -111,8 +117,16 @@ fun VaultModal(
                                 )
                             }
                         }
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Rounded.Close, "Close", modifier = Modifier.size(18.dp), tint = colors.textMuted)
+                        Surface(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(34.dp),
+                            color = colors.inset,
+                            shape = VaultShapes.sm,
+                            border = BorderStroke(1.dp, colors.border),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, "Close", modifier = Modifier.size(18.dp), tint = colors.textMuted)
+                            }
                         }
                     }
                     content()

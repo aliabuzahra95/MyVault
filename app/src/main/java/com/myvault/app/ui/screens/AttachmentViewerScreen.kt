@@ -237,6 +237,7 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
+    private val previewRect = RectF()
     private val tempOverlayLocation = IntArray(2)
     private val tempPdfLocation = IntArray(2)
     private var dragStart: android.graphics.PointF? = null
@@ -276,7 +277,7 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
         val start = dragStart
         val end = dragEnd
         if (drawMode && start != null && end != null) {
-            val preview = RectF(
+            previewRect.set(
                 minOf(start.x, end.x),
                 minOf(start.y, end.y),
                 maxOf(start.x, end.x),
@@ -284,7 +285,7 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
             )
             fillPaint.style = Paint.Style.FILL
             fillPaint.color = highlightColor.toPdfHighlightPreviewArgb()
-            canvas.drawRoundRect(preview, 8f, 8f, fillPaint)
+            canvas.drawRoundRect(previewRect, 8f, 8f, fillPaint)
         }
     }
 
@@ -1836,7 +1837,7 @@ private fun BoxScope.PdfCurrentPageActivityCard(
                     Text(
                         text = buildString {
                             append(annotations.toPdfActivityBreakdownText())
-                            leadAnnotation?.pdfActivityPreviewText()?.takeIf { it.isNotBlank() }?.let { preview ->
+                            leadAnnotation?.pdfActivityBodyText()?.takeIf { it.isNotBlank() }?.let { preview ->
                                 append(" · ")
                                 append(preview)
                             }
@@ -2101,100 +2102,174 @@ private fun BoxScope.PdfReaderControls(
     Surface(
         modifier = modifier
             .align(Alignment.BottomCenter)
-            .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
-        color = colors.elevated.copy(alpha = 0.98f),
-        shape = VaultShapes.xxl,
-        border = BorderStroke(1.dp, colors.border),
-        shadowElevation = 8.dp,
+            .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs)
+            .widthIn(max = 430.dp)
+            .fillMaxWidth(),
+        color = colors.elevated.copy(alpha = 0.96f),
+        shape = VaultShapes.xl,
+        border = BorderStroke(1.dp, colors.borderStrong.copy(alpha = 0.78f)),
+        shadowElevation = 10.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Surface(
+            PdfToolbarAction(
+                label = if (drawHighlightMode) "Done" else "Draw",
+                icon = Icons.Rounded.Draw,
+                active = drawHighlightMode,
+                modifier = Modifier.weight(1f),
                 onClick = onSaveSelectedHighlight,
-                shape = VaultShapes.pill,
-                color = if (drawHighlightMode) colors.accent.copy(alpha = 0.22f) else colors.accent.copy(alpha = 0.14f),
-                border = BorderStroke(1.dp, colors.accent.copy(alpha = if (drawHighlightMode) 0.58f else 0.38f)),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(Icons.Rounded.Draw, contentDescription = null, modifier = Modifier.size(16.dp), tint = colors.accent)
-                    Text(
-                        text = when {
-                            drawHighlightMode -> "Done"
-                            else -> "Draw"
-                        },
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                        color = colors.accent,
-                    )
-                }
-            }
-            Surface(
+            )
+            PdfToolbarAction(
+                label = "Note",
+                icon = Icons.Rounded.StickyNote2,
+                active = textBoxMode,
+                modifier = Modifier.weight(1f),
                 onClick = onTextBoxModeChange,
-                shape = VaultShapes.pill,
-                color = if (textBoxMode) colors.accent.copy(alpha = 0.22f) else colors.surface,
-                border = BorderStroke(1.dp, if (textBoxMode) colors.accent.copy(alpha = 0.58f) else colors.border),
+            )
+            Surface(
+                color = colors.inset.copy(alpha = 0.72f),
+                shape = VaultShapes.lg,
+                border = BorderStroke(1.dp, colors.border.copy(alpha = 0.70f)),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Icon(Icons.Rounded.StickyNote2, contentDescription = null, modifier = Modifier.size(16.dp), tint = colors.accent)
-                    Text(
-                        text = "+ Note",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                        color = if (textBoxMode) colors.accent else colors.textSecondary,
-                    )
-                }
-            }
-            PdfHighlightColors.forEach { color ->
-                Surface(
-                    onClick = { onHighlightColorChange(color) },
-                    modifier = Modifier.size(32.dp),
-                    shape = VaultShapes.pill,
-                    color = color.toPdfHighlightColor().copy(alpha = if (color == highlightColor) 0.92f else 0.46f),
-                    border = BorderStroke(
-                        width = if (color == highlightColor) 2.dp else 1.dp,
-                        color = if (color == highlightColor) colors.text else colors.border,
-                    ),
-                ) {
-                    Box(modifier = Modifier.fillMaxSize())
-                }
-            }
-            if (annotationCount > 0) {
-                Surface(
-                    onClick = onShowAnnotations,
-                    shape = VaultShapes.pill,
-                    color = colors.surface,
-                    border = BorderStroke(
-                        1.dp,
-                        colors.border,
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.StickyNote2,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                            tint = colors.textSecondary,
-                        )
-                        Text(
-                            text = annotationCount.toString(),
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W900),
-                            color = colors.textSecondary,
-                            maxLines = 1,
+                    PdfHighlightColors.forEach { color ->
+                        PdfToolbarColorSwatch(
+                            color = color,
+                            selected = color == highlightColor,
+                            onClick = { onHighlightColorChange(color) },
                         )
                     }
+                }
+            }
+            PdfToolbarActivityButton(
+                annotationCount = annotationCount,
+                onClick = onShowAnnotations,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PdfToolbarAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(36.dp),
+        shape = VaultShapes.lg,
+        color = if (active) colors.accentSoft else Color.Transparent,
+        border = BorderStroke(
+            1.dp,
+            if (active) colors.accentBorder else colors.border.copy(alpha = 0.52f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(15.dp),
+                tint = if (active) colors.accent else colors.textSecondary,
+            )
+            Text(
+                text = label,
+                modifier = Modifier.padding(start = 5.dp),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W900),
+                color = if (active) colors.accent else colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PdfToolbarColorSwatch(
+    color: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val swatch = color.toPdfHighlightColor()
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(26.dp),
+        shape = VaultShapes.pill,
+        color = if (selected) colors.surface else Color.Transparent,
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) colors.text.copy(alpha = 0.84f) else colors.border.copy(alpha = 0.66f),
+        ),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Surface(
+                modifier = Modifier.size(if (selected) 16.dp else 18.dp),
+                shape = VaultShapes.pill,
+                color = swatch.copy(alpha = if (selected) 0.96f else 0.66f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = if (selected) 0.54f else 0.28f)),
+            ) {}
+        }
+    }
+}
+
+@Composable
+private fun PdfToolbarActivityButton(
+    annotationCount: Int,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val hasActivity = annotationCount > 0
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(width = 42.dp, height = 36.dp),
+        shape = VaultShapes.lg,
+        color = if (hasActivity) colors.accentSoft else colors.surface,
+        border = BorderStroke(1.dp, if (hasActivity) colors.accentBorder else colors.border),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Rounded.StickyNote2,
+                contentDescription = "Open PDF activity and notes",
+                modifier = Modifier.size(18.dp),
+                tint = if (hasActivity) colors.accent else colors.textSecondary,
+            )
+            if (hasActivity) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 2.dp, end = 2.dp),
+                    shape = VaultShapes.pill,
+                    color = colors.accent,
+                    border = BorderStroke(1.dp, colors.elevated),
+                ) {
+                    Text(
+                        text = annotationCount.toPdfActivityBadgeText(),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.W900,
+                            fontSize = 8.sp,
+                            lineHeight = 9.sp,
+                        ),
+                        color = Color.White,
+                        maxLines = 1,
+                    )
                 }
             }
         }
@@ -2218,28 +2293,32 @@ private fun BoxScope.PdfAnnotationsPanel(
         }.sortedWith(compareBy<PdfAnnotationEntity> { it.pageIndex }.thenByDescending { it.updatedAt })
     }
     val panelTitle = when (mode) {
-        PdfAnnotationsPanelMode.CurrentPage -> "Page ${currentPageIndex + 1} activity"
-        PdfAnnotationsPanelMode.WholePdf -> "PDF activity"
+        PdfAnnotationsPanelMode.CurrentPage -> "Page ${currentPageIndex + 1} Activity"
+        PdfAnnotationsPanelMode.WholePdf -> "PDF Activity"
     }
     val panelSubtitle = when (mode) {
         PdfAnnotationsPanelMode.CurrentPage -> "${panelAnnotations.size.toPdfActivityItemCount()} on this page"
         PdfAnnotationsPanelMode.WholePdf -> "${panelAnnotations.size.toPdfActivityItemCount()} across this PDF"
     }
+    val modeLabel = when (mode) {
+        PdfAnnotationsPanelMode.CurrentPage -> "Current page"
+        PdfAnnotationsPanelMode.WholePdf -> "Whole PDF"
+    }
     Surface(
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .zIndex(5f)
-            .padding(start = VaultSpacing.screen, end = VaultSpacing.screen, bottom = 92.dp)
-            .widthIn(max = 430.dp)
+            .padding(start = VaultSpacing.screen, end = VaultSpacing.screen, bottom = 88.dp)
+            .widthIn(max = 460.dp)
             .fillMaxWidth(),
-        color = colors.elevated.copy(alpha = 0.98f),
+        color = colors.elevated.copy(alpha = 0.99f),
         shape = VaultShapes.xxl,
-        border = BorderStroke(1.dp, colors.border),
-        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, colors.borderStrong.copy(alpha = 0.76f)),
+        shadowElevation = 12.dp,
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2247,86 +2326,170 @@ private fun BoxScope.PdfAnnotationsPanel(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Surface(
+                        color = colors.accentSoft,
+                        shape = VaultShapes.pill,
+                        border = BorderStroke(1.dp, colors.accentBorder),
+                    ) {
+                        Text(
+                            text = modeLabel,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900),
+                            color = colors.accent,
+                            maxLines = 1,
+                        )
+                    }
                     Text(
                         text = panelTitle,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W900),
                         color = colors.text,
                     )
                     Text(
-                        text = panelSubtitle,
+                        text = if (panelAnnotations.isEmpty()) panelSubtitle else "$panelSubtitle · ${panelAnnotations.toPdfActivityBreakdownText()}",
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.textMuted,
                     )
                 }
-                PremiumPdfDialogButton(label = "+ Note", filled = true, onClick = onAddPageNote)
+                PremiumPdfDialogButton(label = "Add note", filled = true, onClick = onAddPageNote)
                 PremiumPdfDialogButton(label = "Close", onClick = onDismiss)
             }
             Column(
                 modifier = Modifier
-                    .heightIn(max = 420.dp)
+                    .heightIn(max = 430.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (panelAnnotations.isEmpty()) {
                     Surface(
-                        color = colors.surface,
+                        color = colors.inset,
                         shape = VaultShapes.lg,
                         border = BorderStroke(1.dp, colors.border),
                     ) {
-                        Text(
-                            text = if (mode == PdfAnnotationsPanelMode.CurrentPage) {
-                                "No saved activity on this page yet."
-                            } else {
-                                "No saved PDF activity yet."
-                            },
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textMuted,
-                        )
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = if (mode == PdfAnnotationsPanelMode.CurrentPage) {
+                                    "No activity on page ${currentPageIndex + 1} yet"
+                                } else {
+                                    "No saved PDF activity yet"
+                                },
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
+                                color = colors.text,
+                            )
+                            Text(
+                                text = "Add a note or save a highlight, and it will appear here.",
+                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                                color = colors.textMuted,
+                            )
+                        }
                     }
                 } else {
                     panelAnnotations.forEach { annotation ->
-                        Surface(
+                        PdfActivityItemCard(
+                            annotation = annotation,
+                            mode = mode,
                             onClick = { onAnnotationSelected(annotation) },
-                            color = colors.surface,
-                            shape = VaultShapes.lg,
-                            border = BorderStroke(1.dp, colors.border),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(18.dp),
-                                    shape = VaultShapes.pill,
-                                    color = if (annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE) colors.accent.copy(alpha = 0.72f) else annotation.color.toPdfHighlightColor().copy(alpha = 0.84f),
-                                    border = BorderStroke(1.dp, colors.border),
-                                ) {}
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        text = annotation.pdfActivityTitle(),
-                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W900),
-                                        color = colors.text,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = buildString {
-                                            append("Page ${annotation.pageIndex + 1}")
-                                            append(" · ")
-                                            append(annotation.pdfActivityPreviewText())
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.textMuted,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PdfActivityItemCard(
+    annotation: PdfAnnotationEntity,
+    mode: PdfAnnotationsPanelMode,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val bodyText = annotation.pdfActivityBodyText()
+    val isLongBody = bodyText.length > 360 || bodyText.count { it == '\n' } >= 5
+    var expanded by remember(annotation.id, annotation.updatedAt) { mutableStateOf(false) }
+    val indicatorColor = annotation.pdfActivityIndicatorColor()
+    Surface(
+        onClick = onClick,
+        color = colors.surface,
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.82f)),
+        shadowElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .width(5.dp)
+                    .height(54.dp),
+                shape = VaultShapes.pill,
+                color = indicatorColor,
+            ) {}
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = annotation.pdfActivityTitle(),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.W900,
+                                lineHeight = 18.sp,
+                            ),
+                            color = colors.text,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = annotation.pdfActivityMetaText(mode),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                            color = colors.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Surface(
+                        color = annotation.pdfActivityTypeBackground(),
+                        shape = VaultShapes.pill,
+                        border = BorderStroke(1.dp, indicatorColor.copy(alpha = 0.34f)),
+                    ) {
+                        Text(
+                            text = annotation.pdfActivityShortTypeLabel(),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900),
+                            color = indicatorColor,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                Text(
+                    text = bodyText,
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
+                    color = colors.textSecondary,
+                    maxLines = if (isLongBody && !expanded) 5 else Int.MAX_VALUE,
+                    overflow = if (isLongBody && !expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
+                )
+                if (isLongBody) {
+                    Surface(
+                        onClick = { expanded = !expanded },
+                        shape = VaultShapes.pill,
+                        color = colors.inset,
+                        border = BorderStroke(1.dp, colors.border),
+                    ) {
+                        Text(
+                            text = if (expanded) "Show less" else "Show more",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900),
+                            color = colors.accent,
+                        )
                     }
                 }
             }
@@ -2336,6 +2499,9 @@ private fun BoxScope.PdfAnnotationsPanel(
 
 private fun Int.toPdfActivityItemCount(): String =
     "$this activity item${if (this == 1) "" else "s"}"
+
+private fun Int.toPdfActivityBadgeText(): String =
+    if (this > 99) "99+" else toString()
 
 private fun List<PdfAnnotationEntity>.toPdfActivityBreakdownText(): String {
     val notes = count { it.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE }
@@ -2349,15 +2515,53 @@ private fun List<PdfAnnotationEntity>.toPdfActivityBreakdownText(): String {
 private fun PdfAnnotationEntity.pdfActivityTitle(): String =
     displayTitle?.trim()?.takeIf { it.isNotBlank() } ?: pdfActivityTypeLabel()
 
-private fun PdfAnnotationEntity.pdfActivityPreviewText(): String =
-    noteText?.trim()?.takeIf { it.isNotBlank() } ?: pdfActivityTypeLabel()
+private fun PdfAnnotationEntity.pdfActivityBodyText(): String =
+    noteText?.trim()?.takeIf { it.isNotBlank() } ?: when (annotationType) {
+        PdfAnnotationEntity.TYPE_PAGE_NOTE -> "No note text saved yet."
+        PdfAnnotationEntity.TYPE_HIGHLIGHT -> "Highlight saved on this page."
+        PdfAnnotationEntity.TYPE_TEXT_BOX -> "Text annotation saved on this page."
+        else -> "PDF activity saved on this page."
+    }
+
+private fun PdfAnnotationEntity.pdfActivityMetaText(mode: PdfAnnotationsPanelMode): String =
+    when (mode) {
+        PdfAnnotationsPanelMode.CurrentPage -> pdfActivityTypeLabel()
+        PdfAnnotationsPanelMode.WholePdf -> "Page ${pageIndex + 1} · ${pdfActivityTypeLabel()}"
+    }
 
 private fun PdfAnnotationEntity.pdfActivityTypeLabel(): String =
     when (annotationType) {
         PdfAnnotationEntity.TYPE_PAGE_NOTE -> "Page note"
         PdfAnnotationEntity.TYPE_HIGHLIGHT -> "Highlight"
+        PdfAnnotationEntity.TYPE_TEXT_BOX -> "Text annotation"
         else -> "PDF activity"
     }
+
+private fun PdfAnnotationEntity.pdfActivityShortTypeLabel(): String =
+    when (annotationType) {
+        PdfAnnotationEntity.TYPE_PAGE_NOTE -> "Note"
+        PdfAnnotationEntity.TYPE_HIGHLIGHT -> "Highlight"
+        PdfAnnotationEntity.TYPE_TEXT_BOX -> "Text"
+        else -> "Activity"
+    }
+
+@Composable
+private fun PdfAnnotationEntity.pdfActivityIndicatorColor(): Color {
+    val colors = VaultThemeTokens.colors
+    return when (annotationType) {
+        PdfAnnotationEntity.TYPE_PAGE_NOTE -> colors.accent
+        else -> color.toPdfHighlightColor()
+    }.copy(alpha = 0.92f)
+}
+
+@Composable
+private fun PdfAnnotationEntity.pdfActivityTypeBackground(): Color {
+    val colors = VaultThemeTokens.colors
+    return when (annotationType) {
+        PdfAnnotationEntity.TYPE_PAGE_NOTE -> colors.accentSoft
+        else -> color.toPdfHighlightColor().copy(alpha = 0.14f)
+    }
+}
 
 @Composable
 private fun BoxScope.PdfHighlightSaveMessage(message: String) {

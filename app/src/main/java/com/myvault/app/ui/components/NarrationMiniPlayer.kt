@@ -25,6 +25,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,7 +70,7 @@ fun NarrationMiniPlayer(
     }
     val canSeek = state.totalDurationMs > 0L && state.status != NarrationPlaybackStatus.Error
     var isDragging by remember { mutableStateOf(false) }
-    var dragPosition by remember { mutableStateOf(0f) }
+    var dragPosition by remember { mutableFloatStateOf(0f) }
     val sliderPosition = if (isDragging) dragPosition else state.totalPositionMs.toFloat()
     val sliderMax = state.totalDurationMs.coerceAtLeast(1L).toFloat()
 
