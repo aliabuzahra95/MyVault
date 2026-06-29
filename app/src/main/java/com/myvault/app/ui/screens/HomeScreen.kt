@@ -576,7 +576,7 @@ fun HomeScreen(
                 HomeInlineAiPill(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 78.dp, bottom = 80.dp),
+                        .padding(end = VaultSpacing.screen + 2.dp, bottom = 132.dp),
                     onClick = { homeInlineAiViewModel.openPanel() },
                 )
             }
@@ -1140,7 +1140,7 @@ private fun HomeInlineAiPill(
         shape = VaultShapes.pill,
         color = colors.elevated.copy(alpha = 0.98f),
         border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
-        shadowElevation = 8.dp,
+        shadowElevation = 4.dp,
         tonalElevation = 0.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {

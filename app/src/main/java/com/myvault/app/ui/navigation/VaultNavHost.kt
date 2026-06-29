@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -1340,9 +1341,14 @@ private fun StudyLibraryPersonalShell(
     }
 
     LaunchedEffect(pagerState, modes) {
+        var initialSettledPageIgnored = false
         snapshotFlow { pagerState.settledPage.coerceIn(0, modes.lastIndex) }
             .distinctUntilChanged()
             .collect { page ->
+                if (!initialSettledPageIgnored) {
+                    initialSettledPageIgnored = true
+                    return@collect
+                }
                 visualSelectedPage = page
                 onRootModeChanged(modes[page])
             }
@@ -1435,8 +1441,9 @@ private fun FloatingBottomNav(
         color = colors.elevated.copy(alpha = 0.96f),
         contentColor = colors.textSecondary,
         shape = VaultShapes.pill,
+        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.72f)),
         tonalElevation = 0.dp,
-        shadowElevation = 8.dp,
+        shadowElevation = 5.dp,
     ) {
         Row(
             modifier = Modifier

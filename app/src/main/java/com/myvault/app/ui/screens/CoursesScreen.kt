@@ -182,7 +182,7 @@ fun CoursesScreen(
             CourseInlineAiPill(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 78.dp, bottom = 80.dp),
+                    .padding(end = VaultSpacing.screen + 2.dp, bottom = 150.dp),
                 onClick = {
                     courseInlineAiViewModel.openPanel(
                         scope = HomeAiAttachmentScope.Course,
@@ -312,7 +312,7 @@ private fun CourseInlineAiPill(
         shape = VaultShapes.pill,
         color = colors.elevated.copy(alpha = 0.98f),
         border = BorderStroke(1.dp, colors.accentBorder),
-        shadowElevation = 8.dp,
+        shadowElevation = 4.dp,
         tonalElevation = 0.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {

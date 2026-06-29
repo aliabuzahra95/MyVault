@@ -24,15 +24,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FormatColorText
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.PlaylistAddCheck
-import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.repository.toRelativeTime
+import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.SearchBar
 import com.myvault.app.ui.components.VaultActionModal
 import com.myvault.app.ui.components.VaultConfirmModal
@@ -97,11 +100,6 @@ fun PdfActivityFeedScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.bg,
-        topBar = {
-            ScreenTopBar(
-                onBackClick = onBackClick
-            )
-        }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -109,20 +107,37 @@ fun PdfActivityFeedScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = VaultSpacing.screen, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W800),
-                        color = colors.text
+                    IconBtn(
+                        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        onClick = onBackClick,
                     )
-                    Text(
-                        text = "PDF activity grouped by document",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary
-                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W800),
+                            color = colors.text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "PDF activity grouped by document",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
 
                 SearchBar(
@@ -458,14 +473,14 @@ private fun ActivityItemRow(
     onLongPress: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val (defaultTitle, iconTint) = when (activity.annotationType) {
-        PdfAnnotationEntity.TYPE_PAGE_NOTE -> {
-            "PDF Note" to Color(0xFFFFD84D)
-        }
-        else -> {
-            "Highlight" to activity.color.toAnnotationColor()
-        }
-    }
+    val isPdfNote = activity.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE
+    val defaultTitle = if (isPdfNote) "PDF Note" else "Highlight"
+    val iconTint = if (isPdfNote) PdfNoteIconBlue else activity.color.toAnnotationColor()
+    val icon = if (isPdfNote) Icons.AutoMirrored.Rounded.Notes else Icons.Rounded.FormatColorText
+    /*
+     * Highlights intentionally use the saved annotation colour. Page notes are
+     * always blue so they read as notes instead of coloured highlights.
+     */
 
     val titleText = if (!activity.displayTitle.isNullOrBlank()) activity.displayTitle else defaultTitle
     val descriptionText = activity.notePreview
@@ -488,7 +503,7 @@ private fun ActivityItemRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
-                imageVector = Icons.Rounded.StickyNote2,
+                imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = iconTint,
@@ -533,3 +548,5 @@ private fun String.toAnnotationColor(): Color =
         "red" -> Color(0xFFFF5A5F)
         else -> Color(0xFFFFD84D)
     }
+
+private val PdfNoteIconBlue = Color(0xFF5B8DEF)

@@ -1,12 +1,15 @@
 package com.myvault.app.data.narration
 
 import android.content.Context
+import android.media.AudioFocusRequest
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +44,19 @@ class NarrationPlayerManager @Inject constructor(
     private var streamingGeneration = false
     private var waitingForNextChunk = false
     private var pendingSeekMs: Long? = null
+    private var audioFocusHeld = false
+    private var resumeAfterAudioFocusGain = false
+
+    private val speechAudioAttributes = AudioAttributes.Builder()
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .build()
+    private val audioManager: AudioManager = context.getSystemService(AudioManager::class.java)
+    private val audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+        .setAudioAttributes(speechAudioAttributes)
+        .setWillPauseWhenDucked(true)
+        .setOnAudioFocusChangeListener(::handleAudioFocusChange)
+        .build()
 
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
@@ -219,6 +235,8 @@ class NarrationPlayerManager @Inject constructor(
             return
         }
         mediaPlayer?.takeIf { it.isPlaying }?.pause()
+        resumeAfterAudioFocusGain = false
+        abandonNarrationAudioFocus()
         updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
         persistAzureProgress(force = true)
     }
@@ -229,9 +247,28 @@ class NarrationPlayerManager @Inject constructor(
             return
         }
         mediaPlayer?.let {
-            applyPlaybackSpeed(it)
-            if (!it.isPlaying) it.start()
-            updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+            val session = activeSession
+            val file = activeFiles.getOrNull(activeChunkIndex)
+            if (!requestNarrationAudioFocus(session, file, activeChunkIndex, requestCounter)) {
+                showError(session?.noteId, session?.noteTitle ?: _state.value.noteTitle, "Audio focus unavailable. Try again.")
+                return
+            }
+            runCatching {
+                applyPlaybackSpeed(it)
+                if (!it.isPlaying) it.start()
+                updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+            }.onFailure { error ->
+                logPlaybackDiagnostic(
+                    event = "MediaPlayer resume failed",
+                    session = session,
+                    file = file,
+                    chunkIndex = activeChunkIndex,
+                    requestId = requestCounter,
+                    throwable = error,
+                    player = it,
+                )
+                showError(session?.noteId, session?.noteTitle ?: _state.value.noteTitle, "Audio playback failed. Try again.")
+            }
             return
         }
         val session = activeSession ?: return
@@ -429,6 +466,17 @@ class NarrationPlayerManager @Inject constructor(
             }
             return
         }
+        if (!file.exists() || file.length() < MinPlayableAudioBytes) {
+            logPlaybackDiagnostic(
+                event = "Local narration audio file is unavailable before playback",
+                session = session,
+                file = file,
+                chunkIndex = index,
+                throwable = null,
+            )
+            showError(session.noteId, session.noteTitle, "Audio file is unavailable. Try again.")
+            return
+        }
         releaseCurrentPlayer()
         requestCounter += 1
         val requestId = requestCounter
@@ -449,10 +497,7 @@ class NarrationPlayerManager @Inject constructor(
         )
         runCatching {
             player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build(),
+                speechAudioAttributes,
             )
             player.setDataSource(file.absolutePath)
             player.setOnPreparedListener {
@@ -462,6 +507,10 @@ class NarrationPlayerManager @Inject constructor(
                 }
                 if (startPositionMs > 0L) seekPlayer(it, startPositionMs)
                 applyPlaybackSpeed(it)
+                if (!requestNarrationAudioFocus(session, file, index, requestId)) {
+                    showError(session.noteId, session.noteTitle, "Audio focus unavailable. Try again.")
+                    return@setOnPreparedListener
+                }
                 it.start()
                 updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
             }
@@ -480,6 +529,7 @@ class NarrationPlayerManager @Inject constructor(
                         totalDurationMs = estimatedTotalDurationMs(),
                     )
                 } else {
+                    abandonNarrationAudioFocus()
                     progressStore.clear(session.noteId)
                     _state.value = NarrationUiState(
                         status = NarrationPlaybackStatus.Stopped,
@@ -495,12 +545,46 @@ class NarrationPlayerManager @Inject constructor(
                     )
                 }
             }
-            player.setOnErrorListener { _, _, _ ->
+            player.setOnErrorListener { errorPlayer, what, extra ->
+                if (!isCurrentRequest(errorPlayer, requestId)) {
+                    logPlaybackDiagnostic(
+                        event = "Ignored stale MediaPlayer error",
+                        session = session,
+                        file = file,
+                        chunkIndex = index,
+                        requestId = requestId,
+                        mediaPlayerWhat = what,
+                        mediaPlayerExtra = extra,
+                        stale = true,
+                        player = errorPlayer,
+                    )
+                    return@setOnErrorListener true
+                }
+                logPlaybackDiagnostic(
+                    event = "MediaPlayer playback error",
+                    session = session,
+                    file = file,
+                    chunkIndex = index,
+                    requestId = requestId,
+                    mediaPlayerWhat = what,
+                    mediaPlayerExtra = extra,
+                    stale = false,
+                    player = errorPlayer,
+                )
                 showError(session.noteId, session.noteTitle, "Audio playback failed. Try again.")
                 true
             }
             player.prepareAsync()
-        }.onFailure {
+        }.onFailure { error ->
+            logPlaybackDiagnostic(
+                event = "MediaPlayer setup failed",
+                session = session,
+                file = file,
+                chunkIndex = index,
+                requestId = requestId,
+                throwable = error,
+                player = player,
+            )
             showError(session.noteId, session.noteTitle, "Audio playback failed. Try again.")
         }
     }
@@ -541,6 +625,17 @@ class NarrationPlayerManager @Inject constructor(
     private fun applyPlaybackSpeed(player: MediaPlayer) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }
+                .onFailure { error ->
+                    logPlaybackDiagnostic(
+                        event = "MediaPlayer speed change failed",
+                        session = activeSession,
+                        file = activeFiles.getOrNull(activeChunkIndex),
+                        chunkIndex = activeChunkIndex,
+                        throwable = error,
+                        warning = true,
+                        player = player,
+                    )
+                }
         }
     }
 
@@ -618,6 +713,100 @@ class NarrationPlayerManager @Inject constructor(
 
     private fun isCurrentRequest(player: MediaPlayer, requestId: Long): Boolean = player === mediaPlayer && requestId == requestCounter
 
+    private fun requestNarrationAudioFocus(
+        session: NarrationSession?,
+        file: File?,
+        chunkIndex: Int,
+        requestId: Long,
+    ): Boolean {
+        if (audioFocusHeld) return true
+        val result = audioManager.requestAudioFocus(audioFocusRequest)
+        val granted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        audioFocusHeld = granted
+        if (!granted) {
+            logPlaybackDiagnostic(
+                event = "Audio focus request denied",
+                session = session,
+                file = file,
+                chunkIndex = chunkIndex,
+                requestId = requestId,
+                warning = true,
+            )
+        }
+        return granted
+    }
+
+    private fun abandonNarrationAudioFocus() {
+        if (!audioFocusHeld) {
+            resumeAfterAudioFocusGain = false
+            return
+        }
+        runCatching { audioManager.abandonAudioFocusRequest(audioFocusRequest) }
+            .onFailure { error -> Log.w(Tag, "Unable to abandon narration audio focus.", error) }
+        audioFocusHeld = false
+        resumeAfterAudioFocusGain = false
+    }
+
+    private fun handleAudioFocusChange(focusChange: Int) {
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> resumeAfterAudioFocusInterruption()
+            AudioManager.AUDIOFOCUS_LOSS -> pauseForAudioFocusLoss(resumeOnGain = false)
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
+            -> pauseForAudioFocusLoss(resumeOnGain = true)
+        }
+    }
+
+    private fun pauseForAudioFocusLoss(resumeOnGain: Boolean) {
+        val player = mediaPlayer ?: return
+        val wasPlaying = runCatching { player.isPlaying }.getOrDefault(false)
+        if (!wasPlaying) {
+            resumeAfterAudioFocusGain = false
+            return
+        }
+        runCatching { player.pause() }
+            .onFailure { error ->
+                logPlaybackDiagnostic(
+                    event = "MediaPlayer pause for audio focus failed",
+                    session = activeSession,
+                    file = activeFiles.getOrNull(activeChunkIndex),
+                    chunkIndex = activeChunkIndex,
+                    throwable = error,
+                    warning = true,
+                    player = player,
+                )
+            }
+        resumeAfterAudioFocusGain = resumeOnGain
+        updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused for another audio app")
+        persistAzureProgress(force = true)
+        if (!resumeOnGain) abandonNarrationAudioFocus()
+    }
+
+    private fun resumeAfterAudioFocusInterruption() {
+        audioFocusHeld = true
+        if (!resumeAfterAudioFocusGain) return
+        val player = mediaPlayer ?: return
+        val session = activeSession
+        val file = activeFiles.getOrNull(activeChunkIndex)
+        resumeAfterAudioFocusGain = false
+        runCatching {
+            applyPlaybackSpeed(player)
+            if (!player.isPlaying) player.start()
+            updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+        }.onFailure { error ->
+            logPlaybackDiagnostic(
+                event = "MediaPlayer resume after audio focus failed",
+                session = session,
+                file = file,
+                chunkIndex = activeChunkIndex,
+                requestId = requestCounter,
+                throwable = error,
+                player = player,
+            )
+            showError(session?.noteId, session?.noteTitle ?: _state.value.noteTitle, "Audio playback failed. Try again.")
+        }
+    }
+
     private fun stopInternal(resetState: Boolean) {
         releaseCurrentPlayer()
         releaseDeviceTts(stopOnly = true)
@@ -629,6 +818,7 @@ class NarrationPlayerManager @Inject constructor(
         streamingGeneration = false
         waitingForNextChunk = false
         pendingSeekMs = null
+        abandonNarrationAudioFocus()
         deviceChunks = emptyList()
         deviceChunkIndex = 0
         deviceNoteId = null
@@ -658,12 +848,24 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     private fun releaseCurrentPlayer() {
-        mediaPlayer?.runCatching {
-            if (isPlaying) stop()
-            reset()
-            release()
-        }
+        val player = mediaPlayer ?: return
         mediaPlayer = null
+        runCatching {
+            player.setOnPreparedListener(null)
+            player.setOnCompletionListener(null)
+            player.setOnErrorListener(null)
+        }.onFailure { error ->
+            Log.w(Tag, "Unable to detach MediaPlayer listeners before release.", error)
+        }
+        runCatching {
+            if (player.isPlaying) player.stop()
+        }.onFailure { error ->
+            Log.w(Tag, "Unable to stop MediaPlayer before release.", error)
+        }
+        runCatching { player.reset() }
+            .onFailure { error -> Log.w(Tag, "Unable to reset MediaPlayer before release.", error) }
+        runCatching { player.release() }
+            .onFailure { error -> Log.w(Tag, "Unable to release MediaPlayer.", error) }
     }
 
     private fun releaseDeviceTts(stopOnly: Boolean) {
@@ -674,6 +876,95 @@ class NarrationPlayerManager @Inject constructor(
             deviceTtsReady = false
         }
     }
+
+    private fun logPlaybackDiagnostic(
+        event: String,
+        session: NarrationSession?,
+        file: File?,
+        chunkIndex: Int = activeChunkIndex,
+        requestId: Long = requestCounter,
+        mediaPlayerWhat: Int? = null,
+        mediaPlayerExtra: Int? = null,
+        stale: Boolean = false,
+        warning: Boolean = false,
+        throwable: Throwable? = null,
+        player: MediaPlayer? = mediaPlayer,
+    ) {
+        val state = _state.value
+        val activeFile = file ?: activeFiles.getOrNull(chunkIndex)
+        val activeSession = session ?: this.activeSession
+        val playerSnapshot = player?.let { currentPlayer ->
+            runCatching {
+                "isPlaying=${currentPlayer.isPlaying}, currentPositionMs=${currentPlayer.currentPosition}, durationMs=${currentPlayer.duration}"
+            }.getOrElse { error ->
+                "unavailable=${error::class.java.simpleName}:${error.message.orEmpty()}"
+            }
+        } ?: "none"
+        val message = buildString {
+            append("event=").append(event)
+            append("; player=MediaPlayer")
+            append("; playbackExceptionCode=n/a-media-player")
+            append("; mediaPlayerWhat=").append(mediaPlayerWhatLabel(mediaPlayerWhat))
+            append("; mediaPlayerExtra=").append(mediaPlayerExtraLabel(mediaPlayerExtra))
+            append("; staleCallback=").append(stale)
+            append("; requestId=").append(requestId)
+            append("; currentRequestId=").append(requestCounter)
+            append("; provider=").append(activeSession.providerLabel())
+            append("; model=").append(activeSession?.model ?: "unknown")
+            append("; voice=").append(activeSession?.voice ?: state.voice)
+            append("; sourceMode=").append(if (streamingGeneration) "progressive-local-file" else "local-cache-file")
+            append("; audioFocusHeld=").append(audioFocusHeld)
+            append("; resumeAfterAudioFocusGain=").append(resumeAfterAudioFocusGain)
+            append("; playbackState=").append(state.status)
+            append("; label=").append(state.label)
+            append("; chunk=").append(chunkIndex + 1).append("/").append(expectedChunks.takeIf { it > 0 } ?: activeFiles.size)
+            append("; stateCurrentPositionMs=").append(state.currentPositionMs)
+            append("; stateTotalPositionMs=").append(state.totalPositionMs)
+            append("; stateDurationMs=").append(state.durationMs)
+            append("; stateTotalDurationMs=").append(state.totalDurationMs)
+            append("; playerSnapshot=").append(playerSnapshot)
+            append("; filePath=").append(activeFile?.absolutePath ?: "none")
+            append("; fileUri=").append(activeFile?.toURI()?.toString() ?: "none")
+            append("; fileExists=").append(activeFile?.exists() ?: false)
+            append("; fileBytes=").append(activeFile?.takeIf { it.exists() }?.length() ?: 0L)
+            throwable?.let { error ->
+                append("; exception=").append(error::class.java.name)
+                append("; exceptionMessage=").append(error.message.orEmpty())
+                append("; cause=").append(error.cause?.let { "${it::class.java.name}:${it.message.orEmpty()}" } ?: "none")
+            }
+        }
+        if (stale || warning) {
+            Log.w(Tag, message, throwable)
+        } else {
+            Log.e(Tag, message, throwable)
+        }
+    }
+
+    private fun NarrationSession?.providerLabel(): String =
+        when {
+            this == null -> "unknown"
+            model.startsWith("azure-speech-") -> "Azure Speech TTS"
+            model == NarrationConfig.MODEL -> "OpenAI TTS"
+            else -> model
+        }
+
+    private fun mediaPlayerWhatLabel(value: Int?): String =
+        when (value) {
+            null -> "n/a"
+            MediaPlayer.MEDIA_ERROR_UNKNOWN -> "MEDIA_ERROR_UNKNOWN($value)"
+            MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "MEDIA_ERROR_SERVER_DIED($value)"
+            else -> value.toString()
+        }
+
+    private fun mediaPlayerExtraLabel(value: Int?): String =
+        when (value) {
+            null -> "n/a"
+            MediaPlayer.MEDIA_ERROR_IO -> "MEDIA_ERROR_IO($value)"
+            MediaPlayer.MEDIA_ERROR_MALFORMED -> "MEDIA_ERROR_MALFORMED($value)"
+            MediaPlayer.MEDIA_ERROR_UNSUPPORTED -> "MEDIA_ERROR_UNSUPPORTED($value)"
+            MediaPlayer.MEDIA_ERROR_TIMED_OUT -> "MEDIA_ERROR_TIMED_OUT($value)"
+            else -> value.toString()
+        }
 
     private fun String.splitForDeviceTts(): List<String> =
         split(Regex("\\n{2,}"))
@@ -699,11 +990,13 @@ class NarrationPlayerManager @Inject constructor(
             .filter { it.isNotBlank() }
 
     private companion object {
+        const val Tag = "MyVaultNarration"
         const val FalseResetState = false
         const val DeviceNarrationVoice = "device"
         const val DeviceTtsMaxChunkChars = 900
         const val SentenceCueGraceMs = 180L
         const val ProgressSaveIntervalMs = 5_000L
         const val ResumeMinimumMs = 5_000L
+        const val MinPlayableAudioBytes = 512L
     }
 }

@@ -724,7 +724,7 @@ private fun LibraryArchiveScreen(
             LibraryInlineAiPill(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 78.dp, bottom = 80.dp),
+                    .padding(end = VaultSpacing.screen + 2.dp, bottom = 132.dp),
                 onClick = { libraryInlineAiViewModel.openPanel(HomeAiAttachmentScope.LibraryPdfs) },
             )
 
@@ -2143,7 +2143,7 @@ private fun LibraryInlineAiPill(
         shape = VaultShapes.pill,
         color = colors.elevated.copy(alpha = 0.98f),
         border = BorderStroke(1.dp, colors.accentBorder),
-        shadowElevation = 8.dp,
+        shadowElevation = 4.dp,
         tonalElevation = 0.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {

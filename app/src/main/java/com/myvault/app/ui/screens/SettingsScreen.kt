@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -556,8 +558,10 @@ private fun AppearanceCard(
             .fillMaxWidth()
             .padding(horizontal = VaultSpacing.screen),
         color = colors.elevated,
-        shape = VaultShapes.xl,
+        shape = VaultShapes.lg,
         border = BorderStroke(1.dp, colors.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
         Column(modifier = Modifier.padding(VaultSpacing.md), verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
             Text("APPEARANCE", style = MaterialTheme.typography.labelSmall, color = colors.accent)
@@ -593,17 +597,20 @@ private fun SettingsGroupEditor(
     onNarrationProviderClick: () -> Unit,
     onAzureSpeechClick: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-    ) {
-        SettingsRow(Icons.Rounded.TextFields, "Dashboard font size", preferences.dashboardFontSize.displayPreference(), onClick = onDashboardFontSizeClick)
-        SettingsRow(Icons.Rounded.TextFields, "Note editor font size", preferences.noteFontSize.displayPreference(), onClick = onNoteFontSizeClick)
-        SettingsRow(Icons.Rounded.Visibility, "Show full note titles", if (preferences.showFullNoteTitles) "On" else "Off", onClick = { onShowFullNoteTitlesChanged(!preferences.showFullNoteTitles) })
-        SettingsRow(Icons.Rounded.Visibility, "Show full file titles", if (preferences.showFullFileTitles) "On" else "Off", onClick = { onShowFullFileTitlesChanged(!preferences.showFullFileTitles) })
-        SettingsRow(Icons.Rounded.Visibility, "Default note view", preferences.defaultNoteView.displayPreference(), onClick = onDefaultViewClick)
-        SettingsRow(Icons.Rounded.VolumeUp, "Default Listen provider", NarrationProvider.fromStoredValue(preferences.narrationProvider).label, onClick = onNarrationProviderClick)
-        SettingsRow(Icons.Rounded.VolumeUp, "Azure Speech", "API key, region, English and Arabic voices", onClick = onAzureSpeechClick)
+    SettingsSection(title = "READING & LISTENING") {
+        SettingsRow(Icons.Rounded.TextFields, "Dashboard font size", preferences.dashboardFontSize.displayPreference(), contained = false, onClick = onDashboardFontSizeClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.TextFields, "Note editor font size", preferences.noteFontSize.displayPreference(), contained = false, onClick = onNoteFontSizeClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Visibility, "Show full note titles", if (preferences.showFullNoteTitles) "On" else "Off", contained = false, onClick = { onShowFullNoteTitlesChanged(!preferences.showFullNoteTitles) })
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Visibility, "Show full file titles", if (preferences.showFullFileTitles) "On" else "Off", contained = false, onClick = { onShowFullFileTitlesChanged(!preferences.showFullFileTitles) })
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Visibility, "Default note view", preferences.defaultNoteView.displayPreference(), contained = false, onClick = onDefaultViewClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.VolumeUp, "Default Listen provider", NarrationProvider.fromStoredValue(preferences.narrationProvider).label, contained = false, onClick = onNarrationProviderClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.VolumeUp, "Azure Speech", "API key, region, English and Arabic voices", contained = false, onClick = onAzureSpeechClick)
     }
 }
 
@@ -687,28 +694,71 @@ private fun SettingsGroupVault(
     onReleaseReadinessClick: () -> Unit,
     recentlyDeletedCount: Int?,
 ) {
-    Column(
-        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-    ) {
+    SettingsSection(title = "VAULT & ACCOUNT") {
         SettingsRow(
             Icons.Rounded.Backup,
             "Backup & restore",
             preferences.backupSummary(),
+            contained = false,
             onClick = onBackupSettingsClick,
         )
-        SettingsRow(Icons.Rounded.Psychology, "ChatGPT AI login", "Supabase account", onClick = onAiLoginClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Psychology, "ChatGPT AI login", "Supabase account", contained = false, onClick = onAiLoginClick)
+        SettingsSectionDivider()
         SettingsRow(
             Icons.Rounded.RestoreFromTrash,
             "Recently Deleted",
             recentlyDeletedCount?.let { "$it item${if (it == 1) "" else "s"}" } ?: "Open",
+            contained = false,
             onClick = onRecentlyDeletedClick,
         )
-        SettingsRow(Icons.Rounded.Lock, "Security lock", if (preferences.securityLockEnabled) "On" else "Off", onClick = onSecurityLockClick)
-        SettingsRow(Icons.Rounded.Timer, "Auto-lock timer", preferences.securityLockTimeoutMs.displayLockTimeout(), onClick = onLockTimerClick)
-        SettingsRow(Icons.Rounded.Verified, "Release readiness", "Checklist", onClick = onReleaseReadinessClick)
-        SettingsRow(Icons.Rounded.Storage, "Storage", storageLabel)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Lock, "Security lock", if (preferences.securityLockEnabled) "On" else "Off", contained = false, onClick = onSecurityLockClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Timer, "Auto-lock timer", preferences.securityLockTimeoutMs.displayLockTimeout(), contained = false, onClick = onLockTimerClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Verified, "Release readiness", "Checklist", contained = false, onClick = onReleaseReadinessClick)
+        SettingsSectionDivider()
+        SettingsRow(Icons.Rounded.Storage, "Storage", storageLabel, contained = false)
     }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen),
+        color = colors.elevated,
+        shape = VaultShapes.lg,
+        border = BorderStroke(1.dp, colors.border),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(modifier = Modifier.padding(vertical = 12.dp)) {
+            Text(
+                text = title,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.accent,
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionDivider() {
+    val colors = VaultThemeTokens.colors
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 56.dp, end = 14.dp),
+        color = colors.border.copy(alpha = 0.62f),
+        thickness = 1.dp,
+    )
 }
 
 @Composable

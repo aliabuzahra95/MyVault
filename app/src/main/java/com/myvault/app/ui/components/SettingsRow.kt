@@ -16,6 +16,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
@@ -32,31 +33,32 @@ fun SettingsRow(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
+    contained: Boolean = true,
     onClick: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        color = colors.elevated,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
+        color = if (contained) colors.elevated else Color.Transparent,
+        shape = if (contained) VaultShapes.md else VaultShapes.sm,
+        border = if (contained) BorderStroke(1.dp, colors.border) else null,
         tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
+        shadowElevation = if (contained) 0.5.dp else 0.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = if (contained) 12.dp else 13.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
         ) {
             Surface(
-                modifier = Modifier.size(30.dp),
-                color = colors.accentSoft,
+                modifier = Modifier.size(if (contained) 30.dp else 28.dp),
+                color = colors.accent.copy(alpha = if (contained) 0.12f else 0.09f),
                 shape = VaultShapes.sm,
-                border = BorderStroke(1.dp, colors.accentBorder),
+                border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.22f)),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = colors.accent)
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(if (contained) 15.dp else 14.dp), tint = colors.accent)
                 }
             }
             Text(
