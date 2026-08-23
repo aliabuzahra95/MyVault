@@ -49,7 +49,9 @@ fun buildTree(
         val childNotes = notesByFolder[folder.id].orEmpty().map { note ->
             note.toTreeItem(attachmentsByNote, tablesByNote, notesByParent)
         }
-        val children = (childFolders + childNotes).sortedBy { it.orderIndex }
+        val children = (childFolders + childNotes)
+            .sortedBy { it.orderIndex }
+            .withPinnedNotesFirst()
         return VaultTreeItem(
             id = folder.id,
             name = folder.name,
@@ -65,8 +67,20 @@ fun buildTree(
 
     val rootFolders = foldersByParent[null].orEmpty().map { folderItem(it, 0) }
     val rootNotes = notesByFolder[null].orEmpty().map { note -> note.toTreeItem(attachmentsByNote, tablesByNote, notesByParent) }
-    return (rootFolders + rootNotes).sortedBy { it.orderIndex }
+    return (rootFolders + rootNotes)
+        .sortedBy { it.orderIndex }
+        .withPinnedNotesFirst()
 }
+
+/**
+ * Pinning is a stable priority layer over the user's normal order. This keeps pinned notes at
+ * the top of their immediate folder without disturbing the relative order of pinned notes or of
+ * everything left unpinned. A note returns to its original orderIndex position when unpinned.
+ */
+private fun List<VaultTreeItem>.withPinnedNotesFirst(): List<VaultTreeItem> =
+    partition { item ->
+        item.type == VaultTreeItemType.Note && (item.pinned || item.folderPinned)
+    }.let { (pinnedNotes, remainingItems) -> pinnedNotes + remainingItems }
 
 private fun NoteEntity.toTreeItem(
     attachmentsByNote: Map<String, List<AttachmentEntity>>,

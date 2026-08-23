@@ -27,6 +27,8 @@ class MemoriseViewModel @Inject constructor(
                 val current = _uiState.value
                 _uiState.value = current.copy(
                     records = preferences.quranMemorizationRecords,
+                    attempts = preferences.quranMemorizationAttempts,
+                    surahAttempts = preferences.quranSurahMemorizationAttempts,
                     selectedAyah = current.selectedAyah.coerceIn(1, current.selectedSurah.ayat),
                 )
             }
@@ -111,6 +113,8 @@ class MemoriseViewModel @Inject constructor(
             existing?.copy(
                 lastReviewedAt = now,
                 reviewCount = existing.reviewCount + 1,
+                isNeedsRevision = false,
+                isIncorrect = false,
                 updatedAt = now,
             ) ?: freshRecord(surah, ayah, now, reviewCount = 1)
         }
@@ -123,6 +127,8 @@ class MemoriseViewModel @Inject constructor(
             current.copy(
                 memorizedAt = if (current.memorizedAt == null) now else null,
                 lastReviewedAt = now,
+                isIncorrect = false,
+                isNeedsRevision = if (current.memorizedAt == null) false else current.isNeedsRevision,
                 updatedAt = now,
             )
         }
@@ -134,6 +140,8 @@ class MemoriseViewModel @Inject constructor(
             val current = existing ?: freshRecord(surah, ayah, now)
             current.copy(
                 isRevision = !current.isRevision,
+                isNeedsRevision = !current.isRevision,
+                isIncorrect = if (!current.isRevision) false else current.isIncorrect,
                 updatedAt = now,
             )
         }
@@ -145,6 +153,19 @@ class MemoriseViewModel @Inject constructor(
             val current = existing ?: freshRecord(surah, ayah, now)
             current.copy(
                 isWeak = !current.isWeak,
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun toggleIncorrect(verseKey: String) {
+        val (surah, ayah) = parseVerseKey(verseKey) ?: return
+        upsertRecord(surah, ayah) { existing, now ->
+            val current = existing ?: freshRecord(surah, ayah, now)
+            current.copy(
+                isIncorrect = !current.isIncorrect,
+                isNeedsRevision = if (!current.isIncorrect) false else current.isNeedsRevision,
+                isRevision = if (!current.isIncorrect) false else current.isRevision,
                 updatedAt = now,
             )
         }

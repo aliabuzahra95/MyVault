@@ -9,6 +9,7 @@ import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReflectionRepository
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.QuranTextRepository
+import com.myvault.app.data.quran.QuranTranslationSource
 import com.myvault.app.data.quran.MUKHTASAR_TAFSIR_ID
 import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
 import com.myvault.app.data.quran.audio.AudioPickerAyah
@@ -20,6 +21,11 @@ import com.myvault.app.data.quran.audio.SurahDownloadState
 import com.myvault.app.data.quran.memorization.MemorizationConcealAmount
 import com.myvault.app.data.quran.memorization.MemorizationRecord
 import com.myvault.app.data.quran.memorization.MemorizationRepeatMode
+import com.myvault.app.data.quran.memorization.QuranMemorizationAttempt
+import com.myvault.app.data.quran.memorization.QuranMemorizationSavedAttempt
+import com.myvault.app.data.quran.memorization.QuranSurahMemorizationAttempt
+import com.myvault.app.data.quran.memorization.toSavedAttempt
+import com.myvault.app.data.quran.memorization.toStatusSnapshot
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.quran.tafsirCacheKey
@@ -59,6 +65,7 @@ class QuranReaderViewModel @Inject constructor(
                 fontPercent = preferences.quranArabicFontPercent,
                 translationFontPercent = preferences.quranTranslationFontPercent,
                 translationEnabled = preferences.quranTranslationEnabled,
+                translationSource = QuranTranslationSource.fromStoredValue(preferences.quranTranslationSource),
                 tajweedEnabled = preferences.quranTajweedEnabled,
                 bookmarkedVerseKeys = preferences.quranBookmarkedVerses,
                 recentLocations = preferences.quranRecentLocations,
@@ -108,6 +115,8 @@ class QuranReaderViewModel @Inject constructor(
             vaultPreferences.userPreferences.collect { preferences ->
                 _uiState.value = _uiState.value.copy(
                     memorizationRecords = preferences.quranMemorizationRecords,
+                    memorizationAttemptStatuses = preferences.quranMemorizationAttempts.latestStatusSnapshots(),
+                    surahMemorizationAttempts = preferences.quranSurahMemorizationAttempts,
                 )
             }
         }
@@ -125,6 +134,7 @@ class QuranReaderViewModel @Inject constructor(
             fontPercent = _uiState.value.arabicFontPercent,
             translationFontPercent = _uiState.value.translationFontPercent,
             translationEnabled = _uiState.value.translationEnabled,
+            translationSource = _uiState.value.translationSource,
             tajweedEnabled = _uiState.value.tajweedEnabled,
             bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
             recentLocations = _uiState.value.recentLocations,
@@ -141,6 +151,7 @@ class QuranReaderViewModel @Inject constructor(
             fontPercent = _uiState.value.arabicFontPercent,
             translationFontPercent = _uiState.value.translationFontPercent,
             translationEnabled = _uiState.value.translationEnabled,
+            translationSource = _uiState.value.translationSource,
             tajweedEnabled = _uiState.value.tajweedEnabled,
             bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
             recentLocations = _uiState.value.recentLocations,
@@ -190,6 +201,24 @@ class QuranReaderViewModel @Inject constructor(
         viewModelScope.launch {
             vaultPreferences.setQuranTranslationEnabled(enabled)
         }
+    }
+
+    fun setTranslationSource(source: QuranTranslationSource) {
+        if (_uiState.value.translationSource == source && !_uiState.value.translationSourceLoading) return
+        viewModelScope.launch {
+            vaultPreferences.setQuranTranslationSource(source)
+        }
+        loadSurah(
+            surahNumber = _uiState.value.selectedSurah.num,
+            restoredAyah = _uiState.value.restoredAyah,
+            fontPercent = _uiState.value.arabicFontPercent,
+            translationFontPercent = _uiState.value.translationFontPercent,
+            translationEnabled = _uiState.value.translationEnabled,
+            translationSource = source,
+            tajweedEnabled = _uiState.value.tajweedEnabled,
+            bookmarkedVerseKeys = _uiState.value.bookmarkedVerseKeys,
+            recentLocations = _uiState.value.recentLocations,
+        )
     }
 
     fun toggleTafsir(verseKey: String) {
@@ -486,6 +515,17 @@ class QuranReaderViewModel @Inject constructor(
             (existing ?: ayah.toMemorizationRecord(now)).copy(
                 lastReviewedAt = now,
                 reviewCount = (existing?.reviewCount ?: 0).coerceAtLeast(0),
+                isMemorising = true,
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun removeMemorizingAyah(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            val current = existing ?: ayah.toMemorizationRecord(now)
+            current.copy(
+                isMemorising = false,
                 updatedAt = now,
             )
         }
@@ -498,6 +538,22 @@ class QuranReaderViewModel @Inject constructor(
                 memorizedAt = if (current.isMemorized) null else now,
                 lastReviewedAt = now,
                 reviewCount = current.reviewCount + 1,
+                isNeedsRevision = if (current.isMemorized) current.isNeedsRevision else false,
+                isIncorrect = if (current.isMemorized) current.isIncorrect else false,
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun markRevisedAyah(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            val current = existing ?: ayah.toMemorizationRecord(now)
+            current.copy(
+                lastReviewedAt = now,
+                reviewCount = current.reviewCount + 1,
+                isNeedsRevision = false,
+                isRevision = false,
+                isIncorrect = false,
                 updatedAt = now,
             )
         }
@@ -551,6 +607,30 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    fun toggleNeedsRevisionMemorization(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            val current = existing ?: ayah.toMemorizationRecord(now)
+            current.copy(
+                isNeedsRevision = !current.isNeedsRevision,
+                isRevision = !current.isNeedsRevision,
+                isIncorrect = if (!current.isNeedsRevision) false else current.isIncorrect,
+                updatedAt = now,
+            )
+        }
+    }
+
+    fun toggleIncorrectMemorization(ayah: QuranAyah) {
+        updateMemorizationRecord(ayah) { existing, now ->
+            val current = existing ?: ayah.toMemorizationRecord(now)
+            current.copy(
+                isIncorrect = !current.isIncorrect,
+                isNeedsRevision = if (!current.isIncorrect) false else current.isNeedsRevision,
+                isRevision = if (!current.isIncorrect) false else current.isRevision,
+                updatedAt = now,
+            )
+        }
+    }
+
     fun setMemorizationConcealAmount(verseKey: String, amount: MemorizationConcealAmount?) {
         _uiState.value = _uiState.value.copy(
             memorizationConcealedVerseKey = if (amount == null) null else verseKey,
@@ -573,6 +653,29 @@ class QuranReaderViewModel @Inject constructor(
         )
     }
 
+    fun recordAiListenAttempt(attempt: QuranMemorizationAttempt) {
+        val savedAttempt = attempt.toSavedAttempt()
+        _uiState.value = _uiState.value.copy(
+            memorizationAttemptStatuses = _uiState.value.memorizationAttemptStatuses + (savedAttempt.verseKey to savedAttempt.toStatusSnapshot()),
+        )
+        viewModelScope.launch {
+            vaultPreferences.addQuranMemorizationAttempt(savedAttempt)
+        }
+    }
+
+    fun recordSurahTestAttempt(attempt: QuranSurahMemorizationAttempt) {
+        val savedAttempt = attempt.toSavedAttempt()
+        _uiState.value = _uiState.value.copy(
+            surahMemorizationAttempts = (
+                _uiState.value.surahMemorizationAttempts
+                    .filterNot { it.attemptId == savedAttempt.attemptId } + savedAttempt
+                ).sortedByDescending { it.timestampMs },
+        )
+        viewModelScope.launch {
+            vaultPreferences.addQuranSurahMemorizationAttempt(savedAttempt)
+        }
+    }
+
     fun setArabicFontPercentFromSlider(percent: Int) {
         setArabicFontPercent(percent)
     }
@@ -593,6 +696,7 @@ class QuranReaderViewModel @Inject constructor(
         fontPercent: Int,
         translationFontPercent: Int,
         translationEnabled: Boolean,
+        translationSource: QuranTranslationSource,
         tajweedEnabled: Boolean,
         bookmarkedVerseKeys: Set<String>,
         recentLocations: List<com.myvault.app.data.quran.QuranRecentLocation>,
@@ -606,6 +710,8 @@ class QuranReaderViewModel @Inject constructor(
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
                 translationFontPercent = translationFontPercent.coerceIn(80, 130),
                 translationEnabled = translationEnabled,
+                translationSourceLoading = translationSource != _uiState.value.translationSource,
+                translationSourceMessage = null,
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 recentLocations = recentLocations,
@@ -613,7 +719,30 @@ class QuranReaderViewModel @Inject constructor(
                 expandedTafsirVerseKey = null,
                 loading = true,
             )
-            val ayahs = quranTextRepository.getSurahAyahs(surah.num)
+            val requestedAyahs = runCatching {
+                quranTextRepository.getSurahAyahs(surah.num, translationSource)
+            }
+            val (ayahs, loadedTranslationSource, translationMessage) = requestedAyahs.fold(
+                onSuccess = { Triple(it, translationSource, null) },
+                onFailure = {
+                    if (translationSource == QuranTranslationSource.SahihInternational) {
+                        _uiState.value = _uiState.value.copy(
+                            loading = false,
+                            translationSourceLoading = false,
+                            translationSourceMessage = "The translation could not be loaded.",
+                        )
+                        return@launch
+                    }
+                    Triple(
+                        quranTextRepository.getSurahAyahs(
+                            surah.num,
+                            QuranTranslationSource.SahihInternational,
+                        ),
+                        QuranTranslationSource.SahihInternational,
+                        "Tafheem-ul-Quran could not be loaded. Sahih International is shown for now.",
+                    )
+                },
+            )
             _uiState.value = _uiState.value.copy(
                 selectedSurah = surah,
                 ayahs = ayahs,
@@ -621,6 +750,9 @@ class QuranReaderViewModel @Inject constructor(
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
                 translationFontPercent = translationFontPercent.coerceIn(80, 130),
                 translationEnabled = translationEnabled,
+                translationSource = loadedTranslationSource,
+                translationSourceLoading = false,
+                translationSourceMessage = translationMessage,
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 recentLocations = recentLocations,
@@ -628,6 +760,20 @@ class QuranReaderViewModel @Inject constructor(
                 expandedTafsirVerseKey = null,
                 loading = false,
             )
+
+            if (loadedTranslationSource == QuranTranslationSource.Maududi) {
+                val enrichedAyahs = runCatching {
+                    quranTextRepository.refreshMaududiSurahAyahs(surah.num)
+                }.getOrNull()
+                val current = _uiState.value
+                if (
+                    enrichedAyahs != null &&
+                    current.selectedSurah.num == surah.num &&
+                    current.translationSource == QuranTranslationSource.Maududi
+                ) {
+                    _uiState.value = current.copy(ayahs = enrichedAyahs)
+                }
+            }
         }
     }
 
@@ -697,6 +843,12 @@ private fun QuranAyah.toMemorizationRecord(now: Long): MemorizationRecord =
         isWeak = false,
         updatedAt = now,
     )
+
+private fun List<QuranMemorizationSavedAttempt>.latestStatusSnapshots() =
+    groupBy { it.verseKey }
+        .mapValues { (_, attempts) ->
+            attempts.maxBy { it.timestampMs }.toStatusSnapshot()
+        }
 
 private fun buildReflectionNoteBody(title: String, reference: String, ayah: QuranAyah, body: String): String = buildString {
     append(title)

@@ -70,6 +70,10 @@ class FolderViewModel @Inject constructor(
         }
     }
 
+    fun createNoteInFolder(targetFolderId: String, onCreated: (String) -> Unit) {
+        viewModelScope.launch { onCreated(noteRepository.createNote(folderId = targetFolderId)) }
+    }
+
     fun recordCourseNoteOpened(noteId: String) {
         viewModelScope.launch {
             val mode = uiState.value.folder?.mode.orEmpty()
@@ -83,6 +87,22 @@ class FolderViewModel @Inject constructor(
         viewModelScope.launch {
             onCreated(folderRepository.createFolder(parentId = folderId, name = name, description = description))
         }
+    }
+
+    fun createSubfolderInFolder(parentId: String, name: String, description: String?) {
+        viewModelScope.launch { folderRepository.createFolder(parentId, name, description = description) }
+    }
+
+    fun updateChildFolder(id: String, name: String, description: String?) {
+        viewModelScope.launch { folderRepository.updateFolderDetails(id, name, description) }
+    }
+
+    fun moveChildFolder(id: String, parentId: String?) {
+        viewModelScope.launch { folderRepository.moveFolder(id, parentId) }
+    }
+
+    fun deleteChildFolder(id: String) {
+        viewModelScope.launch { folderRepository.deleteFolderTree(id) }
     }
 
     fun updateFolderDetails(name: String, description: String?) {

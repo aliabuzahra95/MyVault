@@ -108,23 +108,15 @@ import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.EditorTool
 import com.myvault.app.ui.components.EditorToolbar
 import com.myvault.app.ui.components.IconBtn
-import com.myvault.app.ui.components.RichMarkdownText
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
-import com.myvault.app.data.repository.AiPromptBuilder
-import com.myvault.app.data.repository.AiSuggestion
-import com.myvault.app.data.repository.NoteAiAction
-import com.myvault.app.data.repository.NoteAiModel
-import com.myvault.app.data.repository.NoteAiProvider
-import com.myvault.app.data.repository.SelectedTextAiAction
-import com.myvault.app.data.repository.displayName
-import com.myvault.app.ui.viewmodel.NoteAiChatMessage
-import com.myvault.app.ui.viewmodel.NoteAiMessageRole
-import com.myvault.app.ui.viewmodel.NoteAiUiState
+import com.myvault.app.data.formatting.NoteFormattingAction
+import com.myvault.app.data.formatting.NoteFormattingModel
+import com.myvault.app.data.formatting.NoteFormattingProvider
+import com.myvault.app.data.formatting.NoteFormattingUiState
 import com.myvault.app.ui.viewmodel.NoteUiState
 import com.myvault.app.ui.viewmodel.NoteTableUiState
-import com.myvault.app.ui.viewmodel.SelectedTextAiUiState
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -139,22 +131,14 @@ import java.text.NumberFormat
 @Composable
 fun EditorScreen(
     uiState: NoteUiState,
-    aiState: NoteAiUiState,
-    selectedTextAiState: SelectedTextAiUiState = SelectedTextAiUiState(),
+    formattingState: NoteFormattingUiState,
     onBackClick: () -> Unit,
     onTitleChange: (String) -> Unit,
     onContentChange: (text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) -> Unit,
-    onRunAiTool: (action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel, title: String, body: String, question: String) -> Unit,
-    onRunSelectedTextAi: (action: SelectedTextAiAction, provider: NoteAiProvider, model: NoteAiModel, title: String, body: String, selectedText: String, question: String) -> Unit = { _, _, _, _, _, _, _ -> },
-    onClearSelectedTextAi: () -> Unit = {},
-    onSelectedTextAiQuestionChange: (question: String, action: SelectedTextAiAction?) -> Unit = { _, _ -> },
-    onSendSelectedTextResultToChat: (action: SelectedTextAiAction, selectedText: String, result: String) -> Unit = { _, _, _ -> },
-    onClearAiResult: () -> Unit,
-    onClearAiConversation: () -> Unit = {},
-    onAiProviderSelected: (NoteAiProvider) -> Unit = {},
-    onAiModelSelected: (NoteAiModel) -> Unit = {},
-    onAiQuestionChange: (String) -> Unit = {},
-    onAskAiClick: (selectedText: String?) -> Unit = {},
+    onRunFormattingTool: (action: NoteFormattingAction, provider: NoteFormattingProvider, model: NoteFormattingModel, title: String, body: String) -> Unit,
+    onClearFormattingResult: () -> Unit,
+    onFormattingProviderSelected: (NoteFormattingProvider) -> Unit = {},
+    onFormattingModelSelected: (NoteFormattingModel) -> Unit = {},
     onAzureListenFromHere: (title: String, body: String, startOffset: Int) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     onAttachDocument: (Uri) -> Unit,
@@ -195,7 +179,6 @@ fun EditorScreen(
     var tableDeleteRequest by remember { mutableStateOf<String?>(null) }
     var moreMenuOpen by remember { mutableStateOf(false) }
     var intelligentStructureOpen by remember { mutableStateOf(false) }
-    var selectedTextTarget by remember { mutableStateOf<SelectedTextTarget?>(null) }
     var replaceAiDialogOpen by remember { mutableStateOf(false) }
     var structureOnlyNotice by remember { mutableStateOf<String?>(null) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
@@ -249,26 +232,55 @@ fun EditorScreen(
         safeBodyValue.selectedTextOrNull()
     }
     val selectedTextChipText = selectedBodyText
+    val bodyBottomComfortPadding = if (selectedTextChipText != null) 64.dp else 10.dp
 
     LaunchedEffect(
         bodyFocused,
         safeBodyValue.selection.start,
         safeBodyValue.selection.end,
         safeBodyValue.text.length,
+        bodyTextLayoutResult,
         imeBottom,
     ) {
-        if (!bodyFocused || !safeBodyValue.selection.collapsed) return@LaunchedEffect
-        delay(16L)
+        if (!bodyFocused || safeBodyValue.text.isEmpty()) return@LaunchedEffect
         val textLayout = bodyTextLayoutResult ?: return@LaunchedEffect
-        val cursorRect = textLayout.getCursorRect(safeBodyValue.selection.end.coerceIn(0, safeBodyValue.text.length))
-        val topPadding = with(density) { 20.dp.toPx() }
-        val bottomPadding = with(density) { 48.dp.toPx() }
+        val selection = safeBodyValue.selection
+        val selectionStart = minOf(selection.start, selection.end).coerceIn(0, safeBodyValue.text.lastIndex)
+        val selectionEnd = maxOf(selection.start, selection.end).coerceIn(selectionStart + 1, safeBodyValue.text.length)
+        val activeOffset = when {
+            selection.collapsed -> selection.end.coerceIn(0, safeBodyValue.text.length)
+            selection.end > selection.start -> (selection.end - 1).coerceIn(0, safeBodyValue.text.lastIndex)
+            else -> selection.end.coerceIn(0, safeBodyValue.text.lastIndex)
+        }
+        val activeRect = if (selection.collapsed) {
+            textLayout.getCursorRect(activeOffset)
+        } else {
+            textLayout.getBoundingBox(activeOffset)
+        }
+        val startRect = textLayout.getBoundingBox(selectionStart)
+        val endRect = textLayout.getBoundingBox((selectionEnd - 1).coerceIn(0, safeBodyValue.text.lastIndex))
+        val completeSelectionRect = Rect(
+            left = minOf(startRect.left, endRect.left),
+            top = minOf(startRect.top, endRect.top),
+            right = maxOf(startRect.right, endRect.right),
+            bottom = maxOf(startRect.bottom, endRect.bottom),
+        )
+        val maxComfortableSelectionHeight = with(density) { 180.dp.toPx() }
+        val targetRect = if (!selection.collapsed && completeSelectionRect.height <= maxComfortableSelectionHeight) {
+            completeSelectionRect
+        } else {
+            activeRect
+        }
+        val topPadding = with(density) { 14.dp.toPx() }
+        val bottomPadding = with(density) {
+            if (selection.collapsed) 30.dp.toPx() else 52.dp.toPx()
+        }
         bodyBringIntoViewRequester.bringIntoView(
             Rect(
-                left = cursorRect.left,
-                top = (cursorRect.top - topPadding).coerceAtLeast(0f),
-                right = cursorRect.right.coerceAtLeast(cursorRect.left + 1f),
-                bottom = cursorRect.bottom + bottomPadding,
+                left = targetRect.left,
+                top = (targetRect.top - topPadding).coerceAtLeast(0f),
+                right = targetRect.right.coerceAtLeast(targetRect.left + 1f),
+                bottom = targetRect.bottom + bottomPadding,
             ),
         )
     }
@@ -494,7 +506,7 @@ fun EditorScreen(
         pendingInlineStyles = emptySet()
     }
 
-    fun insertAiResultBelow(result: String, action: NoteAiAction?) {
+    fun insertAiResultBelow(result: String, action: NoteFormattingAction?) {
         if (action.isEditorOutputMode()) {
             traceStructureOnlyEditorStage(context, "04-before-editor-insert-html", result, action)
             val imported = parseRichImport(html = result, plainText = null).document
@@ -520,7 +532,7 @@ fun EditorScreen(
         bodyFocusRequester.requestFocus()
     }
 
-    fun replaceBodyWithAiResult(result: String, action: NoteAiAction?) {
+    fun replaceBodyWithAiResult(result: String, action: NoteFormattingAction?) {
         traceStructureOnlyEditorStage(context, "04-before-editor-insert-html", result, action)
         val imported = if (action.isEditorOutputMode()) {
             parseRichImport(html = result, plainText = null).document
@@ -560,30 +572,6 @@ fun EditorScreen(
         bodyFocusRequester.requestFocus()
     }
 
-    fun insertSelectedTextAiResultBelow(result: String, target: SelectedTextTarget?) {
-        val trimmed = result.trim()
-        if (trimmed.isBlank()) return
-        val safeValue = sanitizeVaultTextFieldValue(bodyValue)
-        val insertAt = (target?.end ?: safeValue.selection.end).coerceIn(0, safeValue.text.length)
-        val prefix = if (insertAt > 0 && safeValue.text.getOrNull(insertAt - 1) != '\n') "\n\n" else "\n"
-        val suffix = if (safeValue.text.getOrNull(insertAt) == '\n') "" else "\n"
-        val insertion = prefix + trimmed + suffix
-        val updatedText = safeValue.text.replaceRange(insertAt, insertAt, insertion)
-        val cursor = insertAt + insertion.length
-        applyBodyTransform(safeValue.copy(text = updatedText, selection = TextRange(cursor)))
-        bodyFocusRequester.requestFocus()
-    }
-
-    fun insertSelectedTextAiResultAtCursor(result: String) {
-        val trimmed = result.trim()
-        if (trimmed.isBlank()) return
-        val safeValue = sanitizeVaultTextFieldValue(bodyValue)
-        val insertAt = safeValue.selection.end.coerceIn(0, safeValue.text.length)
-        val updatedText = safeValue.text.replaceRange(insertAt, insertAt, trimmed)
-        val cursor = insertAt + trimmed.length
-        applyBodyTransform(safeValue.copy(text = updatedText, selection = TextRange(cursor)))
-        bodyFocusRequester.requestFocus()
-    }
 
     fun insertNoteLink(targetId: String, targetTitle: String) {
         val range = mentionRange ?: return
@@ -856,11 +844,11 @@ fun EditorScreen(
                                     modifier = if (hasTables) {
                                         Modifier
                                             .fillMaxSize()
-                                            .padding(bottom = 10.dp)
+                                            .padding(bottom = bodyBottomComfortPadding)
                                     } else {
                                         Modifier
                                             .fillMaxWidth()
-                                            .padding(bottom = 10.dp)
+                                            .padding(bottom = bodyBottomComfortPadding)
                                     },
                                 ) {
                                     if (bodyValue.text.isBlank()) {
@@ -875,65 +863,6 @@ fun EditorScreen(
                             },
                         )
 
-                        selectedTextChipText?.let { selectedText ->
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(bottom = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                            ) {
-                                Surface(
-                                    onClick = {
-                                    val currentStart = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-                                        .coerceIn(0, safeBodyValue.text.length)
-                                    val currentEnd = maxOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-                                        .coerceIn(0, safeBodyValue.text.length)
-                                    val previousTarget = selectedTextTarget
-                                    val start = if (currentStart < currentEnd) currentStart else previousTarget?.start ?: currentStart
-                                    val end = if (currentStart < currentEnd) currentEnd else previousTarget?.end ?: currentEnd
-                                    selectedTextTarget = SelectedTextTarget(
-                                        text = selectedText,
-                                        start = start,
-                                        end = end,
-                                    )
-                                    onClearSelectedTextAi()
-                                    onAiQuestionChange(AiPromptBuilder.buildSuggestionPrefill(AiSuggestion.Explain, selectedTextMode = true))
-                                    onAskAiClick(selectedText)
-                                    },
-                                    color = colors.accentSoft,
-                                    shape = VaultShapes.pill,
-                                    border = BorderStroke(1.dp, colors.accentBorder),
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = colors.accent)
-                                        Text("Ask AI", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800), color = colors.accent)
-                                    }
-                                }
-                                Surface(
-                                    onClick = {
-                                        val start = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
-                                            .coerceIn(0, safeBodyValue.text.length)
-                                        onAzureListenFromHere(title.text, safeBodyValue.text, start)
-                                    },
-                                    color = colors.accentSoft,
-                                    shape = VaultShapes.pill,
-                                    border = BorderStroke(1.dp, colors.accentBorder),
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp), tint = colors.accent)
-                                        Text("Listen from here", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800), color = colors.accent)
-                                    }
-                                }
-                            }
-                        }
                     }
 
                     if (mentionResults.isNotEmpty()) {
@@ -997,11 +926,40 @@ fun EditorScreen(
                 }
             }
 
+            if (selectedTextChipText != null) {
+                Surface(
+                    onClick = {
+                        val start = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
+                            .coerceIn(0, safeBodyValue.text.length)
+                        onAzureListenFromHere(title.text, safeBodyValue.text, start)
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = VaultSpacing.screen, bottom = 8.dp),
+                    color = colors.elevated,
+                    shape = VaultShapes.pill,
+                    border = BorderStroke(1.dp, colors.borderStrong),
+                    shadowElevation = 2.dp,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(14.dp), tint = colors.accent)
+                        Text(
+                            "Listen from here",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                            color = colors.text,
+                        )
+                    }
+                }
+            }
+
             if (!bodyFocused) {
                 Surface(
                     onClick = {
-                        selectedTextTarget = null
-                        onAskAiClick(null)
+                        intelligentStructureOpen = true
                     },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -1018,7 +976,7 @@ fun EditorScreen(
                     ) {
                         Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = Color.White)
                         Text(
-                            text = "Ask AI",
+                            text = "Structure & Format",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
                             color = Color.White,
                         )
@@ -1140,9 +1098,9 @@ fun EditorScreen(
 
     if (intelligentStructureOpen) {
         IntelligentStructureSheet(
-            aiState = aiState,
-            onProviderSelected = onAiProviderSelected,
-            onModelSelected = onAiModelSelected,
+            formattingState = formattingState,
+            onProviderSelected = onFormattingProviderSelected,
+            onModelSelected = onFormattingModelSelected,
             onDismiss = {
                 intelligentStructureOpen = false
                 structureOnlyNotice = null
@@ -1150,23 +1108,18 @@ fun EditorScreen(
             structureOnlyNotice = structureOnlyNotice,
             onRun = { action ->
                 structureOnlyNotice = null
-                val request = when (action) {
-                    NoteAiAction.StructureOnly -> "Format this note into polished editor-safe HTML like a professional document formatter. Preserve every original word, sentence, paragraph, quote, Arabic phrase, citation, reference, code line, and repeated wording exactly. Improve headings, spacing, hierarchy, bullet formatting, sectioning, blockquotes, and readability only. Do not delete, summarise, paraphrase, rewrite, simplify, merge away, expand, infer, or add content."
-                    NoteAiAction.IntelligentStructure -> "Intelligently structure this note."
-                    else -> action.displayName
-                }
-                onRunAiTool(action, aiState.provider, aiState.model, title.text, bodyValue.text, request)
+                onRunFormattingTool(action, formattingState.provider, formattingState.model, title.text, bodyValue.text)
             },
             onCopy = {
-                clipboardManager.setText(AnnotatedString(aiState.result))
+                clipboardManager.setText(AnnotatedString(formattingState.result))
             },
             onInsertBelow = {
-                insertAiResultBelow(aiState.result, aiState.action)
+                insertAiResultBelow(formattingState.result, formattingState.action)
                 intelligentStructureOpen = false
-                onClearAiResult()
+                onClearFormattingResult()
             },
             onReplace = { replaceAiDialogOpen = true },
-            onClearResult = onClearAiResult,
+            onClearResult = onClearFormattingResult,
         )
     }
 
@@ -1179,9 +1132,9 @@ fun EditorScreen(
                 Button(
                     onClick = {
                         replaceAiDialogOpen = false
-                        replaceBodyWithAiResult(aiState.result, aiState.action)
+                        replaceBodyWithAiResult(formattingState.result, formattingState.action)
                         intelligentStructureOpen = false
-                        onClearAiResult()
+                        onClearFormattingResult()
                     },
                 ) {
                     Text("Replace")
@@ -1376,12 +1329,12 @@ private fun String.toSafeFileName(): String =
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun IntelligentStructureSheet(
-    aiState: NoteAiUiState,
-    onProviderSelected: (NoteAiProvider) -> Unit,
-    onModelSelected: (NoteAiModel) -> Unit,
+    formattingState: NoteFormattingUiState,
+    onProviderSelected: (NoteFormattingProvider) -> Unit,
+    onModelSelected: (NoteFormattingModel) -> Unit,
     onDismiss: () -> Unit,
     structureOnlyNotice: String? = null,
-    onRun: (NoteAiAction) -> Unit,
+    onRun: (NoteFormattingAction) -> Unit,
     onCopy: () -> Unit,
     onInsertBelow: () -> Unit,
     onReplace: () -> Unit,
@@ -1389,7 +1342,7 @@ private fun IntelligentStructureSheet(
 ) {
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val editorOutputReady = aiState.result.isNotBlank() && aiState.action.isEditorOutputMode()
+    val editorOutputReady = formattingState.result.isNotBlank() && formattingState.action.isEditorOutputMode()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1447,24 +1400,24 @@ private fun IntelligentStructureSheet(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                NoteAiProvider.entries.forEach { provider ->
+                NoteFormattingProvider.entries.forEach { provider ->
                     CompactChip(
                         label = provider.displayName,
-                        active = aiState.provider == provider,
-                        enabled = !aiState.loading,
+                        active = formattingState.provider == provider,
+                        enabled = !formattingState.loading,
                         onClick = { onProviderSelected(provider) },
                     )
                 }
                 Box(modifier = Modifier.height(14.dp).width(1.dp).background(colors.borderStrong))
-                NoteAiModel.entries.forEach { model ->
+                NoteFormattingModel.entries.forEach { model ->
                     val label = when (model) {
-                        NoteAiModel.Gemini25Flash -> aiState.provider.noteAiModelLabel(fast = true)
-                        NoteAiModel.Gemini25Pro -> aiState.provider.noteAiModelLabel(fast = false)
+                        NoteFormattingModel.Fast -> formattingState.provider.noteFormattingModelLabel(fast = true)
+                        NoteFormattingModel.Smart -> formattingState.provider.noteFormattingModelLabel(fast = false)
                     }
                     CompactChip(
                         label = label,
-                        active = aiState.model == model,
-                        enabled = !aiState.loading,
+                        active = formattingState.model == model,
+                        enabled = !formattingState.loading,
                         onClick = { onModelSelected(model) },
                     )
                 }
@@ -1493,18 +1446,18 @@ private fun IntelligentStructureSheet(
                         )
                     }
                     Button(
-                        onClick = { onRun(NoteAiAction.StructureOnly) },
-                        enabled = !aiState.loading,
+                        onClick = { onRun(NoteFormattingAction.StructureOnly) },
+                        enabled = !formattingState.loading,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (aiState.loading && aiState.action == NoteAiAction.StructureOnly) aiState.progressLabel ?: "Structuring..." else "Run Structure Only")
+                        Text(if (formattingState.loading && formattingState.action == NoteFormattingAction.StructureOnly) formattingState.progressLabel ?: "Structuring..." else "Run Structure Only")
                     }
                     OutlinedButton(
-                        onClick = { onRun(NoteAiAction.IntelligentStructure) },
-                        enabled = !aiState.loading,
+                        onClick = { onRun(NoteFormattingAction.IntelligentStructure) },
+                        enabled = !formattingState.loading,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (aiState.loading && aiState.action == NoteAiAction.IntelligentStructure) aiState.progressLabel ?: "Structuring..." else "Run Intelligent Structure")
+                        Text(if (formattingState.loading && formattingState.action == NoteFormattingAction.IntelligentStructure) formattingState.progressLabel ?: "Structuring..." else "Run Intelligent Structure")
                     }
                 }
             }
@@ -1525,25 +1478,25 @@ private fun IntelligentStructureSheet(
                     verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
                     when {
-                        aiState.loading -> {
+                        formattingState.loading -> {
                             Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Text(aiState.progressLabel ?: "Structuring note...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                                Text(formattingState.progressLabel ?: "Structuring note...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
                             }
                         }
                         editorOutputReady -> {
-                            AiEditorOutputPreview(
-                                action = aiState.action,
-                                result = aiState.result,
+                            FormattingEditorOutputPreview(
+                                action = formattingState.action,
+                                result = formattingState.result,
                                 onCopy = onCopy,
                                 onInsertBelow = onInsertBelow,
                                 onReplace = onReplace,
                                 onDismiss = onClearResult,
                             )
                         }
-                        aiState.error != null -> {
+                        formattingState.error != null -> {
                             Text(
-                                text = aiState.error,
+                                text = formattingState.error,
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
                                 color = colors.warning,
                             )
@@ -1579,498 +1532,10 @@ private fun CompactChip(label: String, active: Boolean, enabled: Boolean, onClic
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-fun AskAiSheet(
-    aiState: NoteAiUiState,
-    selectedText: String? = null,
-    onProviderSelected: (NoteAiProvider) -> Unit,
-    onModelSelected: (NoteAiModel) -> Unit,
-    onQuestionChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onRun: () -> Unit,
-    onCopy: () -> Unit,
-    onClearConversation: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    val conversationScrollState = rememberScrollState()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    LaunchedEffect(aiState.messages.size, aiState.loading, aiState.error, aiState.action) {
-        conversationScrollState.animateScrollTo(conversationScrollState.maxValue)
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.elevated,
-        contentColor = colors.text,
-        tonalElevation = 0.dp,
-        dragHandle = {
-            Surface(
-                modifier = Modifier
-                    .padding(top = 10.dp, bottom = 6.dp)
-                    .size(width = 42.dp, height = 4.dp),
-                color = colors.borderStrong,
-                shape = VaultShapes.pill,
-                content = {},
-            )
-        },
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f)
-                .padding(horizontal = VaultSpacing.screen)
-                .padding(bottom = VaultSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        modifier = Modifier.size(38.dp),
-                        color = colors.accentSoft,
-                        shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, colors.accentBorder),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                modifier = Modifier.size(19.dp),
-                                tint = colors.accent,
-                            )
-                        }
-                    }
-                    Column {
-                        Text(
-                            text = "Ask AI",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
-                            color = colors.text,
-                        )
-                        Text(
-                            text = if (selectedText.isNullOrBlank()) {
-                                "Current note only"
-                            } else {
-                                "Selected text focus"
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Close")
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                NoteAiProvider.entries.forEach { provider ->
-                    AiActionChip(
-                        label = provider.displayName,
-                        active = aiState.provider == provider,
-                        enabled = !aiState.loading,
-                        onClick = { onProviderSelected(provider) },
-                    )
-                }
-                NoteAiModel.entries.forEach { model ->
-                    val label = when (model) {
-                        NoteAiModel.Gemini25Flash -> aiState.provider.noteAiModelLabel(fast = true)
-                        NoteAiModel.Gemini25Pro -> aiState.provider.noteAiModelLabel(fast = false)
-                    }
-                    AiActionChip(
-                        label = label,
-                        active = aiState.model == model,
-                        enabled = !aiState.loading,
-                        onClick = { onModelSelected(model) },
-                    )
-                }
-                TextButton(onClick = onClearConversation, enabled = !aiState.loading && aiState.messages.isNotEmpty()) {
-                    Text("Clear")
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Column(
-                    modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    selectedText?.takeIf { it.isNotBlank() }?.let { text ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = colors.elevated,
-                            shape = VaultShapes.md,
-                            border = BorderStroke(1.dp, colors.border),
-                        ) {
-                            Text(
-                                text = text,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 84.dp)
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(10.dp),
-                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                                color = colors.textSecondary,
-                            )
-                        }
-                    }
-                    AiSuggestionGrid(
-                        enabled = !aiState.loading,
-                        selectedTextMode = !selectedText.isNullOrBlank(),
-                        onSuggestionClick = { suggestion ->
-                            onQuestionChange(AiPromptBuilder.buildSuggestionPrefill(suggestion, selectedTextMode = !selectedText.isNullOrBlank()))
-                        },
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(conversationScrollState)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                ) {
-                    if (aiState.messages.isEmpty() && !aiState.loading) {
-                        Text(
-                            text = "Ask naturally about this note. Suggestions draft prompts only; you stay in control before sending.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.textMuted,
-                        )
-                    }
-                    aiState.messages.forEach { message ->
-                        AiChatBubble(message = message)
-                    }
-                    if (aiState.loading) {
-                        Surface(
-                            color = colors.elevated,
-                            shape = VaultShapes.md,
-                            border = BorderStroke(1.dp, colors.border),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Text(aiState.progressLabel ?: "Thinking...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-                            }
-                        }
-                    }
-                }
-            }
-
-            aiState.error?.takeIf { error ->
-                aiState.messages.lastOrNull()?.content != error
-            }?.let { error ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = colors.warningSoft,
-                    shape = VaultShapes.md,
-                    border = BorderStroke(1.dp, colors.border),
-                ) {
-                    Text(
-                        text = error,
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
-                        color = colors.warning,
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = aiState.question,
-                        onValueChange = onQuestionChange,
-                        modifier = Modifier.weight(1f),
-                        minLines = 1,
-                        maxLines = 3,
-                        placeholder = { Text("Ask My AI about this note...") },
-                        enabled = !aiState.loading,
-                    )
-                    Button(
-                        onClick = onRun,
-                        enabled = !aiState.loading && aiState.question.isNotBlank(),
-                    ) {
-                        Text("Send")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun SelectedTextAiSheet(
-    selectedText: String,
-    state: SelectedTextAiUiState,
-    provider: NoteAiProvider,
-    model: NoteAiModel,
-    onDismiss: () -> Unit,
-    onRun: (SelectedTextAiAction) -> Unit,
-    onQuestionChange: (String, SelectedTextAiAction?) -> Unit,
-    onCopy: () -> Unit,
-    onInsertBelowSelection: () -> Unit,
-    onInsertAtCursor: () -> Unit,
-    onSendToChat: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val resultScroll = rememberScrollState()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.elevated,
-        contentColor = colors.text,
-        tonalElevation = 0.dp,
-        dragHandle = {
-            Surface(
-                modifier = Modifier
-                    .padding(top = 10.dp, bottom = 6.dp)
-                    .size(width = 42.dp, height = 4.dp),
-                color = colors.borderStrong,
-                shape = VaultShapes.pill,
-                content = {},
-            )
-        },
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.78f)
-                .padding(horizontal = VaultSpacing.screen)
-                .padding(bottom = VaultSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        modifier = Modifier.size(36.dp),
-                        color = colors.accentSoft,
-                        shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, colors.accentBorder),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp), tint = colors.accent)
-                        }
-                    }
-                    Column {
-                        Text(
-                            text = "Ask AI about selection",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
-                            color = colors.text,
-                        )
-                        val label = when (model) {
-                            NoteAiModel.Gemini25Flash -> provider.noteAiModelLabel(fast = true)
-                            NoteAiModel.Gemini25Pro -> provider.noteAiModelLabel(fast = false)
-                        }
-                        Text(
-                            text = "${provider.displayName} · $label",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textMuted,
-                        )
-                    }
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Close")
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = "Selected text",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
-                        color = colors.textMuted,
-                    )
-                    Text(
-                        text = selectedText.ifBlank { "No text selected." },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 110.dp)
-                            .verticalScroll(rememberScrollState()),
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                        color = colors.text,
-                    )
-                }
-            }
-
-            AiSuggestionGrid(
-                enabled = !state.loading && selectedText.isNotBlank(),
-                selectedTextMode = true,
-                onSuggestionClick = { suggestion ->
-                    onQuestionChange(
-                        AiPromptBuilder.buildSuggestionPrefill(suggestion, selectedTextMode = true),
-                        suggestion.toSelectedTextAction(),
-                    )
-                },
-            )
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                ) {
-                    when {
-                        state.loading -> {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Text(
-                                    text = "Thinking about the selected text...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = colors.textSecondary,
-                                )
-                            }
-                        }
-                        state.error != null -> {
-                            Text(
-                                text = state.error,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                                color = colors.warning,
-                            )
-                        }
-                        state.result.isNotBlank() -> {
-                            Text(
-                                text = state.action?.displayName ?: "Result",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
-                                color = colors.textMuted,
-                            )
-                            RichMarkdownText(
-                                text = state.result,
-                                color = colors.text,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .verticalScroll(resultScroll),
-                            )
-                        }
-                        else -> {
-                            Text(
-                                text = "Choose a focused action for the highlighted text. This stays separate from the main My AI chat unless you send it there.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.textMuted,
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (state.result.isNotBlank()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                ) {
-                    TextButton(onClick = onCopy, enabled = !state.loading) { Text("Copy") }
-                    TextButton(onClick = onInsertBelowSelection, enabled = !state.loading) { Text("Insert below selection") }
-                    TextButton(onClick = onInsertAtCursor, enabled = !state.loading) { Text("Insert at cursor") }
-                    TextButton(onClick = onSendToChat, enabled = !state.loading) { Text("Send to chat") }
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = state.question,
-                        onValueChange = { onQuestionChange(it, state.action) },
-                        modifier = Modifier.weight(1f),
-                        minLines = 1,
-                        maxLines = 3,
-                        placeholder = { Text("Ask about the selected text...") },
-                        enabled = !state.loading,
-                    )
-                    Button(
-                        onClick = { onRun(state.action ?: SelectedTextAiAction.Ask) },
-                        enabled = !state.loading && selectedText.isNotBlank() && state.question.isNotBlank(),
-                    ) {
-                        Text("Send")
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
-private fun AiEditorOutputPreview(
-    action: NoteAiAction?,
+private fun FormattingEditorOutputPreview(
+    action: NoteFormattingAction?,
     result: String,
     onCopy: () -> Unit,
     onInsertBelow: () -> Unit,
@@ -2149,178 +1614,6 @@ private fun AiEditorOutputPreview(
     }
 }
 
-@Composable
-private fun AiChatBubble(message: NoteAiChatMessage) {
-    val colors = VaultThemeTokens.colors
-    val isUser = message.role == NoteAiMessageRole.User
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-    ) {
-        Surface(
-            modifier = Modifier.widthIn(max = if (isUser) 300.dp else 520.dp),
-            color = when (message.role) {
-                NoteAiMessageRole.User -> colors.accentSoft
-                NoteAiMessageRole.Assistant -> colors.elevated
-                NoteAiMessageRole.Error -> colors.warningSoft
-            },
-            shape = VaultShapes.lg,
-            border = BorderStroke(
-                1.dp,
-                when (message.role) {
-                    NoteAiMessageRole.User -> colors.accentBorder
-                    NoteAiMessageRole.Assistant -> colors.border
-                    NoteAiMessageRole.Error -> colors.border
-                },
-            ),
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = when (message.role) {
-                        NoteAiMessageRole.User -> "You"
-                        NoteAiMessageRole.Assistant -> message.action?.displayName ?: "My AI"
-                        NoteAiMessageRole.Error -> "Error"
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
-                    color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.textMuted,
-                )
-                when (message.role) {
-                    NoteAiMessageRole.Assistant -> RichMarkdownText(
-                        text = message.content,
-                        color = colors.text,
-                    )
-                    NoteAiMessageRole.User,
-                    NoteAiMessageRole.Error,
-                    -> Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
-                        color = if (message.role == NoteAiMessageRole.Error) colors.warning else colors.text,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AiActionChip(
-    label: String,
-    active: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.height(44.dp),
-        color = if (active) colors.accentSoft else colors.surface,
-        shape = VaultShapes.pill,
-        border = BorderStroke(1.dp, if (active) colors.accentBorder else colors.border),
-    ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
-                color = if (active) colors.accent else colors.text,
-            )
-        }
-    }
-}
-
-@Composable
-private fun AiSuggestionGrid(
-    enabled: Boolean,
-    selectedTextMode: Boolean,
-    onSuggestionClick: (AiSuggestion) -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        AiSuggestion.entries.chunked(2).forEach { rowActions ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                rowActions.forEach { suggestion ->
-                    SelectedTextActionButton(
-                        label = suggestion.displayName,
-                        active = false,
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onSuggestionClick(suggestion) },
-                    )
-                }
-                if (rowActions.size == 1) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-            }
-        }
-        if (!selectedTextMode) {
-            Text(
-                text = "Tap a suggestion to draft a prompt, then edit it and press Send.",
-                style = MaterialTheme.typography.labelSmall,
-                color = VaultThemeTokens.colors.textMuted,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SelectedTextActionButton(
-    label: String,
-    active: Boolean,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(38.dp),
-        color = if (active) colors.accentSoft else colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, if (active) colors.accentBorder else colors.border),
-    ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                color = if (active) colors.accent else colors.textSecondary,
-            )
-        }
-    }
-}
-
-private fun AiSuggestion.toSelectedTextAction(): SelectedTextAiAction =
-    when (this) {
-        AiSuggestion.Explain -> SelectedTextAiAction.Explain
-        AiSuggestion.Simplify -> SelectedTextAiAction.Simplify
-        AiSuggestion.Terminology -> SelectedTextAiAction.Terminology
-        AiSuggestion.Compare -> SelectedTextAiAction.ComparePositions
-        AiSuggestion.RelatedConcepts -> SelectedTextAiAction.RelatedConcepts
-        AiSuggestion.ObjectionResponse -> SelectedTextAiAction.ObjectionResponse
-        AiSuggestion.StudyQuestions -> SelectedTextAiAction.StudyQuestions
-    }
-
-private data class SelectedTextTarget(
-    val text: String,
-    val start: Int,
-    val end: Int,
-)
 
 private fun TextFieldValue.selectedTextOrNull(): String? {
     val safeValue = sanitizeVaultTextFieldValue(this)
@@ -2426,11 +1719,11 @@ private fun TextFieldValue.insertText(textToInsert: String): TextFieldValue {
     return sanitizeVaultTextFieldValue(safeValue.copy(text = newText, selection = TextRange(cursor, cursor)))
 }
 
-private fun NoteAiAction?.isEditorOutputMode(): Boolean =
-    this == NoteAiAction.StructureOnly || this == NoteAiAction.IntelligentStructure || this == NoteAiAction.CleanFormat || this == NoteAiAction.FormatNote
+private fun NoteFormattingAction?.isEditorOutputMode(): Boolean =
+    this == NoteFormattingAction.StructureOnly || this == NoteFormattingAction.IntelligentStructure || this == NoteFormattingAction.CleanFormat || this == NoteFormattingAction.FormatNote
 
-private fun traceStructureOnlyEditorStage(context: Context, stage: String, content: String, action: NoteAiAction?) {
-    if (action != NoteAiAction.StructureOnly || !BuildConfig.DEBUG) return
+private fun traceStructureOnlyEditorStage(context: Context, stage: String, content: String, action: NoteFormattingAction?) {
+    if (action != NoteFormattingAction.StructureOnly || !BuildConfig.DEBUG) return
     Log.d(
         "MyVaultStructureOnly",
         "$stage chars=${content.length} ul=${content.contains("<ul", ignoreCase = true)} ol=${content.contains("<ol", ignoreCase = true)} li=${content.contains("<li", ignoreCase = true)} bullets=${content.contains("•")} numbered=${Regex("(?m)^\\s*\\d+\\.\\s").containsMatchIn(content)}",
@@ -3013,11 +2306,11 @@ private fun decodeEditorPreviewBitmap(localPath: String, maxSize: Int): Bitmap? 
         BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sampleSize })
     }.getOrNull()
 
-private fun NoteAiProvider.noteAiModelLabel(fast: Boolean): String =
+private fun NoteFormattingProvider.noteFormattingModelLabel(fast: Boolean): String =
     when (this) {
-        NoteAiProvider.ChatGPT -> if (fast) "GPT Mini" else "GPT Full"
-        NoteAiProvider.Kimi -> if (fast) "Kimi Fast" else "Kimi Smart"
-        NoteAiProvider.Gemini -> if (fast) "Gemini Flash" else "Gemini Pro"
+        NoteFormattingProvider.ChatGPT -> if (fast) "GPT Mini" else "GPT Full"
+        NoteFormattingProvider.Kimi -> if (fast) "Kimi Fast" else "Kimi Smart"
+        NoteFormattingProvider.Gemini -> if (fast) "Gemini Flash" else "Gemini Pro"
     }
 
 private fun TextFieldValue.activeMentionRange(): TextRange? {

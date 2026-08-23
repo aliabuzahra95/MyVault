@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Notes
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -81,9 +80,7 @@ fun PdfActivityFeedScreen(
     onUpdateActivityDetails: (String, String, String) -> Unit,
     onDeleteSelected: () -> Unit,
     onCreateStudyNoteFromSelected: (onCreated: (String) -> Unit) -> Unit,
-    onAskAiOnSelected: (onNav: (String, String) -> Unit) -> Unit,
     onNavigateToEditor: (String) -> Unit,
-    onNavigateToAskAi: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -253,14 +250,6 @@ fun PdfActivityFeedScreen(
                             }
                         }) {
                             Icon(Icons.Rounded.Description, "Create Study Note", tint = colors.accent)
-                        }
-
-                        IconButton(onClick = {
-                            onAskAiOnSelected { noteId, text ->
-                                onNavigateToAskAi(noteId, text)
-                            }
-                        }) {
-                            Icon(Icons.Rounded.AutoAwesome, "Ask AI", tint = colors.accent)
                         }
 
                         IconButton(onClick = { deleteSelectedConfirmOpen = true }) {

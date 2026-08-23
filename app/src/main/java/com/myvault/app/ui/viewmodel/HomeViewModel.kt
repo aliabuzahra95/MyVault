@@ -13,6 +13,7 @@ import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.quran.QuranReflectionRepository
 import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.data.quran.QuranReflectionSummary
+import com.myvault.app.data.quran.QURAN_REFLECTION_FOLDER_NAME
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -101,7 +102,7 @@ class HomeViewModel @Inject constructor(
         HomeContent(
             pinnedNotes = pinned,
             attachments = attachments,
-            tree = tree,
+            tree = if (mode == FOLDER_MODE_STUDY) tree.withoutQuranReflectionFolder() else tree,
         )
     }
 
@@ -313,13 +314,19 @@ private data class HomeContent(
     val tree: List<VaultTreeItem>,
 )
 
+private fun List<VaultTreeItem>.withoutQuranReflectionFolder(): List<VaultTreeItem> =
+    filterNot { item ->
+        item.type == VaultTreeItemType.Folder &&
+            item.name.equals(QURAN_REFLECTION_FOLDER_NAME, ignoreCase = true)
+    }.map { item -> item.copy(children = item.children.withoutQuranReflectionFolder()) }
+
 private fun String.firstTitleLine(): String {
     val line = lines()
         .firstOrNull { it.isNotBlank() }
         ?.replace(Regex("[#*_`>\\-]+"), "")
         ?.trim()
         .orEmpty()
-    return line.ifBlank { "Ask AI answer" }.take(56)
+    return line.ifBlank { "Untitled note" }.take(56)
 }
 
 private fun HomeContent.toUiState(

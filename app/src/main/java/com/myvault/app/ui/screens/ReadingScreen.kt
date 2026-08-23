@@ -98,15 +98,11 @@ import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.toRelativeTime
-import com.myvault.app.data.repository.NoteAiAction
-import com.myvault.app.data.repository.NoteAiModel
-import com.myvault.app.data.repository.NoteAiProvider
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.data.repository.SourceReferenceCard
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
-import com.myvault.app.ui.viewmodel.NoteAiUiState
 import com.myvault.app.ui.viewmodel.NoteUiState
 import com.myvault.app.ui.viewmodel.NoteTableUiState
 import kotlinx.coroutines.Dispatchers
@@ -117,7 +113,6 @@ import java.text.NumberFormat
 @Composable
 fun ReadingScreen(
     uiState: NoteUiState,
-    aiState: NoteAiUiState = NoteAiUiState(),
     narrationState: NarrationUiState = NarrationUiState(),
     azureNarrationProgress: AzureNarrationProgress? = null,
     onBackClick: () -> Unit,
@@ -126,12 +121,6 @@ fun ReadingScreen(
     onAttachmentClick: (String) -> Unit = {},
     onPinnedChange: (Boolean) -> Unit = {},
     onFavouriteChange: (Boolean) -> Unit = {},
-    onRunAiTool: (action: NoteAiAction, provider: NoteAiProvider, model: NoteAiModel, title: String, body: String, question: String) -> Unit = { _, _, _, _, _, _ -> },
-    onClearAiConversation: () -> Unit = {},
-    onAiProviderSelected: (NoteAiProvider) -> Unit = {},
-    onAiModelSelected: (NoteAiModel) -> Unit = {},
-    onAiQuestionChange: (String) -> Unit = {},
-    onAskAiClick: () -> Unit = {},
     onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
     onAzureListenClick: (title: String, body: String) -> Unit = { _, _ -> },
     onAzureResumeClick: (title: String, body: String) -> Unit = { _, _ -> },
@@ -230,11 +219,6 @@ fun ReadingScreen(
         ) {
             item {
                 ScreenTopBar(onBackClick = onBackClick) {
-                    IconBtn(
-                        icon = Icons.Rounded.AutoAwesome,
-                        contentDescription = "Ask AI",
-                        onClick = onAskAiClick,
-                    )
                     IconBtn(
                         icon = Icons.Rounded.PlayArrow,
                         contentDescription = "Listen",

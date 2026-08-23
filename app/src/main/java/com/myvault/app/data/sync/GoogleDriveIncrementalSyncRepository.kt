@@ -17,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -33,8 +34,16 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 const val DriveConflictMessage = "Cloud contains newer MyVault changes. Pull latest first, then push again."
+internal const val DriveReconnectMessage = "Google Drive access expired. Tap Login, choose your Google account again, then retry."
+private const val HttpUnauthorized = 401
+
+internal fun shouldRefreshDriveToken(responseCode: Int, attempt: Int): Boolean =
+    responseCode == HttpUnauthorized && attempt == 0
+
+private class DriveAuthenticationException : IllegalStateException(DriveReconnectMessage)
 
 private fun Throwable.isInterruptedDriveConnection(): Boolean {
     val text = generateSequence(this) { it.cause }
@@ -54,8 +63,16 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val preferences: VaultPreferences,
 ) {
-    fun signInIntent(): Intent =
-        GoogleSignIn.getClient(context, signInOptions()).signInIntent
+    suspend fun prepareSignInIntent(): Intent {
+        val client = GoogleSignIn.getClient(context, signInOptions())
+        val intent = suspendCancellableCoroutine { continuation ->
+            client.signOut().addOnCompleteListener {
+                if (continuation.isActive) continuation.resume(client.signInIntent)
+            }
+        }
+        preferences.setGoogleDriveAccountEmail("")
+        return intent
+    }
 
     suspend fun handleSignInResult(data: Intent?): DriveSyncResult = withContext(Dispatchers.IO) {
         val account = runCatching {
@@ -93,6 +110,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             backupRepository.exportMetadataForDriveSync(metadataDir)
             val remoteEntries = remoteManifest.toRemoteEntryMap()
             val localFileEntries = localFileDriveEntries(remoteEntries)
+            val currentDriveFilesByName = drive.listChildren(vault.files.id).associateBy { it.name }
             metadataDir.reconcileAttachmentFileClaims(localFileEntries.map { it.backupEntry }.toSet())
             val entries = metadataDir.toMetadataDriveEntries() + localFileEntries
             var uploadedMetadata = 0
@@ -117,25 +135,33 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     ),
                 )
                 val remote = remoteEntries[entry.path]
-                if (entry.kind == EntryKindFile && remote != null && remote.size == entry.size && remote.sha256.isNotBlank()) {
+                val currentDriveFile = if (entry.kind == EntryKindFile) currentDriveFilesByName[entry.fileName] else null
+                if (entry.kind == EntryKindFile && remote != null && remote.size == entry.size && remote.sha256.isNotBlank() && currentDriveFile != null) {
                     entry.sha256 = remote.sha256
-                    entry.cloudFileId = remote.cloudFileId.ifBlank {
-                        drive.findChild(vault.files.id, entry.fileName)?.id.orEmpty()
-                    }
+                    entry.cloudFileId = currentDriveFile.id
                     skippedFiles += 1
                     return@forEachIndexed
                 }
                 entry.ensureSha256()
                 if (remote?.sha256 == entry.sha256 && remote.size == entry.size) {
-                    entry.cloudFileId = remote.cloudFileId.ifBlank {
-                        val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
-                        drive.findChild(parentId, entry.fileName)?.id.orEmpty()
+                    val reusableId = reusableDriveEntryId(
+                        isAttachmentFile = entry.kind == EntryKindFile,
+                        contentMatches = true,
+                        manifestFileId = remote.cloudFileId,
+                        currentFileIdByName = currentDriveFile?.id,
+                    )
+                    if (!reusableId.isNullOrBlank()) {
+                        entry.cloudFileId = reusableId
+                        if (entry.kind == EntryKindFile) skippedFiles += 1
+                        return@forEachIndexed
                     }
-                    if (entry.kind == EntryKindFile) skippedFiles += 1
-                    return@forEachIndexed
                 }
                 val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
-                val existingId = remote?.cloudFileId ?: drive.findChild(parentId, entry.fileName)?.id
+                val existingId = if (entry.kind == EntryKindFile) {
+                    currentDriveFile?.id
+                } else {
+                    remote?.cloudFileId ?: drive.findChild(parentId, entry.fileName)?.id
+                }
                 val uploaded = drive.uploadFile(
                     parentId = parentId,
                     existingFileId = existingId,
@@ -172,6 +198,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 "Drive push complete: $uploadedMetadata metadata file(s), $uploadedFiles file(s) uploaded, $skippedFiles unchanged file(s) skipped.",
             )
         } catch (error: Throwable) {
+            if (error.requiresDriveReconnect()) preferences.setGoogleDriveAccountEmail("")
             DriveSyncResult.Failure(error.driveMessage("Drive push failed"))
         } finally {
             metadataDir.deleteRecursively()
@@ -251,6 +278,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     "$downloadedFiles file(s) downloaded, $reusedLocalFiles reused locally.$missingFilesMessage",
             )
         } catch (error: Throwable) {
+            if (error.requiresDriveReconnect()) preferences.setGoogleDriveAccountEmail("")
             DriveSyncResult.Failure(error.driveMessage("Drive pull failed"))
         } finally {
             zipFile.delete()
@@ -409,10 +437,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
 
     private fun Throwable.driveMessage(prefix: String): String =
         when {
-            this is UserRecoverableAuthException -> "$prefix: Google Drive needs permission again. Connect Drive, then retry."
+            requiresDriveReconnect() -> "$prefix: $DriveReconnectMessage"
             isInterruptedDriveConnection() -> "$prefix: Google Drive connection was interrupted while downloading. Check Wi-Fi/mobile signal and try Restore again."
             else -> message?.let { "$prefix: $it" } ?: prefix
         }
+
+    private fun Throwable.requiresDriveReconnect(): Boolean =
+        this is UserRecoverableAuthException ||
+            generateSequence(this) { it.cause }.any { it is DriveAuthenticationException }
 
     private fun Throwable.googleSignInMessage(): String =
         if (this is ApiException && statusCode == GoogleSignInStatusCodes.DEVELOPER_ERROR) {
@@ -455,6 +487,25 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             val files = json.optJSONArray("files") ?: return null
             if (files.length() == 0) return null
             return files.getJSONObject(0).toDriveFile()
+        }
+
+        fun listChildren(parentId: String): List<DriveFile> {
+            val query = "'${parentId.escapeDriveQuery()}' in parents and trashed = false"
+            val children = mutableListOf<DriveFile>()
+            var pageToken: String? = null
+            do {
+                val tokenParameter = pageToken?.let { "&pageToken=${it.urlEncode()}" }.orEmpty()
+                val json = requestJson(
+                    method = "GET",
+                    url = "$DriveFilesUrl?q=${query.urlEncode()}&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size,modifiedTime)$tokenParameter",
+                )
+                val files = json.optJSONArray("files") ?: JSONArray()
+                for (index in 0 until files.length()) {
+                    children += files.getJSONObject(index).toDriveFile()
+                }
+                pageToken = json.optString("nextPageToken").takeIf { it.isNotBlank() }
+            } while (pageToken != null)
+            return children
         }
 
         fun createFolder(parentId: String, name: String): DriveFile {
@@ -557,29 +608,42 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             JSONObject(requestBytesStreaming(method, url, contentType, methodOverride, writeBody).toString(Charsets.UTF_8))
 
         private fun requestBytes(method: String, url: String, body: ByteArray?, contentType: String?): ByteArray {
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                val actualMethod = if (method == "PATCH") "POST" else method
-                requestMethod = actualMethod
-                if (method == "PATCH") {
-                    setRequestProperty("X-HTTP-Method-Override", "PATCH")
+            var token = accessToken()
+            for (attempt in 0..1) {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    val actualMethod = if (method == "PATCH") "POST" else method
+                    requestMethod = actualMethod
+                    if (method == "PATCH") {
+                        setRequestProperty("X-HTTP-Method-Override", "PATCH")
+                    }
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                    setRequestProperty("Authorization", "Bearer $token")
+                    if (contentType != null) setRequestProperty("Content-Type", contentType)
+                    if (body != null) {
+                        doOutput = true
+                        setRequestProperty("Content-Length", body.size.toString())
+                    }
                 }
-                connectTimeout = 30_000
-                readTimeout = 120_000
-                setRequestProperty("Authorization", "Bearer ${accessToken()}")
-                if (contentType != null) setRequestProperty("Content-Type", contentType)
-                if (body != null) {
-                    doOutput = true
-                    setRequestProperty("Content-Length", body.size.toString())
+                try {
+                    if (body != null) connection.outputStream.use { it.write(body) }
+                    val responseCode = connection.responseCode
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                    val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+                    if (shouldRefreshDriveToken(responseCode, attempt)) {
+                        token = refreshAccessToken(token)
+                        continue
+                    }
+                    if (responseCode == HttpUnauthorized) throw DriveAuthenticationException()
+                    if (responseCode !in 200..299) {
+                        error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+                    }
+                    return bytes
+                } finally {
+                    connection.disconnect()
                 }
             }
-            if (body != null) connection.outputStream.use { it.write(body) }
-            val responseCode = connection.responseCode
-            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
-            if (responseCode !in 200..299) {
-                error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
-            }
-            return bytes
+            throw DriveAuthenticationException()
         }
 
         private fun requestBytesStreaming(
@@ -589,47 +653,71 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             methodOverride: String?,
             writeBody: (OutputStream) -> Unit,
         ): ByteArray {
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                val actualMethod = if (method == "PATCH") "POST" else method
-                requestMethod = actualMethod
-                if (method == "PATCH" || methodOverride == "PATCH") {
-                    setRequestProperty("X-HTTP-Method-Override", "PATCH")
+            var token = accessToken()
+            for (attempt in 0..1) {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    val actualMethod = if (method == "PATCH") "POST" else method
+                    requestMethod = actualMethod
+                    if (method == "PATCH" || methodOverride == "PATCH") {
+                        setRequestProperty("X-HTTP-Method-Override", "PATCH")
+                    }
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                    doOutput = true
+                    setChunkedStreamingMode(DEFAULT_BUFFER_SIZE)
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("Content-Type", contentType)
                 }
-                connectTimeout = 30_000
-                readTimeout = 120_000
-                doOutput = true
-                setChunkedStreamingMode(DEFAULT_BUFFER_SIZE)
-                setRequestProperty("Authorization", "Bearer ${accessToken()}")
-                setRequestProperty("Content-Type", contentType)
+                try {
+                    connection.outputStream.use(writeBody)
+                    val responseCode = connection.responseCode
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                    val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+                    if (shouldRefreshDriveToken(responseCode, attempt)) {
+                        token = refreshAccessToken(token)
+                        continue
+                    }
+                    if (responseCode == HttpUnauthorized) throw DriveAuthenticationException()
+                    if (responseCode !in 200..299) {
+                        error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+                    }
+                    return bytes
+                } finally {
+                    connection.disconnect()
+                }
             }
-            connection.outputStream.use(writeBody)
-            val responseCode = connection.responseCode
-            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
-            if (responseCode !in 200..299) {
-                error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
-            }
-            return bytes
+            throw DriveAuthenticationException()
         }
 
         private fun requestToOutput(method: String, url: String, output: OutputStream) {
-            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = method
-                connectTimeout = 30_000
-                readTimeout = 120_000
-                setRequestProperty("Authorization", "Bearer ${accessToken()}")
-            }
-            try {
-                val responseCode = connection.responseCode
-                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-                if (responseCode !in 200..299) {
-                    val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
-                    error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+            var token = accessToken()
+            for (attempt in 0..1) {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                    setRequestProperty("Authorization", "Bearer $token")
                 }
-                stream?.use { it.copyTo(output) }
-            } finally {
-                connection.disconnect()
+                try {
+                    val responseCode = connection.responseCode
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                    if (shouldRefreshDriveToken(responseCode, attempt)) {
+                        stream?.close()
+                        token = refreshAccessToken(token)
+                        continue
+                    }
+                    if (responseCode == HttpUnauthorized) throw DriveAuthenticationException()
+                    if (responseCode !in 200..299) {
+                        val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+                        error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+                    }
+                    stream?.use { it.copyTo(output) }
+                    return
+                } finally {
+                    connection.disconnect()
+                }
             }
+            throw DriveAuthenticationException()
         }
 
         private suspend fun retryDriveRequest(block: () -> Unit) {
@@ -650,6 +738,11 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         private fun accessToken(): String {
             val androidAccount = account.account ?: error("Google account is unavailable. Connect Drive again.")
             return GoogleAuthUtil.getToken(context, androidAccount, "oauth2:$DriveScopeUrl")
+        }
+
+        private fun refreshAccessToken(staleToken: String): String {
+            GoogleAuthUtil.clearToken(context, staleToken)
+            return accessToken()
         }
 
         private fun JSONObject.toDriveFile(): DriveFile =
@@ -719,6 +812,20 @@ private fun String.escapeDriveQuery(): String = replace("\\", "\\\\").replace("'
 
 private fun OutputStream.writeUtf8(value: String) {
     write(value.toByteArray(Charsets.UTF_8))
+}
+
+internal fun reusableDriveEntryId(
+    isAttachmentFile: Boolean,
+    contentMatches: Boolean,
+    manifestFileId: String,
+    currentFileIdByName: String?,
+): String? {
+    if (!contentMatches) return null
+    return if (isAttachmentFile) {
+        currentFileIdByName?.takeIf { it.isNotBlank() }
+    } else {
+        manifestFileId.takeIf { it.isNotBlank() }
+    }
 }
 
 sealed interface DriveSyncResult {

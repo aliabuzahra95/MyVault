@@ -218,38 +218,4 @@ class PdfActivityFeedViewModel @Inject constructor(
         }
     }
 
-    fun askAiOnSelected(onNoteCreatedAndNav: (String, String) -> Unit) {
-        val selectedIds = selectedActivityIds.value
-        val activities = uiState.value.pdfActivities.flatMap { it.activities }.filter { it.id in selectedIds }
-        if (activities.isEmpty()) return
-        viewModelScope.launch {
-            val title = "AI Chat on ${activities.size} PDF Highlights"
-            val body = buildString {
-                appendLine(title)
-                appendLine()
-                activities.forEach { act ->
-                    appendLine("---")
-                    appendLine("Source: ${act.fileName} (Page ${act.pageIndex + 1})")
-                    val label = if (act.annotationType == "page_note") "PDF Note" else "Highlight"
-                    appendLine("Type: $label")
-                    if (act.displayTitle != null) {
-                        appendLine("Title: ${act.displayTitle}")
-                    }
-                    if (act.notePreview.isNotBlank()) {
-                        appendLine("Content: ${act.notePreview}")
-                    }
-                    appendLine()
-                }
-            }
-            val noteId = noteRepository.createImportedRichTextNote(title = title, text = body, styleMarksJson = "[]")
-            activities.forEach { act ->
-                knowledgeRepository.createSourceLinkFromAnnotation(noteId, act.id)
-            }
-            val selectedText = activities.joinToString("\n\n") { act ->
-                "${act.fileName} (p. ${act.pageIndex + 1}): ${act.displayTitle ?: ""}\n${act.notePreview}"
-            }
-            clearSelection()
-            onNoteCreatedAndNav(noteId, selectedText)
-        }
-    }
 }

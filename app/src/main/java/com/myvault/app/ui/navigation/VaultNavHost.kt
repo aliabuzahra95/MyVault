@@ -4,27 +4,18 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
@@ -35,13 +26,10 @@ import androidx.compose.material.icons.rounded.LocalLibrary
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.School
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -58,9 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
@@ -75,10 +61,12 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
+import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.NarrationMiniPlayer
+import com.myvault.app.ui.components.VaultFixedBottomNavigation
+import com.myvault.app.ui.components.VaultFixedBottomNavigationItem
 import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
-import com.myvault.app.ui.screens.AskAiScreen
 import com.myvault.app.ui.screens.CoursesScreen
 import com.myvault.app.ui.screens.EditorScreen
 import com.myvault.app.ui.screens.FolderViewScreen
@@ -92,7 +80,6 @@ import com.myvault.app.ui.screens.QuranReflectionsHubScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
-import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -208,31 +195,27 @@ fun VaultNavHost(
                     },
                 )
             }
-            val shareAiAnswerToNote: (String, String) -> Unit = { text, mode ->
-                homeViewModel.createNoteFromSharedText(text = text, mode = mode) { noteId ->
-                    navController.navigate(VaultDestination.Editor.route(noteId))
-                }
-            }
-            StudyLibraryPersonalShell(
-                workspace = preferences.workspace,
-                selectedRootModeName = if (preferences.workspace == WORKSPACE_PERSONAL) {
-                    selectedPersonalRootMode
-                } else {
-                    selectedIslamicRootMode
-                },
-                onRootModeChanged = { mode ->
-                    if (preferences.workspace == WORKSPACE_PERSONAL) {
-                        selectedPersonalRootMode = mode.name
-                    } else if (mode != VaultRootMode.Personal) {
-                        selectedIslamicRootMode = mode.name
-                    }
-                },
-                rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
-                onQuickNoteMode = { mode ->
-                    homeViewModel.createNote(folderId = null, mode = mode) { noteId ->
-                        navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
-                    }
-                },
+            key(preferences.workspace) {
+                StudyLibraryPersonalShell(
+                    workspace = preferences.workspace,
+                    selectedRootModeName = if (preferences.workspace == WORKSPACE_PERSONAL) {
+                        selectedPersonalRootMode
+                    } else {
+                        selectedIslamicRootMode
+                    },
+                    onRootModeChanged = { mode ->
+                        if (preferences.workspace == WORKSPACE_PERSONAL) {
+                            selectedPersonalRootMode = mode.name
+                        } else if (mode != VaultRootMode.Personal) {
+                            selectedIslamicRootMode = mode.name
+                        }
+                    },
+                    rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
+                    onQuickNoteMode = { mode ->
+                        homeViewModel.createNote(folderId = null, mode = mode) { noteId ->
+                            navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                        }
+                    },
                 coursesContent = {
                     val coursesViewModel: CoursesViewModel = hiltViewModel()
                     val coursesState by coursesViewModel.uiState.collectAsStateWithLifecycle()
@@ -252,7 +235,16 @@ fun VaultNavHost(
                                 navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
                             }
                         },
+                        onNewNoteInFolder = { folderId ->
+                            coursesViewModel.createNoteInFolder(folderId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
+                        },
                         onNewFolder = coursesViewModel::createSubfolder,
+                        onNewSubfolderInFolder = coursesViewModel::createSubfolderInFolder,
+                        onUpdateChildFolder = coursesViewModel::updateChildFolder,
+                        onMoveChildFolder = coursesViewModel::moveChildFolder,
+                        onDeleteChildFolder = coursesViewModel::deleteChildFolder,
                         onFolderExpandedChange = coursesViewModel::setFolderExpanded,
                         onMoveItemInOrder = coursesViewModel::moveItemInOrder,
                         onRenameNote = coursesViewModel::renameNote,
@@ -286,6 +278,7 @@ fun VaultNavHost(
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
+                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
                     )
                 },
                 studyContent = {
@@ -365,9 +358,6 @@ fun VaultNavHost(
                         onOpenAttachmentsClick = {
                             navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_STUDY))
                         },
-                        onShareAiAnswerClick = { text ->
-                            shareAiAnswerToNote(text, FOLDER_MODE_STUDY)
-                        },
                         onQuranReflectionsClick = {
                             navController.navigate(VaultDestination.QuranReflections.route)
                         },
@@ -384,6 +374,7 @@ fun VaultNavHost(
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         currentFolderMode = FOLDER_MODE_STUDY,
+                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
                     )
                 },
                 quranContent = {
@@ -415,6 +406,7 @@ fun VaultNavHost(
                         onSetArabicFontPercent = quranViewModel::setArabicFontPercentFromSlider,
                         onSetTranslationFontPercent = quranViewModel::setTranslationFontPercent,
                         onSetTranslationEnabled = quranViewModel::setTranslationEnabled,
+                        onSetTranslationSource = quranViewModel::setTranslationSource,
                         onSetTajweedEnabled = quranViewModel::setTajweedEnabled,
                         onLastReadAyahChanged = quranViewModel::updateLastReadPosition,
                         onToggleTafsir = quranViewModel::toggleTafsir,
@@ -442,12 +434,16 @@ fun VaultNavHost(
                         onRefreshAudioDownloads = quranViewModel::refreshAudioDownloadStates,
                         onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
                         onStartMemorizingAyah = quranViewModel::startMemorizingAyah,
+                        onRemoveMemorizingAyah = quranViewModel::removeMemorizingAyah,
                         onToggleMemorizedAyah = quranViewModel::toggleMemorizedAyah,
+                        onMarkRevisedAyah = quranViewModel::markRevisedAyah,
+                        onAiListenAttemptCompleted = quranViewModel::recordAiListenAttempt,
+                        onSurahTestAttemptCompleted = quranViewModel::recordSurahTestAttempt,
                         onMarkCurrentSurahMemorized = quranViewModel::markCurrentSurahMemorized,
+                        onToggleNeedsRevisionMemorization = quranViewModel::toggleNeedsRevisionMemorization,
+                        onToggleIncorrectMemorization = quranViewModel::toggleIncorrectMemorization,
                         onToggleWeakMemorization = quranViewModel::toggleWeakMemorization,
                         onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
-                        onSetMemorizationRepeatMode = quranViewModel::setMemorizationRepeatMode,
-                        onStopMemorizationRepeat = quranViewModel::stopMemorizationRepeat,
                         onPendingScrollHandled = quranViewModel::consumePendingScrollVerse,
                     )
                 },
@@ -479,7 +475,12 @@ fun VaultNavHost(
                         onMarkReviewed = memoriseViewModel::markReviewed,
                         onToggleMemorized = memoriseViewModel::toggleMemorized,
                         onToggleRevision = memoriseViewModel::toggleRevision,
+                        onToggleIncorrect = memoriseViewModel::toggleIncorrect,
                         onToggleWeak = memoriseViewModel::toggleWeak,
+                        onOpenAyah = { verseKey ->
+                            pendingQuranVerseKey = verseKey
+                            selectedIslamicRootMode = VaultRootMode.Quran.name
+                        },
                     )
                 },
                 libraryContent = {
@@ -555,14 +556,12 @@ fun VaultNavHost(
                             }
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
-                        onShareAiAnswerClick = { text ->
-                            shareAiAnswerToNote(text, FOLDER_MODE_STUDY)
-                        },
                         onViewAllAnnotationsClick = {
                             navController.navigate(VaultDestination.PdfActivityFeed.route("library"))
                         },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         showFullFileTitles = preferences.showFullFileTitles,
+                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
                     )
                 },
                 personalContent = {
@@ -640,9 +639,6 @@ fun VaultNavHost(
                         onOpenAttachmentsClick = {
                             navController.navigate(VaultDestination.Attachments.route(FOLDER_MODE_PERSONAL))
                         },
-                        onShareAiAnswerClick = { text ->
-                            shareAiAnswerToNote(text, FOLDER_MODE_PERSONAL)
-                        },
                         onThemeClick = {
                             shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -656,6 +652,7 @@ fun VaultNavHost(
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         currentFolderMode = FOLDER_MODE_PERSONAL,
+                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
                     )
                 },
                 personalLibraryContent = {
@@ -731,17 +728,16 @@ fun VaultNavHost(
                             }
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
-                        onShareAiAnswerClick = { text ->
-                            shareAiAnswerToNote(text, FOLDER_MODE_PERSONAL)
-                        },
                         onViewAllAnnotationsClick = {
                             navController.navigate(VaultDestination.PdfActivityFeed.route(FOLDER_MODE_PERSONAL_LIBRARY))
                         },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         showFullFileTitles = preferences.showFullFileTitles,
+                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
                     )
-                },
-            )
+                    },
+                )
+            }
         }
         composable(
             route = VaultDestination.LibraryFolder.route,
@@ -811,12 +807,6 @@ fun VaultNavHost(
                 onRemoveAttachmentTag = viewModel::removeAttachmentTag,
                 onAddAnnotationTag = viewModel::addAnnotationTag,
                 onRemoveAnnotationTag = viewModel::removeAnnotationTag,
-                onShareAiAnswerClick = { text ->
-                    val noteMode = if (libraryMode == FOLDER_MODE_PERSONAL_LIBRARY) FOLDER_MODE_PERSONAL else FOLDER_MODE_STUDY
-                    homeViewModel.createNoteFromSharedText(text = text, mode = noteMode) { noteId ->
-                        navController.navigate(VaultDestination.Editor.route(noteId))
-                    }
-                },
                 showFullFileTitles = preferences.showFullFileTitles,
             )
         }
@@ -851,6 +841,15 @@ fun VaultNavHost(
                         navController.navigate(VaultDestination.FolderView.route(folderId))
                     }
                 },
+                onCreateNoteInFolderClick = { folderId ->
+                    viewModel.createNoteInFolder(folderId) { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                    }
+                },
+                onCreateSubfolderInFolderClick = viewModel::createSubfolderInFolder,
+                onUpdateChildFolderClick = viewModel::updateChildFolder,
+                onMoveChildFolderClick = viewModel::moveChildFolder,
+                onDeleteChildFolderClick = viewModel::deleteChildFolder,
                 onUpdateFolderClick = viewModel::updateFolderDetails,
                 onMoveCurrentFolderClick = viewModel::moveCurrentFolder,
                 onDeleteCurrentFolderClick = {
@@ -892,30 +891,17 @@ fun VaultNavHost(
         ) { backStackEntry ->
             val viewModel: NoteViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val aiState by viewModel.aiState.collectAsStateWithLifecycle()
-            val selectedTextAiState by viewModel.selectedTextAiState.collectAsStateWithLifecycle()
+            val formattingState by viewModel.formattingState.collectAsStateWithLifecycle()
             EditorScreen(
                 uiState = uiState,
-                aiState = aiState,
-                selectedTextAiState = selectedTextAiState,
+                formattingState = formattingState,
                 onBackClick = { navController.popBackStack() },
                 onTitleChange = viewModel::updateTitle,
                 onContentChange = viewModel::saveRichText,
-                onRunAiTool = viewModel::runAiTool,
-                onRunSelectedTextAi = viewModel::runSelectedTextAi,
-                onClearSelectedTextAi = viewModel::clearSelectedTextAi,
-                onSelectedTextAiQuestionChange = viewModel::setSelectedTextAiQuestion,
-                onSendSelectedTextResultToChat = viewModel::sendSelectedTextResultToChat,
-                onClearAiResult = viewModel::clearAiResult,
-                onClearAiConversation = viewModel::clearAiConversation,
-                onAiProviderSelected = viewModel::setAiProvider,
-                onAiModelSelected = viewModel::setAiModel,
-                onAiQuestionChange = viewModel::setAiQuestion,
-                onAskAiClick = { selectedText ->
-                    uiState.note?.id?.let { noteId ->
-                        navController.navigate(VaultDestination.AskAi.route(noteId, selectedText))
-                    }
-                },
+                onRunFormattingTool = viewModel::runFormattingTool,
+                onClearFormattingResult = viewModel::clearFormattingResult,
+                onFormattingProviderSelected = viewModel::setFormattingProvider,
+                onFormattingModelSelected = viewModel::setFormattingModel,
                 onAzureListenFromHere = viewModel::startAzureNarrationFromSelection,
                 onAttachDocument = viewModel::attachDocument,
                 onAttachmentClick = { attachmentId ->
@@ -943,12 +929,10 @@ fun VaultNavHost(
         ) {
             val viewModel: NoteViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val aiState by viewModel.aiState.collectAsStateWithLifecycle()
             val narrationState by viewModel.narrationState.collectAsStateWithLifecycle()
             val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
             ReadingScreen(
                 uiState = uiState,
-                aiState = aiState,
                 narrationState = narrationState,
                 azureNarrationProgress = azureNarrationProgress,
                 onBackClick = { navController.popBackStack() },
@@ -962,16 +946,6 @@ fun VaultNavHost(
                 },
                 onPinnedChange = viewModel::setPinned,
                 onFavouriteChange = viewModel::setFavourite,
-                onRunAiTool = viewModel::runAiTool,
-                onClearAiConversation = viewModel::clearAiConversation,
-                onAiProviderSelected = viewModel::setAiProvider,
-                onAiModelSelected = viewModel::setAiModel,
-                onAiQuestionChange = viewModel::setAiQuestion,
-                onAskAiClick = {
-                    uiState.note?.id?.let { noteId ->
-                        navController.navigate(VaultDestination.AskAi.route(noteId))
-                    }
-                },
                 onListenClick = viewModel::startNarration,
                 onAzureListenClick = viewModel::startAzureNarration,
                 onAzureResumeClick = viewModel::resumeAzureNarration,
@@ -1001,35 +975,6 @@ fun VaultNavHost(
                 onRemoveKnowledgeTag = viewModel::removeKnowledgeTag,
                 onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
-            )
-        }
-        composable(
-            route = VaultDestination.AskAi.route,
-            arguments = listOf(
-                navArgument("noteId") { type = NavType.StringType },
-                navArgument("selectedText") {
-                    type = NavType.StringType
-                    defaultValue = ""
-                    nullable = true
-                },
-            ),
-        ) { backStackEntry ->
-            val viewModel: NoteViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val aiState by viewModel.aiState.collectAsStateWithLifecycle()
-            val selectedText = backStackEntry.arguments?.getString("selectedText").orEmpty()
-            AskAiScreen(
-                uiState = uiState,
-                aiState = aiState,
-                selectedText = selectedText.takeIf { it.isNotBlank() },
-                onBackClick = { navController.popBackStack() },
-                onRunAiTool = viewModel::runAiTool,
-                onClearAiConversation = viewModel::clearAiConversation,
-                onAiProviderSelected = viewModel::setAiProvider,
-                onAiModelSelected = viewModel::setAiModel,
-                onAiQuestionChange = viewModel::setAiQuestion,
-                onOpenAiConversation = viewModel::openAiConversation,
-                onStartNewAiConversation = viewModel::startNewAiConversation,
             )
         }
         composable(VaultDestination.Search.route) {
@@ -1175,15 +1120,17 @@ fun VaultNavHost(
                 onRestoreDeletedFolder = viewModel::restoreFolder,
                 onPermanentlyDeleteFolder = { folderId -> viewModel.permanentlyDeleteFolder(folderId) { backupMessage = it } },
                 onPermanentlyDeleteAllDeleted = { viewModel.permanentlyDeleteAllRecentlyDeleted { backupMessage = it } },
-                googleDriveSignInIntent = viewModel.googleDriveSignInIntent(),
+                onPrepareGoogleDriveSignIn = { onReady ->
+                    viewModel.prepareGoogleDriveSignIn(onReady) { backupMessage = it }
+                },
                 onGoogleDriveSignInResult = { data -> viewModel.handleGoogleDriveSignInResult(data) { backupMessage = it } },
                 onGoogleDrivePush = { viewModel.pushGoogleDriveSync { backupMessage = it } },
                 onGoogleDriveForcePush = { viewModel.forcePushGoogleDriveSync { backupMessage = it } },
                 onGoogleDrivePull = { viewModel.pullGoogleDriveSync { backupMessage = it } },
                 onBackupSettingsOpened = viewModel::observeDriveRestoreState,
-                supabaseAiEmail = supabaseSession.email,
-                onSupabaseAiLogin = { email, password -> viewModel.signInSupabaseAi(email, password) { backupMessage = it } },
-                onSupabaseAiLogout = { viewModel.signOutSupabaseAi { backupMessage = it } },
+                formattingAccountEmail = supabaseSession.email,
+                onFormattingAccountLogin = { email, password -> viewModel.signInFormattingAccount(email, password) { backupMessage = it } },
+                onFormattingAccountLogout = { viewModel.signOutFormattingAccount { backupMessage = it } },
                 driveRestoreState = driveRestoreState,
                 backupMessage = backupMessage,
                 onDismissBackupMessage = {
@@ -1220,16 +1167,8 @@ fun VaultNavHost(
                         onCreated(noteId)
                     }
                 },
-                onAskAiOnSelected = { onNav ->
-                    viewModel.askAiOnSelected { noteId, text ->
-                        onNav(noteId, text)
-                    }
-                },
                 onNavigateToEditor = { noteId ->
                     navController.navigate(VaultDestination.Editor.route(noteId))
-                },
-                onNavigateToAskAi = { noteId, text ->
-                    navController.navigate(VaultDestination.AskAi.route(noteId, text))
                 }
             )
         }
@@ -1329,6 +1268,9 @@ private fun StudyLibraryPersonalShell(
     var visualSelectedPage by rememberSaveable(modes) { mutableIntStateOf(requestedPage) }
     var lastNavTapMode by remember { mutableStateOf<VaultRootMode?>(null) }
     var lastNavTapAt by remember { mutableLongStateOf(0L) }
+    val fixedNavigationItems = remember(modes) {
+        modes.map { mode -> VaultFixedBottomNavigationItem(mode.label, mode.icon) }
+    }
 
     LaunchedEffect(modes, requestedPage) {
         if (pagerState.currentPage != requestedPage) {
@@ -1338,6 +1280,14 @@ private fun StudyLibraryPersonalShell(
                 animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
             )
         }
+    }
+
+    LaunchedEffect(pagerState, modes) {
+        snapshotFlow { pagerState.targetPage.coerceIn(0, modes.lastIndex) }
+            .distinctUntilChanged()
+            .collect { page ->
+                visualSelectedPage = page
+            }
     }
 
     LaunchedEffect(pagerState, modes) {
@@ -1364,19 +1314,15 @@ private fun StudyLibraryPersonalShell(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.bg),
-    ) {
+    val pagerContent: @Composable (Modifier) -> Unit = { pagerModifier ->
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = pagerModifier,
             key = { page -> modes[page].name },
             beyondViewportPageCount = 1,
             flingBehavior = PagerDefaults.flingBehavior(
                 state = pagerState,
-                snapPositionalThreshold = 0.18f,
+                snapPositionalThreshold = RootPagerSnapThreshold,
             ),
         ) { page ->
             when (modes[page]) {
@@ -1388,137 +1334,53 @@ private fun StudyLibraryPersonalShell(
                 VaultRootMode.Personal -> personalContent()
             }
         }
+    }
 
-        FloatingBottomNav(
-            modes = modes,
+    val handleModeSelected: (Int) -> Unit = modeSelected@ { index ->
+        val mode = modes[index]
+        val now = System.currentTimeMillis()
+        val isFastSecondTap = lastNavTapMode == mode && now - lastNavTapAt <= BottomNavDoubleTapWindowMs
+        lastNavTapMode = mode
+        lastNavTapAt = now
+        if (isFastSecondTap) {
+            onQuickNoteMode(
+                when (mode) {
+                    VaultRootMode.Study -> FOLDER_MODE_STUDY
+                    VaultRootMode.Personal -> FOLDER_MODE_PERSONAL
+                    else -> return@modeSelected
+                },
+            )
+            return@modeSelected
+        }
+        visualSelectedPage = index
+        scope.launch {
+            pagerState.animateScrollToPage(
+                page = index,
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+            )
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.bg),
+    ) {
+        pagerContent(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
+        VaultFixedBottomNavigation(
+            items = fixedNavigationItems,
             selectedIndex = visualSelectedPage.coerceIn(0, modes.lastIndex),
-            onModeSelected = { index ->
-                val mode = modes[index]
-                val now = System.currentTimeMillis()
-                val isFastSecondTap = lastNavTapMode == mode && now - lastNavTapAt <= BottomNavDoubleTapWindowMs
-                lastNavTapMode = mode
-                lastNavTapAt = now
-                if (isFastSecondTap) {
-                    onQuickNoteMode(
-                        when (mode) {
-                            VaultRootMode.Study -> FOLDER_MODE_STUDY
-                            VaultRootMode.Personal -> FOLDER_MODE_PERSONAL
-                            else -> return@FloatingBottomNav
-                        },
-                    )
-                    return@FloatingBottomNav
-                }
-                visualSelectedPage = index
-                scope.launch {
-                    pagerState.animateScrollToPage(
-                        page = index,
-                        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
-                    )
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(vertical = VaultSpacing.lg),
+            onItemSelected = handleModeSelected,
         )
     }
 }
 
-
-@Composable
-private fun FloatingBottomNav(
-    modes: List<VaultRootMode>,
-    selectedIndex: Int,
-    onModeSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = modifier
-            .widthIn(
-                min = if (modes.size > 3) 304.dp else 236.dp,
-                max = if (modes.size > 3) 342.dp else 258.dp,
-            ),
-        color = colors.elevated.copy(alpha = 0.96f),
-        contentColor = colors.textSecondary,
-        shape = VaultShapes.pill,
-        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.72f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 5.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 5.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            modes.forEachIndexed { index, mode ->
-                FloatingBottomNavItem(
-                    label = mode.label,
-                    icon = mode.icon,
-                    selected = selectedIndex == index,
-                    onClick = { onModeSelected(index) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FloatingBottomNavItem(
-    label: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    val contentColor by animateColorAsState(
-        targetValue = if (selected) colors.accent else colors.textSecondary.copy(alpha = 0.74f),
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
-        label = "bottomNavContentColor",
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (selected) 1.03f else 1f,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
-        label = "bottomNavScale",
-    )
-
-    Surface(
-        modifier = Modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onClick,
-        ),
-        color = androidx.compose.ui.graphics.Color.Transparent,
-        contentColor = contentColor,
-        shape = VaultShapes.pill,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .scale(scale)
-                .padding(horizontal = if (label.length > 7) 6.dp else 8.dp, vertical = 5.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                modifier = Modifier.size(16.dp),
-                tint = contentColor,
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = if (selected) FontWeight.W800 else FontWeight.W700,
-                ),
-                color = contentColor,
-            )
-        }
-    }
-}
-
 private const val BottomNavDoubleTapWindowMs = 260L
+private const val RootPagerSnapThreshold = 0.35f
 
 private fun String.toNoteBodyFontSizeSp(): Float =
     when (this) {

@@ -122,8 +122,30 @@ class CoursesViewModel @Inject constructor(
         }
     }
 
+    fun createNoteInFolder(folderId: String, onCreated: (String) -> Unit) = viewModelScope.launch {
+        val noteId = noteRepository.createNote(folderId)
+        uiState.value.activeCourse?.id?.let { courseId -> courseRepository.markNoteOpened(courseId, noteId) }
+        onCreated(noteId)
+    }
+
     fun createSubfolder(name: String, description: String?) = viewModelScope.launch {
         rootFolderId.value?.let { folderRepository.createFolder(it, name, description = description) }
+    }
+
+    fun createSubfolderInFolder(parentId: String, name: String, description: String?) = viewModelScope.launch {
+        folderRepository.createFolder(parentId, name, description = description)
+    }
+
+    fun updateChildFolder(id: String, name: String, description: String?) = viewModelScope.launch {
+        folderRepository.updateFolderDetails(id, name, description)
+    }
+
+    fun moveChildFolder(id: String, parentId: String?) = viewModelScope.launch {
+        folderRepository.moveFolder(id, parentId)
+    }
+
+    fun deleteChildFolder(id: String) = viewModelScope.launch {
+        folderRepository.deleteFolderTree(id)
     }
 
     fun setFolderExpanded(id: String, expanded: Boolean) = viewModelScope.launch {

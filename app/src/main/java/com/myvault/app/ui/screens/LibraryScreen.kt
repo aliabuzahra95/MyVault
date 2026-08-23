@@ -12,6 +12,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -45,7 +46,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
@@ -68,7 +68,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,14 +78,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
+import com.myvault.app.ui.components.FloatingActionMenuExpansion
+import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.PinnedNoteCard
 import com.myvault.app.ui.components.SearchBar
@@ -96,9 +97,6 @@ import com.myvault.app.ui.components.VaultModalAction
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
-import com.myvault.app.ui.home.HomeInlineAiPanel
-import com.myvault.app.ai.home.HomeAiAttachmentScope
-import com.myvault.app.ai.home.HomeInlineAiViewModel
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -108,7 +106,6 @@ import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.LibraryFolderItem
 import com.myvault.app.ui.viewmodel.LibraryUiState
 import com.myvault.app.ui.viewmodel.LibraryViewMode
-import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun LibraryScreen(
@@ -150,10 +147,10 @@ fun LibraryScreen(
     onThemeClick: () -> Unit,
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onShareAiAnswerClick: (String) -> Unit = {},
     quickBackupRecommended: Boolean = false,
     showFullFileTitles: Boolean = false,
     onViewAllAnnotationsClick: () -> Unit = {},
+    fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
     modifier: Modifier = Modifier,
 ) {
     LibraryArchiveScreen(
@@ -199,10 +196,10 @@ fun LibraryScreen(
         onThemeClick = onThemeClick,
         onQuickBackupClick = onQuickBackupClick,
         onSettingsClick = onSettingsClick,
-        onShareAiAnswerClick = onShareAiAnswerClick,
         quickBackupRecommended = quickBackupRecommended,
         showFullFileTitles = showFullFileTitles,
         onViewAllAnnotationsClick = onViewAllAnnotationsClick,
+        fabBottomPadding = fabBottomPadding,
         modifier = modifier,
     )
 }
@@ -242,7 +239,6 @@ fun LibraryFolderScreen(
     onRemoveAttachmentTag: (String, String) -> Unit,
     onAddAnnotationTag: (String, String) -> Unit,
     onRemoveAnnotationTag: (String, String) -> Unit,
-    onShareAiAnswerClick: (String) -> Unit = {},
     showFullFileTitles: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -284,7 +280,6 @@ fun LibraryFolderScreen(
         onRemoveAttachmentTag = onRemoveAttachmentTag,
         onAddAnnotationTag = onAddAnnotationTag,
         onRemoveAnnotationTag = onRemoveAnnotationTag,
-        onShareAiAnswerClick = onShareAiAnswerClick,
         showFullFileTitles = showFullFileTitles,
         onViewAllAnnotationsClick = {},
         modifier = modifier,
@@ -336,15 +331,13 @@ private fun LibraryArchiveScreen(
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    onShareAiAnswerClick: (String) -> Unit = {},
     quickBackupRecommended: Boolean = false,
     showFullFileTitles: Boolean = false,
     onViewAllAnnotationsClick: () -> Unit = {},
+    fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
-    val libraryInlineAiViewModel: HomeInlineAiViewModel = hiltViewModel()
-    val libraryInlineAiState by libraryInlineAiViewModel.state.collectAsState()
     var fabExpanded by remember { mutableStateOf(false) }
     BackHandler(enabled = fabExpanded) {
         fabExpanded = false
@@ -530,7 +523,7 @@ private fun LibraryArchiveScreen(
                 if (uiState.pinnedFiles.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(5.dp))
-                        SectionLabel(label = "Pinned")
+                        SectionLabel(label = "Pinned", uppercase = false)
                         Spacer(modifier = Modifier.height(3.dp))
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
@@ -554,7 +547,7 @@ private fun LibraryArchiveScreen(
 
                 item {
                     Spacer(modifier = Modifier.height(10.dp))
-                    SectionLabel(label = if (currentFolderId == null) "Collections" else "Subfolders")
+                    SectionLabel(label = if (currentFolderId == null) "Collections" else "Subfolders", uppercase = false)
                     Spacer(modifier = Modifier.height(6.dp))
                 }
 
@@ -623,7 +616,7 @@ private fun LibraryArchiveScreen(
 
                 item {
                     Spacer(modifier = Modifier.height(VaultSpacing.xs))
-                    SectionLabel(label = "Files")
+                    SectionLabel(label = "Files", uppercase = false)
                 }
 
                 if (uiState.files.isEmpty() && currentFolderId != null) {
@@ -668,7 +661,7 @@ private fun LibraryArchiveScreen(
                 if (uiState.references.isNotEmpty()) {
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
-                        SectionLabel(label = "Referenced in")
+                        SectionLabel(label = "Referenced in", uppercase = false)
                         Spacer(modifier = Modifier.height(6.dp))
                     }
                     items(uiState.references.take(3), key = { it.id }) { reference ->
@@ -695,6 +688,7 @@ private fun LibraryArchiveScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(colors.scrim)
                         .combinedClickable(onClick = { fabExpanded = false }, onLongClick = {}),
                 )
             }
@@ -702,12 +696,19 @@ private fun LibraryArchiveScreen(
             FloatingActionMenu(
                 expanded = fabExpanded,
                 actions = actions,
-                mainButtonSize = 48.dp,
-                actionButtonSize = 38.dp,
+                mainButtonSize = FloatingActionStackDefaults.mainButtonSize,
+                actionButtonSize = FloatingActionStackDefaults.actionButtonSize,
+                expansionDirection = FloatingActionMenuExpansion.Start,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = 74.dp)
-                    .size(width = 220.dp, height = 230.dp),
+                    .padding(
+                        end = FloatingActionStackDefaults.endPadding,
+                        bottom = fabBottomPadding,
+                    )
+                    .size(
+                        width = FloatingActionStackDefaults.menuWidth,
+                        height = FloatingActionStackDefaults.compactMenuHeight,
+                    ),
                 onToggle = { fabExpanded = !fabExpanded },
                 onActionClick = { action ->
                     fabExpanded = false
@@ -721,38 +722,6 @@ private fun LibraryArchiveScreen(
                 },
             )
 
-            LibraryInlineAiPill(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen + 2.dp, bottom = 132.dp),
-                onClick = { libraryInlineAiViewModel.openPanel(HomeAiAttachmentScope.LibraryPdfs) },
-            )
-
-            HomeInlineAiPanel(
-                state = libraryInlineAiState,
-                onInputChange = libraryInlineAiViewModel::setInput,
-                onAttachClick = libraryInlineAiViewModel::openPicker,
-                onSuggestionClick = libraryInlineAiViewModel::attachSuggestion,
-                onDetachClick = libraryInlineAiViewModel::detachItem,
-                onSendClick = libraryInlineAiViewModel::send,
-                onStopClick = libraryInlineAiViewModel::stopStreaming,
-                onProviderSelected = libraryInlineAiViewModel::setProvider,
-                onModelModeSelected = libraryInlineAiViewModel::setModelMode,
-                onWebSearchToggle = libraryInlineAiViewModel::toggleWebSearch,
-                onSettingsClick = libraryInlineAiViewModel::toggleSettingsMode,
-                onClearHistoryClick = libraryInlineAiViewModel::clearHistory,
-                onHistoryClick = libraryInlineAiViewModel::openHistoryItem,
-                onRetryClick = libraryInlineAiViewModel::retryLastRequest,
-                onDismissErrorClick = libraryInlineAiViewModel::dismissError,
-                onShareAnswerClick = onShareAiAnswerClick,
-                onSpeakAnswerClick = libraryInlineAiViewModel::speakAnswer,
-                onClose = libraryInlineAiViewModel::closePanel,
-                onPickerToggle = libraryInlineAiViewModel::attachItem,
-                onPickerClose = libraryInlineAiViewModel::closePicker,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(80f),
-            )
         }
     }
 
@@ -1683,12 +1652,7 @@ private fun RecentLibraryAnnotationsRow(
             .padding(top = 8.dp, bottom = 2.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = "Annotations",
-            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-            color = colors.textMuted,
-        )
+        SectionLabel(label = "Annotations", uppercase = false)
         LazyRow(
             contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1719,7 +1683,7 @@ private fun RecentLibraryAnnotationsRow(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "View All",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
                             color = colors.accent,
                             textAlign = TextAlign.Center,
                         )
@@ -1751,7 +1715,7 @@ private fun RecentLibraryAnnotationsRow(
                         )
                         Text(
                             text = annotation.displayTitle ?: annotation.notePreview.ifBlank { annotation.defaultAnnotationTitle() },
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
                             color = colors.text,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
@@ -1759,7 +1723,7 @@ private fun RecentLibraryAnnotationsRow(
                         )
                         Text(
                             text = "${annotation.fileName} · p. ${annotation.pageIndex + 1}",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelMedium,
                             color = colors.textMuted,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
@@ -1818,7 +1782,7 @@ private fun LibraryFolderRow(
                 Icon(
                     Icons.Rounded.Folder,
                     contentDescription = null,
-                    modifier = Modifier.size(if (topLevel) 16.dp else 13.dp),
+                    modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
                     tint = if (subfolderStyle) Color(0xFFE23B3B) else colors.accent,
                 )
             },
@@ -1975,17 +1939,35 @@ private fun LibraryHierarchyRow(
     val background = if (topLevel && expanded) colors.surface else Color.Transparent
     val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
     val chevronInteractionSource = remember { MutableInteractionSource() }
+    val hierarchyIndent = when {
+        topLevel -> 6.dp
+        fileRow -> (2 + depth * 7).dp
+        else -> (4 + depth * 8).dp
+    }
+    val rowVerticalGap = if (topLevel) 0.5.dp else 0.dp
+    val rowHorizontalPadding = if (topLevel) 8.dp else 5.dp
+    val rowVerticalPadding = when {
+        fileRow && !subtitle.isNullOrBlank() -> 3.dp
+        fileRow -> 2.dp
+        topLevel -> 6.dp
+        else -> 3.dp
+    }
+    val rowMinHeight = when {
+        !fileRow && topLevel -> 36.dp
+        !fileRow -> 32.dp
+        else -> 30.dp
+    }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.xs)
             .padding(
-                start = if (topLevel) 12.dp else (10 + depth * 14).dp,
-                top = if (topLevel) 2.dp else 0.dp,
-                end = if (topLevel) 12.dp else 8.dp,
-                bottom = if (topLevel) 4.dp else 0.dp,
+                start = hierarchyIndent,
+                top = rowVerticalGap,
+                end = if (topLevel) 8.dp else 6.dp,
+                bottom = rowVerticalGap,
             )
+            .heightIn(min = rowMinHeight)
             .clip(rowShape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         color = background,
@@ -1996,22 +1978,16 @@ private fun LibraryHierarchyRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    horizontal = if (topLevel) 12.dp else 10.dp,
-                    vertical = when {
-                        dense && fileRow -> 8.dp
-                        dense -> 6.dp
-                        fileRow -> 10.dp
-                        topLevel -> 10.dp
-                        else -> 8.dp
-                    },
+                    horizontal = rowHorizontalPadding,
+                    vertical = rowVerticalPadding,
                 ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (onToggle != null) {
                 Box(
                     modifier = Modifier
-                        .size(if (topLevel) 14.dp else 12.dp)
+                        .size(if (topLevel) 13.dp else 11.dp)
                         .clickable(
                             interactionSource = chevronInteractionSource,
                             indication = null,
@@ -2023,24 +1999,23 @@ private fun LibraryHierarchyRow(
                         imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                         contentDescription = "Expand folder",
                         modifier = Modifier
-                            .size(if (topLevel) 14.dp else 12.dp)
+                            .size(if (topLevel) 13.dp else 11.dp)
                             .graphicsLayer { rotationZ = chevronRotation },
                         tint = colors.textMuted,
                     )
                 }
             } else {
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
             }
             leading(topLevel)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
                     text = title,
-                    style = if (fileRow) {
-                        MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W600)
-                    } else if (topLevel) {
-                        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
-                    } else {
-                        MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
+                    style = when {
+                        fileRow && topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                        fileRow -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
+                        topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                        else -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },
                     color = if (subfolderStyle && !fileRow) Color(0xFFE23B3B) else colors.text,
                     maxLines = if (fileRow && showFullTitle) Int.MAX_VALUE else 1,
@@ -2049,7 +2024,7 @@ private fun LibraryHierarchyRow(
                 if (!subtitle.isNullOrBlank()) {
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W500),
                         color = colors.textMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -2130,32 +2105,6 @@ private sealed interface LibraryFolderDialog {
     data class Rename(val folderId: String) : LibraryFolderDialog
 }
 
-
-@Composable
-private fun LibraryInlineAiPill(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = modifier.size(44.dp),
-        onClick = onClick,
-        shape = VaultShapes.pill,
-        color = colors.elevated.copy(alpha = 0.98f),
-        border = BorderStroke(1.dp, colors.accentBorder),
-        shadowElevation = 4.dp,
-        tonalElevation = 0.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Rounded.AutoAwesome,
-                contentDescription = "Open Library AI chat",
-                modifier = Modifier.size(20.dp),
-                tint = colors.accent,
-            )
-        }
-    }
-}
 
 private data class LibraryAction(
     val label: String,

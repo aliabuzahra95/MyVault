@@ -14,9 +14,16 @@ import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.data.narration.AzureNarrationConfig
 import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.quran.QuranRecentLocation
+import com.myvault.app.data.quran.QuranTranslationSource
 import com.myvault.app.data.quran.memorization.MemorizationRecord
+import com.myvault.app.data.quran.memorization.QuranMemorizationSavedAttempt
+import com.myvault.app.data.quran.memorization.QuranSurahMemorizationSavedAttempt
 import com.myvault.app.data.quran.memorization.toMemorizationRecordOrNull
 import com.myvault.app.data.quran.memorization.toPreferenceEntry
+import com.myvault.app.data.quran.memorization.toAttemptPreferenceEntry
+import com.myvault.app.data.quran.memorization.toQuranMemorizationSavedAttemptOrNull
+import com.myvault.app.data.quran.memorization.toQuranSurahMemorizationSavedAttemptOrNull
+import com.myvault.app.data.quran.memorization.toSurahAttemptPreferenceEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -49,6 +56,7 @@ data class VaultUserPreferences(
     val quranArabicFontPercent: Int = 100,
     val quranTranslationFontPercent: Int = 100,
     val quranTranslationEnabled: Boolean = true,
+    val quranTranslationSource: String = QuranTranslationSource.SahihInternational.storedValue,
     val quranTajweedEnabled: Boolean = false,
     val quranTafsirSourceId: Int = -1,
     val quranAudioReciterId: Int = 0,
@@ -56,6 +64,8 @@ data class VaultUserPreferences(
     val quranBookmarkedVerses: Set<String> = emptySet(),
     val quranRecentLocations: List<QuranRecentLocation> = emptyList(),
     val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
+    val quranMemorizationAttempts: List<QuranMemorizationSavedAttempt> = emptyList(),
+    val quranSurahMemorizationAttempts: List<QuranSurahMemorizationSavedAttempt> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
@@ -99,6 +109,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranArabicFontPercent = preferences[Keys.QuranArabicFontPercent] ?: 100,
                 quranTranslationFontPercent = preferences[Keys.QuranTranslationFontPercent] ?: 100,
                 quranTranslationEnabled = preferences[Keys.QuranTranslationEnabled] ?: true,
+                quranTranslationSource = QuranTranslationSource
+                    .fromStoredValue(preferences[Keys.QuranTranslationSource])
+                    .storedValue,
                 quranTajweedEnabled = preferences[Keys.QuranTajweedEnabled] ?: false,
                 quranTafsirSourceId = preferences[Keys.QuranTafsirSourceId] ?: -1,
                 quranAudioReciterId = preferences[Keys.QuranAudioReciterId] ?: 0,
@@ -107,6 +120,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranRecentLocations = preferences[Keys.QuranRecentLocations].orEmpty().toQuranRecentLocations(),
                 quranMemorizationRecords = preferences[Keys.QuranMemorizationRecords].orEmpty()
                     .mapNotNull { it.toMemorizationRecordOrNull() },
+                quranMemorizationAttempts = preferences[Keys.QuranMemorizationAttempts].orEmpty()
+                    .mapNotNull { it.toQuranMemorizationSavedAttemptOrNull() }
+                    .sortedByDescending { it.timestampMs },
+                quranSurahMemorizationAttempts = preferences[Keys.QuranSurahMemorizationAttempts].orEmpty()
+                    .mapNotNull { it.toQuranSurahMemorizationSavedAttemptOrNull() }
+                    .sortedByDescending { it.timestampMs },
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 pinnedExpandedByMode = preferences[Keys.PinnedExpandedByMode].orEmpty()
                     .mapNotNull { entry ->
@@ -287,6 +306,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setQuranTranslationSource(source: QuranTranslationSource) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.QuranTranslationSource] = source.storedValue
+        }
+    }
+
     suspend fun setQuranTajweedEnabled(enabled: Boolean) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.QuranTajweedEnabled] = enabled
@@ -335,6 +360,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
             preferences[Keys.QuranArabicFontPercent] = backup.quranArabicFontPercent.coerceIn(70, 140)
             preferences[Keys.QuranTranslationFontPercent] = backup.quranTranslationFontPercent.coerceIn(80, 130)
             preferences[Keys.QuranTranslationEnabled] = backup.quranTranslationEnabled
+            preferences[Keys.QuranTranslationSource] = QuranTranslationSource
+                .fromStoredValue(backup.quranTranslationSource)
+                .storedValue
             preferences[Keys.QuranTajweedEnabled] = backup.quranTajweedEnabled
             preferences[Keys.QuranTafsirSourceId] = backup.quranTafsirSourceId
             preferences[Keys.QuranAudioReciterId] = backup.quranAudioReciterId.coerceAtLeast(0)
@@ -342,6 +370,16 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
             preferences[Keys.QuranBookmarkedVerses] = backup.quranBookmarkedVerses
             preferences[Keys.QuranRecentLocations] = backup.quranRecentLocations.toPreferenceSet()
             preferences[Keys.QuranMemorizationRecords] = backup.quranMemorizationRecords.map { it.toPreferenceEntry() }.toSet()
+            preferences[Keys.QuranMemorizationAttempts] = backup.quranMemorizationAttempts
+                .sortedByDescending { it.timestampMs }
+                .take(QURAN_MEMORIZATION_ATTEMPT_LIMIT)
+                .map { it.toAttemptPreferenceEntry() }
+                .toSet()
+            preferences[Keys.QuranSurahMemorizationAttempts] = backup.quranSurahMemorizationAttempts
+                .sortedByDescending { it.timestampMs }
+                .take(QURAN_SURAH_MEMORIZATION_ATTEMPT_LIMIT)
+                .map { it.toSurahAttemptPreferenceEntry() }
+                .toSet()
             preferences[Keys.ExpandedFolderIds] = backup.expandedFolderIds
             preferences[Keys.LibraryViewMode] = backup.libraryViewMode
             preferences[Keys.LibraryViewModesByLocation] = backup.libraryViewModesByLocation
@@ -353,6 +391,30 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     suspend fun setQuranMemorizationRecords(records: List<MemorizationRecord>) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.QuranMemorizationRecords] = records.map { it.toPreferenceEntry() }.toSet()
+        }
+    }
+
+    suspend fun addQuranMemorizationAttempt(attempt: QuranMemorizationSavedAttempt) {
+        context.vaultDataStore.edit { preferences ->
+            val currentAttempts = preferences[Keys.QuranMemorizationAttempts].orEmpty()
+                .mapNotNull { it.toQuranMemorizationSavedAttemptOrNull() }
+                .filterNot { it.attemptId == attempt.attemptId }
+            val updated = (currentAttempts + attempt)
+                .sortedByDescending { it.timestampMs }
+                .take(QURAN_MEMORIZATION_ATTEMPT_LIMIT)
+            preferences[Keys.QuranMemorizationAttempts] = updated.map { it.toAttemptPreferenceEntry() }.toSet()
+        }
+    }
+
+    suspend fun addQuranSurahMemorizationAttempt(attempt: QuranSurahMemorizationSavedAttempt) {
+        context.vaultDataStore.edit { preferences ->
+            val currentAttempts = preferences[Keys.QuranSurahMemorizationAttempts].orEmpty()
+                .mapNotNull { it.toQuranSurahMemorizationSavedAttemptOrNull() }
+                .filterNot { it.attemptId == attempt.attemptId }
+            val updated = (currentAttempts + attempt)
+                .sortedByDescending { it.timestampMs }
+                .take(QURAN_SURAH_MEMORIZATION_ATTEMPT_LIMIT)
+            preferences[Keys.QuranSurahMemorizationAttempts] = updated.map { it.toSurahAttemptPreferenceEntry() }.toSet()
         }
     }
 
@@ -424,6 +486,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranArabicFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_arabic_font_percent")
         val QuranTranslationFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_translation_font_percent")
         val QuranTranslationEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_translation_enabled")
+        val QuranTranslationSource: Preferences.Key<String> = stringPreferencesKey("quran_translation_source")
         val QuranTajweedEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("quran_tajweed_enabled")
         val QuranTafsirSourceId: Preferences.Key<Int> = intPreferencesKey("quran_tafsir_source_id")
         val QuranAudioReciterId: Preferences.Key<Int> = intPreferencesKey("quran_audio_reciter_id")
@@ -431,6 +494,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranBookmarkedVerses: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_bookmarked_verses")
         val QuranRecentLocations: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_recent_locations")
         val QuranMemorizationRecords: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_memorization_records")
+        val QuranMemorizationAttempts: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_memorization_attempts")
+        val QuranSurahMemorizationAttempts: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_surah_memorization_attempts")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val PinnedExpandedByMode: Preferences.Key<Set<String>> = stringSetPreferencesKey("pinned_expanded_by_mode")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
@@ -459,6 +524,7 @@ data class VaultBackupPreferences(
     val quranArabicFontPercent: Int,
     val quranTranslationFontPercent: Int,
     val quranTranslationEnabled: Boolean,
+    val quranTranslationSource: String = QuranTranslationSource.SahihInternational.storedValue,
     val quranTajweedEnabled: Boolean,
     val quranTafsirSourceId: Int = -1,
     val quranAudioReciterId: Int,
@@ -466,6 +532,8 @@ data class VaultBackupPreferences(
     val quranBookmarkedVerses: Set<String>,
     val quranRecentLocations: List<QuranRecentLocation>,
     val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
+    val quranMemorizationAttempts: List<QuranMemorizationSavedAttempt> = emptyList(),
+    val quranSurahMemorizationAttempts: List<QuranSurahMemorizationSavedAttempt> = emptyList(),
     val expandedFolderIds: Set<String> = emptySet(),
     val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
@@ -504,3 +572,5 @@ private fun List<QuranRecentLocation>.toPreferenceSet(): Set<String> =
         .toSet()
 
 private const val QURAN_RECENT_LIMIT = 5
+private const val QURAN_MEMORIZATION_ATTEMPT_LIMIT = 50
+private const val QURAN_SURAH_MEMORIZATION_ATTEMPT_LIMIT = 50

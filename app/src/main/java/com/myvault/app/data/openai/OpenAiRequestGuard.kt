@@ -121,5 +121,4 @@ object OpenAiRequestGuard {
 
 object OpenAiFeature {
     const val ListenMode = "ListenMode"
-    const val NoteAiSupabaseFunction = "NoteAiSupabaseFunction"
 }

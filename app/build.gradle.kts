@@ -55,12 +55,49 @@ android {
             .get()
             .trim()
     }
-    val openAiFastModel = providers.gradleProperty("MYVAULT_OPENAI_FAST_MODEL").orElse("gpt-5-mini").get().trim()
-    val openAiSmartModel = providers.gradleProperty("MYVAULT_OPENAI_SMART_MODEL").orElse("gpt-5").get().trim()
-    val geminiFastModel = providers.gradleProperty("MYVAULT_GEMINI_FAST_MODEL").orElse("gemini-2.5-flash").get().trim()
-    val geminiSmartModel = providers.gradleProperty("MYVAULT_GEMINI_SMART_MODEL").orElse("gemini-2.5-pro").get().trim()
-    val kimiFastModel = providers.gradleProperty("MYVAULT_KIMI_FAST_MODEL").orElse("kimi-k2.6").get().trim()
-    val kimiSmartModel = providers.gradleProperty("MYVAULT_KIMI_SMART_MODEL").orElse("kimi-k2.6").get().trim()
+    val openAiTranscribeModel = localProperties.getProperty("MYVAULT_OPENAI_TRANSCRIBE_MODEL").orEmpty().trim().ifBlank {
+        providers.gradleProperty("MYVAULT_OPENAI_TRANSCRIBE_MODEL")
+            .orElse("gpt-4o-transcribe")
+            .get()
+            .trim()
+    }
+    val noteFormattingKimiFastModel = providers.gradleProperty("MYVAULT_KIMI_FAST_MODEL").orElse("kimi-k2.6").get().trim()
+    val noteFormattingKimiSmartModel = providers.gradleProperty("MYVAULT_KIMI_SMART_MODEL").orElse("kimi-k2.6").get().trim()
+    val localGoogleSpeechAccessToken = localProperties.getProperty("MYVAULT_GOOGLE_SPEECH_ACCESS_TOKEN").orEmpty().trim()
+    val googleSpeechAccessToken = localGoogleSpeechAccessToken.ifBlank {
+        providers.environmentVariable("GOOGLE_SPEECH_ACCESS_TOKEN")
+            .orElse(providers.gradleProperty("MYVAULT_GOOGLE_SPEECH_ACCESS_TOKEN"))
+            .orElse("")
+            .get()
+            .trim()
+    }
+    val googleSpeechProjectId = localProperties.getProperty("MYVAULT_GOOGLE_SPEECH_PROJECT_ID").orEmpty().trim().ifBlank {
+        providers.environmentVariable("GOOGLE_CLOUD_PROJECT")
+            .orElse(providers.gradleProperty("MYVAULT_GOOGLE_SPEECH_PROJECT_ID"))
+            .orElse("")
+            .get()
+            .trim()
+    }
+    val googleSpeechLocation = localProperties.getProperty("MYVAULT_GOOGLE_SPEECH_LOCATION").orEmpty().trim().ifBlank {
+        providers.gradleProperty("MYVAULT_GOOGLE_SPEECH_LOCATION")
+            .orElse("us")
+            .get()
+            .trim()
+    }
+    val googleSpeechModel = localProperties.getProperty("MYVAULT_GOOGLE_SPEECH_MODEL").orEmpty().trim().ifBlank {
+        providers.gradleProperty("MYVAULT_GOOGLE_SPEECH_MODEL")
+            .orElse("chirp_3")
+            .get()
+            .trim()
+    }
+    val googleSpeechServiceAccountJsonBase64 =
+        localProperties.getProperty("MYVAULT_GOOGLE_SPEECH_SERVICE_ACCOUNT_JSON_BASE64").orEmpty().trim().ifBlank {
+            providers.environmentVariable("GOOGLE_SPEECH_SERVICE_ACCOUNT_JSON_BASE64")
+                .orElse(providers.gradleProperty("MYVAULT_GOOGLE_SPEECH_SERVICE_ACCOUNT_JSON_BASE64"))
+                .orElse("")
+                .get()
+                .trim()
+        }
 
     defaultConfig {
         applicationId = "com.myvault.app"
@@ -78,12 +115,14 @@ android {
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "KIMI_API_KEY", "\"${kimiApiKey.escapedForBuildConfig()}\"")
-        buildConfigField("String", "HOME_AI_OPENAI_FAST_MODEL", "\"${openAiFastModel.escapedForBuildConfig()}\"")
-        buildConfigField("String", "HOME_AI_OPENAI_SMART_MODEL", "\"${openAiSmartModel.escapedForBuildConfig()}\"")
-        buildConfigField("String", "HOME_AI_GEMINI_FAST_MODEL", "\"${geminiFastModel.escapedForBuildConfig()}\"")
-        buildConfigField("String", "HOME_AI_GEMINI_SMART_MODEL", "\"${geminiSmartModel.escapedForBuildConfig()}\"")
-        buildConfigField("String", "HOME_AI_KIMI_FAST_MODEL", "\"${kimiFastModel.escapedForBuildConfig()}\"")
-        buildConfigField("String", "HOME_AI_KIMI_SMART_MODEL", "\"${kimiSmartModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "OPENAI_TRANSCRIBE_MODEL", "\"${openAiTranscribeModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "NOTE_FORMATTING_KIMI_FAST_MODEL", "\"${noteFormattingKimiFastModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "NOTE_FORMATTING_KIMI_SMART_MODEL", "\"${noteFormattingKimiSmartModel.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GOOGLE_SPEECH_ACCESS_TOKEN", "\"${googleSpeechAccessToken.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GOOGLE_SPEECH_SERVICE_ACCOUNT_JSON_BASE64", "\"${googleSpeechServiceAccountJsonBase64.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GOOGLE_SPEECH_PROJECT_ID", "\"${googleSpeechProjectId.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GOOGLE_SPEECH_LOCATION", "\"${googleSpeechLocation.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GOOGLE_SPEECH_MODEL", "\"${googleSpeechModel.escapedForBuildConfig()}\"")
     }
 
     buildTypes {
@@ -136,6 +175,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.play.services.auth)
     implementation(libs.azure.speech)
+    implementation(libs.pdfbox.android)
     implementation(libs.material)
 
     ksp(libs.androidx.room.compiler)

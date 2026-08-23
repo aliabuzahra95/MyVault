@@ -5,7 +5,6 @@ import androidx.room.migration.Migration
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
-import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
@@ -19,12 +18,7 @@ import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
-import com.myvault.app.ai.home.HomeChatHistoryDao
-import com.myvault.app.ai.home.HomeChatHistoryEntity
-import com.myvault.app.ai.home.LibraryAiFileCacheEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
-import com.myvault.app.data.local.entity.AiConversationEntity
-import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.CourseConceptCardEntity
 import com.myvault.app.data.local.entity.CourseEntity
@@ -56,8 +50,6 @@ import com.myvault.app.data.local.entity.TagEntity
         AttachmentEntity::class,
         NoteFtsEntity::class,
         NoteTableEntity::class,
-        AiConversationEntity::class,
-        AiMessageEntity::class,
         PdfReadingProgressEntity::class,
         PdfAnnotationEntity::class,
         SourceBacklinkEntity::class,
@@ -69,10 +61,8 @@ import com.myvault.app.data.local.entity.TagEntity
         CourseNoteEntity::class,
         CourseStickyNoteEntity::class,
         CourseConceptCardEntity::class,
-        HomeChatHistoryEntity::class,
-        LibraryAiFileCacheEntity::class,
     ],
-    version = 25,
+    version = 27,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -84,14 +74,12 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun attachmentDao(): AttachmentDao
     abstract fun searchDao(): SearchDao
     abstract fun noteTableDao(): NoteTableDao
-    abstract fun aiConversationDao(): AiConversationDao
     abstract fun pdfReadingProgressDao(): PdfReadingProgressDao
     abstract fun pdfAnnotationDao(): PdfAnnotationDao
     abstract fun sourceBacklinkDao(): SourceBacklinkDao
     abstract fun knowledgeTagDao(): KnowledgeTagDao
     abstract fun noteVersionDao(): NoteVersionDao
     abstract fun courseDao(): CourseDao
-    abstract fun homeChatHistoryDao(): HomeChatHistoryDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -523,6 +511,35 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS library_pdf_text_cache (
+                        attachmentId TEXT NOT NULL PRIMARY KEY,
+                        localPath TEXT NOT NULL,
+                        sizeBytes INTEGER NOT NULL,
+                        sourceModifiedAt INTEGER NOT NULL,
+                        extractedText TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        errorMessage TEXT NOT NULL,
+                        extractedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS ai_messages")
+                db.execSQL("DROP TABLE IF EXISTS ai_conversations")
+                db.execSQL("DROP TABLE IF EXISTS home_chat_history")
+                db.execSQL("DROP TABLE IF EXISTS library_ai_file_cache")
+                db.execSQL("DROP TABLE IF EXISTS library_pdf_text_cache")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -548,6 +565,8 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_22_23,
             MIGRATION_23_24,
             MIGRATION_24_25,
+            MIGRATION_25_26,
+            MIGRATION_26_27,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

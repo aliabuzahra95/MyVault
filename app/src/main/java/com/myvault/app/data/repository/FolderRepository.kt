@@ -3,7 +3,6 @@ package com.myvault.app.data.repository
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
-import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.FolderStickyNoteDao
@@ -31,7 +30,6 @@ import javax.inject.Singleton
 @Singleton
 class FolderRepository @Inject constructor(
     private val database: VaultDatabase,
-    private val aiConversationDao: AiConversationDao,
     private val folderDao: FolderDao,
     private val folderStickyNoteDao: FolderStickyNoteDao,
     private val noteDao: NoteDao,
@@ -321,8 +319,6 @@ class FolderRepository @Inject constructor(
                 knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetNote, noteIds)
                 noteTableDao.deleteForNotes(noteIds)
                 noteVersionDao.deleteForNotes(noteIds)
-                aiConversationDao.deleteMessagesForNotes(noteIds)
-                aiConversationDao.deleteConversationsForNotes(noteIds)
                 attachmentDao.deleteForNotes(noteIds)
                 noteDao.deleteByIds(noteIds)
             }

@@ -30,15 +30,15 @@ fun IconBtn(
     Surface(
         onClick = onClick,
         modifier = modifier.size(38.dp),
-        color = if (active) colors.accent.copy(alpha = 0.10f) else colors.elevated.copy(alpha = 0.96f),
+        color = colors.elevated.copy(alpha = 0.96f),
         contentColor = if (active) colors.accent else colors.textSecondary,
         border = BorderStroke(
             width = 1.dp,
-            color = if (active) colors.accent.copy(alpha = 0.36f) else colors.border,
+            color = if (active) colors.accent.copy(alpha = 0.48f) else colors.border,
         ),
         shape = VaultShapes.md,
         tonalElevation = 0.dp,
-        shadowElevation = if (active) 1.dp else 0.5.dp,
+        shadowElevation = 0.5.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(

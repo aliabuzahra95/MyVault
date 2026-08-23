@@ -196,8 +196,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun googleDriveSignInIntent(): Intent =
-        googleDriveSyncRepository.signInIntent()
+    fun prepareGoogleDriveSignIn(onReady: (Intent) -> Unit, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { googleDriveSyncRepository.prepareSignInIntent() }
+                .onSuccess(onReady)
+                .onFailure { onComplete("Could not open Google Drive login: ${it.message ?: "Unknown error"}") }
+        }
+    }
 
     fun handleGoogleDriveSignInResult(data: Intent?, onComplete: (String) -> Unit) {
         viewModelScope.launch {
@@ -238,18 +243,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun signInSupabaseAi(email: String, password: String, onComplete: (String) -> Unit) {
+    fun signInFormattingAccount(email: String, password: String, onComplete: (String) -> Unit) {
         viewModelScope.launch {
             supabaseAuthRepository.signInWithPassword(email, password)
-                .onSuccess { onComplete("ChatGPT AI connected as ${it.email}.") }
-                .onFailure { onComplete("ChatGPT AI login failed: ${it.message ?: "Unknown error"}") }
+                .onSuccess { onComplete("ChatGPT formatting connected as ${it.email}.") }
+                .onFailure { onComplete("ChatGPT formatting login failed: ${it.message ?: "Unknown error"}") }
         }
     }
 
-    fun signOutSupabaseAi(onComplete: (String) -> Unit) {
+    fun signOutFormattingAccount(onComplete: (String) -> Unit) {
         viewModelScope.launch {
             supabaseAuthRepository.signOut()
-            onComplete("ChatGPT AI signed out.")
+            onComplete("ChatGPT formatting signed out.")
         }
     }
 

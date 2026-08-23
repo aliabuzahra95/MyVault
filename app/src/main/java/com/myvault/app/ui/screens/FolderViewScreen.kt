@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -53,6 +54,8 @@ import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.ui.components.Breadcrumb
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
+import com.myvault.app.ui.components.FloatingActionMenuExpansion
+import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.FolderTreeRow
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultConfirmModal
@@ -78,6 +81,11 @@ fun FolderViewScreen(
     onUpdateFolderClick: (String, String?) -> Unit = { _, _ -> },
     onMoveCurrentFolderClick: (String?) -> Unit = {},
     onDeleteCurrentFolderClick: () -> Unit = {},
+    onCreateNoteInFolderClick: (String) -> Unit = {},
+    onCreateSubfolderInFolderClick: (String, String, String?) -> Unit = { _, _, _ -> },
+    onUpdateChildFolderClick: (String, String, String?) -> Unit = { _, _, _ -> },
+    onMoveChildFolderClick: (String, String?) -> Unit = { _, _ -> },
+    onDeleteChildFolderClick: (String) -> Unit = {},
     onFolderExpandedChange: (String, Boolean) -> Unit = { _, _ -> },
     onMoveItemInOrderClick: (String, VaultTreeItemType, Int) -> Unit = { _, _, _ -> },
     onRenameNoteClick: (String, String) -> Unit = { _, _ -> },
@@ -97,6 +105,7 @@ fun FolderViewScreen(
     showNavigationHeader: Boolean = true,
     topContent: (@Composable () -> Unit)? = null,
     bottomContent: (@Composable () -> Unit)? = null,
+    fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
 ) {
     val colors = VaultThemeTokens.colors
     val expansionPrefix = "folder:${uiState.folder?.id}:"
@@ -109,6 +118,11 @@ fun FolderViewScreen(
     var editDescriptionDialogOpen by remember { mutableStateOf(false) }
     var moveFolderDialogOpen by remember { mutableStateOf(false) }
     var deleteFolderDialogOpen by remember { mutableStateOf(false) }
+    var selectedTreeFolder by remember { mutableStateOf<VaultTreeItem?>(null) }
+    var treeFolderActionsOpen by remember { mutableStateOf(false) }
+    var treeFolderDialogMode by remember { mutableStateOf<TreeFolderDialogMode?>(null) }
+    var treeFolderMoveDialogOpen by remember { mutableStateOf(false) }
+    var treeFolderDeleteDialogOpen by remember { mutableStateOf(false) }
     var folderNameDraft by remember { mutableStateOf("") }
     var folderDescriptionDraft by remember { mutableStateOf("") }
     var stickyDialogOpen by remember { mutableStateOf(false) }
@@ -213,9 +227,15 @@ fun FolderViewScreen(
                                 onOpenFolder = { folder -> onFolderClick(folder.id) },
                                 onOpenNote = { note -> onNoteClick(note.id) },
                                 onLongPress = { item ->
-                                    if (item.type == VaultTreeItemType.Note) {
-                                        selectedNote = item
-                                        noteActionsOpen = true
+                                    when (item.type) {
+                                        VaultTreeItemType.Folder -> {
+                                            selectedTreeFolder = item
+                                            treeFolderActionsOpen = true
+                                        }
+                                        VaultTreeItemType.Note -> {
+                                            selectedNote = item
+                                            noteActionsOpen = true
+                                        }
                                     }
                                 },
                                 organizeMode = organizeMode,
@@ -246,11 +266,18 @@ fun FolderViewScreen(
             if (!organizeMode) FloatingActionMenu(
                 expanded = fabExpanded,
                 actions = createActions,
-                mainButtonSize = 48.dp,
-                actionButtonSize = 38.dp,
+                mainButtonSize = FloatingActionStackDefaults.mainButtonSize,
+                actionButtonSize = FloatingActionStackDefaults.actionButtonSize,
+                expansionDirection = FloatingActionMenuExpansion.Start,
                 modifier = Modifier.align(Alignment.BottomEnd)
-                    .padding(end = VaultSpacing.screen, bottom = 92.dp)
-                    .size(width = 220.dp, height = 220.dp),
+                    .padding(
+                        end = FloatingActionStackDefaults.endPadding,
+                        bottom = fabBottomPadding,
+                    )
+                    .size(
+                        width = FloatingActionStackDefaults.menuWidth,
+                        height = FloatingActionStackDefaults.menuHeight,
+                    ),
                 onToggle = { fabExpanded = !fabExpanded },
                 onActionClick = { action ->
                     fabExpanded = false
@@ -380,6 +407,120 @@ fun FolderViewScreen(
             onConfirm = {
                 deleteFolderDialogOpen = false
                 onDeleteCurrentFolderClick()
+            },
+        )
+    }
+
+    if (treeFolderActionsOpen && selectedTreeFolder != null) {
+        val folder = selectedTreeFolder
+        PremiumActionDialog(
+            title = folder?.name.orEmpty(),
+            onDismiss = { treeFolderActionsOpen = false },
+            actions = listOf(
+                PremiumAction("New note", Icons.Rounded.NoteAdd) {
+                    folder?.let { onCreateNoteInFolderClick(it.id) }
+                    treeFolderActionsOpen = false
+                },
+                PremiumAction("New subfolder", Icons.Rounded.CreateNewFolder) {
+                    folderNameDraft = ""
+                    folderDescriptionDraft = ""
+                    treeFolderActionsOpen = false
+                    treeFolderDialogMode = TreeFolderDialogMode.CreateSubfolder
+                },
+                PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) {
+                    folderNameDraft = folder?.name.orEmpty()
+                    folderDescriptionDraft = folder?.description.orEmpty()
+                    treeFolderActionsOpen = false
+                    treeFolderDialogMode = TreeFolderDialogMode.Rename
+                },
+                PremiumAction("Move", Icons.Rounded.Folder) {
+                    treeFolderActionsOpen = false
+                    treeFolderMoveDialogOpen = true
+                },
+                PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    treeFolderActionsOpen = false
+                    treeFolderDeleteDialogOpen = true
+                },
+            ),
+        )
+    }
+
+    treeFolderDialogMode?.let { dialogMode ->
+        VaultFormModal(
+            title = if (dialogMode == TreeFolderDialogMode.Rename) "Rename folder" else "New subfolder",
+            confirmLabel = if (dialogMode == TreeFolderDialogMode.Rename) "Save" else "Create",
+            enabled = folderNameDraft.isNotBlank(),
+            icon = Icons.Rounded.Folder,
+            onDismiss = { treeFolderDialogMode = null },
+            onConfirm = {
+                selectedTreeFolder?.let { folder ->
+                    when (dialogMode) {
+                        TreeFolderDialogMode.CreateSubfolder -> onCreateSubfolderInFolderClick(
+                            folder.id,
+                            folderNameDraft,
+                            folderDescriptionDraft,
+                        )
+                        TreeFolderDialogMode.Rename -> onUpdateChildFolderClick(
+                            folder.id,
+                            folderNameDraft,
+                            folderDescriptionDraft,
+                        )
+                    }
+                }
+                treeFolderDialogMode = null
+            },
+        ) {
+            VaultTextField(folderNameDraft, { folderNameDraft = it }, label = "Folder name", singleLine = true)
+            VaultTextField(
+                value = folderDescriptionDraft,
+                onValueChange = { folderDescriptionDraft = it },
+                label = "Description (optional)",
+                minLines = 2,
+                maxLines = 3,
+            )
+        }
+    }
+
+    if (treeFolderMoveDialogOpen && selectedTreeFolder != null) {
+        val folder = selectedTreeFolder
+        val courseRootId = uiState.folder?.takeIf { it.mode.startsWith("course:") }?.id
+        val rootTarget = courseRootId to (uiState.folder?.name ?: "Course")
+        val targets = remember(uiState.workspace, folder?.id, courseRootId) {
+            val topTarget = if (courseRootId != null) listOf(rootTarget) else listOf(null to "My Vault")
+            topTarget + uiState.workspace
+                .flatMap { it.folderPathItems() }
+                .filterNot { (target, _) ->
+                    target.id == folder?.id || target.id in folder?.collectFolderIds().orEmpty()
+                }
+                .map { (target, path) -> target.id to path }
+                .filterNot { (targetId, _) -> targetId == courseRootId }
+        }
+        PremiumActionDialog(
+            title = "Move ${folder?.name.orEmpty()}",
+            onDismiss = { treeFolderMoveDialogOpen = false },
+            actions = targets.map { (targetId, label) ->
+                PremiumAction(label, Icons.Rounded.Folder) {
+                    folder?.let { onMoveChildFolderClick(it.id, targetId) }
+                    treeFolderMoveDialogOpen = false
+                }
+            },
+        )
+    }
+
+    if (treeFolderDeleteDialogOpen && selectedTreeFolder != null) {
+        val folder = selectedTreeFolder
+        VaultConfirmModal(
+            title = "Move ${folder?.name.orEmpty()}?",
+            message = "Its contained folders and notes will also be moved to Recently Deleted.",
+            confirmLabel = "Move",
+            dismissLabel = "Keep",
+            icon = Icons.Rounded.Delete,
+            destructive = true,
+            onDismiss = { treeFolderDeleteDialogOpen = false },
+            onConfirm = {
+                folder?.let { onDeleteChildFolderClick(it.id) }
+                selectedTreeFolder = null
+                treeFolderDeleteDialogOpen = false
             },
         )
     }
@@ -564,6 +705,14 @@ private fun List<VaultTreeItem>.folderPathActions(
     }
 }
 
+private fun VaultTreeItem.folderPathItems(parentPath: String = ""): List<Pair<VaultTreeItem, String>> =
+    if (type != VaultTreeItemType.Folder) {
+        emptyList()
+    } else {
+        val path = if (parentPath.isBlank()) name else "$parentPath / $name"
+        listOf(this to path) + children.flatMap { it.folderPathItems(path) }
+    }
+
 private fun VaultTreeItem.findItem(id: String): VaultTreeItem? {
     if (this.id == id) return this
     children.forEach { child -> child.findItem(id)?.let { return it } }
@@ -586,6 +735,11 @@ private fun VaultTreeItem.flattenNoteTree(): List<VaultTreeItem> =
 
 private fun VaultTreeItem.noteCount(): Int =
     (if (type == VaultTreeItemType.Note) 1 else 0) + children.sumOf { it.noteCount() }
+
+private enum class TreeFolderDialogMode {
+    CreateSubfolder,
+    Rename,
+}
 
 @Composable
 private fun FolderPinnedNoteRow(
@@ -627,7 +781,9 @@ private fun FolderStickyNoteRow(
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = 3.dp),
         color = colors.surface,
         shape = VaultShapes.sm,
     ) {

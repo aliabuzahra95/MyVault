@@ -36,7 +36,6 @@ import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Audiotrack
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -47,8 +46,6 @@ import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -72,7 +69,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,8 +84,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -98,6 +94,8 @@ import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingAction
+import com.myvault.app.ui.components.FloatingActionMenuExpansion
+import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.FolderTreeRow
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.PinnedNoteCard
@@ -112,7 +110,6 @@ import com.myvault.app.ui.components.VaultModalAction
 import com.myvault.app.ui.components.VaultTextField
 import com.myvault.app.ui.components.VaultTopBar
 import com.myvault.app.ui.components.VaultWorkspaceSwitcher
-import com.myvault.app.ui.home.HomeInlineAiPanel
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.theme.VaultSpacing
@@ -122,8 +119,6 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.util.openAttachment
 import com.myvault.app.ui.viewmodel.HomeUiState
-import com.myvault.app.ai.home.HomeInlineAiViewModel
-import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun HomeScreen(
@@ -156,17 +151,15 @@ fun HomeScreen(
     onImportFileClick: (Uri) -> Unit = {},
     onAttachmentClick: (String) -> Unit = {},
     onOpenAttachmentsClick: () -> Unit = {},
-    onShareAiAnswerClick: (String) -> Unit = {},
     onQuranReflectionsClick: () -> Unit = {},
     onThemeClick: () -> Unit = {},
     onQuickBackupClick: () -> Unit = {},
     quickBackupRecommended: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
     currentFolderMode: String = FOLDER_MODE_STUDY,
+    fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
 ) {
     val colors = VaultThemeTokens.colors
-    val homeInlineAiViewModel: HomeInlineAiViewModel = hiltViewModel()
-    val homeInlineAiState by homeInlineAiViewModel.state.collectAsState()
     BackHandler(enabled = uiState.searchQuery.isNotBlank()) {
         onSearchQueryChange("")
     }
@@ -347,31 +340,13 @@ fun HomeScreen(
                 }
 
                 item(key = "study_pinned") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPinnedExpandedChange(!pinnedExpanded) }
-                            .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "PINNED (${uiState.pinnedNotes.size})",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textMuted,
-                            )
-                            Icon(
-                                imageVector = if (pinnedExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                                contentDescription = if (pinnedExpanded) "Collapse pinned notes" else "Expand pinned notes",
-                                tint = colors.textSecondary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(5.dp))
+                    SectionLabel(
+                        label = "Pinned",
+                        uppercase = false,
+                        modifier = Modifier.clickable { onPinnedExpandedChange(!pinnedExpanded) },
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
                     AnimatedVisibility(
                         visible = pinnedExpanded,
                         enter = expandVertically(
@@ -544,6 +519,7 @@ fun HomeScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(colors.scrim)
                         .clickable { fabExpanded = false },
                 )
             }
@@ -552,12 +528,19 @@ fun HomeScreen(
                 FloatingActionMenu(
                     expanded = fabExpanded,
                     actions = createActions,
-                    mainButtonSize = 48.dp,
-                    actionButtonSize = 38.dp,
+                    mainButtonSize = FloatingActionStackDefaults.mainButtonSize,
+                    actionButtonSize = FloatingActionStackDefaults.actionButtonSize,
+                    expansionDirection = FloatingActionMenuExpansion.Start,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = VaultSpacing.screen, bottom = 74.dp)
-                        .size(width = 220.dp, height = 320.dp),
+                        .padding(
+                            end = FloatingActionStackDefaults.endPadding,
+                            bottom = fabBottomPadding,
+                        )
+                        .size(
+                            width = FloatingActionStackDefaults.menuWidth,
+                            height = FloatingActionStackDefaults.menuHeight,
+                        ),
                     onToggle = { fabExpanded = !fabExpanded },
                     onActionClick = { action ->
                         fabExpanded = false
@@ -573,39 +556,7 @@ fun HomeScreen(
                         }
                     },
                 )
-                HomeInlineAiPill(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = VaultSpacing.screen + 2.dp, bottom = 132.dp),
-                    onClick = { homeInlineAiViewModel.openPanel() },
-                )
             }
-
-            HomeInlineAiPanel(
-                state = homeInlineAiState,
-                onInputChange = homeInlineAiViewModel::setInput,
-                onAttachClick = homeInlineAiViewModel::openPicker,
-                onSuggestionClick = homeInlineAiViewModel::attachSuggestion,
-                onDetachClick = homeInlineAiViewModel::detachItem,
-                onSendClick = homeInlineAiViewModel::send,
-                onStopClick = homeInlineAiViewModel::stopStreaming,
-                onProviderSelected = homeInlineAiViewModel::setProvider,
-                onModelModeSelected = homeInlineAiViewModel::setModelMode,
-                onWebSearchToggle = homeInlineAiViewModel::toggleWebSearch,
-                onSettingsClick = homeInlineAiViewModel::toggleSettingsMode,
-                onClearHistoryClick = homeInlineAiViewModel::clearHistory,
-                onHistoryClick = homeInlineAiViewModel::openHistoryItem,
-                onRetryClick = homeInlineAiViewModel::retryLastRequest,
-                onDismissErrorClick = homeInlineAiViewModel::dismissError,
-                onShareAnswerClick = onShareAiAnswerClick,
-                onSpeakAnswerClick = homeInlineAiViewModel::speakAnswer,
-                onClose = homeInlineAiViewModel::closePanel,
-                onPickerToggle = homeInlineAiViewModel::attachItem,
-                onPickerClose = homeInlineAiViewModel::closePicker,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(80f),
-            )
         }
     }
 
@@ -1123,32 +1074,6 @@ private fun HomeQuranReflectionCard(
                 color = colors.textSecondary,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun HomeInlineAiPill(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = modifier.size(44.dp),
-        onClick = onClick,
-        shape = VaultShapes.pill,
-        color = colors.elevated.copy(alpha = 0.98f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
-        shadowElevation = 4.dp,
-        tonalElevation = 0.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Rounded.AutoAwesome,
-                contentDescription = "Open Home AI chat",
-                modifier = Modifier.size(20.dp),
-                tint = colors.accent,
             )
         }
     }
@@ -1815,11 +1740,14 @@ private fun MutableMap<String, Boolean>.toggle(id: String) {
 private fun List<VaultTreeItem>.sortForMode(mode: WorkspaceSortMode): List<VaultTreeItem> =
     map { it.copy(children = it.children.sortForMode(mode)) }
         .let { items ->
-            when (mode) {
+            val normallySorted = when (mode) {
                 WorkspaceSortMode.FoldersFirst -> items.sortedBy { it.type != VaultTreeItemType.Folder }
                 WorkspaceSortMode.Name -> items.sortedBy { it.name.lowercase() }
                 WorkspaceSortMode.RecentlyEdited -> items.sortedByDescending { it.updatedAt }
             }
+            normallySorted.partition { item ->
+                item.type == VaultTreeItemType.Note && (item.pinned || item.folderPinned)
+            }.let { (pinnedNotes, remainingItems) -> pinnedNotes + remainingItems }
         }
 
 private fun List<VaultTreeItem>.toPremiumFolderActions(

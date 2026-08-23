@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -230,11 +231,19 @@ private fun FolderTreeSingleRow(
     val movable = isFolder || organizeAllItems
     val isSubfolder = isFolder && !topLevel
     val rowVerticalPadding = when {
-        isFolder && topLevel -> 8.dp
-        isFolder -> 7.dp
-        topLevel -> 7.dp
-        else -> 6.dp
+        !isFolder && notePreviewLines > 0 && item.preview.isNotBlank() -> 3.dp
+        !isFolder -> 2.dp
+        isFolder && topLevel -> 6.dp
+        isFolder -> 3.dp
+        else -> 3.dp
     }
+    val rowStartPadding = when {
+        topLevel -> 6.dp
+        isFolder -> (4 + depth * 8).dp
+        else -> (2 + depth * 7).dp
+    }
+    val rowOuterVerticalGap = if (topLevel) 0.5.dp else 0.dp
+    val rowHorizontalPadding = if (topLevel) 8.dp else 5.dp
     val subfolderAccent = Color(0xFFE23B3B)
     val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
     val background = if (topLevel && expanded) colors.surface else Color.Transparent
@@ -262,14 +271,17 @@ private fun FolderTreeSingleRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                start = when {
-                    topLevel -> 12.dp
-                    isFolder -> (8 + depth * 10).dp
-                    else -> (4 + depth * 9).dp
+                start = rowStartPadding,
+                top = rowOuterVerticalGap,
+                end = if (topLevel) 8.dp else 6.dp,
+                bottom = rowOuterVerticalGap,
+            )
+            .heightIn(
+                min = when {
+                    isFolder && topLevel -> 36.dp
+                    isFolder -> 32.dp
+                    else -> 30.dp
                 },
-                top = if (topLevel) 1.dp else 0.dp,
-                end = if (topLevel) 12.dp else 8.dp,
-                bottom = if (topLevel) 2.dp else 0.dp,
             )
             .clip(rowShape)
             .graphicsLayer {
@@ -315,17 +327,17 @@ private fun FolderTreeSingleRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    horizontal = if (topLevel) 12.dp else 10.dp,
+                    horizontal = rowHorizontalPadding,
                     vertical = rowVerticalPadding,
                 ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (selectionMode) {
                 Icon(
                     imageVector = if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                     contentDescription = null,
-                    modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
+                    modifier = Modifier.size(if (topLevel) 15.dp else 13.dp),
                     tint = if (selected) colors.accent else colors.textMuted,
                 )
             } else if (isFolder) {
@@ -333,7 +345,7 @@ private fun FolderTreeSingleRow(
                     imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier
-                        .size(if (topLevel) 14.dp else 12.dp)
+                        .size(if (topLevel) 13.dp else 11.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -343,14 +355,14 @@ private fun FolderTreeSingleRow(
                     tint = colors.textMuted,
                 )
             } else {
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
             }
 
             if (isFolder) {
                 Icon(
                     imageVector = Icons.Rounded.Folder,
                     contentDescription = null,
-                    modifier = Modifier.size(if (topLevel) 16.dp else 13.dp),
+                    modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
                     tint = when {
                         isSubfolder -> subfolderAccent
                         topLevel -> colors.accent
@@ -360,7 +372,7 @@ private fun FolderTreeSingleRow(
             } else {
                 Box(
                     modifier = Modifier
-                        .size(width = 10.dp, height = 1.5.dp)
+                        .size(width = 9.dp, height = 1.5.dp)
                         .background(
                             color = colors.textMuted,
                             shape = VaultShapes.pill,
@@ -368,13 +380,14 @@ private fun FolderTreeSingleRow(
                 )
             }
 
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
                     text = item.name,
-                    style = if (topLevel) {
-                        MaterialTheme.typography.bodyMedium.copy(fontSize = dashboardFontSizeSp.sp, fontWeight = FontWeight.W600)
-                    } else {
-                        MaterialTheme.typography.bodySmall.copy(fontSize = (dashboardFontSizeSp - 1.5f).coerceAtLeast(12f).sp, fontWeight = FontWeight.W500)
+                    style = when {
+                        !isFolder && topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                        !isFolder -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
+                        topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
+                        else -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },
                     color = if (isSubfolder) subfolderAccent else colors.text,
                     maxLines = if (!isFolder && showFullNoteTitles) Int.MAX_VALUE else 1,
@@ -383,7 +396,7 @@ private fun FolderTreeSingleRow(
                 if (!isFolder && notePreviewLines > 0 && item.preview.isNotBlank()) {
                     Text(
                         text = item.preview,
-                        style = MaterialTheme.typography.labelMedium.copy(fontSize = (dashboardFontSizeSp - 2f).coerceAtLeast(11f).sp),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W500),
                         color = colors.textMuted,
                         maxLines = notePreviewLines,
                         overflow = TextOverflow.Ellipsis,

@@ -3,9 +3,7 @@ package com.myvault.app.di
 import android.content.Context
 import androidx.room.Room
 import com.myvault.app.data.local.VaultDatabase
-import com.myvault.app.ai.home.HomeChatHistoryDao
 import com.myvault.app.data.local.dao.AttachmentDao
-import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
@@ -64,9 +62,6 @@ object AppModule {
     fun provideNoteVersionDao(database: VaultDatabase): NoteVersionDao = database.noteVersionDao()
 
     @Provides
-    fun provideAiConversationDao(database: VaultDatabase): AiConversationDao = database.aiConversationDao()
-
-    @Provides
     fun providePdfReadingProgressDao(database: VaultDatabase): PdfReadingProgressDao = database.pdfReadingProgressDao()
 
     @Provides
@@ -80,8 +75,4 @@ object AppModule {
 
     @Provides
     fun provideCourseDao(database: VaultDatabase): CourseDao = database.courseDao()
-
-
-    @Provides
-    fun provideHomeChatHistoryDao(database: VaultDatabase): HomeChatHistoryDao = database.homeChatHistoryDao()
 }

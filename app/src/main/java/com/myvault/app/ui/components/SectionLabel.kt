@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultShapes
@@ -24,9 +25,16 @@ fun SectionLabel(
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     accentAction: Boolean = true,
+    uppercase: Boolean = true,
     onActionClick: () -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
+    val labelText = if (uppercase) label.uppercase() else label
+    val labelStyle = if (uppercase) {
+        MaterialTheme.typography.labelSmall
+    } else {
+        MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700)
+    }
 
     Row(
         modifier = modifier
@@ -36,8 +44,8 @@ fun SectionLabel(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            text = label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
+            text = labelText,
+            style = labelStyle,
             color = colors.textMuted,
         )
         if (actionLabel != null) {

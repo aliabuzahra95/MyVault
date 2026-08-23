@@ -13,6 +13,8 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+const val QURAN_REFLECTION_FOLDER_NAME = "Quran Reflections"
+
 data class QuranReflectionSummary(
     val count: Int = 0,
     val latestReference: String = "",
@@ -79,7 +81,7 @@ class QuranReflectionRepository @Inject constructor(
             val reflectionFolderIds = folders
                 .filter {
                     it.mode == FOLDER_MODE_STUDY &&
-                        it.name.equals(ReflectionFolderName, ignoreCase = true)
+                        it.name.equals(QURAN_REFLECTION_FOLDER_NAME, ignoreCase = true)
                 }
                 .map { it.id }
                 .toSet()
@@ -118,7 +120,6 @@ class QuranReflectionRepository @Inject constructor(
     }
 
     private companion object {
-        const val ReflectionFolderName = "Quran Reflections"
         val SourceRegex = Regex("""Source:\s*(.*?)\s+(\d{1,3}):(\d{1,3})""")
     }
 }

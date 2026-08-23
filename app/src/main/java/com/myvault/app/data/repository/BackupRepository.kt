@@ -3,11 +3,8 @@ package com.myvault.app.data.repository
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
-import com.myvault.app.ai.home.HomeChatHistoryDao
-import com.myvault.app.ai.home.HomeChatHistoryEntity
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
-import com.myvault.app.data.local.dao.AiConversationDao
 import com.myvault.app.data.local.dao.BlockDao
 import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
@@ -22,8 +19,6 @@ import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.AttachmentEntity
-import com.myvault.app.data.local.entity.AiConversationEntity
-import com.myvault.app.data.local.entity.AiMessageEntity
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.CourseConceptCardEntity
 import com.myvault.app.data.local.entity.CourseEntity
@@ -46,7 +41,14 @@ import com.myvault.app.data.preferences.VaultBackupPreferences
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.quran.QuranRecentLocation
+import com.myvault.app.data.quran.QuranTranslationSource
 import com.myvault.app.data.quran.memorization.MemorizationRecord
+import com.myvault.app.data.quran.memorization.QuranMemorizationSavedAttempt
+import com.myvault.app.data.quran.memorization.QuranSurahMemorizationSavedAttempt
+import com.myvault.app.data.quran.memorization.toAttemptPreferenceEntry
+import com.myvault.app.data.quran.memorization.toQuranMemorizationSavedAttemptOrNull
+import com.myvault.app.data.quran.memorization.toQuranSurahMemorizationSavedAttemptOrNull
+import com.myvault.app.data.quran.memorization.toSurahAttemptPreferenceEntry
 import com.myvault.app.data.quran.quranCatalog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -77,8 +79,6 @@ class BackupRepository @Inject constructor(
     private val searchDao: SearchDao,
     private val noteTableDao: NoteTableDao,
     private val noteVersionDao: NoteVersionDao,
-    private val aiConversationDao: AiConversationDao,
-    private val homeChatHistoryDao: HomeChatHistoryDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
@@ -191,10 +191,6 @@ class BackupRepository @Inject constructor(
         val attachments = attachmentDao.getAllIncludingDeleted().filter {
             it.noteId in backupNoteIds || it.noteId.isBlank() || it.libraryFolderId in folderIds
         }
-        val aiConversations = aiConversationDao.getAllConversations().filter { it.noteId in backupNoteIds }
-        val aiConversationIds = aiConversations.map { it.id }.toSet()
-        val aiMessages = aiConversationDao.getAllMessages().filter { it.conversationId in aiConversationIds && it.noteId in backupNoteIds }
-        val homeChatHistory = homeChatHistoryDao.allHistory()
         val backupAttachmentIds = attachments.map { it.id }.toSet()
         val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in backupAttachmentIds }
         val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in backupAttachmentIds }
@@ -238,9 +234,6 @@ class BackupRepository @Inject constructor(
             tagRefs = tagRefs,
             tables = tables,
             noteVersions = noteVersions,
-            aiConversations = aiConversations,
-            aiMessages = aiMessages,
-            homeChatHistory = homeChatHistory,
             attachments = attachments,
             pdfReadingProgress = pdfReadingProgress,
             pdfAnnotations = pdfAnnotations,
@@ -271,14 +264,13 @@ class BackupRepository @Inject constructor(
             }
         }
 
+        BackupCompatibilityPolicy.removeRetiredMetadata(entries)
+
         validateManifest(entries["manifest.json"])
         val notes = entries.requireJsonArray("notes.json")
         val folderStickyNotes = entries.optionalJsonArray("folder_sticky_notes.json")
         val blocks = entries.requireJsonArray("blocks.json")
         val tables = entries.requireJsonArray("note_tables.json")
-        val aiConversations = entries.optionalJsonArray("ai_conversations.json")
-        val aiMessages = entries.optionalJsonArray("ai_messages.json")
-        val homeChatHistory = entries.optionalJsonArray("home_chat_history.json")
         val attachments = entries.requireJsonArray("attachments.json")
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
         val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
@@ -405,28 +397,6 @@ class BackupRepository @Inject constructor(
             val rows = table.getInt("rowCount").coerceIn(1, 10)
             val columns = table.getInt("columnCount").coerceIn(1, 10)
             table.getString("cellsJson").toCellsArray(rows, columns)
-        }
-        val aiConversationIds = List(aiConversations.length()) { index ->
-            val conversation = aiConversations.getJSONObject(index)
-            check(conversation.getString("noteId") in noteIds) { "Backup contains an AI conversation without a matching note." }
-            conversation.getString("id")
-        }.toSet()
-        List(aiMessages.length()) { index -> aiMessages.getJSONObject(index) }.forEach { message ->
-            check(message.getString("noteId") in noteIds) { "Backup contains an AI message without a matching note." }
-            check(message.getString("conversationId") in aiConversationIds) { "Backup contains an AI message without a matching conversation." }
-            check(message.getString("role").isNotBlank()) { "Backup contains an AI message without a role." }
-            check(message.getString("content").isNotBlank()) { "Backup contains an empty AI message." }
-        }
-        val homeChatIds = mutableSetOf<String>()
-        List(homeChatHistory.length()) { index -> homeChatHistory.getJSONObject(index) }.forEach { history ->
-            check(homeChatIds.add(history.getString("id"))) { "Backup contains duplicate Ask AI conversations." }
-            check(history.optString("userQuery").isNotBlank()) { "Backup contains an Ask AI conversation without a question." }
-            check(history.optString("modelId").isNotBlank()) { "Backup contains an Ask AI conversation without a model." }
-            check(history.optLong("createdAt", -1L) >= 0L && history.optLong("updatedAt", -1L) >= 0L) {
-                "Backup contains invalid Ask AI conversation timestamps."
-            }
-            history.optString("attachedTitles").ifBlank { "[]" }.toJsonArray()
-            history.optString("messagesJson").ifBlank { "[]" }.toJsonArray()
         }
         val missingClaimedAttachmentIds = mutableSetOf<String>()
         List(attachments.length()) { index -> attachments.getJSONObject(index) }.forEach { attachment ->
@@ -563,6 +533,8 @@ class BackupRepository @Inject constructor(
                 }
             }
 
+            BackupCompatibilityPolicy.removeRetiredMetadata(entries)
+
             validateManifest(entries["manifest.json"])
 
             val folders = entries.requireJsonArray("folders.json").mapJson { it.toFolderEntity() }
@@ -608,16 +580,6 @@ class BackupRepository @Inject constructor(
             val noteVersions = entries.optionalJsonArray("note_versions.json")
                 .mapJson { it.toNoteVersionEntity() }
                 .filter { it.noteId in restoredNoteIds }
-            val aiConversations = entries.optionalJsonArray("ai_conversations.json")
-                .mapJson { it.toAiConversationEntity() }
-                .filter { it.noteId in restoredNoteIds }
-            val aiConversationIds = aiConversations.map { it.id }.toSet()
-            val aiMessages = entries.optionalJsonArray("ai_messages.json")
-                .mapJson { it.toAiMessageEntity() }
-                .filter { it.noteId in restoredNoteIds && it.conversationId in aiConversationIds }
-            val homeChatHistory = entries.optionalJsonArray("home_chat_history.json")
-                .mapJson { it.toHomeChatHistoryEntity() }
-                .filter { it.userQuery.isNotBlank() }
             val attachmentsJson = entries.requireJsonArray("attachments.json")
             val missingAttachmentFileIds = attachmentsJson.unavailableAttachmentFileIds(restoredFiles.keys)
             val restoredLibraryFolderIds = folders.map { it.id }.toSet()
@@ -684,9 +646,6 @@ class BackupRepository @Inject constructor(
                 if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
                 if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
                 if (noteVersions.isNotEmpty()) noteVersionDao.upsertAll(noteVersions)
-                if (aiConversations.isNotEmpty()) aiConversationDao.upsertConversations(aiConversations)
-                if (aiMessages.isNotEmpty()) aiConversationDao.upsertMessages(aiMessages)
-                if (homeChatHistory.isNotEmpty()) homeChatHistoryDao.upsertHistory(homeChatHistory)
                 if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
                 val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
                     emptyList()
@@ -793,6 +752,12 @@ private fun validateBackupSettings(settings: JSONObject) {
     )
     check(settings.optInt("quranArabicFontPercent", 100) in 70..140) { "Backup contains invalid Qur'an font size." }
     check(settings.optInt("quranTranslationFontPercent", 100) in 80..130) { "Backup contains invalid Qur'an translation font size." }
+    check(
+        settings.optString(
+            "quranTranslationSource",
+            QuranTranslationSource.SahihInternational.storedValue,
+        ) in QuranTranslationSource.entries.map { it.storedValue },
+    ) { "Backup contains an unsupported Qur'an translation source." }
     check(settings.optDouble("quranAudioPlaybackSpeed", 1.0) in 0.5..2.0) { "Backup contains invalid Qur'an audio speed." }
     check(settings.optString("libraryViewMode", "list") in setOf("list", "grid", "icons")) {
         "Backup contains invalid Library display mode."
@@ -839,6 +804,8 @@ private fun validateBackupSettings(settings: JSONObject) {
         }
     }
     settings.optJSONArray("quranMemorizationRecords")?.let(::validateQuranMemorizationRecords)
+    settings.optJSONArray("quranMemorizationAttempts")?.let(::validateQuranMemorizationAttempts)
+    settings.optJSONArray("quranSurahMemorizationAttempts")?.let(::validateQuranSurahMemorizationAttempts)
 }
 
 internal fun JSONObject.toValidatedBackupPreferences(): VaultBackupPreferences {
@@ -872,6 +839,41 @@ private fun validateQuranMemorizationRecords(records: JSONArray) {
                 "Backup contains invalid Qur'an memorised timestamp."
             }
         }
+    }
+}
+
+private fun validateQuranMemorizationAttempts(attempts: JSONArray) {
+    val seen = mutableSetOf<String>()
+    for (index in 0 until attempts.length()) {
+        val attempt = attempts.optJSONObject(index) ?: error("Backup contains invalid Qur'an memorisation attempt data.")
+        val parsed = attempt.toString().toQuranMemorizationSavedAttemptOrNull()
+            ?: error("Backup contains invalid Qur'an memorisation attempt data.")
+        validateQuranPosition(parsed.surahNumber, parsed.ayahNumber, "Backup contains invalid Qur'an memorisation attempt position.")
+        check(parsed.verseKey == "${parsed.surahNumber}:${parsed.ayahNumber}") {
+            "Backup contains mismatched Qur'an memorisation attempt verse data."
+        }
+        check(seen.add(parsed.attemptId)) { "Backup contains duplicate Qur'an memorisation attempts." }
+    }
+}
+
+private fun validateQuranSurahMemorizationAttempts(attempts: JSONArray) {
+    val seen = mutableSetOf<String>()
+    for (index in 0 until attempts.length()) {
+        val attempt = attempts.optJSONObject(index) ?: error("Backup contains invalid Qur'an surah test data.")
+        val parsed = attempt.toString().toQuranSurahMemorizationSavedAttemptOrNull()
+            ?: error("Backup contains invalid Qur'an surah test data.")
+        val surah = quranCatalog.firstOrNull { it.num == parsed.surahNumber }
+            ?: error("Backup contains invalid Qur'an surah test position.")
+        check(parsed.totalAyahs == 0 || parsed.totalAyahs == surah.ayat) {
+            "Backup contains mismatched Qur'an surah test data."
+        }
+        parsed.ayahResults.forEach { ayah ->
+            validateQuranPosition(ayah.surahNumber, ayah.ayahNumber, "Backup contains invalid Qur'an surah test ayah data.")
+            check(ayah.surahNumber == parsed.surahNumber && ayah.verseKey == "${ayah.surahNumber}:${ayah.ayahNumber}") {
+                "Backup contains mismatched Qur'an surah test ayah data."
+            }
+        }
+        check(seen.add(parsed.attemptId)) { "Backup contains duplicate Qur'an surah test attempts." }
     }
 }
 
@@ -954,9 +956,6 @@ private data class BackupSnapshot(
     val tagRefs: List<NoteTagCrossRef>,
     val tables: List<NoteTableEntity>,
     val noteVersions: List<NoteVersionEntity>,
-    val aiConversations: List<AiConversationEntity>,
-    val aiMessages: List<AiMessageEntity>,
-    val homeChatHistory: List<HomeChatHistoryEntity>,
     val attachments: List<AttachmentEntity>,
     val pdfReadingProgress: List<PdfReadingProgressEntity>,
     val pdfAnnotations: List<PdfAnnotationEntity>,
@@ -981,9 +980,6 @@ private data class BackupSnapshot(
         destinationDir.writeJsonFile("note_tags.json", tagRefs.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("note_tables.json", tables.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("note_versions.json", noteVersions.toJsonArray { it.toJson() })
-        destinationDir.writeJsonFile("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
-        destinationDir.writeJsonFile("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
-        destinationDir.writeJsonFile("home_chat_history.json", homeChatHistory.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("attachments.json", attachments.toJsonArray { it.toBackupJson() })
         destinationDir.writeJsonFile("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
@@ -1008,9 +1004,6 @@ private data class BackupSnapshot(
         zip.writeJson("note_tags.json", tagRefs.toJsonArray { it.toJson() })
         zip.writeJson("note_tables.json", tables.toJsonArray { it.toJson() })
         zip.writeJson("note_versions.json", noteVersions.toJsonArray { it.toJson() })
-        zip.writeJson("ai_conversations.json", aiConversations.toJsonArray { it.toJson() })
-        zip.writeJson("ai_messages.json", aiMessages.toJsonArray { it.toJson() })
-        zip.writeJson("home_chat_history.json", homeChatHistory.toJsonArray { it.toJson() })
         zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
         zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
         zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
@@ -1049,6 +1042,7 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranArabicFontPercent", quranArabicFontPercent)
         .put("quranTranslationFontPercent", quranTranslationFontPercent)
         .put("quranTranslationEnabled", quranTranslationEnabled)
+        .put("quranTranslationSource", quranTranslationSource)
         .put("quranTajweedEnabled", quranTajweedEnabled)
         .put("quranTafsirSourceId", quranTafsirSourceId)
         .put("quranAudioReciterId", quranAudioReciterId)
@@ -1056,6 +1050,8 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("quranBookmarkedVerses", JSONArray(quranBookmarkedVerses.sorted()))
         .put("quranRecentLocations", quranRecentLocations.toJsonArray())
         .put("quranMemorizationRecords", quranMemorizationRecords.toMemorizationJsonArray())
+        .put("quranMemorizationAttempts", quranMemorizationAttempts.toMemorizationAttemptJsonArray())
+        .put("quranSurahMemorizationAttempts", quranSurahMemorizationAttempts.toSurahMemorizationAttemptJsonArray())
         .put("expandedFolderIds", JSONArray(expandedFolderIds.sorted()))
         .put("libraryViewMode", libraryViewMode)
         .put("libraryViewModesByLocation", libraryViewModesByLocation.toJsonObject())
@@ -1078,6 +1074,9 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranArabicFontPercent = optInt("quranArabicFontPercent", 100).coerceIn(70, 140),
         quranTranslationFontPercent = optInt("quranTranslationFontPercent", 100).coerceIn(80, 130),
         quranTranslationEnabled = optBoolean("quranTranslationEnabled", true),
+        quranTranslationSource = QuranTranslationSource
+            .fromStoredValue(optString("quranTranslationSource"))
+            .storedValue,
         quranTajweedEnabled = optBoolean("quranTajweedEnabled", false),
         quranTafsirSourceId = optInt("quranTafsirSourceId", -1),
         quranAudioReciterId = optInt("quranAudioReciterId", 0).coerceAtLeast(0),
@@ -1085,6 +1084,8 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         quranBookmarkedVerses = optJSONArray("quranBookmarkedVerses").toStringSet(),
         quranRecentLocations = optJSONArray("quranRecentLocations").toQuranRecentLocations(),
         quranMemorizationRecords = optJSONArray("quranMemorizationRecords").toMemorizationRecords(),
+        quranMemorizationAttempts = optJSONArray("quranMemorizationAttempts").toMemorizationAttempts(),
+        quranSurahMemorizationAttempts = optJSONArray("quranSurahMemorizationAttempts").toSurahMemorizationAttempts(),
         expandedFolderIds = optJSONArray("expandedFolderIds").toStringSet(),
         libraryViewMode = optString("libraryViewMode").takeIf { it in setOf("list", "grid", "icons") } ?: "list",
         libraryViewModesByLocation = optJSONObject("libraryViewModesByLocation").toStringMap(
@@ -1135,7 +1136,24 @@ private fun List<MemorizationRecord>.toMemorizationJsonArray(): JSONArray =
                 .put("isRevision", it.isRevision)
                 .put("isWeak", it.isWeak)
                 .put("updatedAt", it.updatedAt)
+                .put("isNeedsRevision", it.isNeedsRevision)
+                .put("isIncorrect", it.isIncorrect)
+                .put("isMemorising", it.isMemorising)
         },
+    )
+
+private fun List<QuranMemorizationSavedAttempt>.toMemorizationAttemptJsonArray(): JSONArray =
+    JSONArray(
+        sortedByDescending { it.timestampMs }
+            .take(50)
+            .map { JSONObject(it.toAttemptPreferenceEntry()) },
+    )
+
+private fun List<QuranSurahMemorizationSavedAttempt>.toSurahMemorizationAttemptJsonArray(): JSONArray =
+    JSONArray(
+        sortedByDescending { it.timestampMs }
+            .take(50)
+            .map { JSONObject(it.toSurahAttemptPreferenceEntry()) },
     )
 
 private fun Map<String, String>.toJsonObject(): JSONObject =
@@ -1180,10 +1198,35 @@ private fun JSONArray?.toMemorizationRecords(): List<MemorizationRecord> {
                     isRevision = item.optBoolean("isRevision", false),
                     isWeak = item.optBoolean("isWeak", false),
                     updatedAt = item.optLong("updatedAt", 0L).coerceAtLeast(0L),
+                    isNeedsRevision = item.optBoolean("isNeedsRevision", false),
+                    isIncorrect = item.optBoolean("isIncorrect", false),
+                    isMemorising = item.optBoolean("isMemorising", true),
                 ),
             )
         }
     }.sortedByDescending { it.updatedAt }
+}
+
+private fun JSONArray?.toMemorizationAttempts(): List<QuranMemorizationSavedAttempt> {
+    val array = this ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val attempt = item.toString().toQuranMemorizationSavedAttemptOrNull() ?: continue
+            add(attempt)
+        }
+    }.sortedByDescending { it.timestampMs }.take(50)
+}
+
+private fun JSONArray?.toSurahMemorizationAttempts(): List<QuranSurahMemorizationSavedAttempt> {
+    val array = this ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val attempt = item.toString().toQuranSurahMemorizationSavedAttemptOrNull() ?: continue
+            add(attempt)
+        }
+    }.sortedByDescending { it.timestampMs }.take(50)
 }
 
 private fun ZipOutputStream.writeJson(name: String, json: Any) {
@@ -1321,38 +1364,6 @@ private fun NoteVersionEntity.toJson(): JSONObject =
         .put("wordCount", wordCount)
         .put("characterCount", characterCount)
         .put("createdAt", createdAt)
-
-private fun AiConversationEntity.toJson(): JSONObject =
-    JSONObject()
-        .put("id", id)
-        .put("noteId", noteId)
-        .put("title", title)
-        .put("createdAt", createdAt)
-        .put("updatedAt", updatedAt)
-
-private fun AiMessageEntity.toJson(): JSONObject =
-    JSONObject()
-        .put("id", id)
-        .put("conversationId", conversationId)
-        .put("noteId", noteId)
-        .put("role", role)
-        .put("content", content)
-        .put("action", action)
-        .put("provider", provider)
-        .put("model", model)
-        .put("selectedTextContext", selectedTextContext)
-        .put("createdAt", createdAt)
-
-private fun HomeChatHistoryEntity.toJson(): JSONObject =
-    JSONObject()
-        .put("id", id)
-        .put("userQuery", userQuery)
-        .put("assistantAnswer", assistantAnswer)
-        .put("attachedTitles", attachedTitles)
-        .put("modelId", modelId)
-        .put("createdAt", createdAt)
-        .put("updatedAt", updatedAt)
-        .put("messagesJson", messagesJson)
 
 private fun PdfReadingProgressEntity.toJson(): JSONObject =
     JSONObject()
@@ -1627,44 +1638,6 @@ private fun JSONObject.toNoteVersionEntity(): NoteVersionEntity =
         characterCount = optInt("characterCount", optString("bodyPlainText").length),
         createdAt = optLong("createdAt", System.currentTimeMillis()),
     )
-
-private fun JSONObject.toAiConversationEntity(): AiConversationEntity =
-    AiConversationEntity(
-        id = getString("id"),
-        noteId = getString("noteId"),
-        title = optString("title").ifBlank { "Ask AI" },
-        createdAt = getLong("createdAt"),
-        updatedAt = getLong("updatedAt"),
-    )
-
-private fun JSONObject.toAiMessageEntity(): AiMessageEntity =
-    AiMessageEntity(
-        id = getString("id"),
-        conversationId = getString("conversationId"),
-        noteId = getString("noteId"),
-        role = getString("role"),
-        content = getString("content"),
-        action = optNullableString("action"),
-        provider = optNullableString("provider"),
-        model = optNullableString("model"),
-        selectedTextContext = optNullableString("selectedTextContext"),
-        createdAt = getLong("createdAt"),
-    )
-
-private fun JSONObject.toHomeChatHistoryEntity(): HomeChatHistoryEntity {
-    val now = System.currentTimeMillis()
-    val createdAt = optLong("createdAt", now).coerceAtLeast(0L)
-    return HomeChatHistoryEntity(
-        id = getString("id"),
-        userQuery = optString("userQuery"),
-        assistantAnswer = optString("assistantAnswer"),
-        attachedTitles = optString("attachedTitles").ifBlank { "[]" }.toJsonArray().toString(),
-        modelId = optString("modelId").ifBlank { "Unknown" },
-        createdAt = createdAt,
-        updatedAt = optLong("updatedAt", createdAt).coerceAtLeast(0L),
-        messagesJson = optString("messagesJson").ifBlank { "[]" }.toJsonArray().toString(),
-    )
-}
 
 private fun JSONObject.toTagEntity(): TagEntity =
     TagEntity(name = getString("name"))

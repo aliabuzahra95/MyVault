@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Report
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TrendingUp
@@ -60,6 +61,7 @@ import com.myvault.app.data.quran.memorization.MemorizationDashboardItem
 import com.myvault.app.data.quran.memorization.MemorizationOverview
 import com.myvault.app.data.quran.memorization.MemorizationUiState
 import com.myvault.app.data.quran.memorization.MemorizedSurahDashboardItem
+import com.myvault.app.data.quran.memorization.SurahProgressDashboardItem
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.VaultTopBar
@@ -85,15 +87,15 @@ fun MemoriseShellScreen(
     onMarkReviewed: (String) -> Unit,
     onToggleMemorized: (String) -> Unit,
     onToggleRevision: (String) -> Unit,
+    onToggleIncorrect: (String) -> Unit,
     onToggleWeak: (String) -> Unit,
+    onOpenAyah: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     var startSheetOpen by rememberSaveable { mutableStateOf(false) }
-    val showSurahRows = uiState.selectedGroup == MemorizationDashboardGroup.All ||
-        uiState.selectedGroup == MemorizationDashboardGroup.Memorised ||
-        uiState.selectedGroup == MemorizationDashboardGroup.Surahs
-    val memorizedSurahs = if (showSurahRows) uiState.memorizedSurahs else emptyList()
+    val inProgressSurahs = if (uiState.selectedGroup == MemorizationDashboardGroup.InProgress) uiState.inProgressSurahs else emptyList()
+    val memorizedSurahs = if (uiState.selectedGroup == MemorizationDashboardGroup.Surahs) uiState.memorizedSurahs else emptyList()
     val dashboardItems = uiState.dashboardItems
 
     Column(
@@ -125,7 +127,20 @@ fun MemoriseShellScreen(
             contentPadding = PaddingValues(top = 8.dp, bottom = 112.dp),
         ) {
             item {
-                MemoriseHeader(onStart = { startSheetOpen = true })
+                MemoriseHeader()
+            }
+
+            item {
+                MemoriseFocusCard(
+                    item = uiState.continueItem,
+                    inProgressSurah = uiState.inProgressSurahs.firstOrNull(),
+                    onOpen = {
+                        uiState.continueItem?.let { onOpenAyah(it.record.verseKey) }
+                            ?: run { startSheetOpen = true }
+                    },
+                    onReviewed = { uiState.continueItem?.let { onMarkReviewed(it.record.verseKey) } },
+                    onToggleMemorized = { uiState.continueItem?.let { onToggleMemorized(it.record.verseKey) } },
+                )
             }
 
             item {
@@ -136,16 +151,6 @@ fun MemoriseShellScreen(
                 )
             }
 
-            uiState.continueItem?.let { item ->
-                item {
-                    MemoriseFocusCard(
-                        item = item,
-                        onReviewed = { onMarkReviewed(item.record.verseKey) },
-                        onToggleMemorized = { onToggleMemorized(item.record.verseKey) },
-                    )
-                }
-            }
-
             item {
                 MemoriseGroupFilters(
                     selectedGroup = uiState.selectedGroup,
@@ -153,11 +158,31 @@ fun MemoriseShellScreen(
                 )
             }
 
-            if (memorizedSurahs.isEmpty() && dashboardItems.isEmpty()) {
+            if (memorizedSurahs.isEmpty() && dashboardItems.isEmpty() && inProgressSurahs.isEmpty()) {
                 item {
                     MemoriseEmptyState(onStart = { startSheetOpen = true })
                 }
             } else {
+                if (inProgressSurahs.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "In Progress",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W900, letterSpacing = 1.sp),
+                            color = colors.textMuted,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    items(
+                        items = inProgressSurahs,
+                        key = { "progress-${it.surah.num}" },
+                        contentType = { "progress-surah" },
+                    ) { item ->
+                        MemoriseSurahProgressRow(
+                            item = item,
+                            onOpen = { onOpenAyah("${item.surah.num}:${item.nextAyahNumber}") },
+                        )
+                    }
+                }
                 if (memorizedSurahs.isNotEmpty()) {
                     item {
                         Text(
@@ -182,9 +207,11 @@ fun MemoriseShellScreen(
                 ) { item ->
                     MemoriseRecordRow(
                         item = item,
+                        onOpen = { onOpenAyah(item.record.verseKey) },
                         onReviewed = { onMarkReviewed(item.record.verseKey) },
                         onToggleMemorized = { onToggleMemorized(item.record.verseKey) },
                         onToggleRevision = { onToggleRevision(item.record.verseKey) },
+                        onToggleIncorrect = { onToggleIncorrect(item.record.verseKey) },
                         onToggleWeak = { onToggleWeak(item.record.verseKey) },
                     )
                 }
@@ -211,7 +238,7 @@ fun MemoriseShellScreen(
 }
 
 @Composable
-private fun MemoriseHeader(onStart: () -> Unit) {
+private fun MemoriseHeader() {
     val colors = VaultThemeTokens.colors
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -231,7 +258,6 @@ private fun MemoriseHeader(onStart: () -> Unit) {
                 color = colors.textSecondary,
             )
         }
-        MemoriseSmallButton(label = "Start", selected = true, onClick = onStart)
     }
 }
 
@@ -243,13 +269,14 @@ private fun MemoriseMetrics(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            MemoriseMetricCard("Started", overview.startedCount.toString(), selectedGroup == MemorizationDashboardGroup.Started, { onSelectGroup(MemorizationDashboardGroup.Started) }, Modifier.weight(1f))
-            MemoriseMetricCard("Memorised ayahs", overview.memorizedCount.toString(), selectedGroup == MemorizationDashboardGroup.Memorised, { onSelectGroup(MemorizationDashboardGroup.Memorised) }, Modifier.weight(1f))
-            MemoriseMetricCard("Revision", overview.revisionCount.toString(), selectedGroup == MemorizationDashboardGroup.Revision, { onSelectGroup(MemorizationDashboardGroup.Revision) }, Modifier.weight(1f))
+            MemoriseMetricCard("Surahs memorised", overview.memorizedSurahCount.toString(), selectedGroup == MemorizationDashboardGroup.Surahs, { onSelectGroup(MemorizationDashboardGroup.Surahs) }, Modifier.weight(1f))
+            MemoriseMetricCard("In progress", overview.inProgressSurahCount.toString(), selectedGroup == MemorizationDashboardGroup.InProgress, { onSelectGroup(MemorizationDashboardGroup.InProgress) }, Modifier.weight(1f))
+            MemoriseMetricCard("Needs revision", overview.needsReviewCount.toString(), selectedGroup == MemorizationDashboardGroup.NeedsReview, { onSelectGroup(MemorizationDashboardGroup.NeedsReview) }, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            MemoriseMetricCard("Incorrect", overview.incorrectCount.toString(), selectedGroup == MemorizationDashboardGroup.Incorrect, { onSelectGroup(MemorizationDashboardGroup.Incorrect) }, Modifier.weight(1f))
             MemoriseMetricCard("Difficult", overview.difficultCount.toString(), selectedGroup == MemorizationDashboardGroup.Difficult, { onSelectGroup(MemorizationDashboardGroup.Difficult) }, Modifier.weight(1f))
-            MemoriseMetricCard("Surahs memorised", overview.memorizedSurahCount.toString(), selectedGroup == MemorizationDashboardGroup.Surahs, { onSelectGroup(MemorizationDashboardGroup.Surahs) }, Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
         }
     }
 }
@@ -280,14 +307,18 @@ private fun MemoriseMetricCard(
 
 @Composable
 private fun MemoriseFocusCard(
-    item: MemorizationDashboardItem,
+    item: MemorizationDashboardItem?,
+    inProgressSurah: SurahProgressDashboardItem?,
+    onOpen: () -> Unit,
     onReviewed: () -> Unit,
     onToggleMemorized: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val shape = RoundedCornerShape(22.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
         shape = shape,
         color = colors.surface,
         border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.76f)),
@@ -309,12 +340,27 @@ private fun MemoriseFocusCard(
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Continue Memorising", style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.W900), color = colors.textMuted)
-                Text(item.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W900), color = colors.text)
-                Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                Text(
+                    text = item?.title ?: "Choose a surah to begin",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W900),
+                    color = colors.text,
+                )
+                Text(
+                    text = item?.latestAttempt?.let {
+                        "Latest result: ${it.grade.label} • Last attempted: ${formatMemoriseRelativeTime(it.timestampMs)}"
+                    } ?: inProgressSurah?.let {
+                        "${it.progressText} • Last practised: ${formatMemoriseRelativeTime(it.lastPractisedAt)}"
+                    } ?: "Start memorising a surah and it will appear here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
             }
             Column(verticalArrangement = Arrangement.spacedBy(7.dp), horizontalAlignment = Alignment.End) {
-                MemoriseSmallButton("Reviewed", false, onReviewed)
-                MemoriseSmallButton(if (item.record.isMemorized) "Unmark" else "Memorised", item.record.isMemorized, onToggleMemorized)
+                MemoriseSmallButton("Continue", true, onOpen)
+                if (item != null) {
+                    MemoriseSmallButton("Revised", false, onReviewed)
+                    MemoriseSmallButton(if (item.record.isMemorized) "Unmark" else "Memorised", item.record.isMemorized, onToggleMemorized)
+                }
             }
         }
     }
@@ -344,9 +390,11 @@ private fun MemoriseGroupFilters(
 @Composable
 private fun MemoriseRecordRow(
     item: MemorizationDashboardItem,
+    onOpen: () -> Unit,
     onReviewed: () -> Unit,
     onToggleMemorized: () -> Unit,
     onToggleRevision: () -> Unit,
+    onToggleIncorrect: () -> Unit,
     onToggleWeak: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -357,6 +405,7 @@ private fun MemoriseRecordRow(
             .clip(shape)
             .background(colors.surface)
             .border(1.dp, colors.border.copy(alpha = 0.78f), shape)
+            .clickable(onClick = onOpen)
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -379,9 +428,47 @@ private fun MemoriseRecordRow(
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
             MemoriseSmallButton("Reviewed", false, onReviewed)
             MemoriseSmallButton("Memorised", item.record.isMemorized, onToggleMemorized)
-            MemoriseIconButton(Icons.Rounded.Flag, item.record.isRevision, onToggleRevision)
-            MemoriseIconButton(Icons.Rounded.CheckCircle, item.record.isWeak, onToggleWeak)
+            MemoriseSmallButton("Revision", item.record.isNeedsRevision || item.record.isRevision, onToggleRevision)
+            MemoriseIconButton(Icons.Rounded.Report, item.record.isIncorrect, onToggleIncorrect)
+            MemoriseIconButton(Icons.Rounded.Flag, item.record.isWeak, onToggleWeak)
         }
+    }
+}
+
+@Composable
+private fun MemoriseSurahProgressRow(
+    item: SurahProgressDashboardItem,
+    onOpen: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surface)
+            .border(1.dp, colors.border.copy(alpha = 0.78f), shape)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(colors.accentSoft)
+                .border(1.dp, colors.accentBorder, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(item.surah.num.toString(), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W900), color = colors.accent)
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(item.title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W900), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.progressText, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W800), color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -477,6 +564,29 @@ private fun MemoriseIconButton(icon: androidx.compose.ui.graphics.vector.ImageVe
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = if (selected) colors.accent else colors.textSecondary, modifier = Modifier.size(15.dp))
+    }
+}
+
+private fun formatMemoriseRelativeTime(timestampMs: Long, nowMs: Long = System.currentTimeMillis()): String {
+    val elapsedMs = (nowMs - timestampMs).coerceAtLeast(0L)
+    val minuteMs = 60_000L
+    val hourMs = 60L * minuteMs
+    val dayMs = 24L * hourMs
+    return when {
+        elapsedMs < minuteMs -> "Just now"
+        elapsedMs < hourMs -> {
+            val minutes = (elapsedMs / minuteMs).coerceAtLeast(1L)
+            "$minutes minute${if (minutes == 1L) "" else "s"} ago"
+        }
+        elapsedMs < 12L * hourMs -> {
+            val hours = (elapsedMs / hourMs).coerceAtLeast(1L)
+            "$hours hour${if (hours == 1L) "" else "s"} ago"
+        }
+        elapsedMs < dayMs -> "Today"
+        else -> {
+            val days = (elapsedMs / dayMs).coerceAtLeast(1L)
+            "$days days ago"
+        }
     }
 }
 

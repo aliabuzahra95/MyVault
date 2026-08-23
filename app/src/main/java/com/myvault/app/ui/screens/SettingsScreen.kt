@@ -105,15 +105,15 @@ fun SettingsScreen(
     onRestoreDeletedFolder: (String) -> Unit = {},
     onPermanentlyDeleteFolder: (String) -> Unit = {},
     onPermanentlyDeleteAllDeleted: () -> Unit = {},
-    googleDriveSignInIntent: Intent? = null,
+    onPrepareGoogleDriveSignIn: ((Intent) -> Unit) -> Unit = {},
     onGoogleDriveSignInResult: (Intent?) -> Unit = {},
     onGoogleDrivePush: () -> Unit = {},
     onGoogleDriveForcePush: () -> Unit = {},
     onGoogleDrivePull: () -> Unit = {},
     onBackupSettingsOpened: () -> Unit = {},
-    supabaseAiEmail: String = "",
-    onSupabaseAiLogin: (String, String) -> Unit = { _, _ -> },
-    onSupabaseAiLogout: () -> Unit = {},
+    formattingAccountEmail: String = "",
+    onFormattingAccountLogin: (String, String) -> Unit = { _, _ -> },
+    onFormattingAccountLogout: () -> Unit = {},
     driveRestoreState: DriveRestoreState = DriveRestoreState(),
     backupMessage: String? = null,
     onDismissBackupMessage: () -> Unit = {},
@@ -131,7 +131,7 @@ fun SettingsScreen(
     var permanentDeleteTarget by remember { mutableStateOf<DeletedTarget?>(null) }
     var deleteAllDeletedConfirmOpen by remember { mutableStateOf(false) }
     var backupSettingsOpen by remember { mutableStateOf(false) }
-    var aiLoginOpen by remember { mutableStateOf(false) }
+    var formattingLoginOpen by remember { mutableStateOf(false) }
     var driveRestoreConfirmOpen by remember { mutableStateOf(false) }
     var driveConflictOpen by remember { mutableStateOf(false) }
     var releaseReadinessOpen by remember { mutableStateOf(false) }
@@ -194,7 +194,7 @@ fun SettingsScreen(
                         onSecurityLockChanged(!preferences.securityLockEnabled)
                     },
                     onBackupSettingsClick = { backupSettingsOpen = true },
-                    onAiLoginClick = { aiLoginOpen = true },
+                    onFormattingLoginClick = { formattingLoginOpen = true },
                     onLockTimerClick = { lockTimerDialogOpen = true },
                     onRecentlyDeletedClick = {
                         onRecentlyDeletedOpened()
@@ -223,7 +223,7 @@ fun SettingsScreen(
                 restoreLauncher.launch(arrayOf("application/octet-stream", "application/zip", "*/*"))
             },
             onGoogleDriveConnectClick = {
-                googleDriveSignInIntent?.let { googleDriveSignInLauncher.launch(it) }
+                onPrepareGoogleDriveSignIn { intent -> googleDriveSignInLauncher.launch(intent) }
             },
             onGoogleDrivePushClick = onGoogleDrivePush,
             onGoogleDrivePullClick = { driveRestoreConfirmOpen = true },
@@ -231,17 +231,17 @@ fun SettingsScreen(
         )
     }
 
-    if (aiLoginOpen) {
-        ChatGptAiLoginDialog(
-            currentEmail = supabaseAiEmail,
-            onDismiss = { aiLoginOpen = false },
+    if (formattingLoginOpen) {
+        ChatGptFormattingLoginDialog(
+            currentEmail = formattingAccountEmail,
+            onDismiss = { formattingLoginOpen = false },
             onLogin = { email, password ->
-                aiLoginOpen = false
-                onSupabaseAiLogin(email, password)
+                formattingLoginOpen = false
+                onFormattingAccountLogin(email, password)
             },
             onLogout = {
-                aiLoginOpen = false
-                onSupabaseAiLogout()
+                formattingLoginOpen = false
+                onFormattingAccountLogout()
             },
         )
     }
@@ -688,7 +688,7 @@ private fun SettingsGroupVault(
     storageLabel: String,
     onSecurityLockClick: () -> Unit,
     onBackupSettingsClick: () -> Unit,
-    onAiLoginClick: () -> Unit,
+    onFormattingLoginClick: () -> Unit,
     onLockTimerClick: () -> Unit,
     onRecentlyDeletedClick: () -> Unit,
     onReleaseReadinessClick: () -> Unit,
@@ -703,7 +703,7 @@ private fun SettingsGroupVault(
             onClick = onBackupSettingsClick,
         )
         SettingsSectionDivider()
-        SettingsRow(Icons.Rounded.Psychology, "ChatGPT AI login", "Supabase account", contained = false, onClick = onAiLoginClick)
+        SettingsRow(Icons.Rounded.Psychology, "ChatGPT formatting login", "Supabase account", contained = false, onClick = onFormattingLoginClick)
         SettingsSectionDivider()
         SettingsRow(
             Icons.Rounded.RestoreFromTrash,
@@ -762,7 +762,7 @@ private fun SettingsSectionDivider() {
 }
 
 @Composable
-private fun ChatGptAiLoginDialog(
+private fun ChatGptFormattingLoginDialog(
     currentEmail: String,
     onDismiss: () -> Unit,
     onLogin: (String, String) -> Unit,
@@ -772,11 +772,11 @@ private fun ChatGptAiLoginDialog(
     var password by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ChatGPT AI login") },
+        title = { Text("ChatGPT formatting login") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "This only reconnects ChatGPT AI through Supabase. Google Drive backup stays separate.",
+                    text = "This only reconnects ChatGPT note formatting through Supabase. Google Drive backup stays separate.",
                     style = MaterialTheme.typography.bodySmall,
                     color = VaultThemeTokens.colors.textSecondary,
                 )

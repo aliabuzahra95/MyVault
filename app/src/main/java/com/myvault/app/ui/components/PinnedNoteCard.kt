@@ -72,7 +72,7 @@ fun PinnedNoteCard(
                 if (previewLines > 0 && note.preview.isNotBlank()) {
                     Text(
                         text = note.preview,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W500),
                         color = colors.textMuted,
                         textAlign = TextAlign.Center,
                         maxLines = previewLines,

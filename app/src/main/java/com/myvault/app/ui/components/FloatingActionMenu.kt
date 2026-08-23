@@ -4,9 +4,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -47,6 +50,7 @@ fun FloatingActionMenu(
     actions: List<FloatingAction> = defaultFloatingActions,
     mainButtonSize: Dp = 56.dp,
     actionButtonSize: Dp = 44.dp,
+    expansionDirection: FloatingActionMenuExpansion = FloatingActionMenuExpansion.Up,
     onToggle: () -> Unit = {},
     onActionClick: (FloatingAction) -> Unit = {},
 ) {
@@ -60,25 +64,34 @@ fun FloatingActionMenu(
     Box(modifier = modifier, contentAlignment = Alignment.BottomEnd) {
         AnimatedVisibility(
             visible = expanded,
-            enter = scaleIn(
-                animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-                initialScale = 0.94f,
-                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f),
-            ) + slideInVertically(
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                initialOffsetY = { it / 5 },
-            ),
-            exit = scaleOut(
-                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-                targetScale = 0.96f,
-                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f),
-            ) + slideOutVertically(
-                animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing),
-                targetOffsetY = { it / 5 },
-            ),
+            enter = if (expansionDirection == FloatingActionMenuExpansion.Start) {
+                fadeIn(animationSpec = tween(durationMillis = 120)) + slideInHorizontally(
+                    animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                    initialOffsetX = { it / 8 },
+                )
+            } else {
+                fadeIn(animationSpec = tween(durationMillis = 120)) + slideInVertically(
+                    animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                    initialOffsetY = { it / 8 },
+                )
+            },
+            exit = if (expansionDirection == FloatingActionMenuExpansion.Start) {
+                fadeOut(animationSpec = tween(durationMillis = 90)) + slideOutHorizontally(
+                    animationSpec = tween(durationMillis = 105, easing = FastOutSlowInEasing),
+                    targetOffsetX = { it / 10 },
+                )
+            } else {
+                fadeOut(animationSpec = tween(durationMillis = 90)) + slideOutVertically(
+                    animationSpec = tween(durationMillis = 105, easing = FastOutSlowInEasing),
+                    targetOffsetY = { it / 10 },
+                )
+            },
         ) {
             Column(
-                modifier = Modifier.padding(bottom = 68.dp),
+                modifier = when (expansionDirection) {
+                    FloatingActionMenuExpansion.Up -> Modifier.padding(bottom = 68.dp)
+                    FloatingActionMenuExpansion.Start -> Modifier.padding(end = mainButtonSize + 12.dp)
+                },
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -115,7 +128,7 @@ fun FloatingActionMenu(
         SmallFloatingActionButton(
             onClick = onToggle,
             modifier = Modifier.size(mainButtonSize),
-            shape = VaultShapes.lg,
+            shape = CircleShape,
             containerColor = colors.accent,
             contentColor = Color.White,
         ) {
@@ -125,6 +138,26 @@ fun FloatingActionMenu(
 }
 
 data class FloatingAction(val label: String, val icon: ImageVector)
+
+enum class FloatingActionMenuExpansion {
+    Up,
+    Start,
+}
+
+object FloatingActionStackDefaults {
+    val endPadding: Dp = VaultSpacing.screen
+    val fabBottomPadding: Dp = 74.dp
+    val fixedBottomBarFabPadding: Dp = 12.dp
+    val mainButtonSize: Dp = 48.dp
+    val actionButtonSize: Dp = 38.dp
+    val aiButtonSize: Dp = 44.dp
+    val stackGap: Dp = 20.dp
+    val aiEndPadding: Dp = VaultSpacing.screen + 2.dp
+    val aiBottomPadding: Dp = fabBottomPadding + mainButtonSize + stackGap
+    val menuWidth: Dp = 340.dp
+    val menuHeight: Dp = 172.dp
+    val compactMenuHeight: Dp = 130.dp
+}
 
 val defaultFloatingActions = listOf(
     FloatingAction("New Note", Icons.Rounded.Description),

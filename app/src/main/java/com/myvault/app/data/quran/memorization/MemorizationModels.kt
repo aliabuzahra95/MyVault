@@ -14,6 +14,9 @@ data class MemorizationRecord(
     val isRevision: Boolean,
     val isWeak: Boolean,
     val updatedAt: Long,
+    val isNeedsRevision: Boolean = false,
+    val isIncorrect: Boolean = false,
+    val isMemorising: Boolean = true,
 ) {
     val isMemorized: Boolean
         get() = memorizedAt != null
@@ -23,17 +26,47 @@ data class MemorizationOverview(
     val startedCount: Int = 0,
     val memorizedCount: Int = 0,
     val revisionCount: Int = 0,
+    val needsReviewCount: Int = 0,
+    val incorrectCount: Int = 0,
     val difficultCount: Int = 0,
     val memorizedSurahCount: Int = 0,
+    val inProgressSurahCount: Int = 0,
+)
+
+enum class AyahMemorizationStatus {
+    NOT_ATTEMPTED,
+    ATTEMPTED,
+    PASSED,
+    NEEDS_REVIEW,
+    INCORRECT,
+    DIFFICULT,
+    UNKNOWN,
+}
+
+data class AyahMemorizationStatusSnapshot(
+    val verseKey: String,
+    val surahNumber: Int,
+    val ayahNumber: Int,
+    val status: AyahMemorizationStatus,
+    val lastAttemptAtMs: Long? = null,
+    val lastAttemptId: String? = null,
+    val correctWordCount: Int? = null,
+    val expectedWordCount: Int? = null,
 )
 
 data class MemorizationDashboardItem(
     val record: MemorizationRecord,
     val surah: SurahInfo,
+    val latestAttempt: QuranMemorizationSavedAttempt? = null,
 ) {
     val title: String = "${surah.name} ${surah.num}:${record.ayahNumber}"
     val subtitle: String = buildString {
-        append(
+        latestAttempt?.let { attempt ->
+            append("Latest result: ${attempt.grade.label}")
+            append(" • ")
+            append(attempt.overallScore)
+            append("%")
+        } ?: append(
             when {
                 record.isMemorized -> "Memorised"
                 record.isWeak -> "Difficult"
@@ -54,13 +87,32 @@ data class MemorizedSurahDashboardItem(
     val subtitle: String = "$memorizedCount ayahs memorised"
 }
 
+data class SurahProgressDashboardItem(
+    val surah: SurahInfo,
+    val memorizedCount: Int,
+    val totalAyahs: Int,
+    val needsRevisionCount: Int,
+    val incorrectCount: Int,
+    val difficultCount: Int,
+    val lastPractisedAt: Long,
+    val nextAyahNumber: Int,
+) {
+    val title: String = surah.name
+    val progressText: String = "$memorizedCount / $totalAyahs ayahs memorised"
+    val subtitle: String = buildList {
+        if (needsRevisionCount > 0) add("$needsRevisionCount revision")
+        if (incorrectCount > 0) add("$incorrectCount incorrect")
+        if (difficultCount > 0) add("$difficultCount difficult")
+        add("Next: ${surah.num}:$nextAyahNumber")
+    }.joinToString(" • ")
+}
+
 enum class MemorizationDashboardGroup(val label: String) {
-    All("All"),
-    Started("Started"),
-    Memorised("Ayahs"),
-    Surahs("Surahs"),
-    Revision("Revision"),
+    InProgress("In Progress"),
+    NeedsReview("Needs Revision"),
+    Incorrect("Incorrect"),
     Difficult("Difficult"),
+    Surahs("Memorised Surahs"),
 }
 
 enum class MemorizationConcealAmount(
@@ -86,57 +138,195 @@ enum class MemorizationRepeatMode(
 
 data class MemorizationUiState(
     val records: List<MemorizationRecord> = emptyList(),
-    val selectedGroup: MemorizationDashboardGroup = MemorizationDashboardGroup.All,
+    val attempts: List<QuranMemorizationSavedAttempt> = emptyList(),
+    val surahAttempts: List<QuranSurahMemorizationSavedAttempt> = emptyList(),
+    val selectedGroup: MemorizationDashboardGroup = MemorizationDashboardGroup.InProgress,
     val selectedSurah: SurahInfo = quranCatalog.first(),
     val selectedAyah: Int = 1,
 ) {
     val memorizedSurahs: List<MemorizedSurahDashboardItem>
         get() = buildMemorizedSurahs(records)
 
+    val inProgressSurahs: List<SurahProgressDashboardItem>
+        get() = buildSurahProgressItems(records, attempts, surahAttempts)
+
     val overview: MemorizationOverview
         get() {
             val memorizedSurahCount = memorizedSurahs.size
+            val latestAttempts = attempts.latestByVerse()
+            val latestStatuses = buildLatestStatusesByVerse(attempts, surahAttempts)
+            val recordsByVerse = records.associateBy { it.verseKey }
+            fun statusFor(verseKey: String): AyahMemorizationStatus? =
+                recordsByVerse[verseKey]?.manualStatus() ?: latestStatuses[verseKey]?.status
             return MemorizationOverview(
-                startedCount = records.size,
+                startedCount = records.count { it.isMemorising && !it.isMemorized },
                 memorizedCount = records.count { it.isMemorized },
                 revisionCount = records.count { it.isRevision },
+                needsReviewCount = allDashboardRecords().count { record -> statusFor(record.verseKey) == AyahMemorizationStatus.NEEDS_REVIEW },
+                incorrectCount = allDashboardRecords().count { record -> statusFor(record.verseKey) == AyahMemorizationStatus.INCORRECT },
                 difficultCount = records.count { it.isWeak },
                 memorizedSurahCount = memorizedSurahCount,
+                inProgressSurahCount = inProgressSurahs.size,
             )
         }
 
     val dashboardItems: List<MemorizationDashboardItem>
         get() {
             val fullyMemorizedSurahs = memorizedSurahs.map { it.surah.num }.toSet()
-            return records
+            val latestAttempts = attempts.latestByVerse()
+            val latestStatuses = buildLatestStatusesByVerse(attempts, surahAttempts)
+            val recordsByVerse = records.associateBy { it.verseKey }
+            return allDashboardRecords()
             .filter { record ->
+                val latestAttempt = latestAttempts[record.verseKey]
+                val status = recordsByVerse[record.verseKey]?.manualStatus() ?: latestStatuses[record.verseKey]?.status
                 when (selectedGroup) {
-                    MemorizationDashboardGroup.All -> record.surahNumber !in fullyMemorizedSurahs || !record.isMemorized
-                    MemorizationDashboardGroup.Started -> !record.isMemorized
-                    MemorizationDashboardGroup.Memorised -> record.isMemorized && record.surahNumber !in fullyMemorizedSurahs
+                    MemorizationDashboardGroup.InProgress -> false
+                    MemorizationDashboardGroup.NeedsReview -> status == AyahMemorizationStatus.NEEDS_REVIEW
+                    MemorizationDashboardGroup.Incorrect -> status == AyahMemorizationStatus.INCORRECT
                     MemorizationDashboardGroup.Surahs -> false
-                    MemorizationDashboardGroup.Revision -> record.isRevision
                     MemorizationDashboardGroup.Difficult -> record.isWeak
                 }
             }
             .sortedWith(compareByDescending<MemorizationRecord> { it.updatedAt }.thenBy { it.surahNumber }.thenBy { it.ayahNumber })
             .mapNotNull { record ->
                 quranCatalog.firstOrNull { it.num == record.surahNumber }?.let { surah ->
-                    MemorizationDashboardItem(record, surah)
+                    MemorizationDashboardItem(
+                        record = record,
+                        surah = surah,
+                        latestAttempt = latestAttempts[record.verseKey],
+                    )
                 }
             }
         }
 
     val continueItem: MemorizationDashboardItem?
-        get() = records
-            .sortedWith(compareByDescending<MemorizationRecord> { it.isWeak }.thenByDescending { it.updatedAt })
-            .firstOrNull { !it.isMemorized }
-            ?.let { record ->
+        get() {
+            val recordsByVerse = records.associateBy { it.verseKey }
+            val activeSurah = inProgressSurahs.firstOrNull()
+            if (activeSurah != null) {
+                val verseKey = "${activeSurah.surah.num}:${activeSurah.nextAyahNumber}"
+                val latestAttempt = attempts.latestByVerse()[verseKey]
+                val record = recordsByVerse[verseKey] ?: MemorizationRecord(
+                    verseKey = verseKey,
+                    surahNumber = activeSurah.surah.num,
+                    ayahNumber = activeSurah.nextAyahNumber,
+                    startedAt = activeSurah.lastPractisedAt,
+                    lastReviewedAt = activeSurah.lastPractisedAt,
+                    reviewCount = 0,
+                    memorizedAt = null,
+                    isRevision = false,
+                    isWeak = false,
+                    updatedAt = activeSurah.lastPractisedAt,
+                    isMemorising = true,
+                )
+                return MemorizationDashboardItem(
+                    record = record,
+                    surah = activeSurah.surah,
+                    latestAttempt = latestAttempt,
+                )
+            }
+            return records
+                .sortedWith(compareByDescending<MemorizationRecord> { it.updatedAt })
+                .firstOrNull { it.isMemorising && !it.isMemorized }
+                ?.let { record ->
                 quranCatalog.firstOrNull { it.num == record.surahNumber }?.let { surah ->
                     MemorizationDashboardItem(record, surah)
                 }
             }
+        }
+
+    private fun allDashboardRecords(): List<MemorizationRecord> {
+        val recordsByVerse = records.associateBy { it.verseKey }
+        val aiAttemptRecords = buildLatestStatusesByVerse(attempts, surahAttempts)
+            .values
+            .mapNotNull { latest ->
+                if (recordsByVerse.containsKey(latest.verseKey)) return@mapNotNull null
+                if (latest.status != AyahMemorizationStatus.NEEDS_REVIEW && latest.status != AyahMemorizationStatus.INCORRECT) return@mapNotNull null
+                val (surah, ayah) = latest.verseKey.split(':').let { parts ->
+                    (parts.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null) to
+                        (parts.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null)
+                }
+                MemorizationRecord(
+                    verseKey = latest.verseKey,
+                    surahNumber = surah,
+                    ayahNumber = ayah,
+                    startedAt = latest.timestampMs,
+                    lastReviewedAt = latest.timestampMs,
+                    reviewCount = 1,
+                    memorizedAt = null,
+                    isRevision = latest.status == AyahMemorizationStatus.NEEDS_REVIEW,
+                    isWeak = false,
+                    updatedAt = latest.timestampMs,
+                    isNeedsRevision = latest.status == AyahMemorizationStatus.NEEDS_REVIEW,
+                    isIncorrect = latest.status == AyahMemorizationStatus.INCORRECT,
+                    isMemorising = false,
+                )
+            }
+        return records + aiAttemptRecords
+    }
 }
+
+private data class LatestMemorizationStatus(
+    val verseKey: String,
+    val status: AyahMemorizationStatus,
+    val timestampMs: Long,
+)
+
+private fun List<QuranMemorizationSavedAttempt>.latestByVerse(): Map<String, QuranMemorizationSavedAttempt> =
+    groupBy { it.verseKey }
+        .mapValues { (_, attempts) -> attempts.maxBy { it.timestampMs } }
+
+private fun buildLatestStatusesByVerse(
+    attempts: List<QuranMemorizationSavedAttempt>,
+    surahAttempts: List<QuranSurahMemorizationSavedAttempt>,
+): Map<String, LatestMemorizationStatus> {
+    val ayahStatuses = attempts.map {
+        LatestMemorizationStatus(
+            verseKey = it.verseKey,
+            status = it.status,
+            timestampMs = it.timestampMs,
+        )
+    }
+    val surahStatuses = surahAttempts.flatMap { attempt ->
+        attempt.ayahResults.map { result ->
+            LatestMemorizationStatus(
+                verseKey = result.verseKey,
+                status = result.status,
+                timestampMs = attempt.timestampMs,
+            )
+        }
+    }
+    return (ayahStatuses + surahStatuses)
+        .groupBy { it.verseKey }
+        .mapValues { (_, statuses) -> statuses.maxBy { it.timestampMs } }
+}
+
+private fun QuranMemorizationSavedAttempt.toMemorizationRecord(): MemorizationRecord =
+    MemorizationRecord(
+        verseKey = verseKey,
+        surahNumber = surahNumber,
+        ayahNumber = ayahNumber,
+        startedAt = timestampMs,
+        lastReviewedAt = timestampMs,
+        reviewCount = 1,
+        memorizedAt = null,
+        isRevision = false,
+        isWeak = false,
+        updatedAt = timestampMs,
+        isNeedsRevision = status == AyahMemorizationStatus.NEEDS_REVIEW,
+        isIncorrect = status == AyahMemorizationStatus.INCORRECT,
+        isMemorising = false,
+    )
+
+private fun MemorizationRecord.manualStatus(): AyahMemorizationStatus? =
+    when {
+        isIncorrect -> AyahMemorizationStatus.INCORRECT
+        isNeedsRevision || isRevision -> AyahMemorizationStatus.NEEDS_REVIEW
+        isMemorized -> AyahMemorizationStatus.PASSED
+        isMemorising -> AyahMemorizationStatus.ATTEMPTED
+        else -> null
+    }
 
 private fun buildMemorizedSurahs(records: List<MemorizationRecord>): List<MemorizedSurahDashboardItem> =
     records
@@ -154,6 +344,61 @@ private fun buildMemorizedSurahs(records: List<MemorizationRecord>): List<Memori
         }
         .sortedByDescending { it.completedAt }
 
+private fun buildSurahProgressItems(
+    records: List<MemorizationRecord>,
+    attempts: List<QuranMemorizationSavedAttempt>,
+    surahAttempts: List<QuranSurahMemorizationSavedAttempt>,
+): List<SurahProgressDashboardItem> {
+    val latestStatuses = buildLatestStatusesByVerse(attempts, surahAttempts)
+    val recordsByVerse = records.associateBy { it.verseKey }
+    val activeSurahNumbers = (
+        records
+            .asSequence()
+            .filter { it.isMemorising || it.isWeak || it.isNeedsRevision || it.isIncorrect || it.isRevision || it.isMemorized }
+            .map { it.surahNumber } +
+            latestStatuses.values
+                .asSequence()
+                .filter { it.status == AyahMemorizationStatus.NEEDS_REVIEW || it.status == AyahMemorizationStatus.INCORRECT }
+                .mapNotNull { it.verseKey.substringBefore(':').toIntOrNull() }
+        ).toSet()
+
+    return activeSurahNumbers
+        .mapNotNull { surahNumber ->
+            val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: return@mapNotNull null
+            val surahRecords = records.filter { it.surahNumber == surahNumber }
+            val memorizedAyahs = surahRecords.filter { it.isMemorized }.map { it.ayahNumber }.toSet()
+            if (memorizedAyahs.size >= surah.ayat) return@mapNotNull null
+
+            fun statusFor(ayahNumber: Int): AyahMemorizationStatus? {
+                val verseKey = "$surahNumber:$ayahNumber"
+                return recordsByVerse[verseKey]?.manualStatus() ?: latestStatuses[verseKey]?.status
+            }
+
+            val nextAyah = (1..surah.ayat).firstOrNull { ayah ->
+                val status = statusFor(ayah)
+                ayah !in memorizedAyahs && (status == AyahMemorizationStatus.INCORRECT || status == AyahMemorizationStatus.NEEDS_REVIEW)
+            } ?: (1..surah.ayat).firstOrNull { it !in memorizedAyahs } ?: 1
+
+            val lastPractisedAt = maxOf(
+                surahRecords.maxOfOrNull { it.updatedAt } ?: 0L,
+                latestStatuses.values
+                    .filter { it.verseKey.substringBefore(':').toIntOrNull() == surahNumber }
+                    .maxOfOrNull { it.timestampMs } ?: 0L,
+            )
+            SurahProgressDashboardItem(
+                surah = surah,
+                memorizedCount = memorizedAyahs.size,
+                totalAyahs = surah.ayat,
+                needsRevisionCount = (1..surah.ayat).count { statusFor(it) == AyahMemorizationStatus.NEEDS_REVIEW },
+                incorrectCount = (1..surah.ayat).count { statusFor(it) == AyahMemorizationStatus.INCORRECT },
+                difficultCount = surahRecords.count { it.isWeak },
+                lastPractisedAt = lastPractisedAt,
+                nextAyahNumber = nextAyah,
+            )
+        }
+        .sortedByDescending { it.lastPractisedAt }
+}
+
 fun MemorizationRecord.toPreferenceEntry(): String = listOf(
     verseKey,
     surahNumber.toString(),
@@ -165,11 +410,14 @@ fun MemorizationRecord.toPreferenceEntry(): String = listOf(
     isRevision.toString(),
     isWeak.toString(),
     updatedAt.toString(),
+    isNeedsRevision.toString(),
+    isIncorrect.toString(),
+    isMemorising.toString(),
 ).joinToString("|")
 
 fun String.toMemorizationRecordOrNull(): MemorizationRecord? {
     val parts = split('|')
-    if (parts.size != 10) return null
+    if (parts.size != 10 && parts.size != 13) return null
     val verseKey = parts[0].takeIf { it.contains(':') } ?: return null
     return MemorizationRecord(
         verseKey = verseKey,
@@ -182,5 +430,8 @@ fun String.toMemorizationRecordOrNull(): MemorizationRecord? {
         isRevision = parts[7].toBooleanStrictOrNull() ?: false,
         isWeak = parts[8].toBooleanStrictOrNull() ?: false,
         updatedAt = parts[9].toLongOrNull()?.coerceAtLeast(0L) ?: return null,
+        isNeedsRevision = parts.getOrNull(10)?.toBooleanStrictOrNull() ?: false,
+        isIncorrect = parts.getOrNull(11)?.toBooleanStrictOrNull() ?: false,
+        isMemorising = parts.getOrNull(12)?.toBooleanStrictOrNull() ?: true,
     )
 }
