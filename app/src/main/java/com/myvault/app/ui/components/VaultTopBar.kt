@@ -24,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultSpacing
-import com.myvault.app.ui.theme.VaultDimensions
 import com.myvault.app.ui.theme.VaultThemeTokens
 
 @Composable
@@ -39,7 +38,7 @@ fun VaultTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(VaultDimensions.topBarHeight)
+            .height(52.dp)
             .padding(horizontal = VaultSpacing.screen),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,

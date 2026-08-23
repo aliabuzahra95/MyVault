@@ -1,12 +1,19 @@
 package com.myvault.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
@@ -52,18 +59,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.myvault.app.ui.theme.VaultDimensions
-import com.myvault.app.ui.theme.VaultMotion
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
 
@@ -130,13 +133,13 @@ fun FolderTreeRow(
         AnimatedVisibility(
             visible = isFolder && expanded,
             enter = expandVertically(
-                animationSpec = tween(durationMillis = VaultMotion.standard, easing = VaultMotion.easing),
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
                 expandFrom = Alignment.Top,
-            ) + fadeIn(animationSpec = tween(durationMillis = VaultMotion.quick)),
+            ),
             exit = shrinkVertically(
-                animationSpec = tween(durationMillis = VaultMotion.quick, easing = VaultMotion.easing),
+                animationSpec = tween(durationMillis = 115, easing = FastOutSlowInEasing),
                 shrinkTowards = Alignment.Top,
-            ) + fadeOut(animationSpec = tween(durationMillis = VaultMotion.quick)),
+            ),
         ) {
             Column {
                 item.children.forEach { child ->
@@ -223,29 +226,46 @@ private fun FolderTreeSingleRow(
     onMoveDown: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val haptics = LocalHapticFeedback.current
     val topLevel = depth == 0
     val isFolder = item.type == VaultTreeItemType.Folder
     val movable = isFolder || organizeAllItems
-    val rowVerticalPadding = if (!isFolder && notePreviewLines > 0 && item.preview.isNotBlank()) 7.dp else 4.dp
-    val rowStartPadding = if (topLevel) 0.dp else VaultDimensions.treeIndent * depth
-    val rowOuterVerticalGap = if (topLevel) 2.dp else 0.dp
-    val rowHorizontalPadding = 4.dp
-    val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
-    val background = when {
-        selected -> colors.accentSoft
-        organizeMode && movable -> colors.inset
-        topLevel && expanded -> colors.surface
-        else -> Color.Transparent
+    val isSubfolder = isFolder && !topLevel
+    val rowVerticalPadding = when {
+        !isFolder && notePreviewLines > 0 && item.preview.isNotBlank() -> 3.dp
+        !isFolder -> 2.dp
+        isFolder && topLevel -> 6.dp
+        isFolder -> 3.dp
+        else -> 3.dp
     }
+    val rowStartPadding = when {
+        topLevel -> 6.dp
+        isFolder -> (4 + depth * 8).dp
+        else -> (2 + depth * 7).dp
+    }
+    val rowOuterVerticalGap = if (topLevel) 0.5.dp else 0.dp
+    val rowHorizontalPadding = if (topLevel) 8.dp else 5.dp
+    val subfolderAccent = Color(0xFFE23B3B)
+    val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
+    val background = if (topLevel && expanded) colors.surface else Color.Transparent
+    val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(durationMillis = VaultMotion.standard, easing = VaultMotion.easing),
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
         label = "folder-chevron-rotation",
     )
 
     val interactionSource = remember { MutableInteractionSource() }
     var dragCarry by remember(item.id, organizeMode) { mutableFloatStateOf(0f) }
+    val shakeTransition = rememberInfiniteTransition(label = "folder-organise-shake")
+    val shakeRotation by shakeTransition.animateFloat(
+        initialValue = -0.45f,
+        targetValue = 0.45f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 120),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "folder-organise-rotation",
+    )
 
     Surface(
         modifier = Modifier
@@ -253,19 +273,25 @@ private fun FolderTreeSingleRow(
             .padding(
                 start = rowStartPadding,
                 top = rowOuterVerticalGap,
-                end = 0.dp,
+                end = if (topLevel) 8.dp else 6.dp,
                 bottom = rowOuterVerticalGap,
             )
-            .heightIn(min = VaultDimensions.touchTarget)
+            .heightIn(
+                min = when {
+                    isFolder && topLevel -> 36.dp
+                    isFolder -> 32.dp
+                    else -> 30.dp
+                },
+            )
             .clip(rowShape)
+            .graphicsLayer {
+                rotationZ = if (organizeMode && movable) shakeRotation else 0f
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = onClick,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
+                onLongClick = onLongPress,
             )
             .then(
                 if (organizeMode && movable) {
@@ -277,11 +303,11 @@ private fun FolderTreeSingleRow(
                                 change.consume()
                                 dragCarry += dragAmount
                                 when {
-                                    dragCarry <= -48f && canMoveUp -> {
+                                    dragCarry <= -36f && canMoveUp -> {
                                         onMoveUp()
                                         dragCarry = 0f
                                     }
-                                    dragCarry >= 48f && canMoveDown -> {
+                                    dragCarry >= 36f && canMoveDown -> {
                                         onMoveDown()
                                         dragCarry = 0f
                                     }
@@ -292,9 +318,10 @@ private fun FolderTreeSingleRow(
                 } else {
                     Modifier
                 },
-        ),
+            ),
         color = background,
         shape = rowShape,
+        border = BorderStroke(1.dp, borderColor),
     ) {
         Row(
             modifier = Modifier
@@ -304,52 +331,52 @@ private fun FolderTreeSingleRow(
                     vertical = rowVerticalPadding,
                 ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (selectionMode) {
                 Icon(
                     imageVector = if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                     contentDescription = null,
-                    modifier = Modifier.size(VaultDimensions.iconSmall),
+                    modifier = Modifier.size(if (topLevel) 15.dp else 13.dp),
                     tint = if (selected) colors.accent else colors.textMuted,
                 )
             } else if (isFolder) {
-                Box(
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
                     modifier = Modifier
-                        .size(VaultDimensions.compactTouchTarget)
+                        .size(if (topLevel) 13.dp else 11.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = onToggleClick,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                        contentDescription = if (expanded) "Collapse ${item.name}" else "Expand ${item.name}",
-                        modifier = Modifier
-                            .size(VaultDimensions.iconMedium)
-                            .graphicsLayer { rotationZ = chevronRotation },
-                        tint = colors.textMuted,
-                    )
-                }
+                        )
+                        .graphicsLayer { rotationZ = chevronRotation },
+                    tint = colors.textMuted,
+                )
             } else {
-                Spacer(modifier = Modifier.width(VaultDimensions.compactTouchTarget))
+                Spacer(modifier = Modifier.width(8.dp))
             }
 
             if (isFolder) {
                 Icon(
                     imageVector = Icons.Rounded.Folder,
                     contentDescription = null,
-                    modifier = Modifier.size(VaultDimensions.iconMedium),
-                    tint = if (expanded || topLevel) colors.accent else colors.textSecondary,
+                    modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
+                    tint = when {
+                        isSubfolder -> subfolderAccent
+                        topLevel -> colors.accent
+                        else -> colors.textSecondary
+                    },
                 )
             } else {
-                Icon(
-                    imageVector = Icons.Rounded.Description,
-                    contentDescription = null,
-                    modifier = Modifier.size(VaultDimensions.iconSmall),
-                    tint = colors.accent,
+                Box(
+                    modifier = Modifier
+                        .size(width = 9.dp, height = 1.5.dp)
+                        .background(
+                            color = colors.textMuted,
+                            shape = VaultShapes.pill,
+                        ),
                 )
             }
 
@@ -362,7 +389,7 @@ private fun FolderTreeSingleRow(
                         topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
                         else -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },
-                    color = colors.text,
+                    color = if (isSubfolder) subfolderAccent else colors.text,
                     maxLines = if (!isFolder && showFullNoteTitles) Int.MAX_VALUE else 1,
                     overflow = if (!isFolder && showFullNoteTitles) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )
@@ -381,7 +408,7 @@ private fun FolderTreeSingleRow(
                 Icon(
                     imageVector = Icons.Rounded.Star,
                     contentDescription = null,
-                    modifier = Modifier.size(VaultDimensions.iconSmall),
+                    modifier = Modifier.size(12.dp),
                     tint = colors.warning,
                 )
             }
@@ -389,7 +416,7 @@ private fun FolderTreeSingleRow(
                 Icon(
                     imageVector = Icons.Rounded.PushPin,
                     contentDescription = null,
-                    modifier = Modifier.size(VaultDimensions.iconSmall),
+                    modifier = Modifier.size(12.dp),
                     tint = colors.accent,
                 )
             }
@@ -398,14 +425,14 @@ private fun FolderTreeSingleRow(
                 Icon(
                     imageVector = Icons.Rounded.DragIndicator,
                     contentDescription = null,
-                    modifier = Modifier.size(VaultDimensions.iconMedium),
+                    modifier = Modifier.size(18.dp),
                     tint = colors.textMuted,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     IconButton(
                         onClick = onMoveUp,
                         enabled = canMoveUp,
-                        modifier = Modifier.size(VaultDimensions.compactTouchTarget),
+                        modifier = Modifier.size(28.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowUp,
@@ -417,7 +444,7 @@ private fun FolderTreeSingleRow(
                     IconButton(
                         onClick = onMoveDown,
                         enabled = canMoveDown,
-                        modifier = Modifier.size(VaultDimensions.compactTouchTarget),
+                        modifier = Modifier.size(28.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
@@ -444,6 +471,7 @@ private fun TreeTrailing(item: VaultTreeItem, topLevel: Boolean) {
             Surface(
                 shape = VaultShapes.pill,
                 color = colors.inset,
+                border = BorderStroke(1.dp, colors.border),
             ) {
                 Text(
                     text = item.count.toString(),

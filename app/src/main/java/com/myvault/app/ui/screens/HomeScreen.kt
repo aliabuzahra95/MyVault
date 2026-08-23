@@ -218,16 +218,6 @@ fun HomeScreen(
     }
     val displayedWorkspace = if (organizeMode) uiState.workspace else sortedWorkspace
     val rootFolders = displayedWorkspace.filter { it.type == VaultTreeItemType.Folder }
-    val totalFolderCount = remember(uiState.workspace) {
-        uiState.workspace.sumOf { it.flattenFolders().size }
-    }
-    val noteCount = remember(uiState.workspace) {
-        uiState.workspace.sumOf { it.flattenNotes().size }
-    }
-    val topLevelFolderCount = remember(uiState.workspace) {
-        uiState.workspace.count { it.type == VaultTreeItemType.Folder }
-    }
-    val pageTitle = if (currentFolderMode == FOLDER_MODE_STUDY) "Study" else "Personal"
     val listState = rememberLazyListState()
     val folderExpansionPrefix = remember(currentFolderMode) { "home:$currentFolderMode:" }
     fun folderExpansionKey(folderId: String): String = "$folderExpansionPrefix$folderId"
@@ -310,14 +300,6 @@ fun HomeScreen(
                     }
                 }
 
-                item(key = "study_page_header") {
-                    StudyPageHeader(
-                        title = pageTitle,
-                        folderCount = totalFolderCount,
-                        noteCount = noteCount,
-                    )
-                }
-
                 item(key = "study_search") {
                     SearchBar(
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
@@ -357,7 +339,7 @@ fun HomeScreen(
                     }
                 }
 
-                if (uiState.pinnedNotes.isNotEmpty()) item(key = "study_pinned") {
+                item(key = "study_pinned") {
                     Spacer(modifier = Modifier.height(5.dp))
                     SectionLabel(
                         label = "Pinned",
@@ -376,28 +358,36 @@ fun HomeScreen(
                             shrinkTowards = Alignment.Top,
                         ) + fadeOut(animationSpec = tween(durationMillis = 100)),
                     ) {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                        ) {
-                            items(uiState.pinnedNotes, key = { it.id }) { note ->
-                                PinnedNoteCard(
-                                    note = note,
-                                    previewLines = uiState.notePreviewLines,
-                                    showFullTitle = uiState.showFullNoteTitles,
-                                    onClick = { onNoteClick(note.id) },
-                                    onLongPress = {
-                                        selectedNote = VaultTreeItem(
-                                            id = note.id,
-                                            name = note.title,
-                                            type = VaultTreeItemType.Note,
-                                            pinned = true,
-                                        )
-                                        noteActionsOpen = true
-                                    },
-                                )
+                        if (uiState.pinnedNotes.isEmpty()) {
+                            EmptyHomeState(
+                                icon = Icons.Rounded.PushPin,
+                                text = "Pinned notes will appear here",
+                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                            )
+                        } else {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                            ) {
+                                items(uiState.pinnedNotes, key = { it.id }) { note ->
+                                    PinnedNoteCard(
+                                        note = note,
+                                        previewLines = uiState.notePreviewLines,
+                                        showFullTitle = uiState.showFullNoteTitles,
+                                        onClick = { onNoteClick(note.id) },
+                                        onLongPress = {
+                                            selectedNote = VaultTreeItem(
+                                                id = note.id,
+                                                name = note.title,
+                                                type = VaultTreeItemType.Note,
+                                                pinned = true,
+                                            )
+                                            noteActionsOpen = true
+                                        },
+                                    )
                                 }
                             }
+                        }
                     }
                     if (pinnedExpanded) {
                         Spacer(modifier = Modifier.height(10.dp))
@@ -408,18 +398,13 @@ fun HomeScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = VaultSpacing.screen),
+                            .padding(horizontal = VaultSpacing.xs),
                     ) {
-                        StudySectionHeader(
-                            title = "Knowledge tree",
-                            subtitle = "$topLevelFolderCount top-level folder${if (topLevelFolderCount == 1) "" else "s"}",
-                        )
-                        Spacer(modifier = Modifier.height(VaultSpacing.xs))
                         if (displayedWorkspace.isEmpty()) {
                             EmptyHomeState(
                                 icon = Icons.Rounded.Folder,
                                 text = "Create a folder or note to start your vault",
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                             )
                         } else {
                             displayedWorkspace.forEach { item ->
@@ -464,14 +449,7 @@ fun HomeScreen(
                         }
                     }
                     if (currentFolderMode == FOLDER_MODE_STUDY) {
-                        Spacer(modifier = Modifier.height(VaultSpacing.lg))
-                        StudyAtAGlance(
-                            topLevelFolderCount = topLevelFolderCount,
-                            nestedFolderCount = (totalFolderCount - topLevelFolderCount).coerceAtLeast(0),
-                            noteCount = noteCount,
-                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                        )
-                        Spacer(modifier = Modifier.height(VaultSpacing.lg))
+                        Spacer(modifier = Modifier.height(12.dp))
                         QuranReflectionsEntryCard(
                             count = uiState.quranReflectionSummary.count,
                             latestReference = uiState.quranReflectionSummary.latestReference,
@@ -1027,110 +1005,6 @@ fun HomeScreen(
 }
 
 @Composable
-private fun StudyPageHeader(
-    title: String,
-    folderCount: Int,
-    noteCount: Int,
-) {
-    val colors = VaultThemeTokens.colors
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                start = VaultSpacing.screen,
-                top = VaultSpacing.sm,
-                end = VaultSpacing.screen,
-                bottom = VaultSpacing.md,
-            ),
-        verticalArrangement = Arrangement.spacedBy(VaultSpacing.xxs),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = colors.text,
-        )
-        Text(
-            text = "$folderCount folder${if (folderCount == 1) "" else "s"} · " +
-                "$noteCount note${if (noteCount == 1) "" else "s"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textSecondary,
-        )
-    }
-}
-
-@Composable
-private fun StudySectionHeader(
-    title: String,
-    subtitle: String,
-) {
-    val colors = VaultThemeTokens.colors
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.text,
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
-        )
-    }
-}
-
-@Composable
-private fun StudyAtAGlance(
-    topLevelFolderCount: Int,
-    nestedFolderCount: Int,
-    noteCount: Int,
-    modifier: Modifier = Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-    ) {
-        Text(
-            text = "At a glance",
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.text,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
-        ) {
-            StudyMetric(topLevelFolderCount, "Top level", Modifier.weight(1f))
-            StudyMetric(nestedFolderCount, "Nested", Modifier.weight(1f))
-            StudyMetric(noteCount, "Notes", Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun StudyMetric(
-    value: Int,
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            text = value.toString(),
-            style = MaterialTheme.typography.titleLarge,
-            color = colors.text,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.textMuted,
-        )
-    }
-}
-
-@Composable
 private fun EmptyHomeState(
     icon: ImageVector,
     text: String,
@@ -1141,6 +1015,7 @@ private fun EmptyHomeState(
         modifier = modifier.fillMaxWidth(),
         color = colors.surface,
         shape = VaultShapes.md,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
