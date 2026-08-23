@@ -17,4 +17,16 @@ class GoogleDriveAuthenticationTest {
         assertFalse(shouldRefreshDriveToken(responseCode = 403, attempt = 0))
         assertFalse(shouldRefreshDriveToken(responseCode = 500, attempt = 0))
     }
+
+    @Test
+    fun `remote consent response is recognized regardless of case`() {
+        assertTrue("NeedRemoteConsent".isRemoteConsentMessage())
+        assertTrue("Google auth failed: needremoteconsent".isRemoteConsentMessage())
+    }
+
+    @Test
+    fun `ordinary authentication messages are not remote consent responses`() {
+        assertFalse("Invalid credentials".isRemoteConsentMessage())
+        assertFalse(null.isRemoteConsentMessage())
+    }
 }

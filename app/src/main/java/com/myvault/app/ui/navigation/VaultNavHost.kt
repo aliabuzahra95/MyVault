@@ -1123,10 +1123,21 @@ fun VaultNavHost(
                 onPrepareGoogleDriveSignIn = { onReady ->
                     viewModel.prepareGoogleDriveSignIn(onReady) { backupMessage = it }
                 },
-                onGoogleDriveSignInResult = { data -> viewModel.handleGoogleDriveSignInResult(data) { backupMessage = it } },
-                onGoogleDrivePush = { viewModel.pushGoogleDriveSync { backupMessage = it } },
-                onGoogleDriveForcePush = { viewModel.forcePushGoogleDriveSync { backupMessage = it } },
-                onGoogleDrivePull = { viewModel.pullGoogleDriveSync { backupMessage = it } },
+                onGoogleDriveSignInResult = { data, onAuthorizationRequired ->
+                    viewModel.handleGoogleDriveSignInResult(data, onAuthorizationRequired) { backupMessage = it }
+                },
+                onGoogleDriveConsentResult = { granted ->
+                    viewModel.handleGoogleDriveConsentResult(granted) { backupMessage = it }
+                },
+                onGoogleDrivePush = { onAuthorizationRequired ->
+                    viewModel.pushGoogleDriveSync(onAuthorizationRequired) { backupMessage = it }
+                },
+                onGoogleDriveForcePush = { onAuthorizationRequired ->
+                    viewModel.forcePushGoogleDriveSync(onAuthorizationRequired) { backupMessage = it }
+                },
+                onGoogleDrivePull = { onAuthorizationRequired ->
+                    viewModel.pullGoogleDriveSync(onAuthorizationRequired) { backupMessage = it }
+                },
                 onBackupSettingsOpened = viewModel::observeDriveRestoreState,
                 formattingAccountEmail = supabaseSession.email,
                 onFormattingAccountLogin = { email, password -> viewModel.signInFormattingAccount(email, password) { backupMessage = it } },

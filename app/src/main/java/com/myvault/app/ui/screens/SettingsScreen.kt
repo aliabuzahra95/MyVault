@@ -1,5 +1,6 @@
 package com.myvault.app.ui.screens
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -106,10 +107,11 @@ fun SettingsScreen(
     onPermanentlyDeleteFolder: (String) -> Unit = {},
     onPermanentlyDeleteAllDeleted: () -> Unit = {},
     onPrepareGoogleDriveSignIn: ((Intent) -> Unit) -> Unit = {},
-    onGoogleDriveSignInResult: (Intent?) -> Unit = {},
-    onGoogleDrivePush: () -> Unit = {},
-    onGoogleDriveForcePush: () -> Unit = {},
-    onGoogleDrivePull: () -> Unit = {},
+    onGoogleDriveSignInResult: (Intent?, (Intent) -> Unit) -> Unit = { _, _ -> },
+    onGoogleDriveConsentResult: (Boolean) -> Unit = {},
+    onGoogleDrivePush: ((Intent) -> Unit) -> Unit = { _ -> },
+    onGoogleDriveForcePush: ((Intent) -> Unit) -> Unit = { _ -> },
+    onGoogleDrivePull: ((Intent) -> Unit) -> Unit = { _ -> },
     onBackupSettingsOpened: () -> Unit = {},
     formattingAccountEmail: String = "",
     onFormattingAccountLogin: (String, String) -> Unit = { _, _ -> },
@@ -141,8 +143,13 @@ fun SettingsScreen(
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         restoreConfirmUri = uri
     }
+    val googleDriveConsentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        onGoogleDriveConsentResult(result.resultCode == Activity.RESULT_OK)
+    }
     val googleDriveSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        onGoogleDriveSignInResult(result.data)
+        onGoogleDriveSignInResult(result.data) { consentIntent ->
+            googleDriveConsentLauncher.launch(consentIntent)
+        }
     }
     val driveConflictDetected = driveRestoreState.message == DriveConflictMessage || backupMessage == DriveConflictMessage
 
@@ -225,7 +232,9 @@ fun SettingsScreen(
             onGoogleDriveConnectClick = {
                 onPrepareGoogleDriveSignIn { intent -> googleDriveSignInLauncher.launch(intent) }
             },
-            onGoogleDrivePushClick = onGoogleDrivePush,
+            onGoogleDrivePushClick = {
+                onGoogleDrivePush { consentIntent -> googleDriveConsentLauncher.launch(consentIntent) }
+            },
             onGoogleDrivePullClick = { driveRestoreConfirmOpen = true },
             driveRestoreState = driveRestoreState,
         )
@@ -259,7 +268,7 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         driveRestoreConfirmOpen = false
-                        onGoogleDrivePull()
+                        onGoogleDrivePull { consentIntent -> googleDriveConsentLauncher.launch(consentIntent) }
                     },
                 ) {
                     Text("Restore")
@@ -290,7 +299,7 @@ fun SettingsScreen(
                     onClick = {
                         driveConflictOpen = false
                         onDismissBackupMessage()
-                        onGoogleDrivePull()
+                        onGoogleDrivePull { consentIntent -> googleDriveConsentLauncher.launch(consentIntent) }
                     },
                 ) {
                     Text("Pull Latest")
@@ -302,7 +311,7 @@ fun SettingsScreen(
                         onClick = {
                             driveConflictOpen = false
                             onDismissBackupMessage()
-                            onGoogleDriveForcePush()
+                            onGoogleDriveForcePush { consentIntent -> googleDriveConsentLauncher.launch(consentIntent) }
                         },
                     ) {
                         Text("Force Push Local Vault")

@@ -12,6 +12,7 @@ import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.preferences.AzureSpeechSettings
 import com.myvault.app.data.sync.DriveSyncResult
+import com.myvault.app.data.sync.DriveAuthorizationResult
 import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
 import com.myvault.app.data.sync.GoogleDriveRestoreController
@@ -60,6 +61,7 @@ class SettingsViewModel @Inject constructor(
     private val _driveRestoreState = MutableStateFlow(DriveRestoreState())
     val driveRestoreState: StateFlow<DriveRestoreState> = _driveRestoreState
     private var driveRestoreJob: Job? = null
+    private var pendingDriveOperation: PendingDriveOperation? = null
     val supabaseSession: StateFlow<SupabaseSession> =
         supabaseSessionStore.session.stateIn(
             viewModelScope,
@@ -204,31 +206,113 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun handleGoogleDriveSignInResult(data: Intent?, onComplete: (String) -> Unit) {
+    fun handleGoogleDriveSignInResult(
+        data: Intent?,
+        onAuthorizationRequired: (Intent) -> Unit,
+        onComplete: (String) -> Unit,
+    ) {
         viewModelScope.launch {
-            onComplete(googleDriveSyncRepository.handleSignInResult(data).displayMessage())
+            handleDriveAuthorizationResult(
+                result = googleDriveSyncRepository.handleSignInResult(data),
+                onAuthorizationRequired = onAuthorizationRequired,
+                onComplete = onComplete,
+            )
         }
     }
 
-    fun pushGoogleDriveSync(onComplete: (String) -> Unit) {
-        observeDriveRestoreState()
-        googleDriveRestoreController.get().startPush { result ->
-            onComplete(result.displayMessage())
+    fun handleGoogleDriveConsentResult(granted: Boolean, onComplete: (String) -> Unit) {
+        if (!granted) {
+            pendingDriveOperation = null
+            onComplete("Google Drive permission was not granted. Backup and restore were not started.")
+            return
+        }
+        viewModelScope.launch {
+            when (val result = googleDriveSyncRepository.prepareDriveAuthorization()) {
+                is DriveAuthorizationResult.Ready -> {
+                    val operation = pendingDriveOperation
+                    pendingDriveOperation = null
+                    if (operation == null) {
+                        onComplete(result.message)
+                    } else {
+                        enqueueDriveOperation(operation, onComplete)
+                    }
+                }
+                is DriveAuthorizationResult.ConsentRequired -> {
+                    pendingDriveOperation = null
+                    onComplete("Google Drive permission was not completed. Tap Login and approve access, then retry.")
+                }
+                is DriveAuthorizationResult.Failure -> {
+                    pendingDriveOperation = null
+                    onComplete(result.message)
+                }
+            }
         }
     }
 
-    fun forcePushGoogleDriveSync(onComplete: (String) -> Unit) {
-        observeDriveRestoreState()
-        googleDriveRestoreController.get().startForcePush { result ->
-            onComplete(result.displayMessage())
+    fun pushGoogleDriveSync(onAuthorizationRequired: (Intent) -> Unit, onComplete: (String) -> Unit) {
+        authorizeAndStartDriveOperation(PendingDriveOperation.Push, onAuthorizationRequired, onComplete)
+    }
+
+    fun forcePushGoogleDriveSync(onAuthorizationRequired: (Intent) -> Unit, onComplete: (String) -> Unit) {
+        authorizeAndStartDriveOperation(PendingDriveOperation.ForcePush, onAuthorizationRequired, onComplete)
+    }
+
+    fun pullGoogleDriveSync(onAuthorizationRequired: (Intent) -> Unit, onComplete: (String) -> Unit) {
+        authorizeAndStartDriveOperation(PendingDriveOperation.Pull, onAuthorizationRequired, onComplete)
+    }
+
+    private fun authorizeAndStartDriveOperation(
+        operation: PendingDriveOperation,
+        onAuthorizationRequired: (Intent) -> Unit,
+        onComplete: (String) -> Unit,
+    ) {
+        pendingDriveOperation = operation
+        viewModelScope.launch {
+            handleDriveAuthorizationResult(
+                result = googleDriveSyncRepository.prepareDriveAuthorization(),
+                onAuthorizationRequired = onAuthorizationRequired,
+                onComplete = onComplete,
+            )
         }
     }
 
-    fun pullGoogleDriveSync(onComplete: (String) -> Unit) {
+    private fun handleDriveAuthorizationResult(
+        result: DriveAuthorizationResult,
+        onAuthorizationRequired: (Intent) -> Unit,
+        onComplete: (String) -> Unit,
+    ) {
+        when (result) {
+            is DriveAuthorizationResult.Ready -> {
+                val operation = pendingDriveOperation
+                pendingDriveOperation = null
+                if (operation == null) {
+                    onComplete(result.message)
+                } else {
+                    enqueueDriveOperation(operation, onComplete)
+                }
+            }
+            is DriveAuthorizationResult.ConsentRequired -> {
+                onComplete(result.message)
+                onAuthorizationRequired(result.intent)
+            }
+            is DriveAuthorizationResult.Failure -> {
+                pendingDriveOperation = null
+                onComplete(result.message)
+            }
+        }
+    }
+
+    private fun enqueueDriveOperation(operation: PendingDriveOperation, onComplete: (String) -> Unit) {
         observeDriveRestoreState()
-        googleDriveRestoreController.get().startRestore { result ->
-            if (result is DriveSyncResult.Success) refreshStorage()
+        val controller = googleDriveRestoreController.get()
+        val callback: (DriveSyncResult) -> Unit = { result ->
+            if (operation == PendingDriveOperation.Pull && result is DriveSyncResult.Success) refreshStorage()
             onComplete(result.displayMessage())
+        }
+        when (operation) {
+            PendingDriveOperation.Push -> controller.startPush(callback)
+            PendingDriveOperation.ForcePush -> controller.startForcePush(callback)
+            PendingDriveOperation.Pull -> controller.startRestore(callback)
         }
     }
 
@@ -310,6 +394,12 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+}
+
+private enum class PendingDriveOperation {
+    Push,
+    ForcePush,
+    Pull,
 }
 
 data class RecentlyDeletedUiState(

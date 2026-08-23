@@ -38,6 +38,7 @@ import kotlin.coroutines.resume
 
 const val DriveConflictMessage = "Cloud contains newer MyVault changes. Pull latest first, then push again."
 internal const val DriveReconnectMessage = "Google Drive access expired. Tap Login, choose your Google account again, then retry."
+internal const val DriveConsentMessage = "Google Drive needs your permission. Approve the Google consent screen, then MyVault will continue."
 private const val HttpUnauthorized = 401
 
 internal fun shouldRefreshDriveToken(responseCode: Int, attempt: Int): Boolean =
@@ -74,17 +75,25 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         return intent
     }
 
-    suspend fun handleSignInResult(data: Intent?): DriveSyncResult = withContext(Dispatchers.IO) {
+    suspend fun handleSignInResult(data: Intent?): DriveAuthorizationResult = withContext(Dispatchers.IO) {
         val account = runCatching {
             GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
         }.getOrElse { error ->
-            return@withContext DriveSyncResult.Failure(error.googleSignInMessage())
+            return@withContext DriveAuthorizationResult.Failure(error.googleSignInMessage())
         }
         if (!GoogleSignIn.hasPermissions(account, DriveScope)) {
-            return@withContext DriveSyncResult.Failure("Google Drive permission was not granted. Please connect Drive again.")
+            return@withContext DriveAuthorizationResult.Failure("Google Drive permission was not granted. Please connect Drive again.")
         }
-        preferences.setGoogleDriveAccountEmail(account.email.orEmpty())
-        DriveSyncResult.Success("Google Drive connected${account.email?.let { " as $it" }.orEmpty()}.")
+        authorizeAccount(account)
+    }
+
+    suspend fun prepareDriveAuthorization(): DriveAuthorizationResult = withContext(Dispatchers.IO) {
+        val account = GoogleSignIn.getLastSignedInAccount(context)
+            ?: return@withContext DriveAuthorizationResult.Failure("Connect Google Drive first.")
+        if (!GoogleSignIn.hasPermissions(account, DriveScope)) {
+            return@withContext DriveAuthorizationResult.Failure("Google Drive permission is missing. Tap Login and connect your account again.")
+        }
+        authorizeAccount(account)
     }
 
     suspend fun pushToDrive(
@@ -437,14 +446,44 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
 
     private fun Throwable.driveMessage(prefix: String): String =
         when {
+            requiresDriveConsent() -> "$prefix: $DriveConsentMessage Open Backup & restore and tap Login if the consent screen did not open."
             requiresDriveReconnect() -> "$prefix: $DriveReconnectMessage"
             isInterruptedDriveConnection() -> "$prefix: Google Drive connection was interrupted while downloading. Check Wi-Fi/mobile signal and try Restore again."
             else -> message?.let { "$prefix: $it" } ?: prefix
         }
 
     private fun Throwable.requiresDriveReconnect(): Boolean =
-        this is UserRecoverableAuthException ||
-            generateSequence(this) { it.cause }.any { it is DriveAuthenticationException }
+        generateSequence(this) { it.cause }.any { it is DriveAuthenticationException }
+
+    private fun Throwable.requiresDriveConsent(): Boolean =
+        generateSequence(this) { it.cause }.any { error ->
+            error is UserRecoverableAuthException || error.message.isRemoteConsentMessage()
+        }
+
+    private suspend fun authorizeAccount(account: GoogleSignInAccount): DriveAuthorizationResult {
+        return try {
+            val androidAccount = account.account
+                ?: return DriveAuthorizationResult.Failure("Google account is unavailable. Tap Login and connect Drive again.")
+            GoogleAuthUtil.getToken(context, androidAccount, "oauth2:$DriveScopeUrl")
+            preferences.setGoogleDriveAccountEmail(account.email.orEmpty())
+            DriveAuthorizationResult.Ready(
+                "Google Drive connected${account.email?.let { " as $it" }.orEmpty()}.",
+            )
+        } catch (error: UserRecoverableAuthException) {
+            error.intent?.let { recoveryIntent ->
+                DriveAuthorizationResult.ConsentRequired(recoveryIntent, DriveConsentMessage)
+            } ?: DriveAuthorizationResult.Failure(
+                "$DriveConsentMessage Tap Login to reopen Google's permission screen.",
+            )
+        } catch (error: Throwable) {
+            val message = if (error.requiresDriveConsent()) {
+                "$DriveConsentMessage Tap Login to reopen Google's permission screen."
+            } else {
+                error.googleSignInMessage()
+            }
+            DriveAuthorizationResult.Failure(message)
+        }
+    }
 
     private fun Throwable.googleSignInMessage(): String =
         if (this is ApiException && statusCode == GoogleSignInStatusCodes.DEVELOPER_ERROR) {
@@ -834,6 +873,15 @@ sealed interface DriveSyncResult {
     data class Skipped(val message: String) : DriveSyncResult
     data class Failure(val message: String) : DriveSyncResult
 }
+
+sealed interface DriveAuthorizationResult {
+    data class Ready(val message: String) : DriveAuthorizationResult
+    data class ConsentRequired(val intent: Intent, val message: String) : DriveAuthorizationResult
+    data class Failure(val message: String) : DriveAuthorizationResult
+}
+
+internal fun String?.isRemoteConsentMessage(): Boolean =
+    this?.contains("NeedRemoteConsent", ignoreCase = true) == true
 
 enum class DriveRestoreStage(val label: String) {
     Idle("Idle"),
