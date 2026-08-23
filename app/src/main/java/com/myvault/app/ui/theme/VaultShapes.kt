@@ -1,6 +1,7 @@
 package com.myvault.app.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.unit.dp
 
 object VaultShapes {
@@ -23,4 +24,22 @@ object VaultSpacing {
     val xxl = 24.dp
     val xxxl = 32.dp
     val huge = 40.dp
+}
+
+object VaultDimensions {
+    val touchTarget = 48.dp
+    val compactTouchTarget = 40.dp
+    val topBarHeight = 56.dp
+    val contentHorizontalPadding = 18.dp
+    val treeIndent = 18.dp
+    val iconSmall = 16.dp
+    val iconMedium = 20.dp
+    val iconLarge = 24.dp
+}
+
+object VaultMotion {
+    const val quick = 120
+    const val standard = 180
+    const val deliberate = 220
+    val easing = FastOutSlowInEasing
 }
