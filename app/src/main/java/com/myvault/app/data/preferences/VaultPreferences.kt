@@ -33,9 +33,10 @@ import javax.inject.Singleton
 private val Context.vaultDataStore by preferencesDataStore(name = "vault_preferences")
 
 data class VaultUserPreferences(
-    val theme: VaultThemeMode = VaultThemeMode.Auto,
+    val theme: VaultThemeMode = VaultThemeMode.FollowSystemDark,
     val workspace: String = WORKSPACE_ISLAMIC_CORPUS,
-    val accentColor: String = "#5B8DEF",
+    val accentColor: String = "#4F88E6",
+    val materialYouEnabled: Boolean = false,
     val fontSize: String = "medium",
     val dashboardFontSize: String = "medium",
     val noteFontSize: String = "medium",
@@ -86,9 +87,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     val userPreferences: Flow<VaultUserPreferences> =
         context.vaultDataStore.data.map { preferences ->
             VaultUserPreferences(
-                theme = VaultThemeMode.fromStoredValue(preferences[Keys.Theme]),
+                theme = VaultThemeMode.fromStoredValues(
+                    themeModeV2 = preferences[Keys.ThemeModeV2],
+                    legacyTheme = preferences[Keys.Theme],
+                ),
                 workspace = preferences[Keys.Workspace] ?: WORKSPACE_ISLAMIC_CORPUS,
-                accentColor = preferences[Keys.AccentColor] ?: "#5B8DEF",
+                accentColor = preferences[Keys.AccentColor] ?: "#4F88E6",
+                materialYouEnabled = preferences[Keys.MaterialYouEnabled] ?: false,
                 fontSize = preferences[Keys.FontSize] ?: "medium",
                 dashboardFontSize = preferences[Keys.DashboardFontSize] ?: preferences[Keys.FontSize] ?: "medium",
                 noteFontSize = preferences[Keys.NoteFontSize] ?: preferences[Keys.FontSize] ?: "medium",
@@ -172,7 +177,14 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
     suspend fun setTheme(theme: VaultThemeMode) {
         context.vaultDataStore.edit { preferences ->
-            preferences[Keys.Theme] = theme.storedValue
+            preferences[Keys.Theme] = theme.legacyStoredValue
+            preferences[Keys.ThemeModeV2] = theme.v2StoredValue
+        }
+    }
+
+    suspend fun setMaterialYouEnabled(enabled: Boolean) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.MaterialYouEnabled] = enabled
         }
     }
 
@@ -344,7 +356,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
     suspend fun restoreBackedUpPreferences(backup: VaultBackupPreferences) {
         context.vaultDataStore.edit { preferences ->
-            preferences[Keys.Theme] = backup.theme
+            val restoredTheme = VaultThemeMode.fromStoredValues(
+                themeModeV2 = backup.themeModeV2,
+                legacyTheme = backup.theme,
+            )
+            preferences[Keys.Theme] = restoredTheme.legacyStoredValue
+            preferences[Keys.ThemeModeV2] = restoredTheme.v2StoredValue
             preferences[Keys.Workspace] = backup.workspace
             preferences[Keys.AccentColor] = backup.accentColor
             preferences[Keys.FontSize] = backup.fontSize
@@ -460,8 +477,10 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
     private object Keys {
         val Theme: Preferences.Key<String> = stringPreferencesKey("theme")
+        val ThemeModeV2: Preferences.Key<String> = stringPreferencesKey("theme_mode_v2")
         val Workspace: Preferences.Key<String> = stringPreferencesKey("workspace")
         val AccentColor: Preferences.Key<String> = stringPreferencesKey("accent_color")
+        val MaterialYouEnabled: Preferences.Key<Boolean> = booleanPreferencesKey("material_you_enabled")
         val FontSize: Preferences.Key<String> = stringPreferencesKey("font_size")
         val DashboardFontSize: Preferences.Key<String> = stringPreferencesKey("dashboard_font_size")
         val NoteFontSize: Preferences.Key<String> = stringPreferencesKey("note_font_size")
@@ -509,6 +528,7 @@ const val WORKSPACE_ISLAMIC_CORPUS = "islamic_corpus"
 
 data class VaultBackupPreferences(
     val theme: String,
+    val themeModeV2: String? = null,
     val workspace: String,
     val accentColor: String,
     val fontSize: String,

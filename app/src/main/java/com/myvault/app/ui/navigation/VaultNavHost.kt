@@ -281,7 +281,7 @@ fun VaultNavHost(
             onSettingsSelected = { navController.navigate(VaultDestination.Settings.route) },
             onThemeSelected = {
                 shellViewModel.setTheme(
-                    if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                    preferences.theme.quickToggle(),
                 )
             },
             selectedApplicationDestination = when (currentRoute) {
@@ -299,9 +299,10 @@ fun VaultNavHost(
             onExplorerMoreSelected = { sectionIndex, node ->
                 explorerActionTarget = ExplorerActionTarget(rootModes[sectionIndex], node)
             },
-            contentStartsInMenuBar = currentRoute == VaultDestination.Home.route &&
-                rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library),
-        ) {
+            contentStartsInMenuBar = currentRoute == VaultDestination.Settings.route ||
+                (currentRoute == VaultDestination.Home.route &&
+                    rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library)),
+        ) { onOpenNavigation ->
         NavHost(
             navController = navController,
             startDestination = VaultDestination.Home.route,
@@ -373,7 +374,7 @@ fun VaultNavHost(
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -469,7 +470,7 @@ fun VaultNavHost(
                         },
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -497,7 +498,7 @@ fun VaultNavHost(
                         onWorkspaceSelected = ::switchWorkspace,
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -564,7 +565,7 @@ fun VaultNavHost(
                         onWorkspaceSelected = ::switchWorkspace,
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -650,7 +651,7 @@ fun VaultNavHost(
                         onRemoveAnnotationTag = libraryViewModel::removeAnnotationTag,
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -745,7 +746,7 @@ fun VaultNavHost(
                         },
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -819,7 +820,7 @@ fun VaultNavHost(
                         onRemoveAnnotationTag = libraryViewModel::removeAnnotationTag,
                         onThemeClick = {
                             shellViewModel.setTheme(
-                                if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                                preferences.theme.quickToggle(),
                             )
                         },
                         onQuickBackupClick = {
@@ -1200,7 +1201,11 @@ fun VaultNavHost(
             SettingsScreen(
                 preferences = preferences,
                 onBackClick = { navController.popBackStack() },
+                onMenuClick = onOpenNavigation,
                 onThemeSelected = viewModel::setTheme,
+                workspaceLabel = preferences.workspace.workspaceLabel(),
+                accountEmail = preferences.googleDriveAccountEmail,
+                onMaterialYouEnabledChange = viewModel::setMaterialYouEnabled,
                 onAccentColorSelected = viewModel::setAccentColor,
                 onBackupSelected = { uri -> viewModel.exportBackup(uri) { backupMessage = it } },
                 onRestoreSelected = { uri -> viewModel.restoreBackup(uri) { backupMessage = it } },

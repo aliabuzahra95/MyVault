@@ -111,6 +111,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferences.setTheme(mode) }
     }
 
+    fun setMaterialYouEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setMaterialYouEnabled(enabled) }
+    }
+
     fun setWorkspace(workspace: String) {
         viewModelScope.launch { preferences.setWorkspace(workspace) }
     }

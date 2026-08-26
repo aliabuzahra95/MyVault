@@ -3,6 +3,7 @@ package com.myvault.app.data.repository
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import com.myvault.app.data.quran.QuranTranslationSource
@@ -11,6 +12,7 @@ class BackupSettingsValidationTest {
     @Test
     fun validBackupSettingsConvertToPreferences() {
         val preferences = baseSettings()
+            .put("themeModeV2", "oled")
             .put("quranBookmarkedVerses", JSONArray(listOf("1:1", "2:255")))
             .put("quranTranslationSource", QuranTranslationSource.Maududi.storedValue)
             .put(
@@ -51,6 +53,7 @@ class BackupSettingsValidationTest {
             .toValidatedBackupPreferences()
 
         assertEquals("dark", preferences.theme)
+        assertEquals("oled", preferences.themeModeV2)
         assertEquals("personal", preferences.workspace)
         assertEquals(QuranTranslationSource.Maududi.storedValue, preferences.quranTranslationSource)
         assertEquals(setOf("1:1", "2:255"), preferences.quranBookmarkedVerses)
@@ -60,6 +63,24 @@ class BackupSettingsValidationTest {
         assertEquals("surah-attempt-1", preferences.quranSurahMemorizationAttempts.single().attemptId)
         assertEquals(setOf("folder-a", "folder-b"), preferences.expandedFolderIds)
         assertEquals(mapOf("root" to "grid", "folder-a" to "icons"), preferences.libraryViewModesByLocation)
+    }
+
+    @Test
+    fun legacySettingsRemainValidWithoutThemeModeV2() {
+        val preferences = baseSettings().toValidatedBackupPreferences()
+
+        assertEquals("dark", preferences.theme)
+        assertNull(preferences.themeModeV2)
+    }
+
+    @Test
+    fun unknownThemeModeV2RemainsAdditiveForSafeResolverFallback() {
+        val preferences = baseSettings()
+            .put("themeModeV2", "future_theme")
+            .toValidatedBackupPreferences()
+
+        assertEquals("dark", preferences.theme)
+        assertEquals("future_theme", preferences.themeModeV2)
     }
 
     @Test

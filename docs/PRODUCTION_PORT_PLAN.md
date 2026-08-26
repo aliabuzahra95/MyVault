@@ -191,21 +191,23 @@ production features. They must not be removed or assigned new UI silently.
 3. Dashboard screen presentation after selecting Dashboard in Explorer.
 4. Global Search screen presentation after selecting Search in Explorer.
 
-### Stage 3 blockers
+### Stage 3 approved implementation contract
 
-The complete current inventory, proposed placement hierarchy, compatibility
-findings, and unresolved decisions are recorded in
-`docs/STAGE_3_SETTINGS_AMENDMENT.md`. The canonical cross-stage deferred list is
-`docs/DEFERRED_REQUIREMENTS.md`. Neither document authorizes Stage 3
-implementation.
+The complete production inventory, frozen placement hierarchy, compatibility
+mapping, and approved production-specific deviations are recorded in
+`docs/STAGE_3_SETTINGS_AMENDMENT.md`. Stage 3 Settings + Theme is authorized.
+The canonical cross-stage deferred list remains
+`docs/DEFERRED_REQUIREMENTS.md`.
 
 1. App lock, biometric/security options, and lock timeout.
 2. Local backup and restore controls.
 3. Google Drive connection, push/pull, force-push, conflicts, and status.
 4. Azure/device narration provider settings and Azure credentials.
 5. Supabase formatting login/logout.
-6. Storage management.
-7. Recently Deleted, restore, permanent delete, and clear-all.
+6. Storage usage displays the truthful production total only; representative
+   category bars are intentionally omitted.
+7. Recently Deleted displays only production-supported deleted notes/folders,
+   retaining existing restore, permanent delete, and supported clear-all.
 8. Release-readiness information.
 9. Dashboard/note font and title/preview/view preferences not shown explicitly.
 

@@ -1026,7 +1026,8 @@ private fun File.writeJsonFile(name: String, json: Any) {
 private fun VaultUserPreferences.toBackupJson(): JSONObject =
     JSONObject()
         .put("schemaVersion", 1)
-        .put("theme", theme.storedValue)
+        .put("theme", theme.legacyStoredValue)
+        .put("themeModeV2", theme.v2StoredValue)
         .put("workspace", workspace)
         .put("accentColor", accentColor)
         .put("fontSize", fontSize)
@@ -1059,6 +1060,7 @@ private fun VaultUserPreferences.toBackupJson(): JSONObject =
 private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
     VaultBackupPreferences(
         theme = optString("theme").ifBlank { "auto" },
+        themeModeV2 = optString("themeModeV2").takeIf { it.isNotBlank() },
         workspace = optString("workspace").ifBlank { "islamic_corpus" },
         accentColor = optString("accentColor").ifBlank { "#5B8DEF" },
         fontSize = optString("fontSize").ifBlank { "medium" },

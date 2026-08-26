@@ -30,7 +30,7 @@ class VaultMobileWebNavigationContractTest {
         val navigation = source("ui/navigation/VaultNavHost.kt")
 
         assertEquals(1, navigation.countOccurrences("VaultMobileWebShell("))
-        assertTrue(navigation.contains(") {\n        NavHost("))
+        assertTrue(navigation.contains(") { onOpenNavigation ->\n        NavHost("))
         assertFalse(navigation.contains("VaultFixedBottomNavigation("))
         assertFalse(navigation.contains("FloatingBottomNav("))
         assertFalse(navigation.contains("useNavigationShell"))

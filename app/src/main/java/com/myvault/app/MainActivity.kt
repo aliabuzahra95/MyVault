@@ -145,6 +145,7 @@ class MainActivity : FragmentActivity() {
             VaultTheme(
                 mode = userPreferences.theme,
                 accentColorHex = userPreferences.accentColor,
+                materialYouEnabled = userPreferences.materialYouEnabled,
             ) {
                 val locked = loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked
                 val colors = VaultThemeTokens.colors

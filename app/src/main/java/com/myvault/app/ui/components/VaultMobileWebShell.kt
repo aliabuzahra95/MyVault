@@ -134,7 +134,7 @@ fun VaultMobileWebShell(
     onExplorerAddSelected: (Int, VaultMobileWebExplorerNode?) -> Unit = { _, _ -> },
     onExplorerMoreSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
     contentStartsInMenuBar: Boolean = false,
-    content: @Composable () -> Unit,
+    content: @Composable (onOpenNavigation: () -> Unit) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -325,7 +325,7 @@ fun VaultMobileWebShell(
                     .background(colors.bg)
                     .statusBarsPadding(),
             ) {
-                content()
+                content { scope.launch { drawerState.open() } }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -349,7 +349,7 @@ fun VaultMobileWebShell(
                     content = menuButton,
                 )
                 Box(modifier = Modifier.weight(1f)) {
-                    content()
+                    content { scope.launch { drawerState.open() } }
                 }
             }
         }

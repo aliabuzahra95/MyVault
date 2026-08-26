@@ -16,24 +16,27 @@ Frozen prototype directory remains read-only.
 | Dashboard final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
 | Global Search final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
 | Global narration mini-player design/placement | Current production presentation and behavior preserved | Stop if it collides with Frozen surfaces; dedicated design amendment | **DEFERRED** |
-| Narration Settings placement | Proposed under Reading & Listening, including Azure subpage | Pre-Stage-3 Settings amendment approval | **PROPOSED; MINI-PLAYER NOT RESOLVED** |
+| Narration Settings placement | Reading & Listening, including Azure subpage | Implemented and verified in Stage 3; mini-player remains separate | **RESOLVED IN STAGE 3; MINI-PLAYER NOT RESOLVED** |
 | Advanced Note Editor functions | Existing production functionality preserved | Pre-Stage-4 placement decisions | **DEFERRED** |
 | Advanced PDF functions | Existing production functionality preserved | Pre-Stage-5 placement decisions | **DEFERRED** |
 | Qur'an audio-download management | Existing contextual route preserved | Before Stage 7 | **DEFERRED** |
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |
 | Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |
 
-## Pre-Stage-3 Settings Decisions
+## Resolved Stage 3 Settings Decisions
 
 | Requirement | Why unresolved | Required decision | Status |
 |---|---|---|---|
-| Theme model migration | Production only has Light/Dark/Auto; Frozen adds Material You, OLED, and two system-following variants | Legacy mapping, defaults, persistence, and backup compatibility | **STOP-AND-ASK** |
-| Frozen Account/profile row | No unified production MyVault account exists | Define whether row is informational, workspace profile, or future account destination | **STOP-AND-ASK** |
-| Google Drive Disconnect | No user-facing production handler exists | Preserve Connect/change-account only or authorize new Disconnect behavior | **STOP-AND-ASK** |
-| Release readiness checklist | Developer/release checklist is currently user-visible but absent from Frozen Settings | Keep, relocate to approved diagnostics, or remove from release UI | **STOP-AND-ASK** |
-| Automatic tag suggestions | Persisted and backed up, but no visible row/setter/consumer was found | Confirm whether feature remains active and where it belongs | **STOP-AND-ASK** |
-| Legacy general font size | Persisted/backed up but no active visible row/use was found | Preserve hidden compatibility or approve visible mapping | **DEFERRED / STOP-AND-ASK IF TOUCHED** |
-| Formatting-account product name | Legacy label says ChatGPT; implementation is Supabase session | Approve final visible naming | **STOP-AND-ASK** |
+| Theme model migration | Legacy `theme` plus optional `themeModeV2`; invalid/missing V2 falls back safely | Backward-compatible additive mapping | **RESOLVED IN STAGE 3** |
+| Material You portability | Dynamic colour is device-specific | Device-local preference; not backed up | **DEVICE-LOCAL / NOT BACKED UP** |
+| Frozen Account/profile row | No unified production MyVault account exists | Informational real workspace context only | **RESOLVED IN STAGE 3** |
+| Google Drive Disconnect | No user-facing production handler exists | No Disconnect action; preserve supported connect/check/change-account behavior | **RESOLVED - ACTION NOT AUTHORIZED** |
+| Release readiness checklist | Developer/release checklist is absent from Frozen Settings | Hidden from normal Settings; diagnostic implementation preserved | **RESOLVED IN STAGE 3** |
+| Automatic tag suggestions | Persisted/backed up compatibility state | Remains hidden and unchanged | **RESOLVED AS HIDDEN COMPATIBILITY** |
+| Legacy general font size | Persisted/backed up compatibility state | Remains hidden and unchanged | **RESOLVED AS HIDDEN COMPATIBILITY** |
+| Formatting-account product name | Supabase-backed formatting session | Visible neutral name `Formatting account` | **RESOLVED IN STAGE 3** |
+| Storage usage categories | Production can calculate only total local MyVault size | Show truthful total only; no fabricated category bars | **APPROVED PRODUCTION-SPECIFIC MAPPING** |
+| Recently Deleted item types | Production supports deleted notes/folders only | Show only real notes/folders; no PDF-trash mock or new engine | **APPROVED PRODUCTION-SPECIFIC MAPPING** |
 | Qur'an translation text size | Existing reader control is absent from Frozen screenshot | Preserve in contextual sheet or approve omission | **STOP-AND-ASK BEFORE STAGE 7** |
 | Qur'an playback speed | Existing audio control is absent from Frozen Settings sheet | Keep in audio controls or place in reader Settings | **STOP-AND-ASK BEFORE STAGE 7** |
 | Pinned-expanded preference backup gap | Persisted model and backup mapper are not aligned | Do not repair opportunistically; address in compatibility work if authorized | **DEFERRED COMPATIBILITY** |

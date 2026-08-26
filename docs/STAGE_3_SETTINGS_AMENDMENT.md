@@ -1,10 +1,52 @@
 # Stage 3 Settings Placement Amendment
 
-Status: **PROPOSED FOR APPROVAL - AUDIT ONLY**
+Status: **APPROVED - STAGE 3 IMPLEMENTATION AUTHORIZED**
 
-This document resolves the pre-Stage-3 inventory and placement audit. It does
-not authorize Settings or Theme implementation. The Frozen Design Master is
-read-only and remains authoritative for presentation.
+This document records the approved pre-Stage-3 inventory, placement amendment,
+and production-specific compatibility decisions. The Frozen Design Master and
+its frozen Settings amendment remain read-only and authoritative for
+presentation. The approved decisions below supersede earlier audit-only
+`PROPOSED FOR APPROVAL` and `STOP-AND-ASK` labels where they address the same
+capability.
+
+## 0. Approved Stage 3 Resolutions
+
+- The profile row is informational and uses real production workspace context;
+  it does not invent a unified MyVault cloud account.
+- Settings uses the frozen hierarchy and compact grouped-row language.
+- Theme persistence remains backward compatible through the legacy `theme`
+  field plus the optional additive `themeModeV2` field.
+- Legacy `light`, `dark`, and `auto` map to Light, Dark, and Follow system +
+  Dark. Valid V2 state takes precedence; invalid or missing V2 state falls back
+  safely to legacy state.
+- Exact V2 mappings are `light`, `dark`, `oled`, `follow_system_dark`, and
+  `follow_system_oled`. Legacy writes remain limited to `light`, `dark`, and
+  `auto`.
+- Material You is device-local, defaults off for existing users unless already
+  explicitly enabled locally, and is not written to backup. Manual accent
+  controls are disabled while Material You is active.
+- Google Drive exposes production-supported connect/check/change-account
+  behavior only. No Disconnect action is invented.
+- Release-readiness diagnostics are hidden from normal Settings while their
+  underlying diagnostic implementation remains preserved.
+- Automatic tag suggestions and the legacy general font-size value remain
+  hidden compatibility state. Their persisted/backup behavior is not removed.
+- The visible Supabase-backed destination is named `Formatting account`.
+- Qur'an-specific reader settings remain contextual and deferred to Stage 7.
+- Narration settings are resolved under Reading & Listening; the global
+  narration mini-player remains separately deferred.
+
+### Approved Production-Specific Mappings
+
+**Storage usage**: production displays only the truthful total local MyVault
+storage size and the explanation `Used by MyVault on this device`. Frozen
+category bars were representative and are intentionally omitted. No category
+totals, estimates, charts, or filler are fabricated.
+
+**Recently Deleted**: production displays only real deleted notes and folders,
+with the existing restore, permanent-delete, and supported clear-all actions.
+Deleted PDFs/files are not shown because production has no PDF-trash engine.
+No new deletion persistence is introduced.
 
 ## 1. Recovery And Audit Boundary
 
@@ -75,16 +117,16 @@ Backup & restore currently exposes several materially different handlers.
 
 | # | Current label/capability | Current location | State / handler | Frozen or proposed destination | UI type | Backup / scope | Status |
 |---|---|---|---|---|---|---|---|
-| 1 | Theme: Light / Dark / Auto | Appearance cards | `VaultUserPreferences.theme`; `setTheme` | Settings -> Appearance -> Theme subpage | Selector | Yes; global | **ALREADY FROZEN**, but model migration is **STOP-AND-ASK** |
+| 1 | Theme: Light / Dark / Auto | Appearance cards | `VaultUserPreferences.theme`; `setTheme` | Settings -> Appearance -> Theme subpage | Selector | Yes; global | **RESOLVED IN STAGE 3** through legacy `theme` plus optional `themeModeV2` |
 | 2 | Accent colour | Appearance card swatches | `accentColor`; `setAccentColor` | Settings -> Appearance -> Accent | Swatch selector | Yes; global | **ALREADY FROZEN** |
 | 3 | Dashboard font size | Reading & Listening | `dashboardFontSize`; `setDashboardFontSize` | Settings -> Reading & Display | Selector | Yes; global | **ALREADY FROZEN** |
 | 4 | Note editor font size | Reading & Listening | `noteFontSize`; `setNoteFontSize` | Settings -> Reading & Display | Selector | Yes; global | **ALREADY FROZEN** |
 | 5 | Show full note titles | Reading & Listening | `showFullNoteTitles`; setter | Settings -> Reading & Display | Switch | No in current backup mapper; global | **ALREADY FROZEN** |
 | 6 | Show full file titles | Reading & Listening | `showFullFileTitles`; setter | Settings -> Reading & Display | Switch | No in current backup mapper; global | **ALREADY FROZEN** |
 | 7 | Default note view | Reading & Listening | `defaultNoteView`; setter | Settings -> Reading & Display | Selector | Yes; global | **ALREADY FROZEN** |
-| 8 | Note preview | Dialog code exists, but no visible row currently opens it | `notePreview`; `setNotePreview` | Settings -> Reading & Display -> Note preview | Selector | Yes; global | **PROPOSED FOR APPROVAL** |
+| 8 | Note preview | Dialog code exists, but no visible row currently opens it | `notePreview`; `setNotePreview` | Settings -> Reading & Display -> Note preview | Selector | Yes; global | **APPROVED** |
 | 9 | Legacy general font size | Persisted but no current visible row/use beyond compatibility fallback | `fontSize`; preference setter | No new visible row; retain compatibility | Hidden persisted preference | Yes; global | **DEFERRED** |
-| 10 | Automatic tag suggestions | Persisted/backed up; no current row, setter, or consuming UI found | `autoTagSuggestions` | No placement until product behavior is identified | Hidden persisted preference | Yes; global | **STOP-AND-ASK** |
+| 10 | Automatic tag suggestions | Persisted/backed up; no current row, setter, or consuming UI found | `autoTagSuggestions` | Hidden compatibility state | Hidden persisted preference | Yes; global | **APPROVED HIDDEN COMPATIBILITY STATE** |
 | 11 | Default Listen provider | Reading & Listening | `narrationProvider`; setter | Settings -> Reading & Listening | Selector | No in current backup mapper; global | **ALREADY FROZEN** |
 | 12 | Azure Speech | Reading & Listening | Opens Azure configuration dialog | Settings -> Reading & Listening -> Azure Speech subpage | Subpage | Global service configuration | **ALREADY FROZEN** entry; subpage **PROPOSED FOR APPROVAL** |
 | 13 | Azure Speech API key | Azure dialog | secure/local preference handler | Azure Speech subpage | Secret text field | No; global secret | **PROPOSED FOR APPROVAL** |
@@ -96,7 +138,7 @@ Backup & restore currently exposes several materially different handlers.
 | 19 | Recently Deleted | Vault & Account | Opens deleted note/folder manager | Settings -> Storage & Data -> Recently Deleted | Subpage | Room data; workspace-aware records | **PROPOSED FOR APPROVAL** |
 | 20 | Security lock | Vault & Account | `securityLockEnabled`; setter; `MainActivity` auth gate | Settings -> Security & Privacy | Switch | Yes; global | **PROPOSED FOR APPROVAL** |
 | 21 | Auto-lock timer | Vault & Account | `securityLockTimeoutMs`; setter | Settings -> Security & Privacy | Selector | Yes; global | **PROPOSED FOR APPROVAL** |
-| 22 | Release readiness | Vault & Account | Opens hard-coded release checklist | Unresolved diagnostics/developer placement | Subpage/action | No; global | **STOP-AND-ASK** |
+| 22 | Release readiness | Vault & Account | Opens hard-coded release checklist | Hidden from normal Settings; diagnostic implementation preserved | Subpage/action | No; global | **APPROVED HIDDEN DIAGNOSTIC** |
 | 23 | Storage | Vault & Account | `StorageRepository.vaultStorageLabel`; refresh | Settings -> Storage & Data -> Storage usage | Read-only row | Derived local state; global app storage | **PROPOSED FOR APPROVAL** |
 
 ### 4.2 Backup, Restore, And Google Drive Operations
@@ -171,8 +213,8 @@ than global Settings and remain a Stage 5 concern.
 
 | # | Frozen capability | Current production state | Proposed handling | Status |
 |---|---|---|---|---|
-| 56 | Material You | No persisted Material You mode or dynamic scheme implementation found | Add only after persistence, system behavior, and backup compatibility are approved | **STOP-AND-ASK** |
-| 57 | Account/profile row | No single MyVault account engine or profile destination exists; Workspace, Google Drive, and Supabase identities are distinct | Do not wire to an arbitrary account. Decide whether it is informational, workspace profile, or a future account destination | **STOP-AND-ASK** |
+| 56 | Material You | Device-local dynamic-colour preference; not included in backup | Implement the frozen switch and use Android dynamic colour for approved semantic roles | **RESOLVED IN STAGE 3** |
+| 57 | Account/profile row | Existing production workspace/profile context | Informational row using truthful production identity/workspace state; no invented cloud-account model | **RESOLVED IN STAGE 3** |
 
 ### 4.7 Compatibility-Only Persisted Presentation State
 
@@ -205,8 +247,9 @@ Production capabilities that map cleanly to Frozen destinations are:
   Tafsir in contextual Qur'an Reader Settings.
 
 The Frozen Master additionally specifies Material You, OLED, Follow system +
-Dark, Follow system + OLED, and an Account/profile row, none of which currently
-has a complete production-state mapping.
+Dark, Follow system + OLED, and an Account/profile row. Their production
+mappings are resolved in section 0 and implemented without inventing a unified
+MyVault cloud-account model.
 
 ## 6. Proposed Complete Settings Hierarchy
 
@@ -218,12 +261,12 @@ and all subpages.
 Settings
 
 [Profile / account row]
-  STOP-AND-ASK: meaning and destination are unresolved
+  Informational production workspace/profile context
 
 APPEARANCE
   Theme                         -> Theme subpage
   Accent colour                 -> swatch selector
-  Material You                  -> switch, only after model decision
+  Material You                  -> device-local switch
 
 READING & DISPLAY
   Dashboard font size           -> selector
@@ -248,10 +291,10 @@ STORAGE & DATA
 VAULT & ACCOUNT
   Google Drive                  -> Backup & Restore subpage, account section
   Backup / Restore              -> same Backup & Restore subpage
-  ChatGPT formatting login      -> Formatting account subpage
+  Formatting account            -> Formatting account subpage
 
-UNRESOLVED / NOT SHOWN
-  Release readiness             -> STOP-AND-ASK
+HIDDEN FROM NORMAL SETTINGS
+  Release readiness             -> diagnostic implementation preserved
 ```
 
 ### 6.1 Theme Subpage
@@ -274,9 +317,8 @@ ACCENT
   Disabled when Material You is enabled
 ```
 
-Before implementation, approve the mapping from legacy `Auto` and the storage
-and backup representation for the two new system-following modes, OLED, and
-Material You.
+The approved compatibility mapping is recorded in section 0. Material You is
+device-local and is not written to backup.
 
 ### 6.2 Azure Speech Subpage
 
@@ -378,11 +420,11 @@ Existing safety-backup and permanent-delete semantics remain unchanged.
 3. The persisted `pinnedExpanded` model is not fully represented by the current
    backup mapper. Stage 3 must not opportunistically repair this unrelated
    serialization gap without approval.
-4. Legacy `Auto` theme must not be silently reinterpreted until its exact mapping
-   to Follow system + Dark/OLED is approved.
-5. Material You and OLED require new production theme state. Adding them may
-   affect Android backup compatibility and therefore requires a documented
-   migration/default policy.
+4. Legacy `Auto` maps to Follow system + Dark. Exact Frozen modes are stored in
+   optional `themeModeV2`, while the legacy field remains restricted to
+   `light`, `dark`, and `auto`.
+5. Material You remains device-local and OLED uses the approved additive V2
+   compatibility field.
 6. Library view-mode values remain stored even though Stage 2 removed the
    visible selector. Stage 3 must leave these values intact.
 7. Security settings are backed up, but authentication itself remains native
@@ -390,35 +432,16 @@ Existing safety-backup and permanent-delete semantics remain unchanged.
 8. Azure API keys, passwords, and session tokens must never be added to backup
    merely to make Settings uniform.
 
-## 9. Conflicts And Explicit Decisions Required
+## 9. Remaining Stage-Gated Decisions
 
-Stage 3 implementation must not begin until these are resolved:
+Stage 3 decisions are resolved. The following remain deferred to their
+authorized stages and are not changed by this implementation:
 
-1. **Theme migration**: map legacy `Auto`, choose defaults for existing users,
-   and approve persistence/backup values for Material You, OLED, Follow system +
-   Dark, and Follow system + OLED.
-2. **Account/profile row**: define what account it represents. Production has
-   workspace identity, Google Drive identity, and Supabase formatting identity,
-   but no unified MyVault account.
-3. **Google Drive Disconnect**: no user-facing disconnect handler exists. Decide
-   whether Stage 3 only supports Connect/change account through the existing
-   flow or whether Disconnect becomes separately authorized functionality.
-4. **Release readiness**: decide whether this developer-oriented checklist
-   remains user-visible, moves to an approved diagnostics destination, or is
-   removed from release UI. It cannot silently disappear.
-5. **Dormant automatic tag suggestions**: identify whether the preference still
-   drives a production feature. Do not expose or delete it until known.
-6. **Dormant legacy general font size**: retain compatibility without adding a
-   redundant visible row unless specifically approved.
-7. **Formatting feature naming**: approve the visible name for the existing
-   `ChatGPT formatting login` / Supabase account destination.
-8. **Storage action scope**: production currently calculates display-only usage;
-   there is no cache cleanup/management handler. Do not imply cleanup controls.
-9. **Qur'an translation text size**: preserve it contextually or approve its
-   omission from the final frozen reader settings.
-10. **Qur'an playback speed**: approve whether it remains in audio controls or
-    enters contextual Reader Settings before Stage 7.
-11. **Qur'an audio downloads**: final placement remains deferred to Stage 7.
+1. Qur'an translation text size placement.
+2. Qur'an playback speed placement.
+3. Qur'an audio-download management placement.
+4. Global narration mini-player design and placement.
+5. Pinned-expanded backup compatibility.
 
 ## 10. Deferred Requirements Affected
 
@@ -435,6 +458,6 @@ See `docs/DEFERRED_REQUIREMENTS.md` for the canonical current register.
 
 ## 11. Stage Gate
 
-No Stage 3 UI implementation, theme migration, preference migration, backup
-format change, or Settings navigation change is authorized by this document.
-Resolve section 9 and explicitly authorize Stage 3 before code changes begin.
+Stage 3 Settings + Theme implementation is authorized with the approved
+production-specific mappings and backward-compatible theme model recorded in
+this document. Stage 4 remains unauthorized.
