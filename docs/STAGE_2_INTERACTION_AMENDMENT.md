@@ -171,7 +171,9 @@ note Pin decision cannot be extended to folders.
 | --- | --- | --- | --- | --- | --- | --- |
 | Favourite / Unfavourite | Outlined star | Toggle in place and dismiss | `HomeViewModel.setNoteFavourite` / `FolderViewModel.setNoteFavourite` | More | Study note | Approved |
 | Pin within folder / Unpin within folder | Outlined local pin | Toggle in place and dismiss | `NoteRepository.setFolderPinned` (`isFolderPinned`) through the existing ViewModel handler | More | Study note in a folder | Approved |
-| Share | Outlined Android share | Existing native Android sharing flow | Existing outgoing Study share handler must be verified before wiring | More | Study note/folder where supported | Approved placement; stop and ask if handler is absent |
+Outgoing Share is not shown. No outgoing Study Share handler currently exists,
+so adding this action would introduce new production behaviour and unresolved
+sharing semantics.
 
 #### Folder More sheet
 
@@ -243,7 +245,6 @@ transient organise presentation backed by `LibraryViewModel.moveFolderInOrder`.
 | Label | Icon concept | Destination | Existing handler/state | Level | Scope | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | Save to device | Outlined download/save | Android create-document destination | `ActivityResultContracts.CreateDocument` -> `LibraryViewModel.exportFile` | More | Library file/PDF | Approved |
-| Share | Outlined Android share | Existing native Android sharing flow | Existing outgoing Library share handler must be verified before wiring | More | Library file/PDF | Approved placement; stop and ask if handler is absent |
 | Add file tag | Outlined tag/add | Existing tag chooser/editor | `LibraryViewModel.addAttachmentTag` | More | Library file/PDF | Approved |
 | Remove file tag | Outlined tag/remove | Existing tag chooser/editor | `LibraryViewModel.removeAttachmentTag` | More | Library file/PDF | Approved |
 
@@ -301,11 +302,12 @@ permanent duplicate-management UI.
    modify it in Stage 2.
 4. **Study batch Pin**: wire only after proving whether its existing handler
    modifies `isPinned` or `isFolderPinned`. Ambiguity is a stop-and-ask.
-5. **Outgoing Study Share**: approved under More where applicable. The exact
-   existing native handler must be found before wiring; absence is a
-   stop-and-ask rather than permission to create new sharing behaviour.
-6. **Outgoing Library Share**: approved under More. The exact existing native
-   handler must be found before wiring; absence is a stop-and-ask.
+5. **Outgoing Study Share**: **DEFERRED - NEW FUNCTIONALITY NOT CURRENTLY
+   IMPLEMENTED.** Do not show a Share action during Stage 2. Preserve inbound
+   Android Send-to-MyVault/import behaviour unchanged.
+6. **Outgoing Library Share**: **DEFERRED - NEW FUNCTIONALITY NOT CURRENTLY
+   IMPLEMENTED.** Do not show a Share action during Stage 2. Preserve inbound
+   Android Send-to-MyVault/import behaviour unchanged.
 7. **Library view-mode preference**: retain its stored value and compatibility,
    but remove the visible selector from the Frozen Corpus Browser. Do not migrate
    or overwrite old values. A runtime/layout conflict caused by an old value is
