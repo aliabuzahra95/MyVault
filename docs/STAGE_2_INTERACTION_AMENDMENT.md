@@ -106,6 +106,18 @@ Primary evidence:
 | New folder | Outlined folder/add | New root-folder form | `HomeViewModel.createFolder(parentId = null, mode = FOLDER_MODE_STUDY)` | Direct | Study | Approved |
 | Import file | Outlined upload/document | Android document picker, then import | `ActivityResultContracts.OpenDocument` -> `HomeViewModel.importDocument(..., mode = FOLDER_MODE_STUDY)` | Direct | Study | Approved |
 
+#### Tools - temporary access only
+
+These rows preserve access to existing production destinations while their final
+Frozen placement remains unresolved. They are visually separated from creation
+and organisation actions and do not change the primary Study screen.
+
+| Label | Icon concept | Destination | Existing handler/state | Level | Scope | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| Attachments | Outlined attachment/document | Existing workspace Attachments destination | `VaultDestination.Attachments.route(FOLDER_MODE_STUDY)` | Direct under `TOOLS` section | Study | **Temporary placement - final Frozen destination pending** |
+| Favourites | Outlined star | Existing aggregate Favourite-management destination | Existing `manageFavouriteNotesOpen` production state | Direct under `TOOLS` section | Study | **Temporary placement - final Frozen destination pending** |
+| Qur'an Reflections | Outlined book/reflection | Existing Qur'an Reflections Hub | `VaultDestination.QuranReflections.route` | Direct under `TOOLS` section | Study | **Temporary placement - final Frozen destination pending Stage 7** |
+
 #### Organise utility
 
 | Label | Icon concept | Destination | Existing handler/state | Level | Scope | Status |
@@ -292,14 +304,16 @@ permanent duplicate-management UI.
 
 ## Deferred And Stop-And-Ask Production Functions
 
-1. **Aggregate Favourite management**: preserve its existing production route
-   temporarily. Do not add a Favourites rail or new permanent entry. If the new
-   architecture makes that route unreachable, stop and ask.
-2. **Workspace Attachments destination**: preserve the existing route in its
-   legacy form. Add no new Study control. If it becomes unreachable, stop and
-   ask.
-3. **Qur'an Reflections Hub**: deferred to the Stage 7 placement decision. Do not
-   modify it in Stage 2.
+1. **Aggregate Favourite management**: **TEMPORARY PLACEMENT - FINAL FROZEN
+   DESTINATION PENDING.** It remains reachable only through Study root FAB ->
+   `TOOLS` -> `Favourites`. Do not add a rail or permanent primary-screen entry.
+2. **Workspace Attachments destination**: **TEMPORARY PLACEMENT - FINAL FROZEN
+   DESTINATION PENDING.** It remains reachable only through Study root FAB ->
+   `TOOLS` -> `Attachments`. Do not add a permanent Study control.
+3. **Qur'an Reflections Hub**: **TEMPORARY PLACEMENT - FINAL FROZEN DESTINATION
+   PENDING STAGE 7.** It remains reachable through Study root FAB -> `TOOLS` ->
+   `Qur'an Reflections`. The Hub and its data/behaviour are not modified in
+   Stage 2.
 4. **Study batch Pin**: wire only after proving whether its existing handler
    modifies `isPinned` or `isFolderPinned`. Ambiguity is a stop-and-ask.
 5. **Outgoing Study Share**: **DEFERRED - NEW FUNCTIONALITY NOT CURRENTLY

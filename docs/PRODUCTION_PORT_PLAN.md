@@ -301,6 +301,13 @@ mini-player placement, and treatment of Dashboard/global Search destinations.
 
 ### Stage 2 - Study and Library Shared Corpus Browser
 
+Approved temporary access amendment: the Study root FAB sheet contains a
+visually separate `TOOLS` section linking to the existing Workspace Attachments,
+Aggregate Favourites, and Qur'an Reflections Hub destinations. This is temporary
+placement only; each final Frozen destination remains deferred. The primary
+Study screen receives no permanent control, rail, or additional FAB for these
+features. See `docs/STAGE_2_INTERACTION_AMENDMENT.md`.
+
 Expected production files:
 
 - `ui/screens/HomeScreen.kt`
