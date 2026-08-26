@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,6 +105,7 @@ fun FolderViewScreen(
     showFullNoteTitles: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
     showNavigationHeader: Boolean = true,
+    showFloatingCreateAction: Boolean = true,
     topContent: (@Composable () -> Unit)? = null,
     bottomContent: (@Composable () -> Unit)? = null,
     fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
@@ -158,7 +161,16 @@ fun FolderViewScreen(
         ).ifEmpty { listOf("Empty folder") }.joinToString(" • ")
     }
 
-    Scaffold(modifier = modifier.fillMaxSize(), containerColor = colors.bg) { innerPadding ->
+    val scaffoldInsets = if (showNavigationHeader) {
+        ScaffoldDefaults.contentWindowInsets
+    } else {
+        WindowInsets(0, 0, 0, 0)
+    }
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = colors.bg,
+        contentWindowInsets = scaffoldInsets,
+    ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -263,7 +275,7 @@ fun FolderViewScreen(
                         .clickable { fabExpanded = false },
                 )
             }
-            if (!organizeMode) FloatingActionMenu(
+            if (showFloatingCreateAction && !organizeMode) FloatingActionMenu(
                 expanded = fabExpanded,
                 actions = createActions,
                 mainButtonSize = FloatingActionStackDefaults.mainButtonSize,

@@ -17,13 +17,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocalLibrary
-import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.runtime.Composable
@@ -35,13 +34,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,8 +59,15 @@ import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
 import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.NarrationMiniPlayer
-import com.myvault.app.ui.components.VaultFixedBottomNavigation
-import com.myvault.app.ui.components.VaultFixedBottomNavigationItem
+import com.myvault.app.ui.components.VaultExplorerActionHost
+import com.myvault.app.ui.components.VaultExplorerMoveTarget
+import com.myvault.app.ui.components.VaultMobileWebNavigationItem
+import com.myvault.app.ui.components.VaultMobileWebExplorerNode
+import com.myvault.app.ui.components.VaultMobileWebExplorerNodeType
+import com.myvault.app.ui.components.VaultMobileWebExplorerSection
+import com.myvault.app.ui.components.VaultMobileWebShell
+import com.myvault.app.ui.components.VaultTreeItem
+import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
 import com.myvault.app.ui.screens.CoursesScreen
@@ -82,13 +85,16 @@ import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
-import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.AttachmentsViewModel
 import com.myvault.app.ui.viewmodel.AttachmentViewerViewModel
 import com.myvault.app.ui.viewmodel.CoursesViewModel
+import com.myvault.app.ui.viewmodel.CoursesUiState
 import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
+import com.myvault.app.ui.viewmodel.HomeUiState
 import com.myvault.app.ui.viewmodel.LibraryViewModel
+import com.myvault.app.ui.viewmodel.LibraryFolderItem
+import com.myvault.app.ui.viewmodel.LibraryUiState
 import com.myvault.app.ui.viewmodel.MemoriseViewModel
 import com.myvault.app.ui.viewmodel.NarrationViewModel
 import com.myvault.app.ui.viewmodel.NoteViewModel
@@ -98,7 +104,6 @@ import com.myvault.app.ui.viewmodel.QuranReflectionsViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
 import com.myvault.app.ui.viewmodel.ShellPreferencesViewModel
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @Composable
@@ -116,8 +121,111 @@ fun VaultNavHost(
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
+    val homeViewModel: HomeViewModel = hiltViewModel()
+    val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
+    val personalState by homeViewModel.personalUiState.collectAsStateWithLifecycle()
+    val coursesViewModel: CoursesViewModel = hiltViewModel()
+    val coursesState by coursesViewModel.uiState.collectAsStateWithLifecycle()
+    val libraryViewModel: LibraryViewModel = hiltViewModel()
+    val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var explorerActionTarget by remember { mutableStateOf<ExplorerActionTarget?>(null) }
+
+    LaunchedEffect(preferences.workspace, libraryViewModel) {
+        libraryViewModel.setLibraryMode(
+            if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
+        )
+    }
+
+    val rootModes = remember(preferences.workspace) { preferences.workspace.rootModes() }
+    val selectedRootModeName = if (preferences.workspace == WORKSPACE_PERSONAL) {
+        selectedPersonalRootMode
+    } else {
+        selectedIslamicRootMode
+    }
+    val selectedRootIndex = rootModes.indexOfFirst { it.name == selectedRootModeName }.coerceAtLeast(0)
+    val shellNavigationItems = remember(rootModes) {
+        rootModes.map { mode -> VaultMobileWebNavigationItem(mode.label, mode.icon) }
+    }
+    val shellExplorerSections = remember(
+        rootModes,
+        studyState.workspace,
+        personalState.workspace,
+        libraryState.allFolders,
+        libraryState.files,
+        coursesState.courses,
+        coursesState.treesByCourse,
+    ) {
+        buildExplorerSections(
+            modes = rootModes,
+            studyState = studyState,
+            personalState = personalState,
+            libraryState = libraryState,
+            coursesState = coursesState,
+        )
+    }
+    val selectedExplorerNodeId = currentBackStackEntry?.arguments?.getString("noteId")
+        ?: currentBackStackEntry?.arguments?.getString("attachmentId")
+        ?: currentBackStackEntry?.arguments?.getString("folderId")
+        ?: currentBackStackEntry?.arguments?.getString("libraryFolderId")
+        ?: coursesState.activeCourse?.id
+            ?.takeIf { currentRoute == VaultDestination.Home.route && selectedRootModeName == VaultRootMode.Courses.name }
+            ?.let { COURSE_EXPLORER_PREFIX + it }
+
+    fun openNote(noteId: String) {
+        navController.navigate(
+            if (preferences.defaultNoteView == "editing") {
+                VaultDestination.Editor.route(noteId)
+            } else {
+                VaultDestination.Reading.route(noteId)
+            },
+        )
+    }
+
+    fun selectRootMode(mode: VaultRootMode) {
+        if (preferences.workspace == WORKSPACE_PERSONAL) {
+            selectedPersonalRootMode = mode.name
+        } else if (mode != VaultRootMode.Personal) {
+            selectedIslamicRootMode = mode.name
+        }
+        if (currentRoute != VaultDestination.Home.route) {
+            navController.popBackStack(VaultDestination.Home.route, false)
+        }
+    }
+
+    fun openExplorerNode(mode: VaultRootMode, node: VaultMobileWebExplorerNode) {
+        selectRootMode(mode)
+        when (mode) {
+            VaultRootMode.Study, VaultRootMode.Personal -> when (node.type) {
+                VaultMobileWebExplorerNodeType.Folder -> navController.navigate(VaultDestination.FolderView.route(node.id))
+                VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
+                VaultMobileWebExplorerNodeType.Document -> Unit
+            }
+            VaultRootMode.Library -> when (node.type) {
+                VaultMobileWebExplorerNodeType.Folder -> navController.navigate(
+                    VaultDestination.LibraryFolder.route(
+                        node.id,
+                        if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
+                    ),
+                )
+                VaultMobileWebExplorerNodeType.Document -> navController.navigate(VaultDestination.AttachmentViewer.route(node.id))
+                VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
+            }
+            VaultRootMode.Courses -> {
+                if (node.id.startsWith(COURSE_EXPLORER_PREFIX)) {
+                    coursesViewModel.selectCourse(node.id.removePrefix(COURSE_EXPLORER_PREFIX))
+                } else {
+                    when (node.type) {
+                        VaultMobileWebExplorerNodeType.Folder -> navController.navigate(VaultDestination.FolderView.route(node.id))
+                        VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
+                        VaultMobileWebExplorerNodeType.Document -> Unit
+                    }
+                }
+            }
+            else -> Unit
+        }
+    }
 
     DisposableEffect(lifecycleOwner, narrationViewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -156,6 +264,42 @@ fun VaultNavHost(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        VaultMobileWebShell(
+            workspaceLabel = preferences.workspace.workspaceLabel(),
+            accountEmail = preferences.googleDriveAccountEmail,
+            onWorkspaceSelected = {
+                switchWorkspace(
+                    if (preferences.workspace == WORKSPACE_PERSONAL) "Islamic Corpus" else "Personal",
+                )
+            },
+            items = shellNavigationItems,
+            selectedIndex = selectedRootIndex,
+            selectedExplorerNodeId = selectedExplorerNodeId,
+            onItemSelected = { index -> selectRootMode(rootModes[index]) },
+            onDashboardSelected = {
+                selectRootMode(
+                    if (preferences.workspace == WORKSPACE_PERSONAL) VaultRootMode.Personal else VaultRootMode.Study,
+                )
+            },
+            onSearchSelected = { navController.navigate(VaultDestination.Search.route) },
+            onSettingsSelected = { navController.navigate(VaultDestination.Settings.route) },
+            onQuickBackupSelected = {
+                shellViewModel.pushGoogleDriveSync {
+                    Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                }
+            },
+            quickBackupRecommended = preferences.quickBackupRecommended(),
+            explorerSections = shellExplorerSections,
+            onExplorerNodeSelected = { sectionIndex, node ->
+                openExplorerNode(rootModes[sectionIndex], node)
+            },
+            onExplorerAddSelected = { sectionIndex, node ->
+                explorerActionTarget = ExplorerActionTarget(rootModes[sectionIndex], node, creationOnly = true)
+            },
+            onExplorerMoreSelected = { sectionIndex, node ->
+                explorerActionTarget = ExplorerActionTarget(rootModes[sectionIndex], node)
+            },
+        ) {
         NavHost(
             navController = navController,
             startDestination = VaultDestination.Home.route,
@@ -185,16 +329,6 @@ fun VaultNavHost(
             },
         ) {
         composable(VaultDestination.Home.route) {
-            val homeViewModel: HomeViewModel = hiltViewModel()
-            val openNote: (String) -> Unit = { noteId ->
-                navController.navigate(
-                    if (preferences.defaultNoteView == "editing") {
-                        VaultDestination.Editor.route(noteId)
-                    } else {
-                        VaultDestination.Reading.route(noteId)
-                    },
-                )
-            }
             key(preferences.workspace) {
                 StudyLibraryPersonalShell(
                     workspace = preferences.workspace,
@@ -211,14 +345,7 @@ fun VaultNavHost(
                         }
                     },
                     rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
-                    onQuickNoteMode = { mode ->
-                        homeViewModel.createNote(folderId = null, mode = mode) { noteId ->
-                            navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
-                        }
-                    },
-                coursesContent = {
-                    val coursesViewModel: CoursesViewModel = hiltViewModel()
-                    val coursesState by coursesViewModel.uiState.collectAsStateWithLifecycle()
+                    coursesContent = {
                     CoursesScreen(
                         uiState = coursesState,
                         onSelectCourse = coursesViewModel::selectCourse,
@@ -282,7 +409,6 @@ fun VaultNavHost(
                     )
                 },
                 studyContent = {
-                    val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
                     HomeScreen(
                         uiState = studyState,
                         onSearchClick = {},
@@ -294,7 +420,7 @@ fun VaultNavHost(
                         onFolderClick = { folderId ->
                             navController.navigate(VaultDestination.FolderView.route(folderId))
                         },
-                        onNoteClick = openNote,
+                        onNoteClick = ::openNote,
                         onNewNoteClick = { folderId ->
                             homeViewModel.createNote(folderId = folderId, mode = FOLDER_MODE_STUDY) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
@@ -445,6 +571,7 @@ fun VaultNavHost(
                         onToggleWeakMemorization = quranViewModel::toggleWeakMemorization,
                         onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
                         onPendingScrollHandled = quranViewModel::consumePendingScrollVerse,
+                        showNavigationHeader = false,
                     )
                 },
                 memoriseContent = {
@@ -484,11 +611,6 @@ fun VaultNavHost(
                     )
                 },
                 libraryContent = {
-                    val libraryViewModel: LibraryViewModel = hiltViewModel()
-                    LaunchedEffect(libraryViewModel) {
-                        libraryViewModel.setLibraryMode("library")
-                    }
-                    val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
                     LibraryScreen(
                         uiState = libraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
@@ -529,6 +651,7 @@ fun VaultNavHost(
                         onImportFiles = { uris ->
                             libraryViewModel.importFiles(uris)
                         },
+                        onImportFilesToFolder = libraryViewModel::importFilesToFolder,
                         onReplaceDuplicatePdf = libraryViewModel::replaceDuplicatePdf,
                         onSkipDuplicatePdf = libraryViewModel::skipDuplicatePdf,
                         onDismissImportMessage = libraryViewModel::clearImportMessage,
@@ -565,7 +688,6 @@ fun VaultNavHost(
                     )
                 },
                 personalContent = {
-                    val personalState by homeViewModel.personalUiState.collectAsStateWithLifecycle()
                     HomeScreen(
                         uiState = personalState,
                         onSearchClick = {},
@@ -575,7 +697,7 @@ fun VaultNavHost(
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = {},
-                        onNoteClick = openNote,
+                        onNoteClick = ::openNote,
                         onNewNoteClick = { folderId ->
                             homeViewModel.createNote(folderId = folderId, mode = FOLDER_MODE_PERSONAL) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
@@ -656,13 +778,8 @@ fun VaultNavHost(
                     )
                 },
                 personalLibraryContent = {
-                    val personalLibraryViewModel: LibraryViewModel = hiltViewModel()
-                    LaunchedEffect(personalLibraryViewModel) {
-                        personalLibraryViewModel.setLibraryMode(FOLDER_MODE_PERSONAL_LIBRARY)
-                    }
-                    val personalLibraryState by personalLibraryViewModel.uiState.collectAsStateWithLifecycle()
                     LibraryScreen(
-                        uiState = personalLibraryState,
+                        uiState = libraryState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = ::switchWorkspace,
@@ -678,45 +795,46 @@ fun VaultNavHost(
                         onReferenceNoteClick = { noteId ->
                             navController.navigate(VaultDestination.Reading.route(noteId))
                         },
-                        onRenameAnnotation = personalLibraryViewModel::renameAnnotation,
-                        onMoveAnnotation = personalLibraryViewModel::moveAnnotation,
-                        onDeleteAnnotationNote = personalLibraryViewModel::deleteAnnotationNote,
-                        onDeleteAnnotation = personalLibraryViewModel::deleteAnnotation,
-                        onLinkAnnotationToStudyNote = personalLibraryViewModel::linkAnnotationToStudyNote,
+                        onRenameAnnotation = libraryViewModel::renameAnnotation,
+                        onMoveAnnotation = libraryViewModel::moveAnnotation,
+                        onDeleteAnnotationNote = libraryViewModel::deleteAnnotationNote,
+                        onDeleteAnnotation = libraryViewModel::deleteAnnotation,
+                        onLinkAnnotationToStudyNote = libraryViewModel::linkAnnotationToStudyNote,
                         onCreateStudyNoteFromAnnotation = { annotationId ->
-                            personalLibraryViewModel.createStudyNoteFromAnnotation(annotationId) { noteId ->
+                            libraryViewModel.createStudyNoteFromAnnotation(annotationId) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
                             }
                         },
-                        onPrepareStudyNoteLinks = personalLibraryViewModel::prepareStudyNoteLinks,
+                        onPrepareStudyNoteLinks = libraryViewModel::prepareStudyNoteLinks,
                         onCreateFolder = { parentId, name ->
-                            personalLibraryViewModel.createFolder(parentId = parentId, name = name)
+                            libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
-                        onRenameFolder = personalLibraryViewModel::renameFolder,
-                        onMoveFolder = personalLibraryViewModel::moveFolder,
-                        onMoveFolderInOrder = personalLibraryViewModel::moveFolderInOrder,
-                        onDeleteFolder = personalLibraryViewModel::deleteFolder,
-                        onFolderExpandedChange = personalLibraryViewModel::setFolderExpanded,
-                        onViewModeChange = personalLibraryViewModel::setViewMode,
+                        onRenameFolder = libraryViewModel::renameFolder,
+                        onMoveFolder = libraryViewModel::moveFolder,
+                        onMoveFolderInOrder = libraryViewModel::moveFolderInOrder,
+                        onDeleteFolder = libraryViewModel::deleteFolder,
+                        onFolderExpandedChange = libraryViewModel::setFolderExpanded,
+                        onViewModeChange = libraryViewModel::setViewMode,
                         onImportFiles = { uris ->
-                            personalLibraryViewModel.importFiles(uris)
+                            libraryViewModel.importFiles(uris)
                         },
-                        onReplaceDuplicatePdf = personalLibraryViewModel::replaceDuplicatePdf,
-                        onSkipDuplicatePdf = personalLibraryViewModel::skipDuplicatePdf,
-                        onDismissImportMessage = personalLibraryViewModel::clearImportMessage,
-                        onRenameFile = personalLibraryViewModel::renameFile,
-                        onMoveFile = personalLibraryViewModel::moveFile,
-                        onSetFilePinned = personalLibraryViewModel::setFilePinned,
-                        onDeleteFile = personalLibraryViewModel::deleteFile,
+                        onImportFilesToFolder = libraryViewModel::importFilesToFolder,
+                        onReplaceDuplicatePdf = libraryViewModel::replaceDuplicatePdf,
+                        onSkipDuplicatePdf = libraryViewModel::skipDuplicatePdf,
+                        onDismissImportMessage = libraryViewModel::clearImportMessage,
+                        onRenameFile = libraryViewModel::renameFile,
+                        onMoveFile = libraryViewModel::moveFile,
+                        onSetFilePinned = libraryViewModel::setFilePinned,
+                        onDeleteFile = libraryViewModel::deleteFile,
                         onExportFile = { fileId, uri ->
-                            personalLibraryViewModel.exportFile(fileId, uri) {
+                            libraryViewModel.exportFile(fileId, uri) {
                                 Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                             }
                         },
-                        onAddAttachmentTag = personalLibraryViewModel::addAttachmentTag,
-                        onRemoveAttachmentTag = personalLibraryViewModel::removeAttachmentTag,
-                        onAddAnnotationTag = personalLibraryViewModel::addAnnotationTag,
-                        onRemoveAnnotationTag = personalLibraryViewModel::removeAnnotationTag,
+                        onAddAttachmentTag = libraryViewModel::addAttachmentTag,
+                        onRemoveAttachmentTag = libraryViewModel::removeAttachmentTag,
+                        onAddAnnotationTag = libraryViewModel::addAnnotationTag,
+                        onRemoveAnnotationTag = libraryViewModel::removeAnnotationTag,
                         onThemeClick = {
                             shellViewModel.setTheme(
                                 if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
@@ -791,6 +909,7 @@ fun VaultNavHost(
                 onImportFiles = { uris ->
                     viewModel.importFiles(uris)
                 },
+                onImportFilesToFolder = viewModel::importFilesToFolder,
                 onReplaceDuplicatePdf = viewModel::replaceDuplicatePdf,
                 onSkipDuplicatePdf = viewModel::skipDuplicatePdf,
                 onDismissImportMessage = viewModel::clearImportMessage,
@@ -1184,6 +1303,178 @@ fun VaultNavHost(
             )
         }
         }
+        }
+        explorerActionTarget?.let { target ->
+            val node = target.node
+            val section = shellExplorerSections.firstOrNull {
+                rootModes.getOrNull(it.navigationIndex) == target.mode
+            }
+            val courseId = if (target.mode == VaultRootMode.Courses && node != null) {
+                section?.nodes?.findExplorerNodePath(node.id)
+                    ?.firstOrNull()
+                    ?.id
+                    ?.removePrefix(COURSE_EXPLORER_PREFIX)
+            } else {
+                null
+            }
+            val isCourse = node?.id?.startsWith(COURSE_EXPLORER_PREFIX) == true
+            val isFolder = node?.type == VaultMobileWebExplorerNodeType.Folder
+            val canCreateInside = node == null || isFolder
+            val modeLabel = when (target.mode) {
+                VaultRootMode.Personal -> "Personal"
+                else -> target.mode.label
+            }
+            VaultExplorerActionHost(
+                title = node?.label ?: "Add to $modeLabel",
+                nodeType = node?.type,
+                creationOnly = target.creationOnly,
+                canCreateNote = when (target.mode) {
+                    VaultRootMode.Study, VaultRootMode.Personal -> canCreateInside
+                    VaultRootMode.Courses -> node != null && isFolder
+                    else -> false
+                },
+                canCreateFolder = when (target.mode) {
+                    VaultRootMode.Study, VaultRootMode.Personal, VaultRootMode.Library, VaultRootMode.Courses -> canCreateInside
+                    else -> false
+                },
+                createFolderActionLabel = if (target.mode == VaultRootMode.Courses && node == null) "New course" else "New folder",
+                canImportDocuments = target.mode == VaultRootMode.Library && canCreateInside,
+                canRename = node != null,
+                canMove = node != null && !isCourse,
+                canPin = node?.type == VaultMobileWebExplorerNodeType.Note ||
+                    node?.type == VaultMobileWebExplorerNodeType.Document,
+                pinned = node?.pinned == true,
+                canDelete = node != null,
+                moveTargets = section.explorerMoveTargets(target.mode, node),
+                onDismiss = { explorerActionTarget = null },
+                onOpen = { node?.let { openExplorerNode(target.mode, it) } },
+                onCreateNote = {
+                    when (target.mode) {
+                        VaultRootMode.Study -> homeViewModel.createNote(node?.id, FOLDER_MODE_STUDY) { noteId ->
+                            navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                        }
+                        VaultRootMode.Personal -> homeViewModel.createNote(node?.id, FOLDER_MODE_PERSONAL) { noteId ->
+                            navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                        }
+                        VaultRootMode.Courses -> when {
+                            isCourse && courseId != null -> coursesViewModel.createNoteForCourse(courseId) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
+                            node != null && courseId != null -> coursesViewModel.createNoteInFolderForCourse(
+                                courseId,
+                                node.id,
+                            ) { noteId ->
+                                navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
+                            }
+                        }
+                        else -> Unit
+                    }
+                },
+                onCreateFolder = { name ->
+                    when (target.mode) {
+                        VaultRootMode.Study -> homeViewModel.createFolder(node?.id, name, FOLDER_MODE_STUDY) { }
+                        VaultRootMode.Personal -> homeViewModel.createFolder(node?.id, name, FOLDER_MODE_PERSONAL) { }
+                        VaultRootMode.Library -> libraryViewModel.createFolder(node?.id, name)
+                        VaultRootMode.Courses -> when {
+                            node == null -> coursesViewModel.createCourse(name)
+                            courseId != null -> coursesViewModel.createSubfolderForCourse(
+                                courseId = courseId,
+                                parentId = node.id.takeUnless { isCourse },
+                                name = name,
+                            )
+                        }
+                        else -> Unit
+                    }
+                },
+                onImportDocuments = { uris ->
+                    if (target.mode == VaultRootMode.Library) {
+                        libraryViewModel.importFilesToFolder(node?.id, uris)
+                    }
+                },
+                onRename = { name ->
+                    when (target.mode) {
+                        VaultRootMode.Study, VaultRootMode.Personal -> when (node?.type) {
+                            VaultMobileWebExplorerNodeType.Folder -> homeViewModel.updateFolderDetails(node.id, name, node.description)
+                            VaultMobileWebExplorerNodeType.Note -> homeViewModel.renameNote(node.id, name)
+                            else -> Unit
+                        }
+                        VaultRootMode.Library -> when (node?.type) {
+                            VaultMobileWebExplorerNodeType.Folder -> libraryViewModel.renameFolder(node.id, name)
+                            VaultMobileWebExplorerNodeType.Document -> libraryViewModel.renameFile(node.id, name)
+                            else -> Unit
+                        }
+                        VaultRootMode.Courses -> when {
+                            node == null -> Unit
+                            isCourse && courseId != null -> coursesViewModel.renameCourse(courseId, name)
+                            node.type == VaultMobileWebExplorerNodeType.Folder -> coursesViewModel.updateChildFolder(
+                                node.id,
+                                name,
+                                node.description,
+                            )
+                            node.type == VaultMobileWebExplorerNodeType.Note -> coursesViewModel.renameNote(node.id, name)
+                        }
+                        else -> Unit
+                    }
+                },
+                onMove = { parentId ->
+                    when (target.mode) {
+                        VaultRootMode.Study, VaultRootMode.Personal -> when (node?.type) {
+                            VaultMobileWebExplorerNodeType.Folder -> homeViewModel.moveFolder(node.id, parentId)
+                            VaultMobileWebExplorerNodeType.Note -> homeViewModel.moveNote(node.id, parentId)
+                            else -> Unit
+                        }
+                        VaultRootMode.Library -> when (node?.type) {
+                            VaultMobileWebExplorerNodeType.Folder -> libraryViewModel.moveFolder(node.id, parentId)
+                            VaultMobileWebExplorerNodeType.Document -> libraryViewModel.moveFile(node.id, parentId)
+                            else -> Unit
+                        }
+                        VaultRootMode.Courses -> if (node != null && courseId != null) {
+                            when (node.type) {
+                                VaultMobileWebExplorerNodeType.Folder -> coursesViewModel.moveChildFolderForCourse(courseId, node.id, parentId)
+                                VaultMobileWebExplorerNodeType.Note -> coursesViewModel.moveNoteForCourse(courseId, node.id, parentId)
+                                else -> Unit
+                            }
+                        }
+                        else -> Unit
+                    }
+                },
+                onTogglePin = {
+                    when (target.mode) {
+                        VaultRootMode.Study, VaultRootMode.Personal -> node?.let {
+                            homeViewModel.setNotePinned(it.id, !it.pinned)
+                        }
+                        VaultRootMode.Library -> node?.let {
+                            libraryViewModel.setFilePinned(it.id, !it.pinned)
+                        }
+                        VaultRootMode.Courses -> node?.let {
+                            coursesViewModel.setNotePinned(it.id, !it.pinned)
+                        }
+                        else -> Unit
+                    }
+                },
+                onDelete = {
+                    when (target.mode) {
+                        VaultRootMode.Study, VaultRootMode.Personal -> when (node?.type) {
+                            VaultMobileWebExplorerNodeType.Folder -> homeViewModel.deleteFolder(node.id)
+                            VaultMobileWebExplorerNodeType.Note -> homeViewModel.deleteNote(node.id)
+                            else -> Unit
+                        }
+                        VaultRootMode.Library -> when (node?.type) {
+                            VaultMobileWebExplorerNodeType.Folder -> libraryViewModel.deleteFolder(node.id)
+                            VaultMobileWebExplorerNodeType.Document -> libraryViewModel.deleteFile(node.id)
+                            else -> Unit
+                        }
+                        VaultRootMode.Courses -> when {
+                            node == null -> Unit
+                            isCourse && courseId != null -> coursesViewModel.deleteCourse(courseId)
+                            node.type == VaultMobileWebExplorerNodeType.Folder -> coursesViewModel.deleteChildFolder(node.id)
+                            node.type == VaultMobileWebExplorerNodeType.Note -> coursesViewModel.deleteNote(node.id)
+                        }
+                        else -> Unit
+                    }
+                },
+            )
+        }
         AnimatedVisibility(
             visible = narrationState.isActive,
             modifier = Modifier
@@ -1240,12 +1531,131 @@ private fun String.workspaceValue(): String =
 
 private enum class VaultRootMode(val label: String, val icon: ImageVector) {
     Courses("Courses", Icons.Rounded.School),
-    Study("Study", Icons.Rounded.MenuBook),
+    Study("Study", Icons.AutoMirrored.Rounded.MenuBook),
     Library("Library", Icons.Rounded.LocalLibrary),
     Quran("Qur'an", Icons.Rounded.AutoStories),
     Memorise("Memorise", Icons.Rounded.CheckCircle),
     Personal("Personal", Icons.Rounded.Person),
 }
+
+private data class ExplorerActionTarget(
+    val mode: VaultRootMode,
+    val node: VaultMobileWebExplorerNode?,
+    val creationOnly: Boolean = false,
+)
+
+private fun List<VaultMobileWebExplorerNode>.findExplorerNodePath(
+    nodeId: String,
+): List<VaultMobileWebExplorerNode>? {
+    for (node in this) {
+        if (node.id == nodeId) return listOf(node)
+        node.children.findExplorerNodePath(nodeId)?.let { path ->
+            return listOf(node) + path
+        }
+    }
+    return null
+}
+
+private fun VaultMobileWebExplorerSection?.explorerMoveTargets(
+    mode: VaultRootMode,
+    source: VaultMobileWebExplorerNode?,
+): List<VaultExplorerMoveTarget> {
+    if (this == null || source == null) return emptyList()
+    val path = nodes.findExplorerNodePath(source.id).orEmpty()
+    val roots = if (mode == VaultRootMode.Courses) path.firstOrNull()?.children.orEmpty() else nodes
+    val excludedIds = if (source.type == VaultMobileWebExplorerNodeType.Folder) {
+        source.descendantIds()
+    } else {
+        emptySet()
+    }
+    val rootLabel = when (mode) {
+        VaultRootMode.Personal -> "Personal root"
+        VaultRootMode.Courses -> "Course root"
+        else -> "${mode.label} root"
+    }
+    return listOf(VaultExplorerMoveTarget(null, rootLabel)) +
+        roots.flatMap { it.flattenExplorerFolderTargets(excludedIds = excludedIds) }
+}
+
+private fun VaultMobileWebExplorerNode.descendantIds(): Set<String> =
+    buildSet {
+        add(id)
+        children.forEach { addAll(it.descendantIds()) }
+    }
+
+private fun VaultMobileWebExplorerNode.flattenExplorerFolderTargets(
+    parentPath: String = "",
+    excludedIds: Set<String>,
+): List<VaultExplorerMoveTarget> {
+    if (type != VaultMobileWebExplorerNodeType.Folder || id in excludedIds) return emptyList()
+    val path = if (parentPath.isBlank()) label else "$parentPath / $label"
+    return listOf(VaultExplorerMoveTarget(id, path)) + children.flatMap {
+        it.flattenExplorerFolderTargets(path, excludedIds)
+    }
+}
+
+private fun String.rootModes(): List<VaultRootMode> =
+    if (this == WORKSPACE_PERSONAL) {
+        listOf(VaultRootMode.Personal, VaultRootMode.Library)
+    } else {
+        listOf(
+            VaultRootMode.Courses,
+            VaultRootMode.Study,
+            VaultRootMode.Library,
+            VaultRootMode.Quran,
+            VaultRootMode.Memorise,
+        )
+    }
+
+private fun buildExplorerSections(
+    modes: List<VaultRootMode>,
+    studyState: HomeUiState,
+    personalState: HomeUiState,
+    libraryState: LibraryUiState,
+    coursesState: CoursesUiState,
+): List<VaultMobileWebExplorerSection> =
+    modes.mapIndexedNotNull { index, mode ->
+        when (mode) {
+            VaultRootMode.Study -> VaultMobileWebExplorerSection(
+                navigationIndex = index,
+                nodes = studyState.workspace.map(VaultTreeItem::toExplorerNode),
+                canAdd = true,
+            )
+            VaultRootMode.Personal -> VaultMobileWebExplorerSection(
+                navigationIndex = index,
+                nodes = personalState.workspace.map(VaultTreeItem::toExplorerNode),
+                canAdd = true,
+            )
+            VaultRootMode.Library -> VaultMobileWebExplorerSection(
+                navigationIndex = index,
+                nodes = libraryState.allFolders.map(LibraryFolderItem::toExplorerNode) +
+                    libraryState.files.map { file ->
+                        VaultMobileWebExplorerNode(
+                            id = file.id,
+                            label = file.name,
+                            type = VaultMobileWebExplorerNodeType.Document,
+                            pinned = file.pinned,
+                        )
+                    },
+                canAdd = true,
+            )
+            VaultRootMode.Courses -> VaultMobileWebExplorerSection(
+                navigationIndex = index,
+                nodes = coursesState.courses.map { course ->
+                    VaultMobileWebExplorerNode(
+                        id = COURSE_EXPLORER_PREFIX + course.id,
+                        label = course.title,
+                        type = VaultMobileWebExplorerNodeType.Folder,
+                        count = coursesState.noteCountsByCourse[course.id],
+                        children = coursesState.treesByCourse[course.id].orEmpty().map(VaultTreeItem::toExplorerNode),
+                        canAdd = true,
+                    )
+                },
+                canAdd = true,
+            )
+            VaultRootMode.Quran, VaultRootMode.Memorise -> null
+        }
+    }
 
 @Composable
 private fun StudyLibraryPersonalShell(
@@ -1253,7 +1663,6 @@ private fun StudyLibraryPersonalShell(
     selectedRootModeName: String,
     onRootModeChanged: (VaultRootMode) -> Unit,
     rootBackHandlerEnabled: Boolean,
-    onQuickNoteMode: (String) -> Unit,
     coursesContent: @Composable () -> Unit,
     studyContent: @Composable () -> Unit,
     quranContent: @Composable () -> Unit,
@@ -1275,123 +1684,72 @@ private fun StudyLibraryPersonalShell(
     val pagerState = rememberPagerState(initialPage = requestedPage) { modes.size }
     val studyPage = remember(modes) { modes.indexOf(VaultRootMode.Study).takeIf { it >= 0 } ?: 0 }
     val scope = rememberCoroutineScope()
-    val colors = VaultThemeTokens.colors
-    var visualSelectedPage by rememberSaveable(modes) { mutableIntStateOf(requestedPage) }
-    var lastNavTapMode by remember { mutableStateOf<VaultRootMode?>(null) }
-    var lastNavTapAt by remember { mutableLongStateOf(0L) }
-    val fixedNavigationItems = remember(modes) {
-        modes.map { mode -> VaultFixedBottomNavigationItem(mode.label, mode.icon) }
-    }
 
     LaunchedEffect(modes, requestedPage) {
         if (pagerState.currentPage != requestedPage) {
-            visualSelectedPage = requestedPage
-            pagerState.animateScrollToPage(
-                page = requestedPage,
-                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
-            )
+            pagerState.scrollToPage(requestedPage)
         }
-    }
-
-    LaunchedEffect(pagerState, modes) {
-        snapshotFlow { pagerState.targetPage.coerceIn(0, modes.lastIndex) }
-            .distinctUntilChanged()
-            .collect { page ->
-                visualSelectedPage = page
-            }
-    }
-
-    LaunchedEffect(pagerState, modes) {
-        var initialSettledPageIgnored = false
-        snapshotFlow { pagerState.settledPage.coerceIn(0, modes.lastIndex) }
-            .distinctUntilChanged()
-            .collect { page ->
-                if (!initialSettledPageIgnored) {
-                    initialSettledPageIgnored = true
-                    return@collect
-                }
-                visualSelectedPage = page
-                onRootModeChanged(modes[page])
-            }
     }
 
     BackHandler(enabled = rootBackHandlerEnabled && workspace == WORKSPACE_ISLAMIC_CORPUS && pagerState.currentPage != studyPage) {
+        onRootModeChanged(VaultRootMode.Study)
         scope.launch {
-            visualSelectedPage = studyPage
-            pagerState.animateScrollToPage(
-                page = studyPage,
-                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
-            )
+            pagerState.scrollToPage(studyPage)
         }
     }
 
-    val pagerContent: @Composable (Modifier) -> Unit = { pagerModifier ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = pagerModifier,
-            key = { page -> modes[page].name },
-            beyondViewportPageCount = 1,
-            flingBehavior = PagerDefaults.flingBehavior(
-                state = pagerState,
-                snapPositionalThreshold = RootPagerSnapThreshold,
-            ),
-        ) { page ->
-            when (modes[page]) {
-                VaultRootMode.Courses -> coursesContent()
-                VaultRootMode.Study -> studyContent()
-                VaultRootMode.Quran -> quranContent()
-                VaultRootMode.Memorise -> memoriseContent()
-                VaultRootMode.Library -> if (workspace == WORKSPACE_PERSONAL) personalLibraryContent() else libraryContent()
-                VaultRootMode.Personal -> personalContent()
-            }
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        key = { page -> modes[page].name },
+        beyondViewportPageCount = 1,
+        userScrollEnabled = false,
+    ) { page ->
+        when (modes[page]) {
+            VaultRootMode.Courses -> coursesContent()
+            VaultRootMode.Study -> studyContent()
+            VaultRootMode.Quran -> quranContent()
+            VaultRootMode.Memorise -> memoriseContent()
+            VaultRootMode.Library -> if (workspace == WORKSPACE_PERSONAL) personalLibraryContent() else libraryContent()
+            VaultRootMode.Personal -> personalContent()
         }
-    }
-
-    val handleModeSelected: (Int) -> Unit = modeSelected@ { index ->
-        val mode = modes[index]
-        val now = System.currentTimeMillis()
-        val isFastSecondTap = lastNavTapMode == mode && now - lastNavTapAt <= BottomNavDoubleTapWindowMs
-        lastNavTapMode = mode
-        lastNavTapAt = now
-        if (isFastSecondTap) {
-            onQuickNoteMode(
-                when (mode) {
-                    VaultRootMode.Study -> FOLDER_MODE_STUDY
-                    VaultRootMode.Personal -> FOLDER_MODE_PERSONAL
-                    else -> return@modeSelected
-                },
-            )
-            return@modeSelected
-        }
-        visualSelectedPage = index
-        scope.launch {
-            pagerState.animateScrollToPage(
-                page = index,
-                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
-            )
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.bg),
-    ) {
-        pagerContent(
-            Modifier
-                .fillMaxWidth()
-                .weight(1f),
-        )
-        VaultFixedBottomNavigation(
-            items = fixedNavigationItems,
-            selectedIndex = visualSelectedPage.coerceIn(0, modes.lastIndex),
-            onItemSelected = handleModeSelected,
-        )
     }
 }
 
-private const val BottomNavDoubleTapWindowMs = 260L
-private const val RootPagerSnapThreshold = 0.35f
+private fun VaultTreeItem.toExplorerNode(): VaultMobileWebExplorerNode =
+    VaultMobileWebExplorerNode(
+        id = id,
+        label = name,
+        type = if (type == VaultTreeItemType.Folder) {
+            VaultMobileWebExplorerNodeType.Folder
+        } else {
+            VaultMobileWebExplorerNodeType.Note
+        },
+        count = count.takeIf { type == VaultTreeItemType.Folder && it > 0 },
+        children = children.map(VaultTreeItem::toExplorerNode),
+        canAdd = type == VaultTreeItemType.Folder,
+        pinned = pinned,
+        description = description,
+    )
+
+private fun LibraryFolderItem.toExplorerNode(): VaultMobileWebExplorerNode =
+    VaultMobileWebExplorerNode(
+        id = id,
+        label = name,
+        type = VaultMobileWebExplorerNodeType.Folder,
+        count = count.takeIf { it > 0 },
+        children = children.map(LibraryFolderItem::toExplorerNode) + files.map { file ->
+            VaultMobileWebExplorerNode(
+                id = file.id,
+                label = file.name,
+                type = VaultMobileWebExplorerNodeType.Document,
+                pinned = file.pinned,
+            )
+        },
+        canAdd = true,
+    )
+
+private const val COURSE_EXPLORER_PREFIX = "course:"
 
 private fun String.toNoteBodyFontSizeSp(): Float =
     when (this) {

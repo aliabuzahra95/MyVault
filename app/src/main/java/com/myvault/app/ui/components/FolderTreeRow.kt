@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DragIndicator
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Star
@@ -81,6 +83,8 @@ fun FolderTreeRow(
     onOpenNote: (VaultTreeItem) -> Unit,
     modifier: Modifier = Modifier,
     onLongPress: (VaultTreeItem) -> Unit = {},
+    onCreateInside: ((VaultTreeItem) -> Unit)? = null,
+    onMore: ((VaultTreeItem) -> Unit)? = null,
     selectionMode: Boolean = false,
     isSelected: (String) -> Boolean = { false },
     onSelectionToggle: (VaultTreeItem) -> Unit = {},
@@ -89,6 +93,7 @@ fun FolderTreeRow(
     notePreviewLines: Int = 0,
     showFullNoteTitles: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
+    indentHierarchy: Boolean = true,
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
     onMoveFolder: (VaultTreeItem, Int) -> Unit = { _, _ -> },
@@ -117,6 +122,8 @@ fun FolderTreeRow(
             },
             onToggleClick = { onToggle(item) },
             onLongPress = { if (!organizeMode) onLongPress(item) },
+            onCreateInside = onCreateInside,
+            onMore = onMore,
             selectionMode = selectionMode,
             selected = isSelected(item.id),
             organizeMode = organizeMode,
@@ -124,6 +131,7 @@ fun FolderTreeRow(
             notePreviewLines = notePreviewLines,
             showFullNoteTitles = showFullNoteTitles,
             dashboardFontSizeSp = dashboardFontSizeSp,
+            indentHierarchy = indentHierarchy,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
             onMoveUp = { onMoveFolder(item, -1) },
@@ -154,6 +162,8 @@ fun FolderTreeRow(
                             onOpenFolder = onOpenFolder,
                             onOpenNote = onOpenNote,
                             onLongPress = onLongPress,
+                            onCreateInside = onCreateInside,
+                            onMore = onMore,
                             selectionMode = selectionMode,
                             isSelected = isSelected,
                             onSelectionToggle = onSelectionToggle,
@@ -162,6 +172,7 @@ fun FolderTreeRow(
                             notePreviewLines = notePreviewLines,
                             showFullNoteTitles = showFullNoteTitles,
                             dashboardFontSizeSp = dashboardFontSizeSp,
+                            indentHierarchy = indentHierarchy,
                             canMoveUp = childIndex > 0,
                             canMoveDown = childIndex in 0 until childItems.lastIndex,
                             onMoveFolder = onMoveFolder,
@@ -185,6 +196,8 @@ fun FolderTreeRow(
                             onOpenFolder = onOpenFolder,
                             onOpenNote = onOpenNote,
                             onLongPress = onLongPress,
+                            onCreateInside = onCreateInside,
+                            onMore = onMore,
                             selectionMode = selectionMode,
                             isSelected = isSelected,
                             onSelectionToggle = onSelectionToggle,
@@ -193,6 +206,7 @@ fun FolderTreeRow(
                             notePreviewLines = notePreviewLines,
                             showFullNoteTitles = showFullNoteTitles,
                             dashboardFontSizeSp = dashboardFontSizeSp,
+                            indentHierarchy = indentHierarchy,
                             canMoveUp = childIndex > 0,
                             canMoveDown = childIndex in 0 until item.children.lastIndex,
                             onMoveFolder = onMoveFolder,
@@ -213,6 +227,8 @@ private fun FolderTreeSingleRow(
     onClick: () -> Unit,
     onToggleClick: () -> Unit,
     onLongPress: () -> Unit,
+    onCreateInside: ((VaultTreeItem) -> Unit)?,
+    onMore: ((VaultTreeItem) -> Unit)?,
     selectionMode: Boolean,
     selected: Boolean,
     organizeMode: Boolean,
@@ -220,6 +236,7 @@ private fun FolderTreeSingleRow(
     notePreviewLines: Int,
     showFullNoteTitles: Boolean,
     dashboardFontSizeSp: Float,
+    indentHierarchy: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -228,26 +245,23 @@ private fun FolderTreeSingleRow(
     val colors = VaultThemeTokens.colors
     val topLevel = depth == 0
     val isFolder = item.type == VaultTreeItemType.Folder
+    val effectiveDepth = depth.coerceAtMost(3)
     val movable = isFolder || organizeAllItems
-    val isSubfolder = isFolder && !topLevel
     val rowVerticalPadding = when {
-        !isFolder && notePreviewLines > 0 && item.preview.isNotBlank() -> 3.dp
-        !isFolder -> 2.dp
-        isFolder && topLevel -> 6.dp
-        isFolder -> 3.dp
-        else -> 3.dp
+        !isFolder && notePreviewLines > 0 && item.preview.isNotBlank() -> 7.dp
+        !isFolder -> 6.dp
+        isFolder -> 7.dp
+        else -> 6.dp
     }
     val rowStartPadding = when {
-        topLevel -> 6.dp
-        isFolder -> (4 + depth * 8).dp
-        else -> (2 + depth * 7).dp
+        !indentHierarchy -> 0.dp
+        topLevel -> 0.dp
+        else -> (effectiveDepth * 8).dp
     }
     val rowOuterVerticalGap = if (topLevel) 0.5.dp else 0.dp
     val rowHorizontalPadding = if (topLevel) 8.dp else 5.dp
-    val subfolderAccent = Color(0xFFE23B3B)
     val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
-    val background = if (topLevel && expanded) colors.surface else Color.Transparent
-    val borderColor = if (topLevel && expanded) colors.border else Color.Transparent
+    val background = if (topLevel && isFolder) colors.surface else Color.Transparent
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
         animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
@@ -273,14 +287,14 @@ private fun FolderTreeSingleRow(
             .padding(
                 start = rowStartPadding,
                 top = rowOuterVerticalGap,
-                end = if (topLevel) 8.dp else 6.dp,
+                end = 0.dp,
                 bottom = rowOuterVerticalGap,
             )
             .heightIn(
                 min = when {
-                    isFolder && topLevel -> 36.dp
-                    isFolder -> 32.dp
-                    else -> 30.dp
+                    isFolder && topLevel -> 48.dp
+                    isFolder -> 44.dp
+                    else -> 44.dp
                 },
             )
             .clip(rowShape)
@@ -321,7 +335,6 @@ private fun FolderTreeSingleRow(
             ),
         color = background,
         shape = rowShape,
-        border = BorderStroke(1.dp, borderColor),
     ) {
         Row(
             modifier = Modifier
@@ -340,7 +353,7 @@ private fun FolderTreeSingleRow(
                     modifier = Modifier.size(if (topLevel) 15.dp else 13.dp),
                     tint = if (selected) colors.accent else colors.textMuted,
                 )
-            } else if (isFolder) {
+            } else if (isFolder && item.children.isNotEmpty()) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                     contentDescription = null,
@@ -354,6 +367,8 @@ private fun FolderTreeSingleRow(
                         .graphicsLayer { rotationZ = chevronRotation },
                     tint = colors.textMuted,
                 )
+            } else if (isFolder) {
+                Spacer(modifier = Modifier.width(if (topLevel) 13.dp else 11.dp))
             } else {
                 Spacer(modifier = Modifier.width(8.dp))
             }
@@ -364,7 +379,6 @@ private fun FolderTreeSingleRow(
                     contentDescription = null,
                     modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
                     tint = when {
-                        isSubfolder -> subfolderAccent
                         topLevel -> colors.accent
                         else -> colors.textSecondary
                     },
@@ -389,7 +403,7 @@ private fun FolderTreeSingleRow(
                         topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
                         else -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },
-                    color = if (isSubfolder) subfolderAccent else colors.text,
+                    color = colors.text,
                     maxLines = if (!isFolder && showFullNoteTitles) Int.MAX_VALUE else 1,
                     overflow = if (!isFolder && showFullNoteTitles) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )
@@ -456,6 +470,32 @@ private fun FolderTreeSingleRow(
                 }
             } else {
                 TreeTrailing(item = item, topLevel = topLevel)
+                if (isFolder && onCreateInside != null) {
+                    IconButton(
+                        onClick = { onCreateInside(item) },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Add inside ${item.name}",
+                            modifier = Modifier.size(17.dp),
+                            tint = colors.accent,
+                        )
+                    }
+                }
+                if (onMore != null) {
+                    IconButton(
+                        onClick = { onMore(item) },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreHoriz,
+                            contentDescription = "More actions for ${item.name}",
+                            modifier = Modifier.size(16.dp),
+                            tint = colors.textMuted,
+                        )
+                    }
+                }
             }
         }
     }

@@ -242,7 +242,7 @@ internal fun QuranReaderSurface(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = if (uiState.miniPlayer != null) 214.dp else 96.dp),
+                    contentPadding = PaddingValues(bottom = if (uiState.miniPlayer != null) 142.dp else 24.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                 latestSurahTestAttempt?.let { attempt ->
@@ -403,7 +403,7 @@ internal fun QuranReaderSurface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 14.dp)
-                    .padding(bottom = 86.dp)
+                    .padding(bottom = 14.dp)
                     .navigationBarsPadding(),
             )
         }
@@ -415,7 +415,7 @@ internal fun QuranReaderSurface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 24.dp)
-                .padding(bottom = if (uiState.miniPlayer != null) 252.dp else 98.dp)
+                .padding(bottom = if (uiState.miniPlayer != null) 180.dp else 26.dp)
                 .navigationBarsPadding(),
         ) {
             Surface(

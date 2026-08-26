@@ -8,8 +8,10 @@ import com.myvault.app.data.repository.CourseRepository
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.FolderStickyNoteRepository
 import com.myvault.app.data.repository.NoteRepository
+import com.myvault.app.data.repository.courseFolderMode
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.ui.components.VaultTreeItemType
+import com.myvault.app.ui.components.VaultTreeItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +31,9 @@ data class CoursesUiState(
     val activeCourse: CourseEntity? = null,
     val folderState: FolderUiState = FolderUiState(),
     val concepts: List<CourseConceptCardEntity> = emptyList(),
+    val noteCountsByCourse: Map<String, Int> = emptyMap(),
+    val conceptCountsByCourse: Map<String, Int> = emptyMap(),
+    val treesByCourse: Map<String, List<VaultTreeItem>> = emptyMap(),
     val notePreviewLines: Int = 0,
     val showFullNoteTitles: Boolean = false,
 ) {
@@ -49,6 +54,44 @@ class CoursesViewModel @Inject constructor(
     private val selectedCourseId = MutableStateFlow<String?>(null)
     private val rootFolderId = MutableStateFlow<String?>(null)
 
+    private data class CourseCatalog(
+        val courses: List<CourseEntity>,
+        val concepts: List<CourseConceptCardEntity>,
+        val noteCountsByCourse: Map<String, Int>,
+        val conceptCountsByCourse: Map<String, Int>,
+        val treesByCourse: Map<String, List<VaultTreeItem>>,
+    )
+
+    private val courseTrees = courseRepository.courses.flatMapLatest { courses ->
+        if (courses.isEmpty()) {
+            flowOf(emptyMap())
+        } else {
+            combine(
+                courses.map { course ->
+                    folderRepository.observeWorkspaceTree(courseFolderMode(course.id)).map { tree ->
+                        course.id to tree
+                    }
+                },
+            ) { trees -> trees.toMap() }
+        }
+    }
+
+    private val courseCatalog = combine(
+        courseRepository.courses,
+        courseRepository.concepts,
+        courseTrees,
+    ) { courses, concepts, trees ->
+        CourseCatalog(
+            courses = courses,
+            concepts = concepts,
+            noteCountsByCourse = courses.associate { course ->
+                course.id to trees[course.id].orEmpty().sumOf { it.noteCount() }
+            },
+            conceptCountsByCourse = concepts.groupingBy { it.courseId }.eachCount(),
+            treesByCourse = trees,
+        )
+    }
+
     private val folderState = rootFolderId.flatMapLatest { id ->
         if (id == null) {
             flowOf(FolderUiState())
@@ -66,18 +109,20 @@ class CoursesViewModel @Inject constructor(
     }
 
     val uiState: StateFlow<CoursesUiState> = combine(
-        courseRepository.courses,
-        courseRepository.concepts,
+        courseCatalog,
         selectedCourseId,
         folderState,
         vaultPreferences.userPreferences,
-    ) { courses, concepts, requestedId, folder, preferences ->
-        val active = courses.firstOrNull { it.id == requestedId } ?: courses.firstOrNull()
+    ) { catalog, requestedId, folder, preferences ->
+        val active = catalog.courses.firstOrNull { it.id == requestedId } ?: catalog.courses.firstOrNull()
         CoursesUiState(
-            courses = courses,
+            courses = catalog.courses,
             activeCourse = active,
             folderState = folder,
-            concepts = concepts.filter { it.courseId == active?.id },
+            concepts = catalog.concepts.filter { it.courseId == active?.id },
+            noteCountsByCourse = catalog.noteCountsByCourse,
+            conceptCountsByCourse = catalog.conceptCountsByCourse,
+            treesByCourse = catalog.treesByCourse,
             notePreviewLines = when (preferences.notePreview) {
                 "two_lines" -> 2
                 "three_lines" -> 3
@@ -122,9 +167,26 @@ class CoursesViewModel @Inject constructor(
         }
     }
 
+    fun createNoteForCourse(courseId: String, onCreated: (String) -> Unit) = viewModelScope.launch {
+        val course = courseRepository.courses.first().firstOrNull { it.id == courseId } ?: return@launch
+        selectedCourseId.value = courseId
+        val courseRoot = courseRepository.ensureWorkspace(course)
+        rootFolderId.value = courseRoot
+        val noteId = noteRepository.createNote(courseRoot)
+        courseRepository.markNoteOpened(courseId, noteId)
+        onCreated(noteId)
+    }
+
     fun createNoteInFolder(folderId: String, onCreated: (String) -> Unit) = viewModelScope.launch {
         val noteId = noteRepository.createNote(folderId)
         uiState.value.activeCourse?.id?.let { courseId -> courseRepository.markNoteOpened(courseId, noteId) }
+        onCreated(noteId)
+    }
+
+    fun createNoteInFolderForCourse(courseId: String, folderId: String, onCreated: (String) -> Unit) = viewModelScope.launch {
+        selectedCourseId.value = courseId
+        val noteId = noteRepository.createNote(folderId)
+        courseRepository.markNoteOpened(courseId, noteId)
         onCreated(noteId)
     }
 
@@ -136,12 +198,31 @@ class CoursesViewModel @Inject constructor(
         folderRepository.createFolder(parentId, name, description = description)
     }
 
+    fun createSubfolderForCourse(
+        courseId: String,
+        parentId: String?,
+        name: String,
+        description: String? = null,
+    ) = viewModelScope.launch {
+        val course = courseRepository.courses.first().firstOrNull { it.id == courseId } ?: return@launch
+        selectedCourseId.value = courseId
+        val courseRoot = courseRepository.ensureWorkspace(course)
+        rootFolderId.value = courseRoot
+        folderRepository.createFolder(parentId ?: courseRoot, name, description = description)
+    }
+
     fun updateChildFolder(id: String, name: String, description: String?) = viewModelScope.launch {
         folderRepository.updateFolderDetails(id, name, description)
     }
 
     fun moveChildFolder(id: String, parentId: String?) = viewModelScope.launch {
         folderRepository.moveFolder(id, parentId)
+    }
+
+    fun moveChildFolderForCourse(courseId: String, id: String, parentId: String?) = viewModelScope.launch {
+        val course = courseRepository.courses.first().firstOrNull { it.id == courseId } ?: return@launch
+        val courseRoot = courseRepository.ensureWorkspace(course)
+        folderRepository.moveFolder(id, parentId ?: courseRoot)
     }
 
     fun deleteChildFolder(id: String) = viewModelScope.launch {
@@ -161,6 +242,11 @@ class CoursesViewModel @Inject constructor(
 
     fun renameNote(id: String, title: String) = viewModelScope.launch { noteRepository.updateTitle(id, title) }
     fun moveNote(id: String, folderId: String?) = viewModelScope.launch { noteRepository.moveNote(id, folderId) }
+    fun moveNoteForCourse(courseId: String, id: String, folderId: String?) = viewModelScope.launch {
+        val course = courseRepository.courses.first().firstOrNull { it.id == courseId } ?: return@launch
+        val courseRoot = courseRepository.ensureWorkspace(course)
+        noteRepository.moveNote(id, folderId ?: courseRoot)
+    }
     fun moveNoteToMode(id: String, mode: String) = viewModelScope.launch { noteRepository.moveNoteToMode(id, mode) }
     fun deleteNote(id: String) = viewModelScope.launch { noteRepository.deleteNote(id) }
     fun setNotePinned(id: String, pinned: Boolean) = viewModelScope.launch { noteRepository.setPinned(id, pinned) }
@@ -197,3 +283,6 @@ private fun List<com.myvault.app.ui.components.VaultTreeItem>.findNote(id: Strin
     }
     return null
 }
+
+private fun com.myvault.app.ui.components.VaultTreeItem.noteCount(): Int =
+    (if (type == VaultTreeItemType.Note) 1 else 0) + children.sumOf { it.noteCount() }

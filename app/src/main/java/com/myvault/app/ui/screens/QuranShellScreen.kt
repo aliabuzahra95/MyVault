@@ -80,6 +80,7 @@ fun QuranShellScreen(
     onToggleWeakMemorization: (QuranAyah) -> Unit,
     onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
     onPendingScrollHandled: () -> Unit,
+    showNavigationHeader: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -99,21 +100,23 @@ fun QuranShellScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding(),
+                .then(if (showNavigationHeader) Modifier.statusBarsPadding() else Modifier),
         ) {
-            VaultTopBar(
-                title = workspaceTitle,
-                titleContent = {
-                    VaultWorkspaceSwitcher(
-                        selectedLabel = workspaceTitle,
-                        options = workspaceOptions,
-                        onSelected = onWorkspaceSelected,
-                    )
-                },
-            ) {
-                IconBtn(Icons.Rounded.WbSunny, "Toggle theme", active = true, onClick = onThemeClick)
-                IconBtn(Icons.Rounded.Backup, "Quick cloud backup", active = quickBackupRecommended, onClick = onQuickBackupClick)
-                IconBtn(Icons.Rounded.Settings, "App settings", onClick = onSettingsClick)
+            if (showNavigationHeader) {
+                VaultTopBar(
+                    title = workspaceTitle,
+                    titleContent = {
+                        VaultWorkspaceSwitcher(
+                            selectedLabel = workspaceTitle,
+                            options = workspaceOptions,
+                            onSelected = onWorkspaceSelected,
+                        )
+                    },
+                ) {
+                    IconBtn(Icons.Rounded.WbSunny, "Toggle theme", active = true, onClick = onThemeClick)
+                    IconBtn(Icons.Rounded.Backup, "Quick cloud backup", active = quickBackupRecommended, onClick = onQuickBackupClick)
+                    IconBtn(Icons.Rounded.Settings, "App settings", onClick = onSettingsClick)
+                }
             }
 
             QuranReaderSurface(

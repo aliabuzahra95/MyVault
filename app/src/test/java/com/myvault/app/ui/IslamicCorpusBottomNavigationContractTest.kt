@@ -8,7 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class VaultFixedBottomNavigationContractTest {
+class VaultMobileWebNavigationContractTest {
 
     private val projectRoot: Path = generateSequence(Paths.get(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
         .first { Files.exists(it.resolve("app/src/main/java/com/myvault/app/ui/navigation/VaultNavHost.kt")) }
@@ -26,40 +26,95 @@ class VaultFixedBottomNavigationContractTest {
     }
 
     @Test
-    fun `one shared fixed bar serves Islamic Corpus and Personal pagers`() {
+    fun `one shared mobile web drawer serves Islamic Corpus and Personal pagers`() {
         val navigation = source("ui/navigation/VaultNavHost.kt")
 
-        assertEquals(1, navigation.countOccurrences("VaultFixedBottomNavigation("))
+        assertEquals(1, navigation.countOccurrences("VaultMobileWebShell("))
+        assertTrue(navigation.contains(") {\n        NavHost("))
+        assertFalse(navigation.contains("VaultFixedBottomNavigation("))
         assertFalse(navigation.contains("FloatingBottomNav("))
+        assertFalse(navigation.contains("useNavigationShell"))
         assertTrue(navigation.contains("listOf(VaultRootMode.Personal, VaultRootMode.Library)"))
-        assertTrue(navigation.contains("pagerContent("))
-        assertTrue(navigation.contains(".weight(1f)"))
-        assertTrue(navigation.contains("onItemSelected = handleModeSelected"))
+        assertTrue(navigation.contains("HorizontalPager("))
+        assertTrue(navigation.contains("onItemSelected = { index -> selectRootMode(rootModes[index]) }"))
     }
 
     @Test
-    fun `fixed bar owns width boundary indicator and navigation inset`() {
-        val component = source("ui/components/VaultFixedBottomNavigation.kt")
+    fun `mobile web shell owns compact header left drawer and navigation utility`() {
+        val component = source("ui/components/VaultMobileWebShell.kt")
+        val navigation = source("ui/navigation/VaultNavHost.kt")
 
-        assertTrue(component.contains("modifier.fillMaxWidth()"))
+        assertTrue(component.contains("ModalNavigationDrawer("))
+        assertTrue(component.contains("ModalDrawerSheet("))
+        assertTrue(component.contains(".width(292.dp)"))
+        assertTrue(component.contains(".height(56.dp)"))
+        assertTrue(component.contains("Icons.Rounded.Menu"))
+        assertTrue(component.contains("DrawerUtilityRow("))
         assertTrue(component.contains("HorizontalDivider("))
         assertTrue(component.contains(".navigationBarsPadding()"))
-        assertTrue(component.contains("colors.accentSoft"))
-        assertTrue(component.contains("colors.accent"))
-        assertTrue(component.contains("shadowElevation = 0.dp"))
-        assertFalse(component.contains("VaultSpacing.lg"))
+        assertTrue(component.contains("VaultMobileWebExplorerSection"))
+        assertTrue(component.contains("DrawerExplorerNode("))
+        assertTrue(component.contains(".verticalScroll(rememberScrollState())"))
+        assertTrue(component.contains("onExplorerAddSelected"))
+        assertTrue(component.contains("onExplorerMoreSelected"))
+        assertTrue(component.contains("selectedExplorerNodeId"))
+        assertTrue(component.contains("findExplorerPath(selectedId)"))
+        assertTrue(component.contains("onWorkspaceSelected: () -> Unit"))
+        assertTrue(component.contains(".clickable(onClick = onWorkspaceSelected)"))
+        assertTrue(navigation.contains("if (preferences.workspace == WORKSPACE_PERSONAL) \"Islamic Corpus\" else \"Personal\""))
+        assertFalse(component.contains("VaultFixedBottomNavigation("))
     }
 
     @Test
-    fun `pager navigation and state behavior remain in place`() {
+    fun `one native action host manages every explorer content family`() {
+        val navigation = source("ui/navigation/VaultNavHost.kt")
+        val actions = source("ui/components/VaultExplorerActionHost.kt")
+        val modal = source("ui/components/VaultModal.kt")
+
+        assertEquals(1, navigation.countOccurrences("VaultExplorerActionHost("))
+        assertTrue(navigation.contains("VaultRootMode.Study, VaultRootMode.Personal"))
+        assertTrue(navigation.contains("VaultRootMode.Library"))
+        assertTrue(navigation.contains("VaultRootMode.Courses"))
+        assertTrue(actions.contains("New note"))
+        assertTrue(actions.contains("Upload document"))
+        assertTrue(actions.contains("Rename"))
+        assertTrue(actions.contains("Move"))
+        assertTrue(actions.contains("Unpin"))
+        assertTrue(actions.contains("Delete"))
+        assertTrue(modal.contains("Modifier.heightIn(max = 430.dp)"))
+    }
+
+    @Test
+    fun `explorer move choices exclude the selected folder and descendants`() {
+        val navigation = source("ui/navigation/VaultNavHost.kt")
+
+        assertTrue(navigation.contains("source.descendantIds()"))
+        assertTrue(navigation.contains("id in excludedIds"))
+        assertTrue(navigation.contains("roots.flatMap { it.flattenExplorerFolderTargets"))
+        assertTrue(navigation.contains("VaultExplorerMoveTarget(null, rootLabel)"))
+    }
+
+    @Test
+    fun `root pager only changes from navigation selections`() {
         val navigation = source("ui/navigation/VaultNavHost.kt")
 
         assertTrue(navigation.contains("HorizontalPager("))
         assertTrue(navigation.contains("rememberPagerState("))
-        assertTrue(navigation.contains("snapshotFlow { pagerState.targetPage"))
-        assertTrue(navigation.contains("snapshotFlow { pagerState.settledPage"))
-        assertTrue(navigation.contains("pagerState.animateScrollToPage("))
-        assertTrue(navigation.contains("rememberSaveable(modes)"))
+        assertTrue(navigation.contains("modes.indexOfFirst { it.name == selectedRootModeName }"))
+        assertTrue(navigation.contains("LaunchedEffect(modes, requestedPage)"))
+        assertTrue(navigation.contains("userScrollEnabled = false"))
+        assertTrue(navigation.contains("pagerState.scrollToPage("))
+        assertFalse(navigation.contains("pagerState.animateScrollToPage("))
+        assertFalse(navigation.contains("snapshotFlow { pagerState.targetPage"))
+    }
+
+    @Test
+    fun `drawer keeps interactive swipe gestures enabled`() {
+        val component = source("ui/components/VaultMobileWebShell.kt")
+
+        assertTrue(component.contains("gesturesEnabled = true"))
+        assertTrue(component.contains("Modifier.systemGestureExclusion"))
+        assertTrue(component.contains("drawerGestureEdgeWidth"))
     }
 
     @Test

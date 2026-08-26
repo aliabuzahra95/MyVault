@@ -18,10 +18,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultShapes
@@ -35,8 +38,13 @@ fun SearchBar(
     active: Boolean = false,
     query: String = "",
     onQueryChange: (String) -> Unit = {},
+    requestFocus: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
+    val focusRequester = androidx.compose.runtime.remember { FocusRequester() }
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) focusRequester.requestFocus()
+    }
     val borderColor by animateColorAsState(
         targetValue = if (active) colors.accentBorder else colors.border,
         animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
@@ -72,7 +80,9 @@ fun SearchBar(
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
                 singleLine = true,
                 cursorBrush = SolidColor(colors.accent),

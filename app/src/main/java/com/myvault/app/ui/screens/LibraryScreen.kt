@@ -43,12 +43,15 @@ import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.PushPin
@@ -60,6 +63,7 @@ import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -83,7 +87,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.components.AttachmentThumbnail
+import com.myvault.app.ui.components.CompactActionGroup
+import com.myvault.app.ui.components.CompactPrimaryAction
+import com.myvault.app.ui.components.CompactViewAction
+import com.myvault.app.ui.components.CompactWorkspaceHeader
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingActionMenuExpansion
@@ -132,6 +141,7 @@ fun LibraryScreen(
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
+    onImportFilesToFolder: (String?, List<Uri>) -> Unit = { _, uris -> onImportFiles(uris) },
     onReplaceDuplicatePdf: () -> Unit,
     onSkipDuplicatePdf: () -> Unit,
     onDismissImportMessage: () -> Unit,
@@ -181,6 +191,7 @@ fun LibraryScreen(
         onFolderExpandedChange = onFolderExpandedChange,
         onViewModeChange = onViewModeChange,
         onImportFiles = onImportFiles,
+        onImportFilesToFolder = onImportFilesToFolder,
         onReplaceDuplicatePdf = onReplaceDuplicatePdf,
         onSkipDuplicatePdf = onSkipDuplicatePdf,
         onDismissImportMessage = onDismissImportMessage,
@@ -227,6 +238,7 @@ fun LibraryFolderScreen(
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
+    onImportFilesToFolder: (String?, List<Uri>) -> Unit = { _, uris -> onImportFiles(uris) },
     onReplaceDuplicatePdf: () -> Unit,
     onSkipDuplicatePdf: () -> Unit,
     onDismissImportMessage: () -> Unit,
@@ -268,6 +280,7 @@ fun LibraryFolderScreen(
         onFolderExpandedChange = onFolderExpandedChange,
         onViewModeChange = onViewModeChange,
         onImportFiles = onImportFiles,
+        onImportFilesToFolder = onImportFilesToFolder,
         onReplaceDuplicatePdf = onReplaceDuplicatePdf,
         onSkipDuplicatePdf = onSkipDuplicatePdf,
         onDismissImportMessage = onDismissImportMessage,
@@ -316,6 +329,7 @@ private fun LibraryArchiveScreen(
     onFolderExpandedChange: (folderId: String, expanded: Boolean) -> Unit,
     onViewModeChange: (LibraryViewMode) -> Unit,
     onImportFiles: (List<Uri>) -> Unit,
+    onImportFilesToFolder: (String?, List<Uri>) -> Unit,
     onReplaceDuplicatePdf: () -> Unit,
     onSkipDuplicatePdf: () -> Unit,
     onDismissImportMessage: () -> Unit,
@@ -368,6 +382,9 @@ private fun LibraryArchiveScreen(
     var displayModeDialogOpen by remember { mutableStateOf(false) }
     var librarySearchOpen by remember { mutableStateOf(false) }
     var librarySearchQuery by remember { mutableStateOf("") }
+    var rootCreateMenuOpen by remember { mutableStateOf(false) }
+    var folderCreateMenuOpen by remember { mutableStateOf(false) }
+    var importTargetFolderId by remember { mutableStateOf<String?>(null) }
     val closeLibrarySearch = {
         librarySearchOpen = false
         librarySearchQuery = ""
@@ -381,7 +398,7 @@ private fun LibraryArchiveScreen(
         closeLibrarySearch()
     }
     val multiImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) onImportFiles(uris)
+        if (uris.isNotEmpty()) onImportFilesToFolder(importTargetFolderId, uris)
     }
     val exportFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val file = selectedFile
@@ -773,6 +790,45 @@ private fun LibraryArchiveScreen(
                 }
             },
             onDismiss = { displayModeDialogOpen = false },
+        )
+    }
+
+    if (rootCreateMenuOpen) {
+        LibraryActionDialog(
+            title = "Add to Library",
+            actions = listOf(
+                LibraryAction("New folder", Icons.Rounded.CreateNewFolder) {
+                    rootCreateMenuOpen = false
+                    folderName = ""
+                    folderDialog = LibraryFolderDialog.Create(parentId = null)
+                },
+                LibraryAction("Upload file", Icons.Rounded.UploadFile) {
+                    rootCreateMenuOpen = false
+                    importTargetFolderId = null
+                    multiImportPicker.launch(arrayOf("*/*"))
+                },
+            ),
+            onDismiss = { rootCreateMenuOpen = false },
+        )
+    }
+
+    if (folderCreateMenuOpen) {
+        val targetFolder = selectedFolder
+        LibraryActionDialog(
+            title = targetFolder?.name ?: "Folder",
+            actions = listOf(
+                LibraryAction("New subfolder", Icons.Rounded.CreateNewFolder) {
+                    folderCreateMenuOpen = false
+                    folderName = ""
+                    folderDialog = LibraryFolderDialog.Create(parentId = targetFolder?.id)
+                },
+                LibraryAction("Upload file", Icons.Rounded.UploadFile) {
+                    folderCreateMenuOpen = false
+                    importTargetFolderId = targetFolder?.id
+                    multiImportPicker.launch(arrayOf("*/*"))
+                },
+            ),
+            onDismiss = { folderCreateMenuOpen = false },
         )
     }
 
@@ -1346,6 +1402,347 @@ private fun LibraryArchiveScreen(
         )
     }
 }
+
+@Composable
+private fun LibraryMobileWebRootContent(
+    uiState: LibraryUiState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchOpen: Boolean,
+    onSearchOpen: () -> Unit,
+    onSearchClose: () -> Unit,
+    onViewModeChange: (LibraryViewMode) -> Unit,
+    onAddClick: () -> Unit,
+    onFolderToggle: (LibraryFolderItem) -> Unit,
+    onFolderOpen: (String) -> Unit,
+    onFolderAdd: (LibraryFolderItem) -> Unit,
+    onFolderMore: (LibraryFolderItem) -> Unit,
+    onFileClick: (String) -> Unit,
+    onFileMore: (LibraryFileItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    val flattenedFolders = remember(uiState.allFolders) { uiState.allFolders.flatMap { it.flatten() } }
+    val allFiles = remember(uiState.files, flattenedFolders) {
+        (uiState.files + flattenedFolders.flatMap { it.files }).distinctBy { it.id }
+    }
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.bg),
+        contentPadding = PaddingValues(
+            start = VaultSpacing.screen,
+            top = VaultSpacing.md,
+            end = VaultSpacing.screen,
+            bottom = VaultSpacing.huge,
+        ),
+        verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+    ) {
+        item {
+            CompactWorkspaceHeader(
+                title = "Library",
+                metadata = "${flattenedFolders.size} ${if (flattenedFolders.size == 1) "folder" else "folders"} · " +
+                    "${allFiles.size} ${if (allFiles.size == 1) "document" else "documents"}",
+                searchOpen = searchOpen,
+                searchQuery = searchQuery,
+                searchPlaceholder = "Search folders and documents...",
+                onSearchQueryChange = onSearchQueryChange,
+                onSearchClose = onSearchClose,
+            ) {
+                CompactActionGroup {
+                    LibraryMobileViewButton(
+                        icon = Icons.Rounded.GridView,
+                        selected = uiState.viewMode == LibraryViewMode.Grid,
+                        description = "Grid view",
+                    ) { onViewModeChange(LibraryViewMode.Grid) }
+                    LibraryMobileViewButton(
+                        icon = Icons.Rounded.ViewList,
+                        selected = uiState.viewMode == LibraryViewMode.List,
+                        description = "List view",
+                    ) { onViewModeChange(LibraryViewMode.List) }
+                    LibraryMobileViewButton(
+                        icon = Icons.Rounded.FolderOpen,
+                        selected = uiState.viewMode == LibraryViewMode.Icons,
+                        description = "Icon view",
+                    ) { onViewModeChange(LibraryViewMode.Icons) }
+                }
+                CompactViewAction(
+                    icon = Icons.Rounded.Search,
+                    selected = false,
+                    description = "Search library",
+                    onClick = onSearchOpen,
+                )
+                CompactPrimaryAction(
+                    icon = Icons.Rounded.Add,
+                    description = "Add library item",
+                    onClick = onAddClick,
+                )
+            }
+        }
+
+        if (searchQuery.isNotBlank()) {
+            item {
+                LibrarySearchResults(
+                    query = searchQuery,
+                    uiState = uiState,
+                    onFolderClick = onFolderOpen,
+                    onAttachmentClick = onFileClick,
+                    onAnnotationClick = { attachmentId, _ -> onFileClick(attachmentId) },
+                )
+            }
+        } else {
+            if (uiState.folders.isEmpty() && uiState.files.isEmpty()) {
+                item {
+                    LibraryEmptyState(Icons.Rounded.Folder, "Add a folder or upload your first document")
+                }
+            } else if (uiState.viewMode == LibraryViewMode.Grid) {
+                items(uiState.folders.chunked(2), key = { row -> row.joinToString(":") { it.id } }) { row ->
+                    LibraryGridRow(items = row) { folder ->
+                        LibraryGridFolderCard(
+                            folder = folder,
+                            onClick = { onFolderOpen(folder.id) },
+                            onLongPress = { onFolderMore(folder) },
+                        )
+                    }
+                }
+                items(uiState.files.chunked(2), key = { row -> "files:${row.joinToString(":") { it.id }}" }) { row ->
+                    LibraryGridRow(items = row) { file ->
+                        LibraryGridFileCard(
+                            file = file,
+                            showFullTitle = false,
+                            onClick = { onFileClick(file.id) },
+                            onLongPress = { onFileMore(file) },
+                        )
+                    }
+                }
+            } else {
+                items(uiState.folders, key = { it.id }) { folder ->
+                    LibraryMobileWebFolderNode(
+                        folder = folder,
+                        expandedFolderIds = uiState.expandedFolderIds,
+                        dense = uiState.viewMode == LibraryViewMode.Icons,
+                        onToggle = onFolderToggle,
+                        onAdd = onFolderAdd,
+                        onMore = onFolderMore,
+                        onFileClick = onFileClick,
+                        onFileMore = onFileMore,
+                    )
+                }
+                items(uiState.files, key = { "root:${it.id}" }) { file ->
+                    LibraryMobileWebFileRow(
+                        file = file,
+                        depth = 0,
+                        dense = uiState.viewMode == LibraryViewMode.Icons,
+                        onClick = { onFileClick(file.id) },
+                        onMore = { onFileMore(file) },
+                    )
+                }
+            }
+
+        }
+    }
+}
+
+@Composable
+private fun LibraryMobileViewButton(
+    icon: ImageVector,
+    selected: Boolean,
+    description: String,
+    onClick: () -> Unit,
+) {
+    CompactViewAction(
+        icon = icon,
+        selected = selected,
+        description = description,
+        onClick = onClick,
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryMobileWebFolderNode(
+    folder: LibraryFolderItem,
+    expandedFolderIds: Set<String>,
+    dense: Boolean,
+    onToggle: (LibraryFolderItem) -> Unit,
+    onAdd: (LibraryFolderItem) -> Unit,
+    onMore: (LibraryFolderItem) -> Unit,
+    onFileClick: (String) -> Unit,
+    onFileMore: (LibraryFileItem) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val expanded = folder.id in expandedFolderIds
+    val depth = folder.depth.coerceAtLeast(0)
+    val documentCount = remember(folder) { folder.descendantDocumentCount() }
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = { onToggle(folder) },
+                    onLongClick = { onMore(folder) },
+                ),
+            color = if (depth == 0) colors.surface else Color.Transparent,
+            shape = VaultShapes.md,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = if (depth == 0) 48.dp else 44.dp)
+                    .padding(start = 8.dp, end = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = if (expanded) "Collapse ${folder.name}" else "Expand ${folder.name}",
+                    modifier = Modifier
+                        .size(if (depth == 0) 14.dp else 12.dp)
+                        .graphicsLayer { rotationZ = if (expanded) 90f else 0f },
+                    tint = colors.textMuted,
+                )
+                Spacer(Modifier.width(5.dp))
+                Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(if (depth == 0) 20.dp else 18.dp), tint = colors.accent)
+                Spacer(Modifier.width(7.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        folder.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                        color = colors.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (!dense && depth > 0) {
+                        Text(
+                            "$documentCount document${if (documentCount == 1) "" else "s"}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                        )
+                    }
+                }
+                Surface(color = colors.bg, shape = VaultShapes.pill) {
+                    Text(
+                        documentCount.toString(),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textSecondary,
+                    )
+                }
+                IconButton(onClick = { onAdd(folder) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Add to ${folder.name}", modifier = Modifier.size(17.dp), tint = colors.accent)
+                }
+                IconButton(onClick = { onMore(folder) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "Folder options", modifier = Modifier.size(17.dp), tint = colors.textMuted)
+                }
+            }
+        }
+        if (expanded) {
+            folder.children.forEach { child ->
+                LibraryMobileWebFolderNode(
+                    folder = child,
+                    expandedFolderIds = expandedFolderIds,
+                    dense = dense,
+                    onToggle = onToggle,
+                    onAdd = onAdd,
+                    onMore = onMore,
+                    onFileClick = onFileClick,
+                    onFileMore = onFileMore,
+                )
+            }
+            folder.files.forEach { file ->
+                LibraryMobileWebFileRow(
+                    file = file,
+                    depth = depth + 1,
+                    dense = dense,
+                    onClick = { onFileClick(file.id) },
+                    onMore = { onFileMore(file) },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryMobileWebFileRow(
+    file: LibraryFileItem,
+    depth: Int,
+    dense: Boolean,
+    onClick: () -> Unit,
+    onMore: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onMore)
+            .padding(start = 28.dp, top = if (dense) 5.dp else 7.dp, bottom = if (dense) 5.dp else 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AttachmentThumbnail(
+            mimeType = file.mimeType,
+            localPath = file.localPath,
+            kind = file.kind,
+            size = 22.dp,
+            renderPdfPreview = false,
+        )
+        Spacer(Modifier.width(11.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                file.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
+                color = colors.text,
+                maxLines = if (dense) 1 else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!dense) {
+                val progress = file.progressPercent?.let { " · ${(it * 100).toInt()}%" }.orEmpty()
+                Text(
+                    "${file.kind} · ${file.size}$progress",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
+            }
+        }
+        if (file.pinned) {
+            Icon(Icons.Rounded.PushPin, contentDescription = "Pinned", modifier = Modifier.size(15.dp), tint = colors.accent)
+        }
+        IconButton(onClick = onMore, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = "Document options", modifier = Modifier.size(18.dp), tint = colors.textMuted)
+        }
+    }
+}
+
+@Composable
+private fun LibraryMobileFileSection(
+    title: String,
+    icon: ImageVector,
+    files: List<LibraryFileItem>,
+    onFileClick: (String) -> Unit,
+    onFileMore: (LibraryFileItem) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Column(
+        modifier = Modifier.padding(top = VaultSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp), tint = colors.accent)
+            Text(title, fontWeight = FontWeight.W800, color = colors.text)
+        }
+        files.forEach { file ->
+            LibraryMobileWebFileRow(
+                file = file,
+                depth = 0,
+                dense = true,
+                onClick = { onFileClick(file.id) },
+                onMore = { onFileMore(file) },
+            )
+        }
+    }
+}
+
+private fun LibraryFolderItem.descendantDocumentCount(): Int =
+    files.size + children.sumOf { it.descendantDocumentCount() }
 
 @Composable
 private fun LibrarySearchOverlay(

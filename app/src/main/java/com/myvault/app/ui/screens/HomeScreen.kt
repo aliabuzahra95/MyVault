@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Backup
@@ -45,8 +48,13 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
@@ -86,12 +94,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.ui.components.AttachmentThumbnail
+import com.myvault.app.ui.components.CompactActionGroup
+import com.myvault.app.ui.components.CompactPrimaryAction
+import com.myvault.app.ui.components.CompactViewAction
+import com.myvault.app.ui.components.CompactWorkspaceHeader
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenuExpansion
@@ -185,6 +198,10 @@ fun HomeScreen(
     var sortMenuOpen by remember { mutableStateOf(false) }
     val pinnedExpanded = uiState.pinnedExpanded
     var utilityMenuOpen by remember { mutableStateOf(false) }
+    var studyCreateMenuOpen by remember { mutableStateOf(false) }
+    var folderCreateMenuOpen by remember { mutableStateOf(false) }
+    var studyViewMode by rememberSaveable { mutableStateOf(StudyMobileViewMode.List) }
+    var studySearchOpen by rememberSaveable { mutableStateOf(uiState.searchQuery.isNotBlank()) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var manageMenuOpen by remember { mutableStateOf(false) }
     var manageRenameFolderOpen by remember { mutableStateOf(false) }
@@ -222,6 +239,11 @@ fun HomeScreen(
     val folderExpansionPrefix = remember(currentFolderMode) { "home:$currentFolderMode:" }
     fun folderExpansionKey(folderId: String): String = "$folderExpansionPrefix$folderId"
     fun isFolderExpanded(folderId: String): Boolean = folderExpansionKey(folderId) in uiState.expandedFolderIds
+
+    BackHandler(enabled = currentFolderMode == FOLDER_MODE_STUDY && studySearchOpen) {
+        studySearchOpen = false
+        onSearchQueryChange("")
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -558,6 +580,54 @@ fun HomeScreen(
                 )
             }
         }
+    }
+
+    if (studyCreateMenuOpen) {
+        PremiumActionDialog(
+            title = "Add to Study",
+            onDismiss = { studyCreateMenuOpen = false },
+            actions = listOf(
+                PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd) {
+                    studyCreateMenuOpen = false
+                    onNewNoteClick(null)
+                },
+                PremiumAction("New folder", Icons.Rounded.CreateNewFolder) {
+                    studyCreateMenuOpen = false
+                    selectedFolder = null
+                    newFolderName = ""
+                    folderDescriptionInput = ""
+                    folderDialogMode = FolderDialogMode.CreateRoot
+                },
+                PremiumAction("Import file", Icons.Rounded.AttachFile) {
+                    studyCreateMenuOpen = false
+                    importPicker.launch(arrayOf("*/*"))
+                },
+                PremiumAction("Workspace options", Icons.Rounded.MoreHoriz) {
+                    studyCreateMenuOpen = false
+                    utilityMenuOpen = true
+                },
+            ),
+        )
+    }
+
+    if (folderCreateMenuOpen && selectedFolder != null) {
+        val folder = selectedFolder
+        PremiumActionDialog(
+            title = "Add inside ${folder?.name.orEmpty()}",
+            onDismiss = { folderCreateMenuOpen = false },
+            actions = listOf(
+                PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd) {
+                    folderCreateMenuOpen = false
+                    onNewNoteClick(folder?.id)
+                },
+                PremiumAction("New subfolder", Icons.Rounded.CreateNewFolder) {
+                    folderCreateMenuOpen = false
+                    newFolderName = ""
+                    folderDescriptionInput = ""
+                    folderDialogMode = FolderDialogMode.CreateSubfolder
+                },
+            ),
+        )
     }
 
     if (folderActionsOpen && selectedFolder != null) {
@@ -999,6 +1069,403 @@ fun HomeScreen(
                 label = "Description (optional)",
                 minLines = 2,
                 maxLines = 3,
+            )
+        }
+    }
+}
+
+private enum class StudyMobileViewMode {
+    Grid,
+    List,
+    Icon,
+}
+
+@Composable
+private fun StudyMobileWebContent(
+    uiState: HomeUiState,
+    displayedWorkspace: List<VaultTreeItem>,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchOpen: Boolean,
+    onSearchOpen: () -> Unit,
+    onSearchClose: () -> Unit,
+    viewMode: StudyMobileViewMode,
+    onViewModeChange: (StudyMobileViewMode) -> Unit,
+    isFolderExpanded: (String) -> Boolean,
+    onToggleFolder: (VaultTreeItem) -> Unit,
+    onOpenFolder: (VaultTreeItem) -> Unit,
+    onOpenNote: (VaultTreeItem) -> Unit,
+    onCreateInside: (VaultTreeItem) -> Unit,
+    onMore: (VaultTreeItem) -> Unit,
+    onAdd: () -> Unit,
+    organizeMode: Boolean,
+    onDoneOrganizing: () -> Unit,
+    dashboardFontSizeSp: Float,
+    listState: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    val allFolders = remember(uiState.workspace) { uiState.workspace.flatMap { it.flattenFolders() } }
+    val allNotes = remember(uiState.workspace) {
+        uiState.workspace.flatMap { it.flattenNotes() }.distinctBy { it.id }
+    }
+    val pinnedNotes = remember(allNotes) { allNotes.filter { it.pinned }.take(3) }
+    val visibleWorkspace = remember(displayedWorkspace, searchQuery) {
+        displayedWorkspace.filterStudyTree(searchQuery)
+    }
+    val rootFolders = remember(visibleWorkspace) {
+        visibleWorkspace.filter { it.type == VaultTreeItemType.Folder }
+    }
+    val rootNotes = remember(visibleWorkspace) {
+        visibleWorkspace.filter { it.type == VaultTreeItemType.Note }
+    }
+    val searching = searchQuery.isNotBlank()
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.bg),
+        contentPadding = PaddingValues(
+            start = VaultSpacing.screen,
+            top = VaultSpacing.md,
+            end = VaultSpacing.screen,
+            bottom = VaultSpacing.huge,
+        ),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        item(key = "web_study_header") {
+            CompactWorkspaceHeader(
+                title = "Study",
+                metadata = "${allFolders.size} ${if (allFolders.size == 1) "folder" else "folders"} · " +
+                    "${allNotes.size} ${if (allNotes.size == 1) "note" else "notes"}",
+                searchOpen = searchOpen,
+                searchQuery = searchQuery,
+                searchPlaceholder = "Search notes and folders...",
+                onSearchQueryChange = onSearchQueryChange,
+                onSearchClose = onSearchClose,
+            ) {
+                CompactActionGroup {
+                        StudyViewButton(
+                            icon = Icons.Rounded.GridView,
+                            selected = viewMode == StudyMobileViewMode.Grid,
+                            description = "Grid view",
+                            onClick = { onViewModeChange(StudyMobileViewMode.Grid) },
+                        )
+                        StudyViewButton(
+                            icon = Icons.Rounded.FormatListBulleted,
+                            selected = viewMode == StudyMobileViewMode.List,
+                            description = "List view",
+                            onClick = { onViewModeChange(StudyMobileViewMode.List) },
+                        )
+                        StudyViewButton(
+                            icon = Icons.Rounded.FolderOpen,
+                            selected = viewMode == StudyMobileViewMode.Icon,
+                            description = "Icon view",
+                            onClick = { onViewModeChange(StudyMobileViewMode.Icon) },
+                        )
+                }
+                CompactViewAction(
+                    icon = Icons.Rounded.Search,
+                    selected = false,
+                    description = "Search study",
+                    onClick = onSearchOpen,
+                )
+                CompactPrimaryAction(
+                    icon = if (organizeMode) Icons.Rounded.Done else Icons.Rounded.Add,
+                    description = if (organizeMode) "Finish organizing" else "Add study item",
+                    onClick = if (organizeMode) onDoneOrganizing else onAdd,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(VaultSpacing.md))
+        }
+
+        if (pinnedNotes.isNotEmpty() && !searching) {
+            item(key = "web_study_pinned_heading") {
+                Row(
+                    modifier = Modifier.padding(bottom = VaultSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp),
+                        tint = colors.accent,
+                    )
+                    Text(
+                        text = "Pinned",
+                        modifier = Modifier.padding(start = 8.dp),
+                        color = colors.text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.W700,
+                    )
+                }
+            }
+            item(key = "web_study_pinned_notes") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    items(pinnedNotes, key = { "pinned_${it.id}" }) { note ->
+                        PinnedNoteCard(
+                            note = com.myvault.app.ui.components.VaultNoteCardData(
+                                id = note.id,
+                                title = note.name,
+                                meta = note.edited.orEmpty(),
+                                tableCount = note.tableCount,
+                                preview = note.preview,
+                            ),
+                            previewLines = 0,
+                            showFullTitle = uiState.showFullNoteTitles,
+                            onClick = { onOpenNote(note) },
+                            onLongPress = { onMore(note) },
+                        )
+                    }
+                }
+            }
+            item(key = "web_study_after_pinned") {
+                Spacer(modifier = Modifier.height(VaultSpacing.md))
+            }
+        }
+
+        if (visibleWorkspace.isEmpty()) {
+            item(key = "web_study_empty") {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    color = colors.surface,
+                    shape = VaultShapes.sm,
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(42.dp),
+                            tint = colors.textMuted,
+                        )
+                        Text(
+                            text = if (searching) "No matching notes or folders" else "No study folders yet",
+                            modifier = Modifier.padding(top = 17.dp),
+                            color = colors.textSecondary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.W600,
+                        )
+                        Text(
+                            text = if (searching) "Try a different search" else "Restored folders and notes will appear here",
+                            modifier = Modifier.padding(top = 5.dp),
+                            color = colors.textMuted,
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
+        } else if (viewMode == StudyMobileViewMode.List) {
+            item(key = "web_study_tree") {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    visibleWorkspace.forEach { item ->
+                        key(item.id) {
+                            FolderTreeRow(
+                                item = item,
+                                depth = 0,
+                                expanded = searching || isFolderExpanded(item.id),
+                                isChildExpanded = { childId -> searching || isFolderExpanded(childId) },
+                                onToggle = onToggleFolder,
+                                onOpenFolder = onToggleFolder,
+                                onOpenNote = onOpenNote,
+                                onLongPress = onMore,
+                                onCreateInside = onCreateInside,
+                                onMore = onMore,
+                                notePreviewLines = uiState.notePreviewLines,
+                                showFullNoteTitles = uiState.showFullNoteTitles,
+                                dashboardFontSizeSp = dashboardFontSizeSp,
+                                indentHierarchy = false,
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (viewMode == StudyMobileViewMode.Grid) {
+            items(rootFolders, key = { "grid_${it.id}" }) { folder ->
+                StudyVisualFolderCard(
+                    folder = folder,
+                    compact = false,
+                    onOpen = { onOpenFolder(folder) },
+                    onCreateInside = { onCreateInside(folder) },
+                    onMore = { onMore(folder) },
+                )
+                Spacer(modifier = Modifier.height(VaultSpacing.xs))
+            }
+            items(rootNotes, key = { "grid_note_${it.id}" }) { note ->
+                StudyRecentNoteRow(note = note, onClick = { onOpenNote(note) }, onMore = { onMore(note) })
+            }
+        } else {
+            items(rootFolders.chunked(2), key = { pair -> pair.joinToString("_") { it.id } }) { pair ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                ) {
+                    pair.forEach { folder ->
+                        StudyVisualFolderCard(
+                            folder = folder,
+                            compact = true,
+                            onOpen = { onOpenFolder(folder) },
+                            onCreateInside = { onCreateInside(folder) },
+                            onMore = { onMore(folder) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(VaultSpacing.xs))
+            }
+            items(rootNotes, key = { "icon_note_${it.id}" }) { note ->
+                StudyRecentNoteRow(note = note, onClick = { onOpenNote(note) }, onMore = { onMore(note) })
+            }
+        }
+
+    }
+}
+
+@Composable
+private fun StudyViewButton(
+    icon: ImageVector,
+    selected: Boolean,
+    description: String,
+    onClick: () -> Unit,
+) {
+    CompactViewAction(
+        icon = icon,
+        selected = selected,
+        description = description,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun StudyVisualFolderCard(
+    folder: VaultTreeItem,
+    compact: Boolean,
+    onOpen: () -> Unit,
+    onCreateInside: () -> Unit,
+    onMore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onOpen,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(if (compact) 132.dp else 144.dp),
+        color = colors.surface,
+        shape = VaultShapes.sm,
+    ) {
+        Column(
+            modifier = Modifier.padding(if (compact) 12.dp else 16.dp),
+            horizontalAlignment = if (compact) Alignment.CenterHorizontally else Alignment.Start,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (compact) 30.dp else 38.dp),
+                    tint = colors.accent,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    IconBtn(
+                        icon = Icons.Rounded.MoreHoriz,
+                        contentDescription = "More actions for ${folder.name}",
+                        onClick = onMore,
+                    )
+                    IconBtn(
+                        icon = Icons.Rounded.Add,
+                        contentDescription = "Add inside ${folder.name}",
+                        active = true,
+                        onClick = onCreateInside,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = folder.name,
+                modifier = Modifier.fillMaxWidth(),
+                color = colors.text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.W700,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${folder.children.count { it.type == VaultTreeItemType.Folder }} folders · ${folder.flattenNotes().size} notes",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                color = colors.textMuted,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudyRecentNoteRow(
+    note: VaultTreeItem,
+    onClick: () -> Unit,
+    onMore: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.Transparent,
+        shape = VaultShapes.sm,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (note.pinned) Icons.Rounded.PushPin else Icons.Rounded.Description,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = if (note.pinned) colors.accent else colors.textMuted,
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 10.dp),
+            ) {
+                Text(
+                    text = note.name,
+                    color = colors.textSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.W600,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (note.preview.isNotBlank()) {
+                    Text(
+                        text = note.preview,
+                        modifier = Modifier.padding(top = 2.dp),
+                        color = colors.textMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            IconBtn(
+                icon = Icons.Rounded.MoreHoriz,
+                contentDescription = "More actions for ${note.name}",
+                onClick = onMore,
             )
         }
     }
@@ -1597,10 +2064,28 @@ private fun VaultTreeItem.collectSelectedItems(
 
 private fun VaultTreeItem.flattenNotes(): List<VaultTreeItem> =
     if (type == VaultTreeItemType.Note) {
-        listOf(this)
+        listOf(this) + children.flatMap { it.flattenNotes() }
     } else {
         children.flatMap { it.flattenNotes() }
     }
+
+private fun List<VaultTreeItem>.filterStudyTree(query: String): List<VaultTreeItem> {
+    val term = query.trim()
+    if (term.isBlank()) return this
+    return mapNotNull { it.filterStudyNode(term) }
+}
+
+private fun VaultTreeItem.filterStudyNode(term: String): VaultTreeItem? {
+    val matchingChildren = children.mapNotNull { it.filterStudyNode(term) }
+    val matches = name.contains(term, ignoreCase = true) ||
+        description.orEmpty().contains(term, ignoreCase = true) ||
+        preview.contains(term, ignoreCase = true)
+    return when {
+        matches -> this
+        matchingChildren.isNotEmpty() -> copy(children = matchingChildren)
+        else -> null
+    }
+}
 
 private fun VaultTreeItem.containsFolder(folderId: String): Boolean =
     children.any { it.id == folderId || it.containsFolder(folderId) }

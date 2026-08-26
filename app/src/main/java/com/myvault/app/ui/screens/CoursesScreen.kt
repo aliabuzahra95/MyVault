@@ -1,13 +1,17 @@
 package com.myvault.app.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,9 +21,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -28,12 +35,14 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -43,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,14 +60,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.myvault.app.data.local.entity.CourseConceptCardEntity
 import com.myvault.app.data.local.entity.CourseEntity
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.CompactPrimaryAction
+import com.myvault.app.ui.components.CompactWorkspaceHeader
 import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultConfirmModal
@@ -69,6 +83,27 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.CoursesUiState
+import kotlinx.coroutines.delay
+
+private enum class CourseDeferredAction {
+    NewFolder,
+    NewNote,
+    NewSticky,
+    NewConcept,
+    RenameCourse,
+    NewCourse,
+    DeleteCourse,
+}
+
+private enum class OverviewCourseActionType {
+    Rename,
+    Delete,
+}
+
+private data class PendingOverviewCourseAction(
+    val course: CourseEntity,
+    val type: OverviewCourseActionType,
+)
 
 @Composable
 fun CoursesScreen(
@@ -117,14 +152,46 @@ fun CoursesScreen(
     var conceptDialog by remember { mutableStateOf<CourseConceptCardEntity?>(null) }
     var creatingConcept by remember { mutableStateOf(false) }
     var deleteConceptDialog by remember { mutableStateOf<CourseConceptCardEntity?>(null) }
+    var openedCourseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var overviewActionsCourse by remember { mutableStateOf<CourseEntity?>(null) }
+    var pendingOverviewAction by remember { mutableStateOf<PendingOverviewCourseAction?>(null) }
+
+    LaunchedEffect(overviewActionsCourse, pendingOverviewAction) {
+        val pending = pendingOverviewAction ?: return@LaunchedEffect
+        if (overviewActionsCourse != null) return@LaunchedEffect
+        delay(180)
+        when (pending.type) {
+            OverviewCourseActionType.Rename -> courseDialog = pending.course
+            OverviewCourseActionType.Delete -> deleteCourseDialog = pending.course
+        }
+        pendingOverviewAction = null
+    }
+
+    val openedCourse = openedCourseId?.let { id -> uiState.courses.firstOrNull { it.id == id } }
+    BackHandler(enabled = openedCourse != null) { openedCourseId = null }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (uiState.activeCourse == null) {
-            EmptyCoursesScreen(onCreate = { creatingCourse = true })
-        } else {
+        when {
+            openedCourse == null -> CoursesMobileWebOverview(
+                courses = uiState.courses,
+                noteCountsByCourse = uiState.noteCountsByCourse,
+                conceptCountsByCourse = uiState.conceptCountsByCourse,
+                onCreate = { creatingCourse = true },
+                onOpen = { course ->
+                    openedCourseId = course.id
+                    onSelectCourse(course.id)
+                },
+                onManage = { overviewActionsCourse = it },
+            )
+            uiState.activeCourse?.id != openedCourse.id || uiState.folderState.folder == null -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = VaultThemeTokens.colors.accent)
+                }
+            }
+            else -> {
             FolderViewScreen(
             uiState = uiState.folderState,
-            onBackClick = {},
+            onBackClick = { openedCourseId = null },
             onSearchClick = {},
             onNoteClick = onOpenNote,
             onFolderClick = onOpenFolder,
@@ -152,13 +219,13 @@ fun CoursesScreen(
             showFullNoteTitles = uiState.showFullNoteTitles,
             dashboardFontSizeSp = dashboardFontSizeSp,
             showNavigationHeader = false,
+            showFloatingCreateAction = false,
             fabBottomPadding = fabBottomPadding,
             topContent = {
                 CourseHeader(
-                    courses = uiState.courses,
                     active = uiState.activeCourse,
                     continueTitle = uiState.continueNoteTitle,
-                    onSelect = onSelectCourse,
+                    onBack = { openedCourseId = null },
                     onCreate = { creatingCourse = true },
                     onRename = { courseDialog = uiState.activeCourse },
                     onDelete = { deleteCourseDialog = uiState.activeCourse },
@@ -183,7 +250,30 @@ fun CoursesScreen(
             },
         )
 
+            }
         }
+    }
+
+    overviewActionsCourse?.let { course ->
+        PremiumActionDialog(
+            title = course.title,
+            onDismiss = { overviewActionsCourse = null },
+            actions = listOf(
+                PremiumAction("Open course", Icons.Rounded.MenuBook) {
+                    overviewActionsCourse = null
+                    openedCourseId = course.id
+                    onSelectCourse(course.id)
+                },
+                PremiumAction("Rename", Icons.Rounded.Edit) {
+                    pendingOverviewAction = PendingOverviewCourseAction(course, OverviewCourseActionType.Rename)
+                    overviewActionsCourse = null
+                },
+                PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    pendingOverviewAction = PendingOverviewCourseAction(course, OverviewCourseActionType.Delete)
+                    overviewActionsCourse = null
+                },
+            ),
+        )
     }
 
     if (creatingCourse || courseDialog != null) {
@@ -266,14 +356,206 @@ fun CoursesScreen(
     }
 }
 
+@Composable
+private fun CoursesMobileWebOverview(
+    courses: List<CourseEntity>,
+    noteCountsByCourse: Map<String, Int>,
+    conceptCountsByCourse: Map<String, Int>,
+    onCreate: () -> Unit,
+    onOpen: (CourseEntity) -> Unit,
+    onManage: (CourseEntity) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(colors.bg),
+        contentPadding = PaddingValues(
+            start = VaultSpacing.lg,
+            top = VaultSpacing.md,
+            end = VaultSpacing.lg,
+            bottom = VaultSpacing.huge,
+        ),
+        verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+    ) {
+        item(key = "courses_header") {
+            CompactWorkspaceHeader(
+                title = "Courses",
+                metadata = if (courses.size == 1) "1 course" else "${courses.size} courses",
+            ) {
+                CompactPrimaryAction(
+                    icon = Icons.Rounded.Add,
+                    description = "Create course",
+                    onClick = onCreate,
+                )
+            }
+            Spacer(Modifier.height(VaultSpacing.md))
+        }
 
+        if (courses.isEmpty()) {
+            item(key = "courses_empty") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                    color = colors.surface,
+                    shape = VaultShapes.sm,
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(VaultSpacing.xxl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MenuBook,
+                            contentDescription = null,
+                            modifier = Modifier.size(42.dp),
+                            tint = colors.accent,
+                        )
+                        Text(
+                            text = "No courses yet",
+                            modifier = Modifier.padding(top = 16.dp),
+                            color = colors.text,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.W800,
+                        )
+                        Text(
+                            text = "Create a course for its lesson folders, notes, sticky notes, and concepts.",
+                            modifier = Modifier.padding(top = 7.dp),
+                            color = colors.textSecondary,
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                        )
+                        Surface(
+                            onClick = onCreate,
+                            modifier = Modifier.padding(top = 20.dp),
+                            color = colors.accent,
+                            contentColor = Color.White,
+                            shape = VaultShapes.sm,
+                        ) {
+                            Text(
+                                text = "Create course",
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
+                                fontWeight = FontWeight.W700,
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            items(courses, key = { "course_${it.id}" }) { course ->
+                CourseMobileWebCard(
+                    course = course,
+                    noteCount = noteCountsByCourse[course.id] ?: 0,
+                    conceptCount = conceptCountsByCourse[course.id] ?: 0,
+                    onOpen = { onOpen(course) },
+                    onManage = { onManage(course) },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CourseMobileWebCard(
+    course: CourseEntity,
+    noteCount: Int,
+    conceptCount: Int,
+    onOpen: () -> Unit,
+    onManage: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = VaultShapes.sm,
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onOpen, onLongClick = onManage)
+                .padding(VaultSpacing.md),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Surface(
+                        modifier = Modifier.size(44.dp),
+                        color = colors.accent.copy(alpha = 0.10f),
+                        shape = VaultShapes.sm,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.MenuBook, null, modifier = Modifier.size(23.dp), tint = colors.accent)
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f).padding(start = 14.dp, top = 1.dp)) {
+                        Text(
+                            text = course.title,
+                            color = colors.text,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.W800,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "Course workspace",
+                            modifier = Modifier.padding(top = 4.dp),
+                            color = colors.textSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    IconButton(onClick = onManage) {
+                        Icon(Icons.Rounded.MoreVert, "Manage ${course.title}", tint = colors.textSecondary)
+                    }
+                }
+                Row(
+                    modifier = Modifier.padding(top = VaultSpacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CourseCountTile(
+                        value = noteCount,
+                        label = if (noteCount == 1) "Note" else "Notes",
+                        icon = Icons.Rounded.Description,
+                        modifier = Modifier.weight(1f),
+                    )
+                    CourseCountTile(
+                        value = conceptCount,
+                        label = if (conceptCount == 1) "Concept" else "Concepts",
+                        icon = Icons.Rounded.Lightbulb,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CourseCountTile(
+    value: Int,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(modifier = modifier, color = colors.bg, shape = VaultShapes.sm) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Icon(icon, null, modifier = Modifier.size(17.dp), tint = colors.textMuted)
+            Column {
+                Text(value.toString(), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.W800)
+                Text(label, color = colors.textSecondary, fontSize = 11.sp)
+            }
+        }
+    }
+}
 
 @Composable
 private fun CourseHeader(
-    courses: List<CourseEntity>,
     active: CourseEntity,
     continueTitle: String?,
-    onSelect: (String) -> Unit,
+    onBack: () -> Unit,
     onCreate: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
@@ -289,59 +571,115 @@ private fun CourseHeader(
 ) {
     val colors = VaultThemeTokens.colors
     var actionsOpen by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier.padding(vertical = VaultSpacing.sm),
-        verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
-    ) {
-        VaultTopBar(
-            title = active.title,
-            titleContent = {
-                CourseSwitcher(
-                    courses = courses,
-                    active = active,
-                    onSelect = onSelect,
-                    onCreate = onCreate,
-                    modifier = Modifier.widthIn(min = 132.dp, max = 190.dp),
-                )
-            },
-        ) {
-            IconBtn(
-                icon = Icons.Rounded.WbSunny,
-                contentDescription = "Toggle theme",
-                active = true,
-                onClick = onThemeClick,
-            )
-            IconBtn(
-                icon = Icons.Rounded.Backup,
-                contentDescription = "Quick cloud backup",
-                active = quickBackupRecommended,
-                onClick = onQuickBackupClick,
-            )
-            IconBtn(
-                icon = Icons.Rounded.Settings,
-                contentDescription = "Settings",
-                onClick = onSettingsClick,
-            )
-            IconBtn(
-                icon = Icons.Rounded.MoreVert,
-                contentDescription = "Course actions",
-                onClick = { actionsOpen = true },
-            )
-            CourseActionMenu(
-                expanded = actionsOpen,
-                onDismiss = { actionsOpen = false },
-                onRename = onRename,
-                onNewFolder = onNewFolder,
-                onNewNote = onNewNote,
-                onNewSticky = onNewSticky,
-                onNewConcept = onNewConcept,
-                onManage = onRename,
-                onDelete = onDelete,
-            )
+    var addOpen by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<CourseDeferredAction?>(null) }
+
+    LaunchedEffect(addOpen, actionsOpen, pendingAction) {
+        val pending = pendingAction ?: return@LaunchedEffect
+        if (addOpen || actionsOpen) return@LaunchedEffect
+        delay(180)
+        when (pending) {
+            CourseDeferredAction.NewFolder -> onNewFolder()
+            CourseDeferredAction.NewNote -> onNewNote()
+            CourseDeferredAction.NewSticky -> onNewSticky()
+            CourseDeferredAction.NewConcept -> onNewConcept()
+            CourseDeferredAction.RenameCourse -> onRename()
+            CourseDeferredAction.NewCourse -> onCreate()
+            CourseDeferredAction.DeleteCourse -> onDelete()
         }
+        pendingAction = null
+    }
+    Column(
+        modifier = Modifier.padding(
+            start = VaultSpacing.lg,
+            top = VaultSpacing.md,
+            end = VaultSpacing.lg,
+            bottom = VaultSpacing.lg,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.ArrowBack, "Back to courses", tint = colors.text)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = active.title,
+                    color = colors.text,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.W800,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "Course workspace",
+                    modifier = Modifier.padding(top = 2.dp),
+                    color = colors.textSecondary,
+                    fontSize = 12.sp,
+                )
+            }
+            CompactPrimaryAction(
+                icon = Icons.Rounded.Add,
+                description = "Add to course",
+                onClick = { addOpen = true },
+                buttonSize = 42.dp,
+            )
+            IconButton(onClick = { actionsOpen = true }, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.MoreVert, "Course actions", tint = colors.textSecondary)
+            }
+        }
+        Spacer(Modifier.height(VaultSpacing.md))
         ContinueLessonCard(
             continueTitle = continueTitle,
             onContinue = onContinue,
+        )
+    }
+
+    if (addOpen) {
+        PremiumActionDialog(
+            title = "Add to ${active.title}",
+            onDismiss = { addOpen = false },
+            actions = listOf(
+                PremiumAction("New folder", Icons.Rounded.CreateNewFolder) {
+                    pendingAction = CourseDeferredAction.NewFolder
+                    addOpen = false
+                },
+                PremiumAction("New note", Icons.Rounded.Description) {
+                    pendingAction = CourseDeferredAction.NewNote
+                    addOpen = false
+                },
+                PremiumAction("New sticky note", Icons.Rounded.StickyNote2) {
+                    pendingAction = CourseDeferredAction.NewSticky
+                    addOpen = false
+                },
+                PremiumAction("New concept card", Icons.Rounded.Lightbulb) {
+                    pendingAction = CourseDeferredAction.NewConcept
+                    addOpen = false
+                },
+            ),
+        )
+    }
+    if (actionsOpen) {
+        PremiumActionDialog(
+            title = active.title,
+            onDismiss = { actionsOpen = false },
+            actions = listOf(
+                PremiumAction("Rename course", Icons.Rounded.Edit) {
+                    pendingAction = CourseDeferredAction.RenameCourse
+                    actionsOpen = false
+                },
+                PremiumAction("New course", Icons.Rounded.Add) {
+                    pendingAction = CourseDeferredAction.NewCourse
+                    actionsOpen = false
+                },
+                PremiumAction("Delete course", Icons.Rounded.Delete, destructive = true) {
+                    pendingAction = CourseDeferredAction.DeleteCourse
+                    actionsOpen = false
+                },
+            ),
         )
     }
 }
@@ -365,7 +703,6 @@ private fun ContinueLessonCard(
     }
     val modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = VaultSpacing.screen)
 
     if (continueTitle != null) {
         Surface(

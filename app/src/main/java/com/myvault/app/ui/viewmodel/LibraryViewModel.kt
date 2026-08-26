@@ -425,16 +425,21 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun importFiles(uris: List<Uri>, onImported: (String) -> Unit = {}) {
+        importFilesToFolder(folderId = null, uris = uris, onImported = onImported)
+    }
+
+    fun importFilesToFolder(folderId: String?, uris: List<Uri>, onImported: (String) -> Unit = {}) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            val folderId = targetLibraryFolderId()
+            val targetFolderId = folderId ?: targetLibraryFolderId()
             val duplicate = uris.firstNotNullOfOrNull { uri ->
-                attachmentRepository.findDuplicateLibraryPdf(folderId, uri)?.let { existing ->
+                attachmentRepository.findDuplicateLibraryPdf(targetFolderId, uri)?.let { existing ->
                     PendingDuplicatePdfImport(
                         uri = uri,
                         remainingUris = uris.filterNot { it == uri },
                         existingAttachmentId = existing.id,
                         fileName = existing.fileName,
+                        targetFolderId = targetFolderId,
                     )
                 }
             }
@@ -443,7 +448,7 @@ class LibraryViewModel @Inject constructor(
                 return@launch
             }
             importState.value = LibraryImportState(active = true, message = "Importing ${uris.size} file${if (uris.size == 1) "" else "s"}...")
-            val result = attachmentRepository.importLibraryDocuments(folderId, uris)
+            val result = attachmentRepository.importLibraryDocuments(targetFolderId, uris)
             result.importedIds.firstOrNull()?.let(onImported)
             val message = when {
                 result.importedIds.isEmpty() && result.failedCount > 0 -> "Import failed for ${result.failedCount} file${if (result.failedCount == 1) "" else "s"}."
@@ -461,7 +466,7 @@ class LibraryViewModel @Inject constructor(
             runCatching { attachmentRepository.replaceLibraryPdf(pending.existingAttachmentId, pending.uri) }
                 .onSuccess {
                     if (pending.remainingUris.isNotEmpty()) {
-                        importFiles(pending.remainingUris)
+                        importFilesToFolder(pending.targetFolderId, pending.remainingUris)
                     } else {
                         importState.value = LibraryImportState(active = false, message = "Replaced ${pending.fileName}.")
                     }
@@ -475,7 +480,7 @@ class LibraryViewModel @Inject constructor(
     fun skipDuplicatePdf() {
         val pending = importState.value.duplicatePdf ?: return
         if (pending.remainingUris.isNotEmpty()) {
-            importFiles(pending.remainingUris)
+            importFilesToFolder(pending.targetFolderId, pending.remainingUris)
         } else {
             importState.value = LibraryImportState(active = false, message = "Skipped ${pending.fileName}.")
         }
@@ -675,6 +680,7 @@ private data class PendingDuplicatePdfImport(
     val remainingUris: List<Uri>,
     val existingAttachmentId: String,
     val fileName: String,
+    val targetFolderId: String?,
 )
 
 private data class LibraryDataLayer(
