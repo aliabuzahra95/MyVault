@@ -193,6 +193,12 @@ production features. They must not be removed or assigned new UI silently.
 
 ### Stage 3 blockers
 
+The complete current inventory, proposed placement hierarchy, compatibility
+findings, and unresolved decisions are recorded in
+`docs/STAGE_3_SETTINGS_AMENDMENT.md`. The canonical cross-stage deferred list is
+`docs/DEFERRED_REQUIREMENTS.md`. Neither document authorizes Stage 3
+implementation.
+
 1. App lock, biometric/security options, and lock timeout.
 2. Local backup and restore controls.
 3. Google Drive connection, push/pull, force-push, conflicts, and status.
