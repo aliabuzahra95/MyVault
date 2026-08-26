@@ -40,17 +40,17 @@ class VaultMobileWebNavigationContractTest {
     }
 
     @Test
-    fun `mobile web shell owns compact header left drawer and navigation utility`() {
+    fun `frozen shell owns responsive explorer workspace chooser and compact utility`() {
         val component = source("ui/components/VaultMobileWebShell.kt")
         val navigation = source("ui/navigation/VaultNavHost.kt")
 
         assertTrue(component.contains("ModalNavigationDrawer("))
         assertTrue(component.contains("ModalDrawerSheet("))
-        assertTrue(component.contains(".width(292.dp)"))
+        assertTrue(component.contains("(maxWidth - 46.dp).coerceAtMost(366.dp)"))
         assertTrue(component.contains(".height(56.dp)"))
         assertTrue(component.contains("Icons.Rounded.Menu"))
         assertTrue(component.contains("DrawerUtilityRow("))
-        assertTrue(component.contains("HorizontalDivider("))
+        assertFalse(component.contains("HorizontalDivider("))
         assertTrue(component.contains(".navigationBarsPadding()"))
         assertTrue(component.contains("VaultMobileWebExplorerSection"))
         assertTrue(component.contains("DrawerExplorerNode("))
@@ -59,9 +59,18 @@ class VaultMobileWebNavigationContractTest {
         assertTrue(component.contains("onExplorerMoreSelected"))
         assertTrue(component.contains("selectedExplorerNodeId"))
         assertTrue(component.contains("findExplorerPath(selectedId)"))
-        assertTrue(component.contains("onWorkspaceSelected: () -> Unit"))
+        assertTrue(component.contains("onWorkspaceSelected: (String) -> Unit"))
         assertTrue(component.contains(".clickable(onClick = onWorkspaceSelected)"))
-        assertTrue(navigation.contains("if (preferences.workspace == WORKSPACE_PERSONAL) \"Islamic Corpus\" else \"Personal\""))
+        assertTrue(component.contains("title = \"Switch workspace\""))
+        assertTrue(component.contains("label = \"Islamic Corpus\""))
+        assertTrue(component.contains("label = \"Personal\""))
+        assertTrue(navigation.contains("onWorkspaceSelected = ::switchWorkspace"))
+        assertTrue(component.contains("onThemeSelected"))
+        assertFalse(component.contains("Icons.Rounded.Backup"))
+        assertFalse(component.contains("Icons.Rounded.MoreVert"))
+        assertTrue(component.contains(".combinedClickable("))
+        assertFalse(navigation.contains("slideIntoContainer("))
+        assertFalse(navigation.contains("slideOutOfContainer("))
         assertFalse(component.contains("VaultFixedBottomNavigation("))
     }
 

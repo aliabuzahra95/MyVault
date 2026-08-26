@@ -3,7 +3,6 @@ package com.myvault.app.ui.navigation
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -19,12 +18,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
-import androidx.compose.material.icons.rounded.AutoStories
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.LocalLibrary
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.CheckCircleOutline
+import androidx.compose.material.icons.outlined.LocalLibrary
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +61,7 @@ import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.VaultExplorerActionHost
 import com.myvault.app.ui.components.VaultExplorerMoveTarget
 import com.myvault.app.ui.components.VaultMobileWebNavigationItem
+import com.myvault.app.ui.components.VaultMobileWebApplicationDestination
 import com.myvault.app.ui.components.VaultMobileWebExplorerNode
 import com.myvault.app.ui.components.VaultMobileWebExplorerNodeType
 import com.myvault.app.ui.components.VaultMobileWebExplorerSection
@@ -267,11 +267,7 @@ fun VaultNavHost(
         VaultMobileWebShell(
             workspaceLabel = preferences.workspace.workspaceLabel(),
             accountEmail = preferences.googleDriveAccountEmail,
-            onWorkspaceSelected = {
-                switchWorkspace(
-                    if (preferences.workspace == WORKSPACE_PERSONAL) "Islamic Corpus" else "Personal",
-                )
-            },
+            onWorkspaceSelected = ::switchWorkspace,
             items = shellNavigationItems,
             selectedIndex = selectedRootIndex,
             selectedExplorerNodeId = selectedExplorerNodeId,
@@ -283,12 +279,16 @@ fun VaultNavHost(
             },
             onSearchSelected = { navController.navigate(VaultDestination.Search.route) },
             onSettingsSelected = { navController.navigate(VaultDestination.Settings.route) },
-            onQuickBackupSelected = {
-                shellViewModel.pushGoogleDriveSync {
-                    Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-                }
+            onThemeSelected = {
+                shellViewModel.setTheme(
+                    if (preferences.theme == VaultThemeMode.Dark) VaultThemeMode.Light else VaultThemeMode.Dark,
+                )
             },
-            quickBackupRecommended = preferences.quickBackupRecommended(),
+            selectedApplicationDestination = when (currentRoute) {
+                VaultDestination.Search.route -> VaultMobileWebApplicationDestination.Search
+                VaultDestination.Settings.route -> VaultMobileWebApplicationDestination.Settings
+                else -> null
+            },
             explorerSections = shellExplorerSections,
             onExplorerNodeSelected = { sectionIndex, node ->
                 openExplorerNode(rootModes[sectionIndex], node)
@@ -303,30 +303,6 @@ fun VaultNavHost(
         NavHost(
             navController = navController,
             startDestination = VaultDestination.Home.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                )
-            },
         ) {
         composable(VaultDestination.Home.route) {
             key(preferences.workspace) {
@@ -1530,12 +1506,12 @@ private fun String.workspaceValue(): String =
     }
 
 private enum class VaultRootMode(val label: String, val icon: ImageVector) {
-    Courses("Courses", Icons.Rounded.School),
-    Study("Study", Icons.AutoMirrored.Rounded.MenuBook),
-    Library("Library", Icons.Rounded.LocalLibrary),
-    Quran("Qur'an", Icons.Rounded.AutoStories),
-    Memorise("Memorise", Icons.Rounded.CheckCircle),
-    Personal("Personal", Icons.Rounded.Person),
+    Courses("Courses", Icons.Outlined.School),
+    Study("Study", Icons.AutoMirrored.Outlined.MenuBook),
+    Library("Library", Icons.Outlined.LocalLibrary),
+    Quran("Qur'an", Icons.Outlined.AutoStories),
+    Memorise("Memorise", Icons.Outlined.CheckCircleOutline),
+    Personal("Personal", Icons.Outlined.PersonOutline),
 }
 
 private data class ExplorerActionTarget(

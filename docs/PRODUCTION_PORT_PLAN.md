@@ -498,3 +498,42 @@ implemented faithfully until these design gaps are resolved:
 
 All later-stage gaps in section 7 remain separate approval gates. No UI has been
 changed as part of this audit.
+
+## 14. Approved Stage 1 Design Amendments
+
+Approved on 2026-08-26. These amendments resolve only the three Stage 1 blockers
+listed above. They do not resolve any later-stage placement gap.
+
+### Workspace switching
+
+The existing Frozen Design Master Explorer profile/header is the workspace
+switching entry point. Its visual composition remains the approved avatar, user
+name, and active workspace label. Tapping the complete profile/header region
+opens a compact native bottom sheet using the frozen sheet language. The sheet
+contains only Islamic Corpus and Personal, with the current workspace indicated
+subtly. Selection invokes the existing production workspace state and switching
+logic. No permanent switcher, top-bar icon, bottom-navigation item, account
+action, or Settings action is added.
+
+### Narration mini-player
+
+The current production narration mini-player presentation, placement, and
+behavior remain unchanged during Stage 1. It is a deliberate temporary legacy
+exception. If it collides with a frozen FAB, gesture inset, PDF control, Qur'an
+audio bar, Memorise control, bottom sheet, keyboard, editor toolbar, or other
+contextual surface, implementation stops for placement approval.
+
+### Dashboard and global Search
+
+Dashboard and global Search retain their current production screen
+implementations and visual presentation. Stage 1 may make only the minimum
+navigation wiring required to open them from the new Explorer. Contextual
+Study/Library search is not a reference for global Search. Their temporary
+visual inconsistency is approved until dedicated frozen references or another
+explicit design amendment exists.
+
+### Authorization boundary
+
+Stage 1, Global Shell and Explorer, is authorized with these amendments. Stage
+2 and every unresolved later-stage feature remain unauthorized. The frozen
+prototype directory remains read-only.
