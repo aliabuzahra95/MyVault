@@ -299,6 +299,8 @@ fun VaultNavHost(
             onExplorerMoreSelected = { sectionIndex, node ->
                 explorerActionTarget = ExplorerActionTarget(rootModes[sectionIndex], node)
             },
+            contentStartsInMenuBar = currentRoute == VaultDestination.Home.route &&
+                rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library),
         ) {
         NavHost(
             navController = navController,
@@ -441,6 +443,7 @@ fun VaultNavHost(
                         onSetNotePinnedClick = { noteId, pinned ->
                             homeViewModel.setNotePinned(noteId, pinned)
                         },
+                        onSetNoteFolderPinnedClick = homeViewModel::setNoteFolderPinned,
                         onSetNoteFavouriteClick = { noteId, favourite ->
                             homeViewModel.setNoteFavourite(noteId, favourite)
                         },
@@ -449,6 +452,7 @@ fun VaultNavHost(
                                 navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
                             }
                         },
+                        onNewStickyNoteClick = homeViewModel::createStickyNote,
                         onImportFileClick = { uri ->
                             homeViewModel.importDocument(uri, mode = FOLDER_MODE_STUDY) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
@@ -718,6 +722,7 @@ fun VaultNavHost(
                         onSetNotePinnedClick = { noteId, pinned ->
                             homeViewModel.setNotePinned(noteId, pinned)
                         },
+                        onSetNoteFolderPinnedClick = homeViewModel::setNoteFolderPinned,
                         onSetNoteFavouriteClick = { noteId, favourite ->
                             homeViewModel.setNoteFavourite(noteId, favourite)
                         },
@@ -726,6 +731,7 @@ fun VaultNavHost(
                                 navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
                             }
                         },
+                        onNewStickyNoteClick = homeViewModel::createStickyNote,
                         onImportFileClick = { uri ->
                             homeViewModel.importDocument(uri, mode = FOLDER_MODE_PERSONAL) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId))
@@ -902,6 +908,9 @@ fun VaultNavHost(
                 onRemoveAttachmentTag = viewModel::removeAttachmentTag,
                 onAddAnnotationTag = viewModel::addAnnotationTag,
                 onRemoveAnnotationTag = viewModel::removeAnnotationTag,
+                onViewAllAnnotationsClick = {
+                    navController.navigate(VaultDestination.PdfActivityFeed.route(libraryMode))
+                },
                 showFullFileTitles = preferences.showFullFileTitles,
             )
         }

@@ -29,13 +29,17 @@ class WorkspaceFabAndQuranChromeContractTest {
     }
 
     @Test
-    fun `all expandable workspace FAB hosts apply the same scrim`() {
+    fun `frozen corpus FABs use modal sheets while legacy expandable hosts retain their scrim`() {
         val home = source("ui/screens/HomeScreen.kt")
         val library = source("ui/screens/LibraryScreen.kt")
         val folder = source("ui/screens/FolderViewScreen.kt")
+        val corpusBrowser = source("ui/components/CorpusBrowser.kt")
 
-        assertTrue(home.contains(".background(colors.scrim)"))
-        assertTrue(library.contains(".background(colors.scrim)"))
+        assertTrue(home.contains("CorpusFab("))
+        assertTrue(home.contains("CorpusActionSheet("))
+        assertTrue(library.contains("CorpusFab("))
+        assertTrue(library.contains("LibraryActionDialog("))
+        assertTrue(corpusBrowser.contains("ModalBottomSheet("))
         assertTrue(folder.contains(".background(colors.scrim)"))
     }
 

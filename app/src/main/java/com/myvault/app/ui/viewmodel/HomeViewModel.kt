@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.DatabaseSeeder
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
+import com.myvault.app.data.repository.FolderStickyNoteRepository
 import com.myvault.app.data.repository.HomeSnapshotRepository
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SearchRepository
@@ -68,6 +69,7 @@ private val EmptySearchResults = Triple(
 class HomeViewModel @Inject constructor(
     seeder: DatabaseSeeder,
     private val folderRepository: FolderRepository,
+    private val stickyNoteRepository: FolderStickyNoteRepository,
     private val noteRepository: NoteRepository,
     private val attachmentRepository: AttachmentRepository,
     private val searchRepository: SearchRepository,
@@ -303,8 +305,16 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { noteRepository.setPinned(noteId, pinned) }
     }
 
+    fun setNoteFolderPinned(noteId: String, pinned: Boolean) {
+        viewModelScope.launch { noteRepository.setFolderPinned(noteId, pinned) }
+    }
+
     fun setNoteFavourite(noteId: String, favourite: Boolean) {
         viewModelScope.launch { noteRepository.setFavourite(noteId, favourite) }
+    }
+
+    fun createStickyNote(folderId: String, text: String) {
+        viewModelScope.launch { stickyNoteRepository.create(folderId, text) }
     }
 }
 

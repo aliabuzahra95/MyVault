@@ -15,6 +15,7 @@ import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -132,6 +133,7 @@ fun VaultMobileWebShell(
     onExplorerNodeSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
     onExplorerAddSelected: (Int, VaultMobileWebExplorerNode?) -> Unit = { _, _ -> },
     onExplorerMoreSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
+    contentStartsInMenuBar: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -297,38 +299,58 @@ fun VaultMobileWebShell(
             }
         },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.bg),
-        ) {
-            Box(
+        val menuButton: @Composable BoxScope.() -> Unit = {
+            Surface(
+                onClick = { scope.launch { drawerState.open() } },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .height(56.dp)
-                    .padding(horizontal = 12.dp),
+                    .align(Alignment.CenterStart)
+                    .size(40.dp),
+                shape = VaultShapes.sm,
+                color = Color.Transparent,
+                contentColor = colors.textSecondary,
             ) {
-                Surface(
-                    onClick = { scope.launch { drawerState.open() } },
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .size(40.dp),
-                    shape = VaultShapes.sm,
-                    color = Color.Transparent,
-                    contentColor = colors.textSecondary,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Menu,
-                            contentDescription = "Open navigation",
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Menu,
+                        contentDescription = "Open navigation",
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
-            Box(modifier = Modifier.weight(1f)) {
+        }
+        if (contentStartsInMenuBar) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.bg)
+                    .statusBarsPadding(),
+            ) {
                 content()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(horizontal = 12.dp),
+                    content = menuButton,
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.bg),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(56.dp)
+                        .padding(horizontal = 12.dp),
+                    content = menuButton,
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    content()
+                }
             }
         }
     }

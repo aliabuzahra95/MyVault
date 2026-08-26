@@ -105,6 +105,16 @@ import com.myvault.app.ui.components.CompactActionGroup
 import com.myvault.app.ui.components.CompactPrimaryAction
 import com.myvault.app.ui.components.CompactViewAction
 import com.myvault.app.ui.components.CompactWorkspaceHeader
+import com.myvault.app.ui.components.CorpusEmptyState
+import com.myvault.app.ui.components.CorpusAction
+import com.myvault.app.ui.components.CorpusActionGroup
+import com.myvault.app.ui.components.CorpusActionSheet
+import com.myvault.app.ui.components.CorpusFab
+import com.myvault.app.ui.components.CorpusFolderRow
+import com.myvault.app.ui.components.CorpusHeader
+import com.myvault.app.ui.components.CorpusLeafRow
+import com.myvault.app.ui.components.CorpusPinnedItem
+import com.myvault.app.ui.components.CorpusPinnedStrip
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenuExpansion
@@ -159,8 +169,10 @@ fun HomeScreen(
     onMoveNoteToModeClick: (noteId: String, mode: String) -> Unit = { _, _ -> },
     onDeleteNoteClick: (noteId: String) -> Unit = {},
     onSetNotePinnedClick: (noteId: String, pinned: Boolean) -> Unit = { _, _ -> },
+    onSetNoteFolderPinnedClick: (noteId: String, pinned: Boolean) -> Unit = { _, _ -> },
     onSetNoteFavouriteClick: (noteId: String, favourite: Boolean) -> Unit = { _, _ -> },
     onCreateSubNoteClick: (parentNoteId: String) -> Unit = {},
+    onNewStickyNoteClick: (folderId: String, text: String) -> Unit = { _, _ -> },
     onImportFileClick: (Uri) -> Unit = {},
     onAttachmentClick: (String) -> Unit = {},
     onOpenAttachmentsClick: () -> Unit = {},
@@ -191,6 +203,8 @@ fun HomeScreen(
     var deleteFolderDialogOpen by remember { mutableStateOf(false) }
     var selectedNote by remember { mutableStateOf<VaultTreeItem?>(null) }
     var noteActionsOpen by remember { mutableStateOf(false) }
+    var noteMoreActionsOpen by remember { mutableStateOf(false) }
+    var folderMoreActionsOpen by remember { mutableStateOf(false) }
     var renameNoteDialogOpen by remember { mutableStateOf(false) }
     var moveNoteDialogOpen by remember { mutableStateOf(false) }
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
@@ -200,7 +214,8 @@ fun HomeScreen(
     var utilityMenuOpen by remember { mutableStateOf(false) }
     var studyCreateMenuOpen by remember { mutableStateOf(false) }
     var folderCreateMenuOpen by remember { mutableStateOf(false) }
-    var studyViewMode by rememberSaveable { mutableStateOf(StudyMobileViewMode.List) }
+    var stickyNoteDialogOpen by remember { mutableStateOf(false) }
+    var stickyNoteInput by remember { mutableStateOf("") }
     var studySearchOpen by rememberSaveable { mutableStateOf(uiState.searchQuery.isNotBlank()) }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var manageMenuOpen by remember { mutableStateOf(false) }
@@ -245,340 +260,53 @@ fun HomeScreen(
         onSearchQueryChange("")
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = colors.bg,
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.bg)
-                .padding(innerPadding),
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 144.dp),
-            ) {
-                item(key = "study_top_bar") {
-                    VaultTopBar(
-                        title = workspaceTitle,
-                        titleContent = if (workspaceOptions.isNotEmpty()) {
-                            {
-                                VaultWorkspaceSwitcher(
-                                    selectedLabel = workspaceTitle,
-                                    options = workspaceOptions,
-                                    onSelected = onWorkspaceSelected,
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                    ) {
-                        if (organizeMode) {
-                            Surface(
-                                onClick = { organizeMode = false },
-                                shape = VaultShapes.pill,
-                                color = colors.accentSoft,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentBorder),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(Icons.Rounded.Done, null, modifier = Modifier.size(15.dp), tint = colors.accent)
-                                    Text(
-                                        text = "Done",
-                                        style = androidx.compose.material3.MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
-                                        color = colors.accent,
-                                    )
-                                }
-                            }
-                        } else {
-                            IconBtn(
-                                icon = Icons.Rounded.WbSunny,
-                                contentDescription = "Toggle theme",
-                                active = true,
-                                onClick = onThemeClick,
-                            )
-                            IconBtn(
-                                icon = Icons.Rounded.Backup,
-                                contentDescription = "Quick cloud backup",
-                                active = quickBackupRecommended,
-                                onClick = { quickBackupConfirmOpen = true },
-                            )
-                            IconBtn(
-                                icon = Icons.Rounded.Settings,
-                                contentDescription = "Settings",
-                                onClick = onSettingsClick,
-                            )
-                            IconBtn(
-                                icon = Icons.Rounded.MoreVert,
-                                contentDescription = "Manage workspace",
-                                onClick = { utilityMenuOpen = true },
-                            )
-                        }
-                    }
-                }
-
-                item(key = "study_search") {
-                    SearchBar(
-                        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                        query = uiState.searchQuery,
-                        active = isSearching,
-                        onQueryChange = onSearchQueryChange,
-                    )
-                }
-
-                item(key = "study_search_results") {
-                    AnimatedVisibility(
-                        visible = isSearching,
-                        enter = slideInVertically(
-                            animationSpec = tween(durationMillis = 165, easing = FastOutSlowInEasing),
-                            initialOffsetY = { -it / 8 },
-                        ) + expandVertically(
-                            animationSpec = tween(durationMillis = 175, easing = FastOutSlowInEasing),
-                            expandFrom = Alignment.Top,
-                        ),
-                        exit = slideOutVertically(
-                            animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-                            targetOffsetY = { -it / 10 },
-                        ) + shrinkVertically(
-                            animationSpec = tween(durationMillis = 135, easing = FastOutSlowInEasing),
-                            shrinkTowards = Alignment.Top,
-                        ),
-                    ) {
-                        InlineSearchResults(
-                            uiState = uiState,
-                            onNoteClick = onNoteClick,
-                            onFolderClick = { folderId ->
-                                onFolderExpandedChange(folderId, true)
-                            },
-                            onAttachmentClick = onAttachmentClick,
-                            modifier = Modifier.padding(top = VaultSpacing.sm),
-                        )
-                    }
-                }
-
-                item(key = "study_pinned") {
-                    Spacer(modifier = Modifier.height(5.dp))
-                    SectionLabel(
-                        label = "Pinned",
-                        uppercase = false,
-                        modifier = Modifier.clickable { onPinnedExpandedChange(!pinnedExpanded) },
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    AnimatedVisibility(
-                        visible = pinnedExpanded,
-                        enter = expandVertically(
-                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                            expandFrom = Alignment.Top,
-                        ) + fadeIn(animationSpec = tween(durationMillis = 120)),
-                        exit = shrinkVertically(
-                            animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
-                            shrinkTowards = Alignment.Top,
-                        ) + fadeOut(animationSpec = tween(durationMillis = 100)),
-                    ) {
-                        if (uiState.pinnedNotes.isEmpty()) {
-                            EmptyHomeState(
-                                icon = Icons.Rounded.PushPin,
-                                text = "Pinned notes will appear here",
-                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                            )
-                        } else {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                            ) {
-                                items(uiState.pinnedNotes, key = { it.id }) { note ->
-                                    PinnedNoteCard(
-                                        note = note,
-                                        previewLines = uiState.notePreviewLines,
-                                        showFullTitle = uiState.showFullNoteTitles,
-                                        onClick = { onNoteClick(note.id) },
-                                        onLongPress = {
-                                            selectedNote = VaultTreeItem(
-                                                id = note.id,
-                                                name = note.title,
-                                                type = VaultTreeItemType.Note,
-                                                pinned = true,
-                                            )
-                                            noteActionsOpen = true
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (pinnedExpanded) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
-                }
-
-                item(key = "study_workspace_tree") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = VaultSpacing.xs),
-                    ) {
-                        if (displayedWorkspace.isEmpty()) {
-                            EmptyHomeState(
-                                icon = Icons.Rounded.Folder,
-                                text = "Create a folder or note to start your vault",
-                                modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                            )
-                        } else {
-                            displayedWorkspace.forEach { item ->
-                                key(item.id) {
-                                    val rootFolderIndex = rootFolders.indexOfFirst { it.id == item.id }
-                                    FolderTreeRow(
-                                        item = item,
-                                        depth = 0,
-                                        notePreviewLines = uiState.notePreviewLines,
-                                        showFullNoteTitles = uiState.showFullNoteTitles,
-                                        dashboardFontSizeSp = dashboardFontSizeSp,
-                                        expanded = isFolderExpanded(item.id),
-                                        isChildExpanded = { id -> isFolderExpanded(id) },
-                                        onToggle = { folder ->
-                                            onFolderExpandedChange(folderExpansionKey(folder.id), !isFolderExpanded(folder.id))
-                                        },
-                                        onOpenFolder = { folder -> onFolderClick(folder.id) },
-                                        onOpenNote = { note -> onNoteClick(note.id) },
-                                        onLongPress = { item ->
-                                            if (manageSelectionMode) {
-                                                selectedItemIds.toggle(item.id)
-                                            } else if (item.type == VaultTreeItemType.Folder) {
-                                                selectedFolder = item
-                                                folderActionsOpen = true
-                                            } else {
-                                                selectedNote = item
-                                                noteActionsOpen = true
-                                            }
-                                        },
-                                        selectionMode = manageSelectionMode,
-                                        isSelected = { id -> selectedItemIds[id] == true },
-                                        onSelectionToggle = { item -> selectedItemIds.toggle(item.id) },
-                                        organizeMode = organizeMode,
-                                        canMoveUp = rootFolderIndex > 0,
-                                        canMoveDown = rootFolderIndex in 0 until rootFolders.lastIndex,
-                                        onMoveFolder = { folder, direction ->
-                                            onMoveFolderInOrderClick(folder.id, direction)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (currentFolderMode == FOLDER_MODE_STUDY) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        QuranReflectionsEntryCard(
-                            count = uiState.quranReflectionSummary.count,
-                            latestReference = uiState.quranReflectionSummary.latestReference,
-                            onClick = onQuranReflectionsClick,
-                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                        )
-                    }
-                }
-
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.bg),
+    ) {
+        StudyMobileWebContent(
+            uiState = uiState,
+            displayedWorkspace = displayedWorkspace,
+            searchQuery = uiState.searchQuery,
+            onSearchQueryChange = onSearchQueryChange,
+            searchOpen = studySearchOpen,
+            onSearchOpen = { studySearchOpen = true },
+            onSearchClose = {
+                studySearchOpen = false
+                onSearchQueryChange("")
+            },
+            isFolderExpanded = ::isFolderExpanded,
+            onToggleFolder = { folder ->
+                onFolderExpandedChange(folderExpansionKey(folder.id), !isFolderExpanded(folder.id))
+            },
+            onCreateInside = { folder ->
+                selectedFolder = folder
+                folderCreateMenuOpen = true
+            },
+            onOpenNote = onNoteClick,
+            onMore = { item ->
                 if (manageSelectionMode) {
-                    item {
-                        SelectionManageBar(
-                            selectedCount = selectedItems.size,
-                            selectedNoteCount = selectedNotes.size,
-                            onMoveNotes = { moveSelectedNotesOpen = true },
-                            onPinNotes = {
-                                selectedNotes.forEach { onSetNotePinnedClick(it.id, true) }
-                                selectedItemIds.clear()
-                            },
-                            onFavouriteNotes = {
-                                selectedNotes.forEach { onSetNoteFavouriteClick(it.id, true) }
-                                selectedItemIds.clear()
-                            },
-                            onDelete = { deleteSelectedOpen = true },
-                            onDone = {
-                                selectedItemIds.clear()
-                                manageSelectionMode = false
-                            },
-                            modifier = Modifier.padding(top = VaultSpacing.sm),
-                        )
-                    }
+                    selectedItemIds.toggle(item.id)
+                } else if (item.type == VaultTreeItemType.Folder) {
+                    selectedFolder = item
+                    folderActionsOpen = true
+                } else {
+                    selectedNote = item
+                    noteActionsOpen = true
                 }
-
-                if (currentFolderMode == FOLDER_MODE_STUDY) {
-                    item {
-                        Spacer(modifier = Modifier.height(28.dp))
-                        SectionLabel(label = "Qur’an Reflections")
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                        ) {
-                            if (uiState.quranReflectionItems.isEmpty()) {
-                                item {
-                                    EmptyHomeState(
-                                        icon = Icons.Rounded.AutoStories,
-                                        text = "Reflections you save from Qur’an will appear here",
-                                        modifier = Modifier
-                                            .fillParentMaxWidth()
-                                            .padding(end = VaultSpacing.screen),
-                                    )
-                                }
-                            } else {
-                                items(uiState.quranReflectionItems, key = { it.noteId }) { reflection ->
-                                    HomeQuranReflectionCard(
-                                        reflection = reflection,
-                                        onClick = { onNoteClick(reflection.noteId) },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (fabExpanded && !organizeMode) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.scrim)
-                        .clickable { fabExpanded = false },
-                )
-            }
-
-            if (!organizeMode) {
-                FloatingActionMenu(
-                    expanded = fabExpanded,
-                    actions = createActions,
-                    mainButtonSize = FloatingActionStackDefaults.mainButtonSize,
-                    actionButtonSize = FloatingActionStackDefaults.actionButtonSize,
-                    expansionDirection = FloatingActionMenuExpansion.Start,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(
-                            end = FloatingActionStackDefaults.endPadding,
-                            bottom = fabBottomPadding,
-                        )
-                        .size(
-                            width = FloatingActionStackDefaults.menuWidth,
-                            height = FloatingActionStackDefaults.menuHeight,
-                        ),
-                    onToggle = { fabExpanded = !fabExpanded },
-                    onActionClick = { action ->
-                        fabExpanded = false
-                        when (action.label) {
-                            "New Note" -> onNewNoteClick(null)
-                            "New Folder" -> {
-                                selectedFolder = null
-                                newFolderName = ""
-                                folderDescriptionInput = ""
-                                folderDialogMode = FolderDialogMode.CreateRoot
-                            }
-                            "Import File" -> importPicker.launch(arrayOf("*/*"))
-                        }
-                    },
-                )
-            }
+            },
+            organizeMode = organizeMode,
+            onDoneOrganizing = { organizeMode = false },
+            listState = listState,
+        )
+        if (!organizeMode) {
+            CorpusFab(
+                onClick = { studyCreateMenuOpen = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 14.dp, bottom = fabBottomPadding),
+            )
         }
     }
 
@@ -587,24 +315,38 @@ fun HomeScreen(
             title = "Add to Study",
             onDismiss = { studyCreateMenuOpen = false },
             actions = listOf(
-                PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd) {
+                PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd, section = "CREATE") {
                     studyCreateMenuOpen = false
                     onNewNoteClick(null)
                 },
-                PremiumAction("New folder", Icons.Rounded.CreateNewFolder) {
+                PremiumAction("New folder", Icons.Rounded.CreateNewFolder, section = "CREATE") {
                     studyCreateMenuOpen = false
                     selectedFolder = null
                     newFolderName = ""
                     folderDescriptionInput = ""
                     folderDialogMode = FolderDialogMode.CreateRoot
                 },
-                PremiumAction("Import file", Icons.Rounded.AttachFile) {
+                PremiumAction("Import file", Icons.Rounded.AttachFile, section = "CREATE") {
                     studyCreateMenuOpen = false
                     importPicker.launch(arrayOf("*/*"))
                 },
-                PremiumAction("Workspace options", Icons.Rounded.MoreHoriz) {
+                PremiumAction("Attachments", Icons.Rounded.AttachFile, section = "TOOLS") {
                     studyCreateMenuOpen = false
-                    utilityMenuOpen = true
+                    onOpenAttachmentsClick()
+                },
+                PremiumAction("Favourites", Icons.Rounded.Star, section = "TOOLS") {
+                    studyCreateMenuOpen = false
+                    manageFavouriteNotesOpen = true
+                },
+                *if (currentFolderMode == FOLDER_MODE_STUDY) arrayOf(
+                    PremiumAction("Qur'an Reflections", Icons.Rounded.AutoStories, section = "TOOLS") {
+                        studyCreateMenuOpen = false
+                        onQuranReflectionsClick()
+                    },
+                ) else emptyArray(),
+                PremiumAction("Organise existing items", Icons.Rounded.SwapVert, section = "ORGANISE") {
+                    studyCreateMenuOpen = false
+                    manageMenuOpen = true
                 },
             ),
         )
@@ -626,6 +368,11 @@ fun HomeScreen(
                     folderDescriptionInput = ""
                     folderDialogMode = FolderDialogMode.CreateSubfolder
                 },
+                PremiumAction("New sticky note", Icons.Rounded.Description) {
+                    folderCreateMenuOpen = false
+                    stickyNoteInput = ""
+                    stickyNoteDialogOpen = true
+                },
             ),
         )
     }
@@ -638,6 +385,12 @@ fun HomeScreen(
             title = folder?.name.orEmpty(),
             onDismiss = { folderActionsOpen = false },
             actions = listOf(
+                PremiumAction("Open", Icons.Rounded.FolderOpen) {
+                    folderActionsOpen = false
+                    folder?.let {
+                        onFolderExpandedChange(folderExpansionKey(it.id), !isFolderExpanded(it.id))
+                    }
+                },
                 PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd) {
                     folderActionsOpen = false
                     onNewNoteClick(folder?.id)
@@ -648,30 +401,46 @@ fun HomeScreen(
                     folderDescriptionInput = ""
                     folderDialogMode = FolderDialogMode.CreateSubfolder
                 },
-                PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) {
+                PremiumAction("Move", Icons.Rounded.Folder) {
                     folderActionsOpen = false
+                    moveFolderDialogOpen = true
+                },
+                PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    folderActionsOpen = false
+                    deleteFolderDialogOpen = true
+                },
+                PremiumAction("More actions", Icons.Rounded.MoreHoriz) {
+                    folderActionsOpen = false
+                    folderMoreActionsOpen = true
+                },
+            ),
+        )
+    }
+
+    if (folderMoreActionsOpen && selectedFolder != null) {
+        val folder = selectedFolder
+        val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
+        val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
+        PremiumActionDialog(
+            title = "More actions",
+            onDismiss = { folderMoreActionsOpen = false },
+            actions = listOf(
+                PremiumAction("Rename / edit description", Icons.Rounded.DriveFileRenameOutline) {
+                    folderMoreActionsOpen = false
                     newFolderName = folder?.name.orEmpty()
                     folderDescriptionInput = folder?.description.orEmpty()
                     folderDialogMode = FolderDialogMode.Rename
                 },
                 PremiumAction("Organise", Icons.Rounded.SwapVert) {
-                    folderActionsOpen = false
+                    folderMoreActionsOpen = false
                     selectedItemIds.clear()
                     manageSelectionMode = false
                     sortMode = WorkspaceSortMode.FoldersFirst
                     organizeMode = true
                 },
-                PremiumAction("Move", Icons.Rounded.Folder) {
-                    folderActionsOpen = false
-                    moveFolderDialogOpen = true
-                },
                 PremiumAction("Move to $oppositeModeLabel", Icons.Rounded.LocalOffer) {
-                    folderActionsOpen = false
+                    folderMoreActionsOpen = false
                     folder?.let { onMoveFolderToModeClick(it.id, oppositeMode) }
-                },
-                PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
-                    folderActionsOpen = false
-                    deleteFolderDialogOpen = true
                 },
             ),
         )
@@ -732,37 +501,86 @@ fun HomeScreen(
             title = note?.name.orEmpty(),
             onDismiss = { noteActionsOpen = false },
             actions = listOf(
-                PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) {
+                PremiumAction("Open", Icons.Rounded.Description) {
                     noteActionsOpen = false
-                    noteTitleInput = note?.name.orEmpty()
-                    renameNoteDialogOpen = true
+                    note?.let { onNoteClick(it.id) }
+                },
+                PremiumAction("Create sub-note", Icons.AutoMirrored.Rounded.NoteAdd) {
+                    note?.let { onCreateSubNoteClick(it.id) }
+                    noteActionsOpen = false
                 },
                 PremiumAction("Move", Icons.Rounded.Folder) {
                     noteActionsOpen = false
                     moveNoteDialogOpen = true
                 },
-                PremiumAction("Create Sub-note", Icons.AutoMirrored.Rounded.NoteAdd) {
-                    note?.let { onCreateSubNoteClick(it.id) }
-                    noteActionsOpen = false
-                },
-                PremiumAction("Move to $oppositeModeLabel", Icons.Rounded.LocalOffer) {
-                    note?.let { onMoveNoteToModeClick(it.id, oppositeMode) }
-                    noteActionsOpen = false
-                },
                 PremiumAction(if (note?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
                     note?.let { onSetNotePinnedClick(it.id, !it.pinned) }
-                    noteActionsOpen = false
-                },
-                PremiumAction(if (note?.favourite == true) "Unfavourite" else "Favourite", Icons.Rounded.Star) {
-                    note?.let { onSetNoteFavouriteClick(it.id, !it.favourite) }
                     noteActionsOpen = false
                 },
                 PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     noteActionsOpen = false
                     deleteNoteDialogOpen = true
                 },
+                PremiumAction("More actions", Icons.Rounded.MoreHoriz) {
+                    noteActionsOpen = false
+                    noteMoreActionsOpen = true
+                },
             ),
         )
+    }
+
+    if (noteMoreActionsOpen && selectedNote != null) {
+        val note = selectedNote
+        val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
+        val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
+        PremiumActionDialog(
+            title = "More actions",
+            onDismiss = { noteMoreActionsOpen = false },
+            actions = listOf(
+                PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) {
+                    noteMoreActionsOpen = false
+                    noteTitleInput = note?.name.orEmpty()
+                    renameNoteDialogOpen = true
+                },
+                PremiumAction(if (note?.favourite == true) "Unfavourite" else "Favourite", Icons.Rounded.Star) {
+                    note?.let { onSetNoteFavouriteClick(it.id, !it.favourite) }
+                    noteMoreActionsOpen = false
+                },
+                PremiumAction(
+                    if (note?.folderPinned == true) "Unpin within folder" else "Pin within folder",
+                    Icons.Rounded.PushPin,
+                ) {
+                    note?.let { onSetNoteFolderPinnedClick(it.id, !it.folderPinned) }
+                    noteMoreActionsOpen = false
+                },
+                PremiumAction("Move to $oppositeModeLabel", Icons.Rounded.LocalOffer) {
+                    note?.let { onMoveNoteToModeClick(it.id, oppositeMode) }
+                    noteMoreActionsOpen = false
+                },
+            ),
+        )
+    }
+
+    if (stickyNoteDialogOpen && selectedFolder != null) {
+        VaultFormModal(
+            title = "New sticky note",
+            confirmLabel = "Create",
+            enabled = stickyNoteInput.isNotBlank(),
+            icon = Icons.Rounded.Description,
+            onDismiss = { stickyNoteDialogOpen = false },
+            onConfirm = {
+                selectedFolder?.let { onNewStickyNoteClick(it.id, stickyNoteInput) }
+                stickyNoteInput = ""
+                stickyNoteDialogOpen = false
+            },
+        ) {
+            VaultTextField(
+                value = stickyNoteInput,
+                onValueChange = { stickyNoteInput = it },
+                label = "Sticky note",
+                singleLine = false,
+            )
+        }
     }
 
     if (moveNoteDialogOpen && selectedNote != null) {
@@ -1074,12 +892,6 @@ fun HomeScreen(
     }
 }
 
-private enum class StudyMobileViewMode {
-    Grid,
-    List,
-    Icon,
-}
-
 @Composable
 private fun StudyMobileWebContent(
     uiState: HomeUiState,
@@ -1089,18 +901,13 @@ private fun StudyMobileWebContent(
     searchOpen: Boolean,
     onSearchOpen: () -> Unit,
     onSearchClose: () -> Unit,
-    viewMode: StudyMobileViewMode,
-    onViewModeChange: (StudyMobileViewMode) -> Unit,
     isFolderExpanded: (String) -> Boolean,
     onToggleFolder: (VaultTreeItem) -> Unit,
-    onOpenFolder: (VaultTreeItem) -> Unit,
-    onOpenNote: (VaultTreeItem) -> Unit,
     onCreateInside: (VaultTreeItem) -> Unit,
+    onOpenNote: (String) -> Unit,
     onMore: (VaultTreeItem) -> Unit,
-    onAdd: () -> Unit,
     organizeMode: Boolean,
     onDoneOrganizing: () -> Unit,
-    dashboardFontSizeSp: Float,
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
@@ -1113,12 +920,6 @@ private fun StudyMobileWebContent(
     val visibleWorkspace = remember(displayedWorkspace, searchQuery) {
         displayedWorkspace.filterStudyTree(searchQuery)
     }
-    val rootFolders = remember(visibleWorkspace) {
-        visibleWorkspace.filter { it.type == VaultTreeItemType.Folder }
-    }
-    val rootNotes = remember(visibleWorkspace) {
-        visibleWorkspace.filter { it.type == VaultTreeItemType.Note }
-    }
     val searching = searchQuery.isNotBlank()
 
     LazyColumn(
@@ -1127,15 +928,14 @@ private fun StudyMobileWebContent(
             .fillMaxSize()
             .background(colors.bg),
         contentPadding = PaddingValues(
-            start = VaultSpacing.screen,
-            top = VaultSpacing.md,
-            end = VaultSpacing.screen,
-            bottom = VaultSpacing.huge,
+            start = 14.dp,
+            top = 4.dp,
+            end = 14.dp,
+            bottom = 96.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        item(key = "web_study_header") {
-            CompactWorkspaceHeader(
+        item(key = "corpus_study_header") {
+            CorpusHeader(
                 title = "Study",
                 metadata = "${allFolders.size} ${if (allFolders.size == 1) "folder" else "folders"} · " +
                     "${allNotes.size} ${if (allNotes.size == 1) "note" else "notes"}",
@@ -1143,189 +943,107 @@ private fun StudyMobileWebContent(
                 searchQuery = searchQuery,
                 searchPlaceholder = "Search notes and folders...",
                 onSearchQueryChange = onSearchQueryChange,
+                onSearchOpen = onSearchOpen,
                 onSearchClose = onSearchClose,
-            ) {
-                CompactActionGroup {
-                        StudyViewButton(
-                            icon = Icons.Rounded.GridView,
-                            selected = viewMode == StudyMobileViewMode.Grid,
-                            description = "Grid view",
-                            onClick = { onViewModeChange(StudyMobileViewMode.Grid) },
-                        )
-                        StudyViewButton(
-                            icon = Icons.Rounded.FormatListBulleted,
-                            selected = viewMode == StudyMobileViewMode.List,
-                            description = "List view",
-                            onClick = { onViewModeChange(StudyMobileViewMode.List) },
-                        )
-                        StudyViewButton(
-                            icon = Icons.Rounded.FolderOpen,
-                            selected = viewMode == StudyMobileViewMode.Icon,
-                            description = "Icon view",
-                            onClick = { onViewModeChange(StudyMobileViewMode.Icon) },
-                        )
+                reserveNavigationSpace = true,
+            )
+            if (organizeMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onDoneOrganizing)
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Text("Done", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.W700)
                 }
-                CompactViewAction(
-                    icon = Icons.Rounded.Search,
-                    selected = false,
-                    description = "Search study",
-                    onClick = onSearchOpen,
-                )
-                CompactPrimaryAction(
-                    icon = if (organizeMode) Icons.Rounded.Done else Icons.Rounded.Add,
-                    description = if (organizeMode) "Finish organizing" else "Add study item",
-                    onClick = if (organizeMode) onDoneOrganizing else onAdd,
-                )
             }
-
-            Spacer(modifier = Modifier.height(VaultSpacing.md))
         }
 
         if (pinnedNotes.isNotEmpty() && !searching) {
-            item(key = "web_study_pinned_heading") {
-                Row(
-                    modifier = Modifier.padding(bottom = VaultSpacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PushPin,
-                        contentDescription = null,
-                        modifier = Modifier.size(17.dp),
-                        tint = colors.accent,
-                    )
-                    Text(
-                        text = "Pinned",
-                        modifier = Modifier.padding(start = 8.dp),
-                        color = colors.text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.W700,
-                    )
-                }
-            }
-            item(key = "web_study_pinned_notes") {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    items(pinnedNotes, key = { "pinned_${it.id}" }) { note ->
-                        PinnedNoteCard(
-                            note = com.myvault.app.ui.components.VaultNoteCardData(
-                                id = note.id,
-                                title = note.name,
-                                meta = note.edited.orEmpty(),
-                                tableCount = note.tableCount,
-                                preview = note.preview,
-                            ),
-                            previewLines = 0,
-                            showFullTitle = uiState.showFullNoteTitles,
-                            onClick = { onOpenNote(note) },
-                            onLongPress = { onMore(note) },
-                        )
-                    }
-                }
-            }
-            item(key = "web_study_after_pinned") {
-                Spacer(modifier = Modifier.height(VaultSpacing.md))
+            item(key = "corpus_study_pinned") {
+                CorpusPinnedStrip(
+                    items = pinnedNotes.map { CorpusPinnedItem(it.id, it.name) },
+                    onClick = onOpenNote,
+                    onLongPress = { id -> allNotes.firstOrNull { it.id == id }?.let(onMore) },
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
             }
         }
 
         if (visibleWorkspace.isEmpty()) {
-            item(key = "web_study_empty") {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    color = colors.surface,
-                    shape = VaultShapes.sm,
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FolderOpen,
-                            contentDescription = null,
-                            modifier = Modifier.size(42.dp),
-                            tint = colors.textMuted,
-                        )
-                        Text(
-                            text = if (searching) "No matching notes or folders" else "No study folders yet",
-                            modifier = Modifier.padding(top = 17.dp),
-                            color = colors.textSecondary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.W600,
-                        )
-                        Text(
-                            text = if (searching) "Try a different search" else "Restored folders and notes will appear here",
-                            modifier = Modifier.padding(top = 5.dp),
-                            color = colors.textMuted,
-                            fontSize = 11.sp,
-                        )
-                    }
-                }
-            }
-        } else if (viewMode == StudyMobileViewMode.List) {
-            item(key = "web_study_tree") {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    visibleWorkspace.forEach { item ->
-                        key(item.id) {
-                            FolderTreeRow(
-                                item = item,
-                                depth = 0,
-                                expanded = searching || isFolderExpanded(item.id),
-                                isChildExpanded = { childId -> searching || isFolderExpanded(childId) },
-                                onToggle = onToggleFolder,
-                                onOpenFolder = onToggleFolder,
-                                onOpenNote = onOpenNote,
-                                onLongPress = onMore,
-                                onCreateInside = onCreateInside,
-                                onMore = onMore,
-                                notePreviewLines = uiState.notePreviewLines,
-                                showFullNoteTitles = uiState.showFullNoteTitles,
-                                dashboardFontSizeSp = dashboardFontSizeSp,
-                                indentHierarchy = false,
-                            )
-                        }
-                    }
-                }
-            }
-        } else if (viewMode == StudyMobileViewMode.Grid) {
-            items(rootFolders, key = { "grid_${it.id}" }) { folder ->
-                StudyVisualFolderCard(
-                    folder = folder,
-                    compact = false,
-                    onOpen = { onOpenFolder(folder) },
-                    onCreateInside = { onCreateInside(folder) },
-                    onMore = { onMore(folder) },
+            item(key = "corpus_study_empty") {
+                CorpusEmptyState(
+                    icon = Icons.Rounded.FolderOpen,
+                    title = if (searching) "No matching notes or folders" else "No study items yet",
                 )
-                Spacer(modifier = Modifier.height(VaultSpacing.xs))
-            }
-            items(rootNotes, key = { "grid_note_${it.id}" }) { note ->
-                StudyRecentNoteRow(note = note, onClick = { onOpenNote(note) }, onMore = { onMore(note) })
             }
         } else {
-            items(rootFolders.chunked(2), key = { pair -> pair.joinToString("_") { it.id } }) { pair ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                ) {
-                    pair.forEach { folder ->
-                        StudyVisualFolderCard(
-                            folder = folder,
-                            compact = true,
-                            onOpen = { onOpenFolder(folder) },
-                            onCreateInside = { onCreateInside(folder) },
-                            onMore = { onMore(folder) },
-                            modifier = Modifier.weight(1f),
+            item(key = "corpus_study_tree") {
+                Column {
+                    visibleWorkspace.forEach { item ->
+                        StudyCorpusItem(
+                            item = item,
+                            searching = searching,
+                            isFolderExpanded = isFolderExpanded,
+                            onToggleFolder = onToggleFolder,
+                            onCreateInside = onCreateInside,
+                            onOpenNote = onOpenNote,
+                            onMore = onMore,
+                            showFullTitle = uiState.showFullNoteTitles,
                         )
                     }
-                    if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
                 }
-                Spacer(modifier = Modifier.height(VaultSpacing.xs))
-            }
-            items(rootNotes, key = { "icon_note_${it.id}" }) { note ->
-                StudyRecentNoteRow(note = note, onClick = { onOpenNote(note) }, onMore = { onMore(note) })
             }
         }
+    }
+}
 
+@Composable
+private fun StudyCorpusItem(
+    item: VaultTreeItem,
+    searching: Boolean,
+    isFolderExpanded: (String) -> Boolean,
+    onToggleFolder: (VaultTreeItem) -> Unit,
+    onCreateInside: (VaultTreeItem) -> Unit,
+    onOpenNote: (String) -> Unit,
+    onMore: (VaultTreeItem) -> Unit,
+    showFullTitle: Boolean,
+) {
+    if (item.type == VaultTreeItemType.Folder) {
+        val expanded = searching || isFolderExpanded(item.id)
+        CorpusFolderRow(
+            title = item.name,
+            count = item.children.size,
+            expanded = expanded,
+            onToggle = { onToggleFolder(item) },
+            onLongPress = { onMore(item) },
+            onAdd = { onCreateInside(item) },
+        )
+        if (expanded) {
+            item.children.forEach { child ->
+                StudyCorpusItem(
+                    item = child,
+                    searching = searching,
+                    isFolderExpanded = isFolderExpanded,
+                    onToggleFolder = onToggleFolder,
+                    onCreateInside = onCreateInside,
+                    onOpenNote = onOpenNote,
+                    onMore = onMore,
+                    showFullTitle = showFullTitle,
+                )
+            }
+        }
+    } else {
+        CorpusLeafRow(
+            title = item.name,
+            icon = Icons.Rounded.Description,
+            onClick = { onOpenNote(item.id) },
+            onLongPress = { onMore(item) },
+            pinned = item.pinned,
+            attachmentCount = item.attachmentCount,
+            showFullTitle = showFullTitle,
+        )
     }
 }
 
@@ -1556,6 +1274,7 @@ internal data class PremiumAction(
     val label: String,
     val icon: ImageVector,
     val destructive: Boolean = false,
+    val section: String? = null,
     val onClick: () -> Unit,
 )
 
@@ -2027,17 +1746,20 @@ internal fun PremiumActionDialog(
     actions: List<PremiumAction>,
     onDismiss: () -> Unit,
 ) {
-    VaultActionModal(
+    val groups = actions.fold(mutableListOf<CorpusActionGroup>()) { result, action ->
+        val mapped = CorpusAction(action.label, action.icon, action.destructive, onClick = action.onClick)
+        val last = result.lastOrNull()
+        if (last != null && last.label == action.section) {
+            result[result.lastIndex] = last.copy(actions = last.actions + mapped)
+        } else {
+            result += CorpusActionGroup(label = action.section, actions = listOf(mapped))
+        }
+        result
+    }
+    CorpusActionSheet(
         title = title,
         onDismiss = onDismiss,
-        actions = actions.map { action ->
-            VaultModalAction(
-                label = action.label,
-                icon = action.icon,
-                destructive = action.destructive,
-                onClick = action.onClick,
-            )
-        },
+        groups = groups,
     )
 }
 
