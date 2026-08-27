@@ -389,6 +389,9 @@ Implementation status: the shared Reading/Editing shell, primary and secondary
 formatting surfaces, Note overflow, Note info, Knowledge & references,
 Attachments, Version history, export, formatting-provider entry and the three
 approved narration providers are integrated with existing production state.
+The final frozen collision amendment dynamically raises the unchanged Reading
+Edit action by the measured global mini-player height plus 10 dp while that
+player occupies the layout; the player itself remains unchanged and deferred.
 No Room schema, repository contract, note serialization or backup-format change
 was introduced.
 

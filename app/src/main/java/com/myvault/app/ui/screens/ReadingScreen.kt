@@ -90,6 +90,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.components.AttachmentThumbnail
@@ -150,6 +151,8 @@ fun ReadingScreen(
     onRemoveKnowledgeTag: (String) -> Unit = {},
     onRestoreVersion: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
+    narrationMiniPlayerVisible: Boolean = false,
+    narrationMiniPlayerHeight: Dp = 0.dp,
 ) {
     val colors = VaultThemeTokens.colors
     val note = uiState.note
@@ -212,6 +215,11 @@ fun ReadingScreen(
         noteBodyText.toReadingBodyChunks(uiState.richText.styleMarks, uiState.richText.noteLinks)
     }
     val numberFormat = remember { NumberFormat.getNumberInstance() }
+    val editActionBottomOffset = if (narrationMiniPlayerVisible) {
+        narrationMiniPlayerHeight + NarrationEditActionClearance
+    } else {
+        0.dp
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -219,7 +227,9 @@ fun ReadingScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onEditClick,
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier
+                    .padding(bottom = editActionBottomOffset)
+                    .size(52.dp),
                 shape = VaultShapes.md,
                 containerColor = colors.accent,
                 contentColor = Color.White,
@@ -774,6 +784,8 @@ fun ReadingScreen(
         )
     }
 }
+
+private val NarrationEditActionClearance = 10.dp
 
 private fun String.toSafeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "note" }

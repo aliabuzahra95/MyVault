@@ -15,7 +15,7 @@ Frozen prototype directory remains read-only.
 | Qur'an Reflections Hub final placement | Study root FAB -> Tools -> Qur'an Reflections | Before Stage 7 | **TEMPORARY PLACEMENT** |
 | Dashboard final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
 | Global Search final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
-| Global narration mini-player design/placement | Current production presentation and behavior preserved | Stop if it collides with Frozen surfaces; dedicated design amendment | **DEFERRED** |
+| Global narration mini-player design/placement | Current production presentation and behavior preserved; Note Reading Edit collision is resolved by a dynamic measured offset | Dedicated final global player design amendment | **DEFERRED; NOTE READING COLLISION RESOLVED** |
 | Narration Settings placement | Reading & Listening, including Azure subpage | Implemented and verified in Stage 3; mini-player remains separate | **RESOLVED IN STAGE 3; MINI-PLAYER NOT RESOLVED** |
 | Note metadata placement | Note info sheet: Updated, Words, Characters | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Quote formatting command | Existing serializable Quote mark receives the frozen direct toolbar adapter | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |

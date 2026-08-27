@@ -381,4 +381,12 @@ formatting-provider handlers.
   rewrite, backup-format change or repository-interface change was required.
 
 The global narration mini-player remains deferred and was not redesigned in
-Stage 4.
+Stage 4. The frozen narration-collision amendment is implemented for Note
+Reading mode: while the global player is entering, visible, or exiting, the
+unchanged Edit action is lifted by the player's measured runtime height plus
+the approved 10 dp visual clearance. The normal Edit position returns when the
+player leaves composition. System/navigation insets remain owned by the
+Reading `Scaffold`; no emulator-specific coordinate is stored.
+
+Full destructive backup/restore round-trip verification remains mandatory in
+Stage 10.

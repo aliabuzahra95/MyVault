@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -33,6 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,7 +42,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -120,6 +124,15 @@ fun VaultNavHost(
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
+    val narrationMiniPlayerVisibility = remember { MutableTransitionState(false) }
+    var narrationMiniPlayerHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val narrationMiniPlayerHeight = with(density) { narrationMiniPlayerHeightPx.toDp() }
+    LaunchedEffect(narrationState.isActive) {
+        narrationMiniPlayerVisibility.targetState = narrationState.isActive
+    }
+    val narrationMiniPlayerOccupiesSpace =
+        narrationMiniPlayerVisibility.currentState || narrationMiniPlayerVisibility.targetState
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
     val homeViewModel: HomeViewModel = hiltViewModel()
@@ -1112,6 +1125,8 @@ fun VaultNavHost(
                 onRemoveKnowledgeTag = viewModel::removeKnowledgeTag,
                 onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
+                narrationMiniPlayerVisible = narrationMiniPlayerOccupiesSpace,
+                narrationMiniPlayerHeight = narrationMiniPlayerHeight,
             )
         }
         composable(VaultDestination.Search.route) {
@@ -1500,7 +1515,7 @@ fun VaultNavHost(
             )
         }
         AnimatedVisibility(
-            visible = narrationState.isActive,
+            visibleState = narrationMiniPlayerVisibility,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
@@ -1534,6 +1549,7 @@ fun VaultNavHost(
                 onSeek = narrationViewModel::seekTo,
                 onSkipBy = narrationViewModel::skipBy,
                 onProgressTick = narrationViewModel::refreshProgress,
+                modifier = Modifier.onSizeChanged { narrationMiniPlayerHeightPx = it.height },
             )
         }
     }
