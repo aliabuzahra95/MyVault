@@ -1,6 +1,14 @@
 # Stage 4 Note Editor Functionality Audit
 
-Status: **PROPOSED FOR APPROVAL - NO STAGE 4 UI IMPLEMENTATION HAS STARTED**
+Status: **APPROVED FOR STAGE 4 IMPLEMENTATION**
+
+The final Frozen Editor amendment and its 22 screenshots resolve the placement
+questions recorded by this audit. The later production compatibility decision
+also approves one restrained deviation in the Listen sheet: the existing
+production `OpenAI TTS` provider is shown as a third provider row alongside
+Device TTS and Azure Speech TTS. This is presentation and wiring only; the
+existing `NarrationProvider.OpenAi` state and narration engine remain
+authoritative.
 
 This production-side amendment audits the current Android Note reading and
 editing system against Frozen Design Master references 14-17. The Frozen
@@ -308,8 +316,41 @@ Stage 4 presentation must preserve all current payloads and relationships:
 No Room migration, ID change, serialization rewrite, backup schema change or
 formatting-output rewrite is authorised by this audit.
 
-## 8. Stage Gate
+## 8. Approved Stage 4 Resolution
 
-Stage 4 remains blocked until the conflicts and proposed hierarchy in sections
-5-6 receive an explicit design amendment/approval. No production Note
-presentation file was changed as part of this audit.
+The Frozen Editor amendment approves the following production mapping:
+
+- Reading uses the compact Note header, document-first canvas, restrained
+  overflow and Edit affordance.
+- Editing uses the same canvas with saved/editing state and an IME-adjacent
+  formatting toolbar.
+- The primary toolbar contains Undo, Redo, Paragraph/H1-H4, Bold, Italic,
+  Underline, Colour, Bullet, Numbered, Quote and More Formatting.
+- Clear formatting is limited to the proven production command, `Clear selected
+  colour`; no generic all-formatting command is invented.
+- More Formatting contains Table, Add web link, Link to note, Attach file and
+  Attach image using existing production handlers and persistence.
+- Note overflow owns Listen, Pin/Unpin, Favourite/Unfavourite, Note info,
+  Knowledge & references, Attachments, Version history, Export, Structure &
+  Format while editing, and Delete.
+- Note info contains Updated, Words and Characters rather than permanently
+  displaying those values on the canvas.
+- Tags, backlinks and PDF source references remain semantically distinct inside
+  Knowledge & references.
+- Tables and attachments remain production entities rendered in the document
+  flow and managed through their approved contextual surfaces.
+- Version history, restore confirmation, TXT/PDF export, Structure Only,
+  Intelligent Structure and formatting-result actions use the frozen secondary
+  sheets.
+- Device TTS, Azure Speech TTS and OpenAI TTS appear as three restrained rows in
+  the Listen sheet. OpenAI is an approved production-specific extension because
+  it is an active persisted production provider.
+- Active-sentence highlighting and selection-based `Listen from here` remain
+  operational. The global narration mini-player presentation remains deferred.
+- The existing double-tap-to-edit gesture remains as invisible compatibility
+  behaviour alongside the visible Edit affordance.
+- Checklist, Divider, hidden Clean Format/Format Note actions and conversational
+  Ask AI receive no new UI.
+
+Stage 4 implementation is authorised. No Room, repository, note-serialization,
+backup-format or narration-provider data change is authorised by this amendment.

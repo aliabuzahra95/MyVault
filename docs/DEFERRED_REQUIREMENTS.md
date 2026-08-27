@@ -17,18 +17,18 @@ Frozen prototype directory remains read-only.
 | Global Search final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
 | Global narration mini-player design/placement | Current production presentation and behavior preserved | Stop if it collides with Frozen surfaces; dedicated design amendment | **DEFERRED** |
 | Narration Settings placement | Reading & Listening, including Azure subpage | Implemented and verified in Stage 3; mini-player remains separate | **RESOLVED IN STAGE 3; MINI-PLAYER NOT RESOLVED** |
-| Note metadata placement | Timestamp and word/character counts remain in production | Stage 4 Frozen placement decision | **STOP-AND-ASK** |
-| Quote formatting command | Engine can render/serialize Quote; current main toolbar has no visible command | Approve adapter command for Frozen Quote control | **STOP-AND-ASK** |
-| Clear-formatting command | Production clears selected colour but has no proven all-formatting command | Define exact semantics for Frozen Clear control | **STOP-AND-ASK** |
-| URL link vs structured note-link controls | Both engines remain preserved and distinct | Approve chooser/secondary formatting presentation | **STOP-AND-ASK** |
-| Note tables and advanced block controls | Table engine and dormant Checklist/Divider compatibility preserved | Stage 4 block/context presentation decision | **DEFERRED** |
-| Note attachments management | Existing file/image import, previews and storage preserved | Stage 4 Attachments sheet/block anatomy decision | **DEFERRED** |
-| Note knowledge surfaces | Tags, backlinks and PDF source references remain distinct | Stage 4 Knowledge & references placement decision | **DEFERRED** |
-| Note version history / restore | Snapshot and restore engines preserved | Stage 4 dedicated history presentation decision | **DEFERRED** |
-| Note export | Existing TXT/PDF callbacks preserved | Stage 4 Export placement decision | **DEFERRED** |
-| Note narration entry and reading state | Listen, provider choice, selection narration and follow state preserved | Stage 4 entry/state amendment; player remains separately deferred | **DEFERRED** |
-| Note formatting-provider actions | Structure Only, Intelligent Structure and result actions preserved; hidden retained actions not exposed | Stage 4 secondary sheet placement decision | **DEFERRED** |
-| Reading-to-edit double-tap | Existing gesture preserved pending approval | Approve as invisible compatibility gesture alongside Frozen Edit control | **PROPOSED FOR APPROVAL** |
+| Note metadata placement | Note info sheet: Updated, Words, Characters | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Quote formatting command | Existing serializable Quote mark receives the frozen direct toolbar adapter | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Clear-formatting command | Only proven `Clear selected colour` is exposed; no generic clear-all semantics | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| URL link vs structured note-link controls | Kept distinct as Add web link and Link to note under More Formatting | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note tables and advanced block controls | Table uses frozen More Formatting/context surfaces; dormant Checklist/Divider stay engine-only | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note attachments management | Frozen Attachments sheet plus document-flow attachment presentation | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note knowledge surfaces | Tags, backlinks and PDF source references remain distinct in Knowledge & references | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note version history / restore | Frozen Version history and restore-confirmation surfaces | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note export | Frozen Export surface invokes existing TXT/PDF callbacks | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note narration entry and reading state | Listen sheet includes Device, Azure and approved production OpenAI row; selection/follow state preserved | Frozen Editor amendment; player separately deferred | **RESOLVED FOR STAGE 4; MINI-PLAYER NOT RESOLVED** |
+| Note formatting-provider actions | Structure Only, Intelligent Structure and result actions use frozen secondary sheet; hidden actions remain unexposed | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Reading-to-edit double-tap | Preserved as invisible compatibility gesture alongside frozen Edit affordance | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Advanced PDF functions | Existing production functionality preserved | Pre-Stage-5 placement decisions | **DEFERRED** |
 | Qur'an audio-download management | Existing contextual route preserved | Before Stage 7 | **DEFERRED** |
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |

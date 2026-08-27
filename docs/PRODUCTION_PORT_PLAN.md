@@ -382,8 +382,10 @@ Expected production files:
 Frozen references: 14-17.
 
 Pre-stage audit: `docs/STAGE_4_EDITOR_AMENDMENT.md` inventories 63 production
-capabilities. No Stage 4 presentation implementation may begin until its action
-hierarchy and explicit conflicts are approved.
+capabilities. The final Frozen Editor amendment resolves the action hierarchy.
+The approved production-specific Listen-sheet mapping retains Device and Azure
+and adds the existing OpenAI TTS provider as a third restrained row. Stage 4 is
+authorised without changing editor, narration, persistence or backup engines.
 
 Preserve: rich text and style marks, selection, undo/redo, blocks, tables,
 attachments, links, tags, versions, export, narration, formatting, autosave, and
