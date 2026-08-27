@@ -46,11 +46,21 @@ import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -104,10 +114,18 @@ import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
+import com.myvault.app.data.repository.SourceReferenceCard
+import com.myvault.app.data.repository.toRelativeTime
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.EditorTool
 import com.myvault.app.ui.components.EditorToolbar
 import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.NoteActionSheet
+import com.myvault.app.ui.components.NoteModalActionRow
+import com.myvault.app.ui.components.NoteSheetAction
+import com.myvault.app.ui.components.NoteSheetSection
+import com.myvault.app.ui.components.NoteWorkspaceHeader
+import com.myvault.app.ui.components.VaultModal
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -133,6 +151,7 @@ fun EditorScreen(
     uiState: NoteUiState,
     formattingState: NoteFormattingUiState,
     onBackClick: () -> Unit,
+    onMenuClick: () -> Unit,
     onTitleChange: (String) -> Unit,
     onContentChange: (text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) -> Unit,
     onRunFormattingTool: (action: NoteFormattingAction, provider: NoteFormattingProvider, model: NoteFormattingModel, title: String, body: String) -> Unit,
@@ -151,6 +170,12 @@ fun EditorScreen(
     onCreateTable: (rows: Int, columns: Int) -> Unit = { _, _ -> },
     onUpdateTableCell: (tableId: String, row: Int, column: Int, text: String) -> Unit = { _, _, _, _ -> },
     onDeleteTable: (String) -> Unit = {},
+    onNoteLinkClick: (String) -> Unit = {},
+    onSourceReferenceClick: (String, Int) -> Unit = { _, _ -> },
+    onRemoveSourceReference: (String) -> Unit = {},
+    onAddKnowledgeTag: (String) -> Unit = {},
+    onRemoveKnowledgeTag: (String) -> Unit = {},
+    onRestoreVersion: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
     autoFocusBody: Boolean = false,
 ) {
@@ -178,6 +203,18 @@ fun EditorScreen(
     var tableDialogOpen by remember { mutableStateOf(false) }
     var tableDeleteRequest by remember { mutableStateOf<String?>(null) }
     var moreMenuOpen by remember { mutableStateOf(false) }
+    var paragraphStyleOpen by remember { mutableStateOf(false) }
+    var moreFormattingOpen by remember { mutableStateOf(false) }
+    var exportOpen by remember { mutableStateOf(false) }
+    var noteInfoOpen by remember { mutableStateOf(false) }
+    var knowledgeOpen by remember { mutableStateOf(false) }
+    var attachmentsOpen by remember { mutableStateOf(false) }
+    var versionHistoryOpen by remember { mutableStateOf(false) }
+    var versionToRestore by remember { mutableStateOf<String?>(null) }
+    var tagDialogOpen by remember { mutableStateOf(false) }
+    var removeTagDialogOpen by remember { mutableStateOf(false) }
+    var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
+    var tagDraft by remember { mutableStateOf("") }
     var intelligentStructureOpen by remember { mutableStateOf(false) }
     var replaceAiDialogOpen by remember { mutableStateOf(false) }
     var structureOnlyNotice by remember { mutableStateOf<String?>(null) }
@@ -209,20 +246,17 @@ fun EditorScreen(
     }
     val supportedTools = remember {
         listOf(
-            EditorTool.Heading,
-            EditorTool.Heading2,
-            EditorTool.Heading3,
-            EditorTool.Heading4,
+            EditorTool.Undo,
+            EditorTool.Redo,
+            EditorTool.Paragraph,
             EditorTool.Bold,
             EditorTool.Italic,
             EditorTool.Underline,
             EditorTool.TextColor,
             EditorTool.BulletList,
             EditorTool.NumberedList,
-            EditorTool.Table,
-            EditorTool.Link,
-            EditorTool.Attachment,
-            EditorTool.Image,
+            EditorTool.Quote,
+            EditorTool.More,
         )
     }
     val safeBodyValue = sanitizeVaultTextFieldValue(bodyValue)
@@ -294,9 +328,12 @@ fun EditorScreen(
     val numberFormat = remember { NumberFormat.getNumberInstance() }
 
     val saveStatusLabel = if (editorReady && (bodyValue.text != lastSavedText || styleMarks != lastSavedMarks || noteLinks != lastSavedLinks)) {
-        "Saving... · ${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} chars"
+        "Saving... · Editing"
     } else {
-        "Saved · ${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} chars"
+        "Saved · Editing"
+    }
+    val noteBreadcrumb = remember(uiState.folderPath) {
+        (listOf("My Vault") + uiState.folderPath).joinToString(" / ")
     }
     val mentionRange = remember(safeBodyValue.text, safeBodyValue.selection) { safeBodyValue.activeMentionRange() }
     val mentionQuery = mentionRange?.let { safeBodyValue.text.substring(it.start + 1, it.end) }.orEmpty()
@@ -594,6 +631,18 @@ fun EditorScreen(
 
     fun applyTool(tool: EditorTool) {
         when (tool) {
+            EditorTool.Undo -> {
+                undoEditorChange()
+                return
+            }
+            EditorTool.Redo -> {
+                redoEditorChange()
+                return
+            }
+            EditorTool.Paragraph -> {
+                paragraphStyleOpen = true
+                return
+            }
             EditorTool.Bold -> {
                 val value = sanitizeVaultTextFieldValue(bodyValue)
                 val update = applyVaultStyleFromToolbar(value, styleMarks, pendingInlineStyles, VaultInlineStyle.Bold)
@@ -642,6 +691,16 @@ fun EditorScreen(
             }
             EditorTool.BulletList -> applyRichTextTransform(applyBulletListTransform(bodyValue))
             EditorTool.NumberedList -> applyRichTextTransform(applyNumberedListTransform(bodyValue))
+            EditorTool.Quote -> {
+                val value = sanitizeVaultTextFieldValue(bodyValue)
+                val update = applyVaultStyleFromToolbar(value, styleMarks, pendingInlineStyles, VaultInlineStyle.Quote)
+                styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
+                pendingInlineStyles = update.pendingStyles
+            }
+            EditorTool.More -> {
+                moreFormattingOpen = true
+                return
+            }
             EditorTool.Table -> {
                 tableDialogOpen = true
                 return
@@ -683,6 +742,10 @@ fun EditorScreen(
                 EditorToolbar(
                     tools = supportedTools,
                     activeTools = activeTools,
+                    disabledTools = buildSet {
+                        if (!canUndo) add(EditorTool.Undo)
+                        if (!canRedo) add(EditorTool.Redo)
+                    },
                     onToolClick = ::applyTool,
                 )
             }
@@ -694,54 +757,17 @@ fun EditorScreen(
                 .padding(innerPadding),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                ScreenTopBar(
-                    onBackClick = {
+                NoteWorkspaceHeader(
+                    breadcrumb = noteBreadcrumb,
+                    status = saveStatusLabel,
+                    onMenuClick = {
                         flushPendingBodySave()
-                        onBackClick()
+                        onMenuClick()
                     },
-                ) {
-                    EditorTopActionButton(
-                        icon = Icons.AutoMirrored.Rounded.Undo,
-                        contentDescription = "Undo",
-                        enabled = canUndo,
-                        onClick = ::undoEditorChange,
-                    )
-                    EditorTopActionButton(
-                        icon = Icons.AutoMirrored.Rounded.Redo,
-                        contentDescription = "Redo",
-                        enabled = canRedo,
-                        onClick = ::redoEditorChange,
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.AutoAwesome,
-                        contentDescription = "Intelligent Structure",
-                        onClick = { intelligentStructureOpen = true },
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.PushPin,
-                        contentDescription = if (isPinned) "Unpin" else "Pin",
-                        active = isPinned,
-                        onClick = { onPinnedChange(!isPinned) },
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.Star,
-                        contentDescription = if (isFavourite) "Unfavourite" else "Favourite",
-                        active = isFavourite,
-                        onClick = { onFavouriteChange(!isFavourite) },
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.MoreHoriz,
-                        contentDescription = "More",
-                        onClick = { moreMenuOpen = true },
-                    )
-                }
-
-                EditorBreadcrumb(
-                    items = breadcrumbItems,
-                    modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                    onMoreClick = { moreMenuOpen = true },
                 )
 
-                Spacer(modifier = Modifier.height(VaultSpacing.md))
+                Spacer(modifier = Modifier.height(VaultSpacing.sm))
 
                 BasicTextField(
                     value = title,
@@ -760,13 +786,6 @@ fun EditorScreen(
                         }
                         innerTextField()
                     },
-                )
-
-                Text(
-                    text = saveStatusLabel,
-                    modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textMuted,
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -956,33 +975,6 @@ fun EditorScreen(
                 }
             }
 
-            if (!bodyFocused) {
-                Surface(
-                    onClick = {
-                        intelligentStructureOpen = true
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = VaultSpacing.screen, bottom = VaultSpacing.sm),
-                    color = colors.accent,
-                    contentColor = Color.White,
-                    shape = VaultShapes.pill,
-                    shadowElevation = 8.dp,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = Color.White)
-                        Text(
-                            text = "Structure & Format",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                            color = Color.White,
-                        )
-                    }
-                }
-            }
         }
     }
 
@@ -1053,46 +1045,481 @@ fun EditorScreen(
     }
 
     if (moreMenuOpen) {
-        AlertDialog(
-            onDismissRequest = { moreMenuOpen = false },
-            confirmButton = {},
-            title = {
-                Text(
-                    text = uiState.note?.title?.takeIf { it.isNotBlank() } ?: "Note actions",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
-                    color = colors.text,
+        NoteActionSheet(
+            title = "Note actions",
+            onDismiss = { moreMenuOpen = false },
+            sections = listOf(
+                NoteSheetSection(
+                    label = "Note",
+                    actions = listOf(
+                        NoteSheetAction(
+                            label = if (isPinned) "Unpin" else "Pin",
+                            icon = Icons.Rounded.PushPin,
+                            selected = isPinned,
+                            onClick = {
+                                onPinnedChange(!isPinned)
+                                moreMenuOpen = false
+                            },
+                        ),
+                        NoteSheetAction(
+                            label = if (isFavourite) "Unfavourite" else "Favourite",
+                            icon = Icons.Rounded.Star,
+                            selected = isFavourite,
+                            onClick = {
+                                onFavouriteChange(!isFavourite)
+                                moreMenuOpen = false
+                            },
+                        ),
+                        NoteSheetAction("Note info", Icons.Rounded.Info, subtitle = "Updated, words and characters", onClick = {
+                            moreMenuOpen = false
+                            noteInfoOpen = true
+                        }),
+                    ),
+                ),
+                NoteSheetSection(
+                    label = "Content",
+                    actions = listOf(
+                        NoteSheetAction("Knowledge & references", Icons.Rounded.Link, subtitle = "Tags, backlinks and PDF sources", onClick = {
+                            moreMenuOpen = false
+                            knowledgeOpen = true
+                        }),
+                        NoteSheetAction("Attachments", Icons.Rounded.AttachFile, subtitle = "Files and images linked to this note", onClick = {
+                            moreMenuOpen = false
+                            attachmentsOpen = true
+                        }),
+                        NoteSheetAction("Version history", Icons.Rounded.History, subtitle = "Restore an earlier saved snapshot", onClick = {
+                            moreMenuOpen = false
+                            versionHistoryOpen = true
+                        }),
+                    ),
+                ),
+                NoteSheetSection(
+                    label = "Tools",
+                    actions = listOf(
+                        NoteSheetAction("Export", Icons.Rounded.FileDownload, subtitle = "TXT or PDF", onClick = {
+                            moreMenuOpen = false
+                            exportOpen = true
+                        }),
+                        NoteSheetAction(
+                            label = "Structure & Format",
+                            icon = Icons.Rounded.AutoAwesome,
+                            onClick = {
+                                moreMenuOpen = false
+                                intelligentStructureOpen = true
+                            },
+                        ),
+                    ),
+                ),
+                NoteSheetSection(
+                    label = "Delete",
+                    actions = listOf(
+                        NoteSheetAction(
+                            label = "Delete note",
+                            icon = Icons.Rounded.Delete,
+                            onClick = {
+                                moreMenuOpen = false
+                                deleteDialogOpen = true
+                            },
+                            destructive = true,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    if (noteInfoOpen) {
+        VaultModal(title = "Note info", onDismiss = { noteInfoOpen = false }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            ) {
+                NoteInfoStat(
+                    label = "Updated",
+                    value = uiState.note?.updatedAt?.toRelativeTime() ?: "Unknown",
+                    modifier = Modifier.weight(1f),
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    EditorActionRow("Attach file", Icons.Rounded.AttachFile) {
-                        moreMenuOpen = false
-                        attachmentPicker.launch(arrayOf("*/*"))
-                    }
-                    EditorActionRow(if (isPinned) "Unpin note" else "Pin note", Icons.Rounded.PushPin) {
-                        onPinnedChange(!isPinned)
-                        moreMenuOpen = false
-                    }
-                    EditorActionRow(if (isFavourite) "Remove favourite" else "Add favourite", Icons.Rounded.Star) {
-                        onFavouriteChange(!isFavourite)
-                        moreMenuOpen = false
-                    }
-                    EditorActionRow("Export as TXT", Icons.Rounded.AttachFile) {
-                        moreMenuOpen = false
-                        exportTextLauncher.launch("${uiState.note?.title?.toSafeFileName() ?: "note"}.txt")
-                    }
-                    EditorActionRow("Export as PDF", Icons.Rounded.AttachFile) {
-                        moreMenuOpen = false
-                        exportPdfLauncher.launch("${uiState.note?.title?.toSafeFileName() ?: "note"}.pdf")
-                    }
-                    EditorActionRow("Delete note", Icons.Rounded.Delete, destructive = true) {
-                        moreMenuOpen = false
-                        deleteDialogOpen = true
+                NoteInfoStat(
+                    label = "Words",
+                    value = numberFormat.format(wordCount),
+                    modifier = Modifier.weight(1f),
+                )
+                NoteInfoStat(
+                    label = "Characters",
+                    value = numberFormat.format(charCount),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+
+    if (knowledgeOpen) {
+        VaultModal(title = "Knowledge & references", onDismiss = { knowledgeOpen = false }) {
+            Text(
+                "TAGS",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                color = colors.textMuted,
+            )
+            if (uiState.knowledgeTags.isEmpty()) {
+                Text("No tags yet", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                KnowledgeTagRow(tags = uiState.knowledgeTags)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                TextButton(onClick = {
+                    knowledgeOpen = false
+                    tagDraft = ""
+                    tagDialogOpen = true
+                }) { Text("Add tag") }
+                if (uiState.knowledgeTags.isNotEmpty()) {
+                    TextButton(onClick = {
+                        knowledgeOpen = false
+                        removeTagDialogOpen = true
+                    }) { Text("Remove tag") }
+                }
+            }
+            Text(
+                "BACKLINKS",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                color = colors.textMuted,
+            )
+            if (uiState.backlinks.isEmpty()) {
+                Text("No notes link here", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.backlinks.take(5).forEach { backlink ->
+                    BacklinkCard(
+                        title = backlink.title,
+                        preview = backlink.preview,
+                        onClick = {
+                            knowledgeOpen = false
+                            onNoteLinkClick(backlink.id)
+                        },
+                        compact = true,
+                    )
+                }
+            }
+            Text(
+                "PDF SOURCES",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                color = colors.textMuted,
+            )
+            if (uiState.sourceReferences.isEmpty()) {
+                Text("No PDF sources linked", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.sourceReferences.take(5).forEach { source ->
+                    SourceReferenceCardRow(
+                        source = source,
+                        onClick = {
+                            knowledgeOpen = false
+                            onSourceReferenceClick(source.attachmentId, source.pageIndex)
+                        },
+                        onLongPress = { sourceReferenceToRemove = source },
+                        compact = true,
+                    )
+                }
+            }
+        }
+    }
+
+    if (attachmentsOpen) {
+        VaultModal(title = "Attachments", onDismiss = { attachmentsOpen = false }) {
+            if (uiState.attachmentsLoading && uiState.attachments.isEmpty()) {
+                Text("Loading attachments...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else if (uiState.attachments.isEmpty()) {
+                Text("No files or images attached", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.attachments.forEach { attachment ->
+                    AttachmentSheetRow(
+                        attachment = attachment,
+                        onClick = {
+                            attachmentsOpen = false
+                            onAttachmentClick(attachment.id)
+                        },
+                    )
+                }
+            }
+            Text(
+                "ADD",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
+                color = colors.textMuted,
+            )
+            NoteModalActionRow(
+                NoteSheetAction("Attach file", Icons.Rounded.AttachFile, onClick = {
+                    attachmentsOpen = false
+                    attachmentPicker.launch(arrayOf("*/*"))
+                }),
+            )
+            NoteModalActionRow(
+                NoteSheetAction("Attach image", Icons.Rounded.Image, onClick = {
+                    attachmentsOpen = false
+                    imagePicker.launch(arrayOf("image/*"))
+                }),
+            )
+        }
+    }
+
+    if (versionHistoryOpen) {
+        VaultModal(title = "Version history", onDismiss = { versionHistoryOpen = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = colors.accentSoft,
+                shape = VaultShapes.md,
+                border = BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Row(
+                    modifier = Modifier.padding(VaultSpacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(18.dp), tint = colors.accent)
+                    Column {
+                        Text(
+                            "Current",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
+                            color = colors.accent,
+                        )
+                        Text(
+                            "${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} characters",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textSecondary,
+                        )
                     }
                 }
+            }
+            if (uiState.versions.isEmpty()) {
+                Text("No saved versions yet", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.versions.take(12).forEach { version ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = colors.surface,
+                        shape = VaultShapes.md,
+                        border = BorderStroke(1.dp, colors.border),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(VaultSpacing.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    version.createdAt.toRelativeTime(),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                                    color = colors.text,
+                                )
+                                Text(
+                                    "${numberFormat.format(version.wordCount)} words · ${numberFormat.format(version.characterCount)} characters",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.textMuted,
+                                )
+                            }
+                            TextButton(onClick = { versionToRestore = version.id }) { Text("Restore") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    versionToRestore?.let { versionId ->
+        AlertDialog(
+            onDismissRequest = { versionToRestore = null },
+            title = { Text("Restore this version?") },
+            text = { Text("Your current note will be saved as a version first, then this older version will be restored.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRestoreVersion(versionId)
+                        versionToRestore = null
+                        versionHistoryOpen = false
+                    },
+                ) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { versionToRestore = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (tagDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { tagDialogOpen = false },
+            title = { Text("Add tag") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                    if (uiState.knowledgeTags.isNotEmpty()) {
+                        KnowledgeTagRow(tags = uiState.knowledgeTags)
+                    }
+                    OutlinedTextField(
+                        value = tagDraft,
+                        onValueChange = { tagDraft = it },
+                        singleLine = true,
+                        label = { Text("Tag") },
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onAddKnowledgeTag(tagDraft)
+                        tagDraft = ""
+                        tagDialogOpen = false
+                    },
+                    enabled = tagDraft.isNotBlank(),
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { tagDialogOpen = false }) { Text("Close") }
             },
             containerColor = colors.elevated,
             tonalElevation = 0.dp,
+        )
+    }
+
+    if (removeTagDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { removeTagDialogOpen = false },
+            title = { Text("Remove tag") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    uiState.knowledgeTags.forEach { tag ->
+                        NoteModalActionRow(
+                            NoteSheetAction(
+                                label = tag.name,
+                                icon = Icons.Rounded.LocalOffer,
+                                destructive = true,
+                                onClick = {
+                                    onRemoveKnowledgeTag(tag.id)
+                                    removeTagDialogOpen = false
+                                },
+                            ),
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { removeTagDialogOpen = false }) { Text("Cancel") }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
+    sourceReferenceToRemove?.let { source ->
+        AlertDialog(
+            onDismissRequest = { sourceReferenceToRemove = null },
+            title = { Text("Remove source reference?") },
+            text = {
+                Text(
+                    "This only unlinks the reference from this note. It will not delete the note, PDF, or annotation.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRemoveSourceReference(source.id)
+                        sourceReferenceToRemove = null
+                    },
+                ) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { sourceReferenceToRemove = null }) { Text("Cancel") }
+            },
+            containerColor = colors.elevated,
+            tonalElevation = 0.dp,
+        )
+    }
+
+    if (paragraphStyleOpen) {
+        fun applyParagraphTool(tool: EditorTool) {
+            if (tool == EditorTool.Paragraph) {
+                val value = sanitizeVaultTextFieldValue(bodyValue)
+                val update = clearVaultHeadingFromToolbar(value, styleMarks, pendingInlineStyles)
+                styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
+                pendingInlineStyles = update.pendingStyles
+                bodyFocusRequester.requestFocus()
+            } else {
+                applyTool(tool)
+            }
+            paragraphStyleOpen = false
+        }
+        NoteActionSheet(
+            title = "Text style",
+            onDismiss = { paragraphStyleOpen = false },
+            sections = listOf(
+                NoteSheetSection(
+                    label = "Format",
+                    actions = listOf(
+                        NoteSheetAction("Paragraph", Icons.Rounded.Notes, onClick = { applyParagraphTool(EditorTool.Paragraph) }),
+                        NoteSheetAction("Heading 1", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading) }),
+                        NoteSheetAction("Heading 2", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading2) }),
+                        NoteSheetAction("Heading 3", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading3) }),
+                        NoteSheetAction("Heading 4", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading4) }),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    if (moreFormattingOpen) {
+        NoteActionSheet(
+            title = "More formatting",
+            onDismiss = { moreFormattingOpen = false },
+            sections = listOf(
+                NoteSheetSection(
+                    label = "Insert",
+                    actions = listOf(
+                        NoteSheetAction("Table", Icons.Rounded.TableChart, onClick = {
+                            moreFormattingOpen = false
+                            tableDialogOpen = true
+                        }),
+                        NoteSheetAction("Add web link", Icons.Rounded.Link, onClick = {
+                            moreFormattingOpen = false
+                            linkUrl = ""
+                            linkDialogOpen = true
+                        }),
+                        NoteSheetAction("Link to note", Icons.Rounded.Notes, onClick = {
+                            moreFormattingOpen = false
+                            val value = sanitizeVaultTextFieldValue(bodyValue)
+                            val selection = value.selection
+                            val updatedText = value.text.replaceRange(selection.min, selection.max, "@")
+                            updateBody(value.copy(text = updatedText, selection = TextRange(selection.min + 1)))
+                            bodyFocusRequester.requestFocus()
+                        }),
+                        NoteSheetAction("Attach file", Icons.Rounded.AttachFile, onClick = {
+                            moreFormattingOpen = false
+                            attachmentPicker.launch(arrayOf("*/*"))
+                        }),
+                        NoteSheetAction("Attach image", Icons.Rounded.Image, onClick = {
+                            moreFormattingOpen = false
+                            imagePicker.launch(arrayOf("image/*"))
+                        }),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    if (exportOpen) {
+        NoteActionSheet(
+            title = "Export",
+            onDismiss = { exportOpen = false },
+            sections = listOf(
+                NoteSheetSection(
+                    label = "Format",
+                    actions = listOf(
+                        NoteSheetAction("Text file", Icons.Rounded.FileDownload, onClick = {
+                            exportOpen = false
+                            exportTextLauncher.launch("${uiState.note?.title?.toSafeFileName() ?: "note"}.txt")
+                        }),
+                        NoteSheetAction("PDF", Icons.Rounded.FileDownload, onClick = {
+                            exportOpen = false
+                            exportPdfLauncher.launch("${uiState.note?.title?.toSafeFileName() ?: "note"}.pdf")
+                        }),
+                    ),
+                ),
+            ),
         )
     }
 

@@ -169,6 +169,8 @@ fun SettingsScreen(
     driveRestoreState: DriveRestoreState = DriveRestoreState(),
     backupMessage: String? = null,
     onDismissBackupMessage: () -> Unit = {},
+    initialSection: String? = null,
+    onInitialSectionConsumed: () -> Unit = {},
 ) {
     var destination by remember { mutableStateOf(FrozenSettingsDestination.Main) }
     var choiceDialog by remember { mutableStateOf<String?>(null) }
@@ -185,6 +187,14 @@ fun SettingsScreen(
     }
     val signInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         onGoogleDriveSignInResult(result.data) { consentLauncher.launch(it) }
+    }
+
+    LaunchedEffect(initialSection) {
+        when (initialSection) {
+            "azure_speech" -> destination = FrozenSettingsDestination.AzureSpeech
+            null -> return@LaunchedEffect
+        }
+        onInitialSectionConsumed()
     }
 
     BackHandler(destination != FrozenSettingsDestination.Main) { destination = FrozenSettingsDestination.Main }

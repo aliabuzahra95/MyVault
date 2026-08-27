@@ -41,15 +41,21 @@ import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,9 +93,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.components.AttachmentThumbnail
-import com.myvault.app.ui.components.Breadcrumb
-import com.myvault.app.ui.components.IconBtn
+import com.myvault.app.ui.components.NoteActionSheet
+import com.myvault.app.ui.components.NoteModalActionRow
+import com.myvault.app.ui.components.NoteSheetAction
+import com.myvault.app.ui.components.NoteSheetSection
+import com.myvault.app.ui.components.NoteWorkspaceHeader
 import com.myvault.app.ui.components.SectionLabel
+import com.myvault.app.ui.components.VaultModal
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.narration.NarrationConfig
 import com.myvault.app.data.narration.AzureNarrationProgress
@@ -117,8 +127,11 @@ fun ReadingScreen(
     azureNarrationProgress: AzureNarrationProgress? = null,
     onBackClick: () -> Unit,
     onEditClick: () -> Unit,
+    onMenuClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     onAttachmentClick: (String) -> Unit = {},
+    onAttachDocument: (Uri) -> Unit = {},
+    onConfigureAzure: () -> Unit = {},
     onPinnedChange: (Boolean) -> Unit = {},
     onFavouriteChange: (Boolean) -> Unit = {},
     onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
@@ -145,6 +158,10 @@ fun ReadingScreen(
     val isFavourite = note?.isFavourite == true
     var moreMenuOpen by remember { mutableStateOf(false) }
     var listenModeOpen by remember { mutableStateOf(false) }
+    var noteInfoOpen by remember { mutableStateOf(false) }
+    var knowledgeOpen by remember { mutableStateOf(false) }
+    var attachmentsOpen by remember { mutableStateOf(false) }
+    var exportOpen by remember { mutableStateOf(false) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var versionHistoryOpen by remember { mutableStateOf(false) }
     var versionToRestore by remember { mutableStateOf<String?>(null) }
@@ -172,11 +189,14 @@ fun ReadingScreen(
     val exportPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         uri?.let(onExportPdf)
     }
-    val breadcrumbItems = remember(uiState.folderPath) {
-        buildList {
-            add("My Vault")
-            addAll(uiState.folderPath)
-        }
+    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(onAttachDocument)
+    }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(onAttachDocument)
+    }
+    val noteBreadcrumb = remember(uiState.folderPath) {
+        uiState.folderPath.joinToString(" / ").ifBlank { "Study" }
     }
     
     val wordCount = remember(uiState.richText.text, note?.bodyPlainText) {
@@ -218,56 +238,19 @@ fun ReadingScreen(
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
             item {
-                ScreenTopBar(onBackClick = onBackClick) {
-                    IconBtn(
-                        icon = Icons.Rounded.PlayArrow,
-                        contentDescription = "Listen",
-                        active = narrationState.isActive,
-                        onClick = { listenModeOpen = true },
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.PushPin,
-                        contentDescription = if (isPinned) "Unpin" else "Pin",
-                        active = isPinned,
-                        onClick = { onPinnedChange(!isPinned) },
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.Star,
-                        contentDescription = if (isFavourite) "Unfavourite" else "Favourite",
-                        active = isFavourite,
-                        onClick = { onFavouriteChange(!isFavourite) },
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.MoreHoriz,
-                        contentDescription = "More",
-                        onClick = { moreMenuOpen = true },
-                    )
-                }
+                NoteWorkspaceHeader(
+                    breadcrumb = noteBreadcrumb,
+                    onMenuClick = onMenuClick,
+                    onMoreClick = { moreMenuOpen = true },
+                )
             }
             item {
-                Breadcrumb(breadcrumbItems, modifier = Modifier.padding(horizontal = VaultSpacing.screen))
-            }
-            item {
-                Column(modifier = Modifier.padding(horizontal = VaultSpacing.screen), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                    Text(note?.title ?: "Untitled note", style = MaterialTheme.typography.headlineSmall, color = colors.text)
-                    Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.AccessTime, null, modifier = Modifier.size(13.dp), tint = colors.textMuted)
-                        Text(
-                            text = listOfNotNull(
-                                note?.updatedAt?.toRelativeTime()?.let { "Edited $it" },
-                                "${numberFormat.format(wordCount)} words",
-                                "${numberFormat.format(charCount)} chars",
-                            ).joinToString(" · "),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textMuted,
-                        )
-                    }
-                    if (uiState.knowledgeTags.isNotEmpty()) {
-                        KnowledgeTagRow(
-                            tags = uiState.knowledgeTags,
-                        )
-                    }
-                }
+                Text(
+                    text = note?.title ?: "Untitled note",
+                    modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = colors.text,
+                )
             }
             if (narrationState.noteId == note?.id && narrationState.activeSentence.isNotBlank()) {
                 item {
@@ -323,180 +306,284 @@ fun ReadingScreen(
                     ReadOnlyNoteTable(table = table)
                 }
             }
-            if (uiState.attachmentsLoading || uiState.attachments.isNotEmpty()) {
-                item(key = "attachments_hydration") {
-                    Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                        SectionLabel(label = "Attachments")
-                        Crossfade(
-                            targetState = uiState.attachments,
-                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                            label = "readingAttachmentsHydration",
-                        ) { attachments ->
-                            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                                if (attachments.isEmpty()) {
-                                    AttachmentHydrationPlaceholder(count = uiState.attachmentCount)
-                                } else {
-                                    attachments.forEach { attachment ->
-                                        AttachmentReadingPreview(
-                                            attachment = attachment,
-                                            onClick = { onAttachmentClick(attachment.id) },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (uiState.sourceReferences.isNotEmpty()) {
-                item { SectionLabel(label = "Sources used") }
-                items(uiState.sourceReferences.take(3), key = { it.id }) { source ->
-                    SourceReferenceCardRow(
-                        source = source,
-                        onClick = { onSourceReferenceClick(source.attachmentId, source.pageIndex) },
-                        onLongPress = { sourceReferenceToRemove = source },
-                    )
-                }
-                if (uiState.sourceReferences.size > 3) {
-                    item {
-                        Text(
-                            text = "+${uiState.sourceReferences.size - 3} more sources",
-                            modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textMuted,
-                        )
-                    }
-                }
-            }
-            if (uiState.backlinks.isNotEmpty()) {
-                item { SectionLabel(label = "Linked from:") }
-                items(uiState.backlinks, key = { it.id }) { backlink ->
-                    BacklinkCard(title = backlink.title, preview = backlink.preview, onClick = { onNoteLinkClick(backlink.id) })
-                }
-            }
         }
     }
 
     if (moreMenuOpen) {
-        AlertDialog(
-            onDismissRequest = { moreMenuOpen = false },
-            confirmButton = {},
-            title = {
-                Text(
-                    text = note?.title?.takeIf { it.isNotBlank() } ?: "Note actions",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
-                    color = colors.text,
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    ReadingActionRow("Edit note", Icons.Rounded.Edit) {
-                        moreMenuOpen = false
-                        onEditClick()
-                    }
-                    ReadingActionRow(if (isPinned) "Unpin note" else "Pin note", Icons.Rounded.PushPin) {
-                        onPinnedChange(!isPinned)
-                        moreMenuOpen = false
-                    }
-                    ReadingActionRow(if (isFavourite) "Remove favourite" else "Add favourite", Icons.Rounded.Star) {
-                        onFavouriteChange(!isFavourite)
-                        moreMenuOpen = false
-                    }
-                    ReadingActionRow("Export as TXT", Icons.Rounded.FileDownload) {
-                        moreMenuOpen = false
-                        exportTextLauncher.launch("${note?.title?.toSafeFileName() ?: "note"}.txt")
-                    }
-                    ReadingActionRow("Export as PDF", Icons.Rounded.FileDownload) {
-                        moreMenuOpen = false
-                        exportPdfLauncher.launch("${note?.title?.toSafeFileName() ?: "note"}.pdf")
-                    }
-                    ReadingActionRow("Add/Edit Tags", Icons.Rounded.LocalOffer) {
-                        moreMenuOpen = false
-                        tagDraft = ""
-                        tagDialogOpen = true
-                    }
-                    ReadingActionRow("Version history", Icons.Rounded.History) {
-                        moreMenuOpen = false
-                        versionHistoryOpen = true
-                    }
-                    if (uiState.knowledgeTags.isNotEmpty()) {
-                        ReadingActionRow("Remove Tag", Icons.Rounded.LocalOffer) {
+        NoteActionSheet(
+            title = "Note actions",
+            onDismiss = { moreMenuOpen = false },
+            sections = listOf(
+                NoteSheetSection(
+                    label = "Note",
+                    actions = listOf(
+                        NoteSheetAction("Listen", Icons.Rounded.PlayArrow, subtitle = "Read this note aloud", onClick = {
                             moreMenuOpen = false
-                            removeTagDialogOpen = true
-                        }
-                    }
-                    ReadingActionRow("Delete note", Icons.Rounded.Delete, destructive = true) {
-                        moreMenuOpen = false
-                        deleteDialogOpen = true
-                    }
-                }
-            },
-            containerColor = colors.elevated,
-            tonalElevation = 0.dp,
+                            listenModeOpen = true
+                        }),
+                        NoteSheetAction(if (isPinned) "Unpin note" else "Pin note", Icons.Rounded.PushPin, subtitle = "Show in compact Pinned strip", onClick = {
+                            onPinnedChange(!isPinned)
+                            moreMenuOpen = false
+                        }),
+                        NoteSheetAction(if (isFavourite) "Remove favourite" else "Favourite", Icons.Rounded.Star, subtitle = "Add to existing favourites", onClick = {
+                            onFavouriteChange(!isFavourite)
+                            moreMenuOpen = false
+                        }),
+                        NoteSheetAction("Note info", Icons.Rounded.Info, subtitle = "Updated, words and characters", onClick = {
+                            moreMenuOpen = false
+                            noteInfoOpen = true
+                        }),
+                    ),
+                ),
+                NoteSheetSection(
+                    label = "Content",
+                    actions = listOf(
+                        NoteSheetAction("Knowledge & references", Icons.Rounded.Link, subtitle = "Tags, backlinks and PDF sources", onClick = {
+                            moreMenuOpen = false
+                            knowledgeOpen = true
+                        }),
+                        NoteSheetAction("Attachments", Icons.Rounded.AttachFile, subtitle = "Files and images linked to this note", onClick = {
+                            moreMenuOpen = false
+                            attachmentsOpen = true
+                        }),
+                        NoteSheetAction("Version history", Icons.Rounded.History, subtitle = "Restore an earlier saved snapshot", onClick = {
+                            moreMenuOpen = false
+                            versionHistoryOpen = true
+                        }),
+                    ),
+                ),
+                NoteSheetSection(
+                    label = "Tools",
+                    actions = listOf(
+                        NoteSheetAction("Export", Icons.Rounded.FileDownload, subtitle = "TXT or PDF", onClick = {
+                            moreMenuOpen = false
+                            exportOpen = true
+                        }),
+                    ),
+                ),
+                NoteSheetSection(
+                    label = "Delete",
+                    actions = listOf(
+                        NoteSheetAction("Delete note", Icons.Rounded.Delete, subtitle = "Move this note to Recently Deleted", destructive = true, onClick = {
+                            moreMenuOpen = false
+                            deleteDialogOpen = true
+                        }),
+                    ),
+                ),
+            ),
         )
     }
 
     if (listenModeOpen) {
         val noteTitle = note?.title.orEmpty()
         val noteBody = uiState.richText.text.ifBlank { note?.bodyPlainText.orEmpty() }
-        AlertDialog(
-            onDismissRequest = { listenModeOpen = false },
-            title = {
-                Text(
-                    text = "Listen",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
-                    color = colors.text,
+        val narrationActions = buildList {
+            azureNarrationProgress?.takeIf { it.positionMs >= 5_000L }?.let { progress ->
+                add(
+                    NoteSheetAction(
+                        label = "Continue listening",
+                        icon = Icons.Rounded.PlayArrow,
+                        subtitle = "Resume from ${progress.positionMs.toPlaybackTime()}",
+                        onClick = {
+                            listenModeOpen = false
+                            onAzureResumeClick(noteTitle, noteBody)
+                        },
+                    ),
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    azureNarrationProgress?.takeIf { it.positionMs >= 5_000L }?.let { progress ->
-                        ListenModeChoice(
-                            title = "Continue listening",
-                            subtitle = "Resume from ${progress.positionMs.toPlaybackTime()}",
-                            icon = Icons.Rounded.PlayArrow,
+            }
+            val choices = listOf(
+                NarrationProvider.Device to {
+                    listenModeOpen = false
+                    onDeviceListenClick(noteTitle, noteBody)
+                },
+                NarrationProvider.Azure to {
+                    listenModeOpen = false
+                    onAzureListenClick(noteTitle, noteBody)
+                },
+                NarrationProvider.OpenAi to {
+                    listenModeOpen = false
+                    onListenClick(noteTitle, noteBody, selectedNarrationVoice)
+                },
+            ).sortedByDescending { it.first.storedValue == defaultNarrationProvider }
+            choices.forEach { (provider, action) ->
+                add(
+                    NoteSheetAction(
+                        label = provider.label,
+                        icon = if (provider == NarrationProvider.Device) Icons.Rounded.PlayArrow else Icons.Rounded.AutoAwesome,
+                        selected = provider.storedValue == defaultNarrationProvider,
+                        subtitle = when (provider) {
+                            NarrationProvider.Device -> "Fast built-in phone voice. No network required."
+                            NarrationProvider.Azure -> "Azure ${azureNarrationVoice.ifBlank { "neural voice" }}. Uses cached audio."
+                            NarrationProvider.OpenAi -> "Natural OpenAI voice. Uses cached audio when available."
+                        },
+                        onClick = action,
+                    ),
+                )
+            }
+        }
+        NoteActionSheet(
+            title = "Listen",
+            onDismiss = { listenModeOpen = false },
+            sections = listOf(
+                NoteSheetSection("Listen with", narrationActions),
+                NoteSheetSection(
+                    "Audio",
+                    listOf(
+                        NoteSheetAction(
+                            label = "Follow text while listening",
+                            icon = Icons.Rounded.Notes,
+                            selected = followAudio,
+                            subtitle = if (followAudio) "On" else "Off",
+                            onClick = { followAudio = !followAudio },
+                        ),
+                        NoteSheetAction(
+                            label = "Configure Azure Speech",
+                            icon = Icons.Rounded.Settings,
+                            subtitle = "Voice, region and connection",
                             onClick = {
                                 listenModeOpen = false
-                                onAzureResumeClick(noteTitle, noteBody)
+                                onConfigureAzure()
                             },
-                        )
-                    }
-                    val choices = listOf(
-                        NarrationProvider.Device to {
-                            listenModeOpen = false
-                            onDeviceListenClick(noteTitle, noteBody)
-                        },
-                        NarrationProvider.Azure to {
-                            listenModeOpen = false
-                            onAzureListenClick(noteTitle, noteBody)
-                        },
-                        NarrationProvider.OpenAi to {
-                            listenModeOpen = false
-                            onListenClick(noteTitle, noteBody, selectedNarrationVoice)
-                        },
-                    ).sortedByDescending { it.first.storedValue == defaultNarrationProvider }
-                    choices.forEach { (provider, action) ->
-                        ListenModeChoice(
-                            title = provider.label,
-                            subtitle = when (provider) {
-                                NarrationProvider.Device -> "Fast built-in phone voice. No network required."
-                                NarrationProvider.Azure -> "Azure ${azureNarrationVoice.ifBlank { "neural voice" }}. Uses cached audio."
-                                NarrationProvider.OpenAi -> "Natural OpenAI voice. Uses cached audio when available."
-                            },
-                            icon = if (provider == NarrationProvider.Device) Icons.Rounded.PlayArrow else Icons.Rounded.AutoAwesome,
-                            onClick = action,
-                        )
-                    }
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    if (noteInfoOpen) {
+        VaultModal(title = "Note info", onDismiss = { noteInfoOpen = false }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            ) {
+                NoteInfoStat(
+                    label = "Updated",
+                    value = note?.updatedAt?.toRelativeTime() ?: "Unknown",
+                    modifier = Modifier.weight(1f),
+                )
+                NoteInfoStat(
+                    label = "Words",
+                    value = numberFormat.format(wordCount),
+                    modifier = Modifier.weight(1f),
+                )
+                NoteInfoStat(
+                    label = "Characters",
+                    value = numberFormat.format(charCount),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+
+    if (knowledgeOpen) {
+        VaultModal(title = "Knowledge & references", onDismiss = { knowledgeOpen = false }) {
+            Text("TAGS", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.textMuted)
+            if (uiState.knowledgeTags.isEmpty()) {
+                Text("No tags yet", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                KnowledgeTagRow(tags = uiState.knowledgeTags)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                TextButton(onClick = {
+                    knowledgeOpen = false
+                    tagDraft = ""
+                    tagDialogOpen = true
+                }) { Text("Add tag") }
+                if (uiState.knowledgeTags.isNotEmpty()) {
+                    TextButton(onClick = {
+                        knowledgeOpen = false
+                        removeTagDialogOpen = true
+                    }) { Text("Remove tag") }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { listenModeOpen = false }) {
-                    Text("Cancel")
+            }
+            Text("BACKLINKS", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.textMuted)
+            if (uiState.backlinks.isEmpty()) {
+                Text("No notes link here", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.backlinks.take(5).forEach { backlink ->
+                    BacklinkCard(
+                        title = backlink.title,
+                        preview = backlink.preview,
+                        onClick = {
+                            knowledgeOpen = false
+                            onNoteLinkClick(backlink.id)
+                        },
+                        compact = true,
+                    )
                 }
-            },
-            containerColor = colors.elevated,
-            shape = VaultShapes.xl,
+            }
+            Text("PDF SOURCES", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.textMuted)
+            if (uiState.sourceReferences.isEmpty()) {
+                Text("No PDF sources linked", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.sourceReferences.take(5).forEach { source ->
+                    SourceReferenceCardRow(
+                        source = source,
+                        onClick = {
+                            knowledgeOpen = false
+                            onSourceReferenceClick(source.attachmentId, source.pageIndex)
+                        },
+                        onLongPress = { sourceReferenceToRemove = source },
+                        compact = true,
+                    )
+                }
+            }
+        }
+    }
+
+    if (attachmentsOpen) {
+        VaultModal(title = "Attachments", onDismiss = { attachmentsOpen = false }) {
+            if (uiState.attachmentsLoading && uiState.attachments.isEmpty()) {
+                Text("Loading attachments...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else if (uiState.attachments.isEmpty()) {
+                Text("No files or images attached", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.attachments.forEach { attachment ->
+                    AttachmentSheetRow(
+                        attachment = attachment,
+                        onClick = {
+                            attachmentsOpen = false
+                            onAttachmentClick(attachment.id)
+                        },
+                    )
+                }
+            }
+            Text("ADD", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.textMuted)
+            NoteModalActionRow(
+                NoteSheetAction("Attach file", Icons.Rounded.AttachFile, onClick = {
+                    attachmentsOpen = false
+                    attachmentPicker.launch(arrayOf("*/*"))
+                }),
+            )
+            NoteModalActionRow(
+                NoteSheetAction("Attach image", Icons.Rounded.Image, onClick = {
+                    attachmentsOpen = false
+                    imagePicker.launch(arrayOf("image/*"))
+                }),
+            )
+        }
+    }
+
+    if (exportOpen) {
+        NoteActionSheet(
+            title = "Export",
+            onDismiss = { exportOpen = false },
+            sections = listOf(
+                NoteSheetSection(
+                    "Export as",
+                    listOf(
+                        NoteSheetAction("Text file", Icons.Rounded.Notes, subtitle = "Plain TXT document", onClick = {
+                            exportOpen = false
+                            exportTextLauncher.launch("${note?.title?.toSafeFileName() ?: "note"}.txt")
+                        }),
+                        NoteSheetAction("PDF", Icons.Rounded.FileDownload, subtitle = "Portable document", onClick = {
+                            exportOpen = false
+                            exportPdfLauncher.launch("${note?.title?.toSafeFileName() ?: "note"}.pdf")
+                        }),
+                    ),
+                ),
+            ),
         )
     }
 
@@ -524,81 +611,49 @@ fun ReadingScreen(
     }
 
     if (versionHistoryOpen) {
-        AlertDialog(
-            onDismissRequest = { versionHistoryOpen = false },
-            title = { Text("Version history") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    // Always show current version details at the top
+        VaultModal(title = "Version history", onDismiss = { versionHistoryOpen = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = colors.accentSoft,
+                shape = VaultShapes.md,
+                border = BorderStroke(1.dp, colors.accentBorder),
+            ) {
+                Row(
+                    modifier = Modifier.padding(VaultSpacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(18.dp), tint = colors.accent)
+                    Column {
+                        Text("Current", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800), color = colors.accent)
+                        Text("${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} characters", style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
+                    }
+                }
+            }
+            if (uiState.versions.isEmpty()) {
+                Text("No saved versions yet", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            } else {
+                uiState.versions.take(12).forEach { version ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = colors.accentSoft,
+                        color = colors.surface,
                         shape = VaultShapes.md,
-                        border = BorderStroke(1.dp, colors.accentBorder),
+                        border = BorderStroke(1.dp, colors.border),
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier.padding(VaultSpacing.sm),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                "Current Note Stats",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W800),
-                                color = colors.accent,
-                            )
-                            Text(
-                                "${numberFormat.format(wordCount)} words · ${numberFormat.format(charCount)} characters",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textSecondary,
-                            )
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    if (uiState.versions.isEmpty()) {
-                        Text(
-                            "No saved versions yet. MyVault creates versions as you make meaningful note changes.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.textSecondary,
-                        )
-                    } else {
-                        uiState.versions.take(12).forEach { version ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = colors.surface,
-                                shape = VaultShapes.md,
-                                border = BorderStroke(1.dp, colors.border),
-                                onClick = { versionToRestore = version.id },
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(VaultSpacing.sm),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        version.createdAt.toRelativeTime(),
-                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
-                                        color = colors.text,
-                                    )
-                                    Text(
-                                        "${numberFormat.format(version.wordCount)} words · ${numberFormat.format(version.characterCount)} characters",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = colors.textMuted,
-                                    )
-                                }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(version.createdAt.toRelativeTime(), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700), color = colors.text)
+                                Text("${numberFormat.format(version.wordCount)} words · ${numberFormat.format(version.characterCount)} characters", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
                             }
+                            TextButton(onClick = { versionToRestore = version.id }) { Text("Restore") }
                         }
                     }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { versionHistoryOpen = false }) {
-                    Text("Close")
-                }
-            },
-            containerColor = colors.elevated,
-            tonalElevation = 0.dp,
-        )
+            }
+        }
     }
 
     versionToRestore?.let { versionId ->
@@ -724,7 +779,7 @@ private fun String.toSafeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "note" }
 
 @Composable
-private fun KnowledgeTagRow(
+internal fun KnowledgeTagRow(
     tags: List<KnowledgeTagChip>,
 ) {
     val colors = VaultThemeTokens.colors
@@ -760,16 +815,17 @@ private fun KnowledgeTagRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SourceReferenceCardRow(
+internal fun SourceReferenceCardRow(
     source: SourceReferenceCard,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    compact: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen)
+            .padding(horizontal = if (compact) 0.dp else VaultSpacing.screen)
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         color = colors.surface,
         shape = VaultShapes.md,
@@ -1090,13 +1146,21 @@ private fun Long.toPlaybackTime(): String {
 }
 
 @Composable
-private fun BacklinkCard(title: String, preview: String, onClick: () -> Unit) {
+internal fun BacklinkCard(
+    title: String,
+    preview: String,
+    onClick: () -> Unit,
+    compact: Boolean = false,
+) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.xs),
+            .padding(
+                horizontal = if (compact) 0.dp else VaultSpacing.screen,
+                vertical = VaultSpacing.xs,
+            ),
         color = colors.surface,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, colors.border),
@@ -1105,6 +1169,82 @@ private fun BacklinkCard(title: String, preview: String, onClick: () -> Unit) {
             Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600), color = colors.text)
             if (preview.isNotBlank()) {
                 Text(preview, style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NoteInfoStat(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = modifier,
+        color = colors.inset,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun AttachmentSheetRow(
+    attachment: AttachmentEntity,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.inset,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (attachment.mimeType.startsWith("image/")) Icons.Rounded.Image else Icons.Rounded.AttachFile,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = colors.textSecondary,
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = attachment.fileName,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
+                    color = colors.text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${attachment.kindLabel()} · ${attachment.sizeLabel()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                )
             }
         }
     }

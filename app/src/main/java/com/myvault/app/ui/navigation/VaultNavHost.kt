@@ -117,6 +117,7 @@ fun VaultNavHost(
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
     var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
     var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
@@ -300,10 +301,18 @@ fun VaultNavHost(
             onExplorerMoreSelected = { sectionIndex, node ->
                 explorerActionTarget = ExplorerActionTarget(rootModes[sectionIndex], node)
             },
-            contentStartsInMenuBar = currentRoute == VaultDestination.Settings.route ||
+            contentStartsInMenuBar = currentRoute in setOf(
+                VaultDestination.Settings.route,
+                VaultDestination.Editor.route,
+                VaultDestination.Reading.route,
+            ) ||
                 (currentRoute == VaultDestination.Home.route &&
                     rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library)),
-            menuVisible = currentRoute != VaultDestination.Settings.route && !corpusSearchActive,
+            menuVisible = currentRoute !in setOf(
+                VaultDestination.Settings.route,
+                VaultDestination.Editor.route,
+                VaultDestination.Reading.route,
+            ) && !corpusSearchActive,
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -1007,6 +1016,7 @@ fun VaultNavHost(
                 uiState = uiState,
                 formattingState = formattingState,
                 onBackClick = { navController.popBackStack() },
+                onMenuClick = onOpenNavigation,
                 onTitleChange = viewModel::updateTitle,
                 onContentChange = viewModel::saveRichText,
                 onRunFormattingTool = viewModel::runFormattingTool,
@@ -1030,6 +1040,16 @@ fun VaultNavHost(
                 onCreateTable = viewModel::createTable,
                 onUpdateTableCell = viewModel::updateTableCell,
                 onDeleteTable = viewModel::deleteTable,
+                onNoteLinkClick = { noteId ->
+                    navController.navigate(VaultDestination.Reading.route(noteId))
+                },
+                onSourceReferenceClick = { attachmentId, pageIndex ->
+                    navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId, pageIndex))
+                },
+                onRemoveSourceReference = viewModel::removeSourceReference,
+                onAddKnowledgeTag = viewModel::addKnowledgeTag,
+                onRemoveKnowledgeTag = viewModel::removeKnowledgeTag,
+                onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
                 autoFocusBody = backStackEntry.arguments?.getBoolean("quickFocus") == true,
             )
@@ -1052,8 +1072,14 @@ fun VaultNavHost(
                         navController.navigate(VaultDestination.Editor.route(noteId))
                     }
                 },
+                onMenuClick = onOpenNavigation,
                 onAttachmentClick = { attachmentId ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
+                },
+                onAttachDocument = viewModel::attachDocument,
+                onConfigureAzure = {
+                    pendingSettingsSection = "azure_speech"
+                    navController.navigate(VaultDestination.Settings.route)
                 },
                 onPinnedChange = viewModel::setPinned,
                 onFavouriteChange = viewModel::setFavourite,
@@ -1263,6 +1289,8 @@ fun VaultNavHost(
                     backupMessage = null
                     viewModel.dismissDriveRestoreMessage()
                 },
+                initialSection = pendingSettingsSection,
+                onInitialSectionConsumed = { pendingSettingsSection = null },
             )
         }
         composable(

@@ -354,3 +354,31 @@ The Frozen Editor amendment approves the following production mapping:
 
 Stage 4 implementation is authorised. No Room, repository, note-serialization,
 backup-format or narration-provider data change is authorised by this amendment.
+
+## 9. Stage 4 Implementation Record
+
+Implemented on the `frozen-design-master-port` branch using the existing
+production note, attachment, knowledge, version, export, narration and
+formatting-provider handlers.
+
+- Reading and Editing now share the compact Note workspace header and open
+  document canvas.
+- The shell-level menu row is suppressed on Note routes so only the approved
+  Note header is rendered.
+- The editing toolbar is attached to the editor viewport and remains above the
+  native IME.
+- More Formatting contains the approved Table, web link, note link, file and
+  image attachment actions.
+- Reading/Editing overflow and the approved secondary sheets use existing
+  production callbacks.
+- The Listen sheet contains Device TTS, Azure Speech TTS and the explicitly
+  approved OpenAI TTS row. This is a production-specific extension to the
+  frozen screenshot and does not alter narration-provider semantics.
+- Runtime captures were made at approximately 412 x 892 logical dp in Light,
+  Dark and OLED, with side-by-side frozen comparisons stored under
+  `artifacts/stage-4/comparisons/`.
+- Existing unit tests and the debug APK build pass. No Room migration, payload
+  rewrite, backup-format change or repository-interface change was required.
+
+The global narration mini-player remains deferred and was not redesigned in
+Stage 4.

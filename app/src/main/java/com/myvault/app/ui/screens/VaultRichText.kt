@@ -272,8 +272,39 @@ internal fun activeVaultToolsForSelection(
         if (VaultInlineStyle.Heading2 in styles) add(EditorTool.Heading2)
         if (VaultInlineStyle.Heading3 in styles) add(EditorTool.Heading3)
         if (VaultInlineStyle.Heading4 in styles) add(EditorTool.Heading4)
+        if (VaultInlineStyle.Quote in styles) add(EditorTool.Quote)
         if (styles.any { it.isColor() }) add(EditorTool.TextColor)
     }
+}
+
+internal fun clearVaultHeadingFromToolbar(
+    value: TextFieldValue,
+    marks: List<VaultStyleMark>,
+    pendingStyles: Set<VaultInlineStyle>,
+): VaultToolbarStyleUpdate {
+    val safeValue = sanitizeVaultTextFieldValue(value)
+    val safeMarks = sanitizeVaultStyleMarks(marks, safeValue.text.length)
+    val headings = listOf(
+        VaultInlineStyle.Heading,
+        VaultInlineStyle.Heading2,
+        VaultInlineStyle.Heading3,
+        VaultInlineStyle.Heading4,
+    )
+    val range = normalizedSelection(safeValue.selection, safeValue.text.length)
+    var updated = safeMarks
+    if (!range.collapsed) {
+        headings.forEach { heading -> updated = removeStyleFromRange(updated, range, heading) }
+    } else {
+        headings.forEach { heading ->
+            styleMarkAtOffset(range.start, updated, heading)?.let { mark ->
+                updated = removeStyleFromRange(updated, TextRange(mark.start, mark.end), heading)
+            }
+        }
+    }
+    return VaultToolbarStyleUpdate(
+        marks = sanitizeVaultStyleMarks(updated, safeValue.text.length),
+        pendingStyles = pendingStyles.filterNotTo(linkedSetOf()) { it in headings },
+    )
 }
 
 internal fun applyBulletList(value: TextFieldValue): TextFieldValue =

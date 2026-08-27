@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
+import androidx.compose.material.icons.automirrored.rounded.Redo
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.CheckBox
@@ -20,6 +22,9 @@ import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.FormatUnderlined
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material3.Icon
@@ -42,6 +47,7 @@ fun EditorToolbar(
     modifier: Modifier = Modifier,
     tools: List<EditorTool> = EditorTool.entries,
     activeTools: Set<EditorTool> = emptySet(),
+    disabledTools: Set<EditorTool> = emptySet(),
     onToolClick: (EditorTool) -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
@@ -63,7 +69,12 @@ fun EditorToolbar(
                 horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxs),
             ) {
                 tools.forEach { tool ->
-                    ToolbarIcon(tool = tool, active = tool in activeTools, onClick = { onToolClick(tool) })
+                    ToolbarIcon(
+                        tool = tool,
+                        active = tool in activeTools,
+                        enabled = tool !in disabledTools,
+                        onClick = { onToolClick(tool) },
+                    )
                 }
             }
         }
@@ -71,13 +82,18 @@ fun EditorToolbar(
 }
 
 @Composable
-private fun ToolbarIcon(tool: EditorTool, active: Boolean, onClick: () -> Unit) {
+private fun ToolbarIcon(tool: EditorTool, active: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.heightIn(min = 32.dp),
         color = if (active) colors.accentSoft else Color.Transparent,
-        contentColor = if (active) colors.accent else colors.textSecondary,
+        contentColor = when {
+            !enabled -> colors.textMuted.copy(alpha = 0.45f)
+            active -> colors.accent
+            else -> colors.textSecondary
+        },
         shape = VaultShapes.sm,
         border = if (active) BorderStroke(1.dp, colors.accentBorder) else null,
     ) {
@@ -99,6 +115,9 @@ enum class EditorTool(
     val icon: ImageVector,
     val showLabel: Boolean = false,
 ) {
+    Undo("Undo", Icons.AutoMirrored.Rounded.Undo),
+    Redo("Redo", Icons.AutoMirrored.Rounded.Redo),
+    Paragraph("Paragraph", Icons.Rounded.Notes, true),
     Heading("H1", Icons.Rounded.Title, true),
     Heading2("H2", Icons.Rounded.Title, true),
     Heading3("H3", Icons.Rounded.Title, true),
@@ -109,6 +128,8 @@ enum class EditorTool(
     TextColor("Color", Icons.Rounded.FormatColorText),
     BulletList("Bullets", Icons.AutoMirrored.Rounded.FormatListBulleted),
     NumberedList("Numbers", Icons.Rounded.FormatListNumbered),
+    Quote("Quote", Icons.Rounded.FormatQuote),
+    More("More formatting", Icons.Rounded.MoreHoriz),
     Checklist("Check", Icons.Rounded.CheckBox),
     Table("Table", Icons.Rounded.TableChart),
     Link("Link", Icons.Rounded.Link),

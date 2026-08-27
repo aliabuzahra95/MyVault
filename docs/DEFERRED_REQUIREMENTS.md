@@ -29,6 +29,7 @@ Frozen prototype directory remains read-only.
 | Note narration entry and reading state | Listen sheet includes Device, Azure and approved production OpenAI row; selection/follow state preserved | Frozen Editor amendment; player separately deferred | **RESOLVED FOR STAGE 4; MINI-PLAYER NOT RESOLVED** |
 | Note formatting-provider actions | Structure Only, Intelligent Structure and result actions use frozen secondary sheet; hidden actions remain unexposed | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Reading-to-edit double-tap | Preserved as invisible compatibility gesture alongside frozen Edit affordance | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| OpenAI note narration provider row | Existing `NarrationProvider.OpenAi` handler shown as the approved third restrained Listen provider | Stage 4 production-specific decision | **RESOLVED FOR STAGE 4** |
 | Advanced PDF functions | Existing production functionality preserved | Pre-Stage-5 placement decisions | **DEFERRED** |
 | Qur'an audio-download management | Existing contextual route preserved | Before Stage 7 | **DEFERRED** |
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |

@@ -211,25 +211,15 @@ The canonical cross-stage deferred list remains
 8. Release-readiness information.
 9. Dashboard/note font and title/preview/view preferences not shown explicitly.
 
-### Stage 4 blockers
+### Stage 4 approved resolution
 
-The complete pre-Stage-4 audit is recorded in
-`docs/STAGE_4_EDITOR_AMENDMENT.md`. Stage 4 remains blocked pending approval of:
-
-1. metadata placement for timestamps and word/character counts;
-2. Frozen Quote and Clear-formatting controls whose exact visible production
-   commands/semantics do not currently exist;
-3. separate URL-link and structured note-link presentation;
-4. tables, attachments and their document-canvas anatomy;
-5. backlinks, knowledge tags and PDF source references;
-6. Pin, Favourite and Delete placement in the restrained Note overflow;
-7. version history/restore and TXT/PDF export surfaces;
-8. narration entry, provider selection, active-sentence/follow state and its
-   still-deferred global mini-player dependency;
-9. Structure Only, Intelligent Structure and formatting-result actions without
-   restoring the unfrozen floating AI pill;
-10. retained dormant Checklist/Divider and CleanFormat/FormatNote engine
-    compatibility without inventing new visible controls.
+The complete pre-Stage-4 audit and approved placement hierarchy are recorded in
+`docs/STAGE_4_EDITOR_AMENDMENT.md`. The frozen Editor amendment resolves the
+document canvas, toolbar, overflow, attachments, knowledge, history, export,
+formatting-provider and narration entry surfaces. The production-specific
+Listen mapping includes Device TTS, Azure Speech TTS and the existing OpenAI
+TTS provider. The global narration mini-player remains a separate deferred
+requirement.
 
 ### Stage 5 blockers
 
@@ -394,6 +384,13 @@ serialization.
 Tests: open restored/new/course notes, edit/save/reopen, formatting round-trip,
 undo/redo, IME, long note scroll, attachments, Android/Web backup payload, and
 screenshots with/without keyboard.
+
+Implementation status: the shared Reading/Editing shell, primary and secondary
+formatting surfaces, Note overflow, Note info, Knowledge & references,
+Attachments, Version history, export, formatting-provider entry and the three
+approved narration providers are integrated with existing production state.
+No Room schema, repository contract, note serialization or backup-format change
+was introduced.
 
 ### Stage 5 - PDF Reader
 
