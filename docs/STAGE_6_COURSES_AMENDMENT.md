@@ -1,8 +1,8 @@
 # Stage 6 Courses Delta Audit
 
-Status: **AUDIT COMPLETE - IMPLEMENTATION BLOCKED PENDING DESIGN DECISIONS**
+Status: **APPROVED AND IMPLEMENTED IN STAGE 6**
 
-Scope: Production Courses compared with Frozen Design Master screenshots 23-26 and the approved shared hierarchy/action-sheet language. No Stage 6 application code was changed.
+Scope: Production Courses compared with Frozen Design Master screenshots 23-26, the Frozen Courses amendment, and the approved shared hierarchy/action-sheet language.
 
 ## A. Authoritative References
 
@@ -185,38 +185,35 @@ The Frozen references display `x of y lessons`, percentages, progress bars, and 
 
 No entity, Room schema, backup field, ID, or migration change is authorised by this audit.
 
-## J. Explicit Blockers
+## J. Approved Production-Specific Mappings
 
-### Blocker 1: Course progress presentation
+### Course progress presentation - RESOLVED
 
-The Frozen cards and workspace header show completion progress that production does not calculate.
+Completion UI is omitted. Courses show only the real derived Course Note count. The compact Continue row appears only when `CourseEntity.lastOpenedNoteId` resolves to a real Course Note and reopens that exact note.
 
-Decision required:
+### Course description subtitle - RESOLVED
 
-1. Approve a production-specific mapping to **current lesson position** derived from the last-opened note and current note total, with no completion percentage; or
-2. Approve omission of progress/percentage UI; or
-3. Authorise a future completion engine and compatible data/backup design as new functionality.
+Course descriptions are omitted. No metadata field or fabricated subtitle was added.
 
-### Blocker 2: Course description subtitle
+### Course search - RESOLVED
 
-The Frozen root cards show a descriptive subtitle, but `CourseEntity` has no description field.
+Course-specific Search is omitted. It remains possible future functionality and is distinct from the deferred global Search redesign.
 
-Decision required:
+## K. Implementation Result
 
-1. Approve omission/empty subtitle as a production-specific mapping; or
-2. Authorise new Course metadata plus persistence and backup compatibility design.
+The Frozen Course amendment resolves every identified presentation blocker. Stage 6 uses the existing Course, folder, note, Sticky Note and Concept Card engines; the shared Stage 2 hierarchy/action sheets; the Stage 4 Note Reader/Editor route; and the existing Explorer Course state.
 
-### Blocker 3: Course search
+No Room entity, schema, repository contract, ID, progress field, or backup representation changed.
 
-The Frozen Courses root shows a Search action, but production currently supplies no Course search handler or state; the current callback is empty.
+## L. Stage 6 Runtime Verification
 
-Decision required:
+- Courses root renders compact Course cards containing only the persisted title and truthful derived Course Note count.
+- Course detail omits completion UI and exposes Continue only when `lastOpenedNoteId` resolves to a real Course Note.
+- Continue opened the exact stored Course Note through the Stage 4 Reader; system Back returned to the same Course detail.
+- Nested Course folders and notes expand inline through the shared hierarchy primitives.
+- Sticky Notes and Concept Cards remain separate production entities with their existing create/edit/delete handlers.
+- The Explorer displayed the same Course, nested folders and Course Note from the shared `CoursesViewModel` state.
+- Light, Dark and OLED Course detail states were captured at the 412 x 892 logical reference viewport.
+- Frozen-reference side-by-side, overlay and diff artifacts are stored under `artifacts/stage-6/comparisons/`.
 
-1. Approve hiding the Search action as a production-specific visual deviation; or
-2. Authorise Course search as new production functionality and define its scope (course titles only or nested Course content).
-
-## K. Gate Result
-
-**STAGE 6 HAS NEW DESIGN/SEMANTIC BLOCKERS.**
-
-A narrow Frozen Course amendment or explicit production-specific mapping is required for the three blockers above. Stage 6 implementation must not begin until those decisions are approved.
+The full destructive Android/Web backup and restore round trip remains reserved for Stage 10. Stage 6 made no backup-format change.

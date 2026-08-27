@@ -45,6 +45,14 @@ Frozen prototype directory remains read-only.
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |
 | Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |
 
+## Resolved Stage 6 Course Decisions
+
+| Requirement | Approved production mapping | Status |
+|---|---|---|
+| Course progress | Completion UI is absent; show only truthful Course Note count and last-opened Continue | **RESOLVED IN STAGE 6** |
+| Course description | Omit because production has no persisted Course description | **RESOLVED IN STAGE 6 - OMITTED** |
+| Course search | Omit Course-specific Search; global Search remains separately deferred | **RESOLVED IN STAGE 6 - FUTURE NEW FUNCTIONALITY ONLY** |
+
 ## Resolved Stage 3 Settings Decisions
 
 | Requirement | Why unresolved | Required decision | Status |

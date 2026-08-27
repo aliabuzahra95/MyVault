@@ -1,6 +1,7 @@
 package com.myvault.app.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,9 +13,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -50,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderStickyNoteEntity
@@ -108,6 +112,7 @@ fun FolderViewScreen(
     showFloatingCreateAction: Boolean = true,
     topContent: (@Composable () -> Unit)? = null,
     bottomContent: (@Composable () -> Unit)? = null,
+    coursePresentation: Boolean = false,
     fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
 ) {
     val colors = VaultThemeTokens.colors
@@ -122,6 +127,7 @@ fun FolderViewScreen(
     var moveFolderDialogOpen by remember { mutableStateOf(false) }
     var deleteFolderDialogOpen by remember { mutableStateOf(false) }
     var selectedTreeFolder by remember { mutableStateOf<VaultTreeItem?>(null) }
+    var treeFolderCreateOpen by remember { mutableStateOf(false) }
     var treeFolderActionsOpen by remember { mutableStateOf(false) }
     var treeFolderDialogMode by remember { mutableStateOf<TreeFolderDialogMode?>(null) }
     var treeFolderMoveDialogOpen by remember { mutableStateOf(false) }
@@ -210,13 +216,13 @@ fun FolderViewScreen(
                     }
                 }
                 topContent?.let { content -> item { content() } }
-                if (pinnedNotes.isNotEmpty()) {
+                if (!coursePresentation && pinnedNotes.isNotEmpty()) {
                     item { SectionLabel(label = "Pinned Notes") }
                     items(pinnedNotes, key = { "folder-pin-${it.id}" }) { note ->
                         FolderPinnedNoteRow(note = note, onClick = { onNoteClick(note.id) })
                     }
                 }
-                if (uiState.stickyNotes.isNotEmpty()) {
+                if (!coursePresentation && uiState.stickyNotes.isNotEmpty()) {
                     item { SectionLabel(label = "Sticky Notes") }
                     items(uiState.stickyNotes, key = { "sticky-${it.id}" }) { stickyNote ->
                         FolderStickyNoteRow(stickyNote = stickyNote) {
@@ -226,6 +232,11 @@ fun FolderViewScreen(
                         }
                     }
                     item { Spacer(Modifier.size(14.dp)) }
+                }
+                if (coursePresentation) {
+                    item {
+                        CourseCountSectionLabel(label = "COURSE NOTES", count = uiState.contents.sumOf { it.noteCount() })
+                    }
                 }
                 item {
                     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.xs)) {
@@ -250,11 +261,14 @@ fun FolderViewScreen(
                                         }
                                     }
                                 },
+                                onCreateInside = null,
                                 organizeMode = organizeMode,
                                 organizeAllItems = true,
                                 notePreviewLines = notePreviewLines,
                                 showFullNoteTitles = showFullNoteTitles,
                                 dashboardFontSizeSp = dashboardFontSizeSp,
+                                flatHierarchy = coursePresentation,
+                                showLeafEditedTime = !coursePresentation,
                                 canMoveUp = index > 0,
                                 canMoveDown = index < uiState.contents.lastIndex,
                                 onMoveFolder = { movedItem, direction ->
@@ -263,6 +277,24 @@ fun FolderViewScreen(
                             )
                         }
                     }
+                }
+                if (coursePresentation && uiState.stickyNotes.isNotEmpty()) {
+                    item { CourseCountSectionLabel(label = "STICKY NOTES", count = uiState.stickyNotes.size) }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(uiState.stickyNotes, key = { "course-sticky-${it.id}" }) { stickyNote ->
+                                CourseStickyNoteCard(stickyNote = stickyNote) {
+                                    selectedStickyNote = stickyNote
+                                    stickyDraft = stickyNote.text
+                                    stickyDialogOpen = true
+                                }
+                            }
+                        }
+                    }
+                    item { Spacer(Modifier.height(12.dp)) }
                 }
                 bottomContent?.let { content -> item { content() } }
             }
@@ -452,6 +484,26 @@ fun FolderViewScreen(
                 PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
                     treeFolderActionsOpen = false
                     treeFolderDeleteDialogOpen = true
+                },
+            ),
+        )
+    }
+
+    if (treeFolderCreateOpen && selectedTreeFolder != null) {
+        val folder = selectedTreeFolder
+        PremiumActionDialog(
+            title = folder?.name.orEmpty(),
+            onDismiss = { treeFolderCreateOpen = false },
+            actions = listOf(
+                PremiumAction("New note", Icons.Rounded.NoteAdd) {
+                    folder?.let { onCreateNoteInFolderClick(it.id) }
+                    treeFolderCreateOpen = false
+                },
+                PremiumAction("New subfolder", Icons.Rounded.CreateNewFolder) {
+                    folderNameDraft = ""
+                    folderDescriptionDraft = ""
+                    treeFolderCreateOpen = false
+                    treeFolderDialogMode = TreeFolderDialogMode.CreateSubfolder
                 },
             ),
         )
@@ -670,6 +722,57 @@ fun FolderViewScreen(
                 deleteStickyConfirmOpen = false
             },
         )
+    }
+}
+
+@Composable
+private fun CourseStickyNoteCard(
+    stickyNote: FolderStickyNoteEntity,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(width = 142.dp, height = 64.dp),
+        color = colors.surface,
+        shape = VaultShapes.sm,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(Icons.Rounded.StickyNote2, null, modifier = Modifier.size(15.dp), tint = colors.textMuted)
+            Text(
+                text = stickyNote.text,
+                modifier = Modifier.weight(1f),
+                color = colors.text,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CourseCountSectionLabel(label: String, count: Int) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            color = colors.textMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.W700,
+            letterSpacing = 0.7.sp,
+        )
+        Text(count.toString(), color = colors.textMuted, fontSize = 11.sp)
     }
 }
 

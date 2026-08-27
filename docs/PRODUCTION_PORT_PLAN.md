@@ -460,20 +460,29 @@ The destructive Android/Web backup round trip remains reserved for Stage 10.
 
 ### Stage 6 - Courses
 
-Expected production files:
+Status: **IMPLEMENTED AND VERIFIED; AWAITING STAGE APPROVAL**
+
+Production files changed:
 
 - `ui/screens/CoursesScreen.kt`
-- shared course card/hierarchy/creation components
-- `ui/viewmodel/CoursesViewModel.kt` only for presentation adapters
-- targeted course tests
+- `ui/screens/FolderViewScreen.kt`
+- `ui/components/FolderTreeRow.kt`
+- `ui/navigation/VaultNavHost.kt`
+- targeted presentation tests
 
-Frozen references: 23-26 and relevant context sheets 45-50.
+Frozen references: 23-26, the frozen Courses amendment states 01-06, and the relevant shared context sheets.
 
-Preserve: course CRUD, nested folders and notes, Sticky Notes, Concept Cards,
-continue lesson/progress, pin/favorite, reorder, move, and Explorer integration.
+Implemented: compact root cards; truthful Course Note counts; conditional
+`lastOpenedNoteId` Continue; hierarchy-first detail; production creation and
+context actions; distinct Sticky Notes and Concept Cards; Stage 4 Note routing;
+and Explorer synchronization. Course descriptions, completion UI and
+Course-specific Search are deliberately omitted by the approved amendment.
 
-Tests: all course content types and CRUD, hierarchy persistence, continue flow,
-open course note, Explorer parity, and screenshots.
+Verification: Course creation/context handlers, nested hierarchy, Continue
+route/back behavior, Sticky and Concept presentation/actions, Explorer parity,
+Light/Dark/OLED runtime screenshots, targeted unit tests, lint and APK build.
+No Course entity, Room schema, repository contract or backup representation was
+changed.
 
 ### Stage 7 - Qur'an
 

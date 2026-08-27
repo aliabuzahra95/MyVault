@@ -329,7 +329,11 @@ fun VaultNavHost(
                 VaultDestination.Reading.route,
             ) || (currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) ||
                 (currentRoute == VaultDestination.Home.route &&
-                    rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library)),
+                    rootModes.getOrNull(selectedRootIndex) in setOf(
+                        VaultRootMode.Courses,
+                        VaultRootMode.Study,
+                        VaultRootMode.Library,
+                    )),
             menuVisible = currentRoute !in setOf(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
@@ -361,6 +365,7 @@ fun VaultNavHost(
                     coursesContent = {
                     CoursesScreen(
                         uiState = coursesState,
+                        backHandlerEnabled = currentRoute == VaultDestination.Home.route,
                         onSelectCourse = coursesViewModel::selectCourse,
                         onCreateCourse = coursesViewModel::createCourse,
                         onRenameCourse = coursesViewModel::renameCourse,

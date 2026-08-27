@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,7 +72,6 @@ import com.myvault.app.data.local.entity.CourseConceptCardEntity
 import com.myvault.app.data.local.entity.CourseEntity
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.CompactPrimaryAction
-import com.myvault.app.ui.components.CompactWorkspaceHeader
 import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultConfirmModal
@@ -108,6 +108,7 @@ private data class PendingOverviewCourseAction(
 @Composable
 fun CoursesScreen(
     uiState: CoursesUiState,
+    backHandlerEnabled: Boolean = true,
     onSelectCourse: (String) -> Unit,
     onCreateCourse: (String) -> Unit,
     onRenameCourse: (String, String) -> Unit,
@@ -153,6 +154,7 @@ fun CoursesScreen(
     var creatingConcept by remember { mutableStateOf(false) }
     var deleteConceptDialog by remember { mutableStateOf<CourseConceptCardEntity?>(null) }
     var openedCourseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var courseCreateActionsOpen by remember { mutableStateOf(false) }
     var overviewActionsCourse by remember { mutableStateOf<CourseEntity?>(null) }
     var pendingOverviewAction by remember { mutableStateOf<PendingOverviewCourseAction?>(null) }
 
@@ -168,15 +170,13 @@ fun CoursesScreen(
     }
 
     val openedCourse = openedCourseId?.let { id -> uiState.courses.firstOrNull { it.id == id } }
-    BackHandler(enabled = openedCourse != null) { openedCourseId = null }
+    BackHandler(enabled = backHandlerEnabled && openedCourse != null) { openedCourseId = null }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
             openedCourse == null -> CoursesMobileWebOverview(
                 courses = uiState.courses,
                 noteCountsByCourse = uiState.noteCountsByCourse,
-                conceptCountsByCourse = uiState.conceptCountsByCourse,
-                onCreate = { creatingCourse = true },
                 onOpen = { course ->
                     openedCourseId = course.id
                     onSelectCourse(course.id)
@@ -220,20 +220,16 @@ fun CoursesScreen(
             dashboardFontSizeSp = dashboardFontSizeSp,
             showNavigationHeader = false,
             showFloatingCreateAction = false,
+            coursePresentation = true,
             fabBottomPadding = fabBottomPadding,
             topContent = {
                 CourseHeader(
                     active = uiState.activeCourse,
+                    noteCount = uiState.noteCountsByCourse[uiState.activeCourse.id] ?: 0,
                     continueTitle = uiState.continueNoteTitle,
-                    onBack = { openedCourseId = null },
-                    onCreate = { creatingCourse = true },
                     onRename = { courseDialog = uiState.activeCourse },
                     onDelete = { deleteCourseDialog = uiState.activeCourse },
                     onContinue = { uiState.continueNoteId?.let(onOpenNote) },
-                    onNewNote = onNewNote,
-                    onNewFolder = { creatingFolder = true },
-                    onNewSticky = { creatingSticky = true },
-                    onNewConcept = { creatingConcept = true },
                     onThemeClick = onThemeClick,
                     onQuickBackupClick = onQuickBackupClick,
                     onSettingsClick = onSettingsClick,
@@ -243,7 +239,6 @@ fun CoursesScreen(
             bottomContent = {
                 ConceptSection(
                     concepts = uiState.concepts,
-                    onAdd = { creatingConcept = true },
                     onEdit = { conceptDialog = it },
                     onDelete = { concept -> deleteConceptDialog = concept },
                 )
@@ -252,6 +247,48 @@ fun CoursesScreen(
 
             }
         }
+        if (openedCourse == null) {
+            CourseFloatingCreateButton(
+                contentDescription = "Create course",
+                onClick = { creatingCourse = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 18.dp, bottom = fabBottomPadding),
+            )
+        } else if (uiState.activeCourse?.id == openedCourse.id && uiState.folderState.folder != null) {
+            CourseFloatingCreateButton(
+                contentDescription = "Add to course",
+                onClick = { courseCreateActionsOpen = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 18.dp, bottom = fabBottomPadding),
+            )
+        }
+    }
+
+    if (courseCreateActionsOpen && openedCourse != null) {
+        PremiumActionDialog(
+            title = openedCourse.title,
+            onDismiss = { courseCreateActionsOpen = false },
+            actions = listOf(
+                PremiumAction("New folder", Icons.Rounded.CreateNewFolder, section = "CREATE") {
+                    courseCreateActionsOpen = false
+                    creatingFolder = true
+                },
+                PremiumAction("New note", Icons.Rounded.Description, section = "CREATE") {
+                    courseCreateActionsOpen = false
+                    onNewNote()
+                },
+                PremiumAction("New sticky note", Icons.Rounded.StickyNote2, section = "CREATE") {
+                    courseCreateActionsOpen = false
+                    creatingSticky = true
+                },
+                PremiumAction("New concept card", Icons.Rounded.Lightbulb, section = "CREATE") {
+                    courseCreateActionsOpen = false
+                    creatingConcept = true
+                },
+            ),
+        )
     }
 
     overviewActionsCourse?.let { course ->
@@ -360,8 +397,6 @@ fun CoursesScreen(
 private fun CoursesMobileWebOverview(
     courses: List<CourseEntity>,
     noteCountsByCourse: Map<String, Int>,
-    conceptCountsByCourse: Map<String, Int>,
-    onCreate: () -> Unit,
     onOpen: (CourseEntity) -> Unit,
     onManage: (CourseEntity) -> Unit,
 ) {
@@ -377,65 +412,37 @@ private fun CoursesMobileWebOverview(
         verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
     ) {
         item(key = "courses_header") {
-            CompactWorkspaceHeader(
-                title = "Courses",
-                metadata = if (courses.size == 1) "1 course" else "${courses.size} courses",
-            ) {
-                CompactPrimaryAction(
-                    icon = Icons.Rounded.Add,
-                    description = "Create course",
-                    onClick = onCreate,
+            Column(modifier = Modifier.padding(start = 44.dp)) {
+                Text(
+                    text = "Courses",
+                    color = colors.text,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.W800,
+                )
+                Text(
+                    text = if (courses.size == 1) "1 course" else "${courses.size} courses",
+                    modifier = Modifier.padding(top = 2.dp),
+                    color = colors.textSecondary,
+                    fontSize = 10.5.sp,
                 )
             }
-            Spacer(Modifier.height(VaultSpacing.md))
+            Spacer(Modifier.height(10.dp))
         }
 
         if (courses.isEmpty()) {
             item(key = "courses_empty") {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().height(240.dp),
-                    color = colors.surface,
-                    shape = VaultShapes.sm,
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(top = 76.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(VaultSpacing.xxl),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MenuBook,
-                            contentDescription = null,
-                            modifier = Modifier.size(42.dp),
-                            tint = colors.accent,
-                        )
-                        Text(
-                            text = "No courses yet",
-                            modifier = Modifier.padding(top = 16.dp),
-                            color = colors.text,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.W800,
-                        )
-                        Text(
-                            text = "Create a course for its lesson folders, notes, sticky notes, and concepts.",
-                            modifier = Modifier.padding(top = 7.dp),
-                            color = colors.textSecondary,
-                            fontSize = 13.sp,
-                            lineHeight = 19.sp,
-                        )
-                        Surface(
-                            onClick = onCreate,
-                            modifier = Modifier.padding(top = 20.dp),
-                            color = colors.accent,
-                            contentColor = Color.White,
-                            shape = VaultShapes.sm,
-                        ) {
-                            Text(
-                                text = "Create course",
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-                                fontWeight = FontWeight.W700,
-                            )
-                        }
-                    }
+                    Icon(Icons.Rounded.MenuBook, null, modifier = Modifier.size(28.dp), tint = colors.textMuted)
+                    Text(
+                        text = "No courses yet",
+                        modifier = Modifier.padding(top = 12.dp),
+                        color = colors.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.W700,
+                    )
                 }
             }
         } else {
@@ -443,7 +450,6 @@ private fun CoursesMobileWebOverview(
                 CourseMobileWebCard(
                     course = course,
                     noteCount = noteCountsByCourse[course.id] ?: 0,
-                    conceptCount = conceptCountsByCourse[course.id] ?: 0,
                     onOpen = { onOpen(course) },
                     onManage = { onManage(course) },
                 )
@@ -457,7 +463,6 @@ private fun CoursesMobileWebOverview(
 private fun CourseMobileWebCard(
     course: CourseEntity,
     noteCount: Int,
-    conceptCount: Int,
     onOpen: () -> Unit,
     onManage: () -> Unit,
 ) {
@@ -467,103 +472,52 @@ private fun CourseMobileWebCard(
         color = colors.surface,
         shape = VaultShapes.sm,
         tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(1.dp, colors.border),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onOpen, onLongClick = onManage)
-                .padding(VaultSpacing.md),
+                .heightIn(min = 72.dp)
+                .padding(start = 16.dp, top = 10.dp, end = 6.dp, bottom = 10.dp),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Surface(
-                        modifier = Modifier.size(44.dp),
-                        color = colors.accent.copy(alpha = 0.10f),
-                        shape = VaultShapes.sm,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.MenuBook, null, modifier = Modifier.size(23.dp), tint = colors.accent)
-                        }
-                    }
-                    Column(modifier = Modifier.weight(1f).padding(start = 14.dp, top = 1.dp)) {
-                        Text(
-                            text = course.title,
-                            color = colors.text,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.W800,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = "Course workspace",
-                            modifier = Modifier.padding(top = 4.dp),
-                            color = colors.textSecondary,
-                            fontSize = 12.sp,
-                        )
-                    }
-                    IconButton(onClick = onManage) {
-                        Icon(Icons.Rounded.MoreVert, "Manage ${course.title}", tint = colors.textSecondary)
-                    }
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = course.title,
+                        color = colors.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.W700,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = courseNoteCountLabel(noteCount),
+                        modifier = Modifier.padding(top = 2.dp),
+                        color = colors.textMuted,
+                        fontSize = 11.sp,
+                    )
                 }
-                Row(
-                    modifier = Modifier.padding(top = VaultSpacing.md),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CourseCountTile(
-                        value = noteCount,
-                        label = if (noteCount == 1) "Note" else "Notes",
-                        icon = Icons.Rounded.Description,
-                        modifier = Modifier.weight(1f),
-                    )
-                    CourseCountTile(
-                        value = conceptCount,
-                        label = if (conceptCount == 1) "Concept" else "Concepts",
-                        icon = Icons.Rounded.Lightbulb,
-                        modifier = Modifier.weight(1f),
-                    )
+                IconButton(onClick = onManage, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Rounded.MoreVert, "Manage ${course.title}", modifier = Modifier.size(18.dp), tint = colors.textMuted)
                 }
             }
         }
     }
 }
 
-@Composable
-private fun CourseCountTile(
-    value: Int,
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(modifier = modifier, color = colors.bg, shape = VaultShapes.sm) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            Icon(icon, null, modifier = Modifier.size(17.dp), tint = colors.textMuted)
-            Column {
-                Text(value.toString(), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.W800)
-                Text(label, color = colors.textSecondary, fontSize = 11.sp)
-            }
-        }
-    }
-}
+internal fun courseNoteCountLabel(noteCount: Int): String =
+    if (noteCount == 1) "1 note" else "$noteCount notes"
 
 @Composable
 private fun CourseHeader(
     active: CourseEntity,
+    noteCount: Int,
     continueTitle: String?,
-    onBack: () -> Unit,
-    onCreate: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onContinue: () -> Unit,
-    onNewNote: () -> Unit,
-    onNewFolder: () -> Unit,
-    onNewSticky: () -> Unit,
-    onNewConcept: () -> Unit,
     onThemeClick: () -> Unit,
     onQuickBackupClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -571,30 +525,25 @@ private fun CourseHeader(
 ) {
     val colors = VaultThemeTokens.colors
     var actionsOpen by remember { mutableStateOf(false) }
-    var addOpen by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<CourseDeferredAction?>(null) }
 
-    LaunchedEffect(addOpen, actionsOpen, pendingAction) {
+    LaunchedEffect(actionsOpen, pendingAction) {
         val pending = pendingAction ?: return@LaunchedEffect
-        if (addOpen || actionsOpen) return@LaunchedEffect
+        if (actionsOpen) return@LaunchedEffect
         delay(180)
         when (pending) {
-            CourseDeferredAction.NewFolder -> onNewFolder()
-            CourseDeferredAction.NewNote -> onNewNote()
-            CourseDeferredAction.NewSticky -> onNewSticky()
-            CourseDeferredAction.NewConcept -> onNewConcept()
             CourseDeferredAction.RenameCourse -> onRename()
-            CourseDeferredAction.NewCourse -> onCreate()
             CourseDeferredAction.DeleteCourse -> onDelete()
+            else -> Unit
         }
         pendingAction = null
     }
     Column(
         modifier = Modifier.padding(
-            start = VaultSpacing.lg,
+            start = 60.dp,
             top = VaultSpacing.md,
             end = VaultSpacing.lg,
-            bottom = VaultSpacing.lg,
+            bottom = VaultSpacing.sm,
         ),
     ) {
         Row(
@@ -602,66 +551,32 @@ private fun CourseHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Rounded.ArrowBack, "Back to courses", tint = colors.text)
-            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = active.title,
                     color = colors.text,
-                    fontSize = 22.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.W800,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "Course workspace",
+                    text = courseNoteCountLabel(noteCount),
                     modifier = Modifier.padding(top = 2.dp),
                     color = colors.textSecondary,
-                    fontSize = 12.sp,
+                    fontSize = 10.5.sp,
                 )
             }
-            CompactPrimaryAction(
-                icon = Icons.Rounded.Add,
-                description = "Add to course",
-                onClick = { addOpen = true },
-                buttonSize = 42.dp,
-            )
             IconButton(onClick = { actionsOpen = true }, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.MoreVert, "Course actions", tint = colors.textSecondary)
             }
         }
-        Spacer(Modifier.height(VaultSpacing.md))
-        ContinueLessonCard(
-            continueTitle = continueTitle,
-            onContinue = onContinue,
-        )
+        continueTitle?.let {
+            Spacer(Modifier.height(10.dp))
+            ContinueLessonCard(continueTitle = it, onContinue = onContinue)
+        }
     }
 
-    if (addOpen) {
-        PremiumActionDialog(
-            title = "Add to ${active.title}",
-            onDismiss = { addOpen = false },
-            actions = listOf(
-                PremiumAction("New folder", Icons.Rounded.CreateNewFolder) {
-                    pendingAction = CourseDeferredAction.NewFolder
-                    addOpen = false
-                },
-                PremiumAction("New note", Icons.Rounded.Description) {
-                    pendingAction = CourseDeferredAction.NewNote
-                    addOpen = false
-                },
-                PremiumAction("New sticky note", Icons.Rounded.StickyNote2) {
-                    pendingAction = CourseDeferredAction.NewSticky
-                    addOpen = false
-                },
-                PremiumAction("New concept card", Icons.Rounded.Lightbulb) {
-                    pendingAction = CourseDeferredAction.NewConcept
-                    addOpen = false
-                },
-            ),
-        )
-    }
     if (actionsOpen) {
         PremiumActionDialog(
             title = active.title,
@@ -669,10 +584,6 @@ private fun CourseHeader(
             actions = listOf(
                 PremiumAction("Rename course", Icons.Rounded.Edit) {
                     pendingAction = CourseDeferredAction.RenameCourse
-                    actionsOpen = false
-                },
-                PremiumAction("New course", Icons.Rounded.Add) {
-                    pendingAction = CourseDeferredAction.NewCourse
                     actionsOpen = false
                 },
                 PremiumAction("Delete course", Icons.Rounded.Delete, destructive = true) {
@@ -686,41 +597,62 @@ private fun CourseHeader(
 
 @Composable
 private fun ContinueLessonCard(
-    continueTitle: String?,
+    continueTitle: String,
     onContinue: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val content: @Composable () -> Unit = {
-        Row(modifier = Modifier.padding(horizontal = VaultSpacing.md, vertical = VaultSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.PlayArrow, null, tint = colors.accent)
-            Spacer(Modifier.padding(VaultSpacing.xxs))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Continue lesson", color = colors.textMuted, style = MaterialTheme.typography.labelSmall)
-                Text(continueTitle ?: "No lesson opened yet", color = colors.text, fontWeight = FontWeight.SemiBold)
+        Row(modifier = Modifier.padding(horizontal = VaultSpacing.md, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(34.dp),
+                shape = VaultShapes.sm,
+                color = colors.accent,
+                contentColor = Color.White,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Description, null, modifier = Modifier.size(17.dp))
+                }
             }
-            if (continueTitle != null) Icon(Icons.Rounded.ChevronRight, null, tint = colors.textMuted)
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("CONTINUE", color = colors.accent, fontSize = 9.sp, fontWeight = FontWeight.W700, letterSpacing = 0.6.sp)
+                Text(continueTitle, color = colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.W700, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("Continue reading", color = colors.textMuted, fontSize = 10.5.sp)
+            }
+            Icon(Icons.Rounded.ChevronRight, null, modifier = Modifier.size(18.dp), tint = colors.textMuted)
         }
     }
     val modifier = Modifier
         .fillMaxWidth()
 
-    if (continueTitle != null) {
-        Surface(
-            onClick = onContinue,
-            modifier = modifier,
-            shape = VaultShapes.sm,
-            color = colors.surface,
-            border = BorderStroke(1.dp, colors.border),
-            content = content,
-        )
-    } else {
-        Surface(
-            modifier = modifier,
-            shape = VaultShapes.sm,
-            color = colors.surface,
-            border = BorderStroke(1.dp, colors.border),
-            content = content,
-        )
+    Surface(
+        onClick = onContinue,
+        modifier = modifier,
+        shape = VaultShapes.sm,
+        color = colors.accent.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.18f)),
+        content = content,
+    )
+}
+
+@Composable
+private fun CourseFloatingCreateButton(
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = modifier.size(56.dp),
+        shape = VaultShapes.pill,
+        color = colors.accent,
+        contentColor = Color.White,
+        shadowElevation = 4.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Add, contentDescription, modifier = Modifier.size(25.dp))
+        }
     }
 }
 
@@ -882,16 +814,12 @@ private fun CourseMenuItem(
 @Composable
 private fun ConceptSection(
     concepts: List<CourseConceptCardEntity>,
-    onAdd: () -> Unit,
     onEdit: (CourseConceptCardEntity) -> Unit,
     onDelete: (CourseConceptCardEntity) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-        Row(modifier = Modifier.padding(end = VaultSpacing.screen), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) { SectionLabel("Concept Cards") }
-            IconButton(onClick = onAdd) { Icon(Icons.Rounded.Add, "Add concept", tint = colors.accent) }
-        }
+        CourseSupportingSectionLabel(label = "CONCEPT CARDS", count = concepts.size)
         if (concepts.isEmpty()) {
             Text("No concept cards yet.", modifier = Modifier.padding(horizontal = VaultSpacing.screen), color = colors.textMuted, style = MaterialTheme.typography.bodySmall)
         } else {
@@ -902,6 +830,25 @@ private fun ConceptSection(
             )
         }
         Spacer(Modifier.height(VaultSpacing.sm))
+    }
+}
+
+@Composable
+private fun CourseSupportingSectionLabel(label: String, count: Int) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            color = colors.textMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.W700,
+            letterSpacing = 0.7.sp,
+        )
+        Text(count.toString(), color = colors.textMuted, fontSize = 11.sp)
     }
 }
 
@@ -944,22 +891,26 @@ private fun ConceptCard(
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
         onClick = onEdit,
-        modifier = modifier.height(124.dp),
+        modifier = modifier.height(64.dp),
         shape = VaultShapes.sm,
         color = colors.surface,
         border = BorderStroke(1.dp, colors.border),
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(VaultSpacing.xxs)) {
-            Row(verticalAlignment = Alignment.Top) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
                 Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(15.dp), tint = colors.accent)
                 Spacer(Modifier.width(VaultSpacing.xxs))
-                Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(concept.term, color = colors.text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        concept.arabicTerm?.let {
-                            Text(it, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(concept.term, color = colors.text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        concept.definition.ifBlank { concept.arabicTerm.orEmpty() },
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                     androidx.compose.foundation.layout.Box(
                         modifier = Modifier
                             .size(28.dp)
@@ -972,26 +923,23 @@ private fun ConceptCard(
                     ) {
                         Icon(Icons.Rounded.MoreVert, "Concept actions", modifier = Modifier.size(16.dp), tint = colors.textMuted)
                     }
-                }
-            }
-            Text(concept.definition.ifBlank { "No definition yet." }, color = colors.textSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            DropdownMenu(
-                expanded = menuOpen,
-                onDismissRequest = { menuOpen = false },
-                modifier = Modifier
-                    .shadow(10.dp, VaultShapes.lg, clip = false)
-                    .background(colors.elevated)
-                    .border(BorderStroke(1.dp, colors.borderStrong), VaultShapes.lg),
-                shape = VaultShapes.lg,
-                containerColor = colors.elevated,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-                properties = PopupProperties(focusable = true),
-            ) {
-                CourseMenuItem("Edit", Icons.Rounded.Edit, { menuOpen = false }, onEdit)
-                CourseMenuItem("Delete", Icons.Rounded.Delete, { menuOpen = false }, onDelete, destructive = true)
-            }
         }
+    }
+    if (menuOpen) {
+        PremiumActionDialog(
+            title = concept.term,
+            onDismiss = { menuOpen = false },
+            actions = listOf(
+                PremiumAction("Edit", Icons.Rounded.Edit) {
+                    menuOpen = false
+                    onEdit()
+                },
+                PremiumAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                    menuOpen = false
+                    onDelete()
+                },
+            ),
+        )
     }
 }
 

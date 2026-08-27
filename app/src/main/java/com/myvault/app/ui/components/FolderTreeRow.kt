@@ -94,6 +94,8 @@ fun FolderTreeRow(
     showFullNoteTitles: Boolean = false,
     dashboardFontSizeSp: Float = 14f,
     indentHierarchy: Boolean = true,
+    flatHierarchy: Boolean = false,
+    showLeafEditedTime: Boolean = true,
     canMoveUp: Boolean = false,
     canMoveDown: Boolean = false,
     onMoveFolder: (VaultTreeItem, Int) -> Unit = { _, _ -> },
@@ -132,6 +134,8 @@ fun FolderTreeRow(
             showFullNoteTitles = showFullNoteTitles,
             dashboardFontSizeSp = dashboardFontSizeSp,
             indentHierarchy = indentHierarchy,
+            flatHierarchy = flatHierarchy,
+            showLeafEditedTime = showLeafEditedTime,
             canMoveUp = canMoveUp,
             canMoveDown = canMoveDown,
             onMoveUp = { onMoveFolder(item, -1) },
@@ -173,6 +177,8 @@ fun FolderTreeRow(
                             showFullNoteTitles = showFullNoteTitles,
                             dashboardFontSizeSp = dashboardFontSizeSp,
                             indentHierarchy = indentHierarchy,
+                            flatHierarchy = flatHierarchy,
+                            showLeafEditedTime = showLeafEditedTime,
                             canMoveUp = childIndex > 0,
                             canMoveDown = childIndex in 0 until childItems.lastIndex,
                             onMoveFolder = onMoveFolder,
@@ -207,6 +213,8 @@ fun FolderTreeRow(
                             showFullNoteTitles = showFullNoteTitles,
                             dashboardFontSizeSp = dashboardFontSizeSp,
                             indentHierarchy = indentHierarchy,
+                            flatHierarchy = flatHierarchy,
+                            showLeafEditedTime = showLeafEditedTime,
                             canMoveUp = childIndex > 0,
                             canMoveDown = childIndex in 0 until item.children.lastIndex,
                             onMoveFolder = onMoveFolder,
@@ -237,6 +245,8 @@ private fun FolderTreeSingleRow(
     showFullNoteTitles: Boolean,
     dashboardFontSizeSp: Float,
     indentHierarchy: Boolean,
+    flatHierarchy: Boolean,
+    showLeafEditedTime: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -259,9 +269,13 @@ private fun FolderTreeSingleRow(
         else -> (effectiveDepth * 8).dp
     }
     val rowOuterVerticalGap = if (topLevel) 0.5.dp else 0.dp
-    val rowHorizontalPadding = if (topLevel) 8.dp else 5.dp
+    val rowHorizontalPadding = when {
+        flatHierarchy -> 5.dp
+        topLevel -> 8.dp
+        else -> 5.dp
+    }
     val rowShape = if (topLevel) VaultShapes.md else VaultShapes.sm
-    val background = if (topLevel && isFolder) colors.surface else Color.Transparent
+    val background = if (!flatHierarchy && topLevel && isFolder) colors.surface else Color.Transparent
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
         animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
@@ -378,10 +392,7 @@ private fun FolderTreeSingleRow(
                     imageVector = Icons.Rounded.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
-                    tint = when {
-                        topLevel -> colors.accent
-                        else -> colors.textSecondary
-                    },
+                    tint = if (flatHierarchy) colors.textSecondary else if (topLevel) colors.accent else colors.textSecondary,
                 )
             } else {
                 Box(
@@ -469,7 +480,12 @@ private fun FolderTreeSingleRow(
                     }
                 }
             } else {
-                TreeTrailing(item = item, topLevel = topLevel)
+                TreeTrailing(
+                    item = item,
+                    topLevel = topLevel,
+                    flatHierarchy = flatHierarchy,
+                    showLeafEditedTime = showLeafEditedTime,
+                )
                 if (isFolder && onCreateInside != null) {
                     IconButton(
                         onClick = { onCreateInside(item) },
@@ -502,12 +518,17 @@ private fun FolderTreeSingleRow(
 }
 
 @Composable
-private fun TreeTrailing(item: VaultTreeItem, topLevel: Boolean) {
+private fun TreeTrailing(
+    item: VaultTreeItem,
+    topLevel: Boolean,
+    flatHierarchy: Boolean,
+    showLeafEditedTime: Boolean,
+) {
     val colors = VaultThemeTokens.colors
     val isFolder = item.type == VaultTreeItemType.Folder
 
     when {
-        isFolder && topLevel -> {
+        isFolder && topLevel && !flatHierarchy -> {
             Surface(
                 shape = VaultShapes.pill,
                 color = colors.inset,
@@ -567,11 +588,12 @@ private fun TreeTrailing(item: VaultTreeItem, topLevel: Boolean) {
                 }
             }
         }
-        else -> Text(
+        !isFolder && showLeafEditedTime -> Text(
             text = item.edited?.compactEditedTime().orEmpty(),
             style = MaterialTheme.typography.labelMedium,
             color = colors.textMuted,
         )
+        else -> Unit
     }
 }
 
