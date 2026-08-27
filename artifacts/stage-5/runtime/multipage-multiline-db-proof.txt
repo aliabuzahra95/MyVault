@@ -1,0 +1,17 @@
+Stage 5 multiline PDF annotation database proof
+
+Source: read-only inspection of the isolated emulator Room database after creating
+and reopening a real AndroidX PDF text-selection highlight in the two-page fixture.
+
+Annotation ID: 2e71f434-e46e-445b-bc00-451beb8fbb90
+Annotation type: highlight
+Selected text length: 3553 characters
+Legacy parent rectangle: page 0, left 16.0, top 19.0, right 276.0, bottom 32.0
+Ordered child geometry segments: 54
+Segment order indexes: contiguous 0 through 53 (PASS)
+Segment pages: all page 0 (AndroidX Select All selected the current page only)
+
+Runtime verification:
+- The highlight covered every selected line segment.
+- Geometry remained aligned after scrolling away and back.
+- Geometry and selected text remained present after leaving and reopening the PDF.

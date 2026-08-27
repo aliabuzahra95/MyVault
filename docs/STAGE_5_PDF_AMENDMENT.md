@@ -1,6 +1,6 @@
 # Stage 5 PDF Functionality Audit
 
-Status: **PRE-STAGE-5 AUDIT ONLY - STAGE 5 IMPLEMENTATION IS NOT AUTHORIZED**
+Status: **STAGE 5 IMPLEMENTED AND VERIFIED - AWAITING APPROVAL**
 
 Stage 4 approved checkpoint:
 
@@ -8,9 +8,63 @@ Stage 4 approved checkpoint:
 - tag: `stage-4-approved`
 - branch: `frozen-design-master-port`
 
-This document compares the real production PDF implementation with Frozen PDF
-references 18-22. It records presentation proposals and blockers; it does not
-authorize changes to the renderer, annotation model, persistence, backup, or UI.
+This document began as the production PDF audit. Stage 5 is now governed by the
+Frozen PDF amendment and its approved compatibility extension. The reader port
+preserves the production renderer and adds only the narrowly approved additive
+annotation geometry, selected-text, migration, and backup compatibility model.
+
+Authoritative Stage 5 references:
+
+- frozen PDF checkpoint:
+  `myvault-ui-prototype-frozen-pdf-amendment-20260827-184816-AEST`
+- `PDF_AMENDMENT.md`
+- `design-master/pdf-amendment/01-21`
+
+## Stage 5 Approved Compatibility Resolution
+
+Genuine AndroidX PDF selection is exposed to the Frozen selection toolbar as
+actual selected text plus ordered page rectangles. One user action remains one
+logical `PdfAnnotationEntity`. Ordered `PdfAnnotationSegmentEntity` children
+store the complete multi-line/multi-page geometry while the parent retains the
+first valid segment in its legacy page/rectangle fields.
+
+Compatibility behavior is additive and deterministic:
+
+- old annotations with no segment rows render from their legacy rectangle;
+- new selected-text annotations retain a structurally valid legacy rectangle;
+- old Android/Web clients can safely degrade to that representative rectangle;
+- new clients restore complete ordered segments when valid;
+- missing, empty, or invalid extended geometry falls back to the parent;
+- actual selected text is optional and is never populated through OCR;
+- Draw Highlight remains a distinct single-rectangle interaction;
+- `pdf_annotations.json` remains present and compatible;
+- optional complete geometry is stored in `pdf_annotation_geometry.json`;
+- Room migration 27 -> 28 is additive and has no destructive fallback.
+
+Historic `text_box` annotations are compatibility-preserved. Valid records are
+no longer classified as incompatible during viewer initialization, their tags
+and Study backlinks are left intact, and the Frozen reader can display them
+read-only where the existing overlay path is safe. No Add text box or text-box
+editing action is exposed.
+
+## Stage 5 Implemented Presentation
+
+The production PDF route now converges on one Frozen reader shell with:
+
+- compact 58 dp reader header and interactive page count;
+- continuous AndroidX PDF pages with retained renderer identity;
+- genuine selection actions: Highlight, Note, Copy, and More;
+- selected-text colours, note, Listen, Study link/create-note, and tag flows;
+- distinct Draw Highlight mode;
+- current-page annotations and page-note indicator;
+- existing-annotation note, colour, tag, Study-link, create-note, and delete;
+- reader overflow: PDF Activity, Listen, Go to page, and Immersive mode;
+- frozen PDF Activity search/filter/row/action presentation;
+- Light, Dark, and OLED canvas treatment with untinted white PDF paper.
+
+File-management actions remain Library-owned. The reader does not add a FAB,
+permanent activity rail, permanent annotation toolbar, Save-to-device action,
+Delete action, or outgoing Share action.
 
 ## 1. Authoritative References
 
@@ -48,13 +102,17 @@ sheet with selected text context. Page jump and other secondary actions use the
 same sheet language. In OLED, the surrounding canvas is black while the PDF
 paper remains white.
 
-The future port must retain the production renderer, page/zoom state,
-coordinate transforms, annotation persistence, file identity, and backup
-contracts beneath that presentation.
+The production port retains the renderer, page/zoom state, coordinate
+transforms, annotation persistence, file identity, and backup contracts beneath
+that presentation.
 
-## 3. Complete Production Capability Inventory
+## 3. Complete Production Capability Inventory (Audit Snapshot)
 
 The audit identified **55 distinct production PDF capabilities or contracts**.
+The status column below records the pre-authorization audit state. Its former
+blockers and placement decisions are superseded by the Frozen PDF amendment,
+the approved compatibility decision, and the implemented resolution recorded
+at the start and end of this document.
 
 Status abbreviations:
 
@@ -181,9 +239,10 @@ The following need a frozen amendment or explicit approval:
 - exact page-jump trigger and immersive-mode trigger;
 - whether manual rectangle highlighting remains available alongside selection.
 
-## 6. Proposed Stage 5 Action Hierarchy - Not Approved
+## 6. Approved Stage 5 Action Hierarchy
 
-This hierarchy is a placement proposal only. It must be frozen before code work.
+This hierarchy was approved by the Frozen PDF amendment and is now wired to the
+existing production handlers.
 
 ### Reader Header
 
@@ -207,8 +266,7 @@ This hierarchy is a placement proposal only. It must be frozen before code work.
 - Copy
 - More
 
-This surface is **blocked** until real text selection semantics are approved and
-proven against the AndroidX renderer and custom overlay.
+This surface uses genuine AndroidX selected text and ordered page rectangles.
 
 ### Annotation Sheet
 
@@ -279,7 +337,7 @@ Primary risks:
 
 ## 8. Backup and Persistence Contract
 
-No Stage 5 UI port may change:
+Stage 5 preserves:
 
 - `PdfAnnotationEntity` IDs or type strings;
 - normalized annotation coordinates;
@@ -290,11 +348,16 @@ No Stage 5 UI port may change:
 - cascade cleanup behavior;
 - duplicate replacement semantics.
 
-The text-box contradiction must be resolved explicitly before any compatibility
-change. A destructive backup/restore round trip remains mandatory in Stage 10,
-not during this audit.
+The approved optional `pdf_annotation_geometry.json` extension stores complete
+ordered selection geometry while retaining a valid representative rectangle in
+the existing parent annotation. Missing, malformed, or unknown extension data
+falls back to legacy parent geometry. Historic `text_box` annotations remain
+read-only and are not blanket-deleted during viewer initialization.
 
-## 9. Required Decisions Before Stage 5 Authorization
+The full destructive Android/Web backup and restore round trip remains mandatory
+in Stage 10. It was deliberately not performed against user data during Stage 5.
+
+## 9. Resolved Authorization Decisions
 
 1. Approve the production strategy for true PDF text selection and Copy.
 2. Decide whether manual rectangle highlighting remains as a separate tool.
@@ -308,4 +371,67 @@ not during this audit.
    Library-only.
 8. Confirm page-jump and immersive-mode triggers.
 
-Until these decisions are frozen, Stage 5 implementation must not begin.
+All eight decisions were frozen before implementation. File management remains
+Library-owned, Draw Highlight remains distinct from selected-text highlighting,
+and historic text boxes remain compatibility-preserved without creation UI.
+
+## 10. Stage 5 Runtime Verification
+
+Verification used the installed production package `com.myvault.app` on
+`emulator-5554` at a 412 x 892 logical viewport. Isolated one-page and two-page
+PDF fixtures were imported through the real Library flow; user files and cloud
+data were not modified.
+
+Passed runtime checks:
+
+- real AndroidX PDF rendering, continuous vertical scrolling, native zoom/pan
+  gesture ownership, page count, reopening, and reading-position persistence;
+- Explorer open/close without fragment remount, white flash, or annotation
+  drift;
+- genuine text selection with Highlight, Note, Copy, and More;
+- selected-text highlight persistence across close/reopen;
+- a real multiline selection stored as one logical parent annotation with
+  3,553 selected characters and 54 deterministically ordered page-local segment
+  rows; every segment remained aligned after scrolling away/back and after
+  leaving and reopening the PDF;
+- two-page continuous rendering, page-jump from page 1 to page 2, and restored
+  page-2 reading position after leaving and reopening the document;
+- Draw Highlight as a separate rectangle workflow;
+- selected-text note, page note, colours, tags, existing Study-note linking,
+  and linked-reference display;
+- current-page activity indicator and annotation sheet;
+- PDF Activity search plus All, Highlights, Notes, and Study links filters;
+- annotation-action navigation back to the PDF location;
+- page jump, immersive entry, and deliberate unclaimed-canvas-tap chrome
+  restoration;
+- Device TTS entry and active global mini-player using the unchanged production
+  narration engine;
+- Light, Dark, and OLED reader presentation with untinted white PDF paper;
+- annotation persistence after theme changes and repeated reader entry;
+- metadata-only attachment failure remains a truthful neutral unavailable state.
+
+Focused automated checks cover migration 27 -> 28, annotation segment ordering
+and fallback, geometry normalization, historic text-box preservation, backup
+extension tolerance, and the source contract that no text-box creation action is
+exposed.
+
+Runtime evidence is stored under `artifacts/stage-5/runtime/`. Frozen-versus-
+Android side-by-side images and mechanical differences are stored under
+`artifacts/stage-5/comparison/`.
+
+Approved/known visual difference: AndroidX vertically centers the unusually
+short one-page test fixture within its viewport, leaving more canvas above and
+below than the multi-page Frozen reference. The two-page fixture aligns and
+flows naturally from the top, confirming that this is short-document renderer
+behavior rather than a shared-shell offset. The shared reader shell, chrome,
+surfaces, annotation indicator, and theme treatment match the Frozen contract;
+the native renderer was not altered to manufacture reference-document layout.
+
+The emulator's AndroidX Select All operation selected all text on the current
+page, so a genuine cross-page selection was not available for runtime exercise.
+The approved model remains page-aware and its migration, ordering, fallback,
+and backup behavior are covered by focused automated tests. Automated input
+could not reliably synthesize a multi-pointer pinch gesture; the production
+AndroidX zoom/pan engine and its gesture ownership were preserved rather than
+reimplemented. Full destructive Android/Web backup and restore remains a
+mandatory Stage 10 regression item.

@@ -7,12 +7,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.narration.NarrationController
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.DocumentTextExtractor
+import com.myvault.app.data.repository.KnowledgeRepository
+import com.myvault.app.data.repository.KnowledgeTagChip
+import com.myvault.app.data.repository.LibraryReferencedNote
+import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.PdfAnnotationRepository
+import com.myvault.app.data.repository.PdfAnnotationSegmentInput
 import com.myvault.app.data.repository.PdfReadingProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -35,6 +43,8 @@ class AttachmentViewerViewModel @Inject constructor(
     private val attachmentRepository: AttachmentRepository,
     private val pdfReadingProgressRepository: PdfReadingProgressRepository,
     private val pdfAnnotationRepository: PdfAnnotationRepository,
+    private val noteRepository: NoteRepository,
+    private val knowledgeRepository: KnowledgeRepository,
     private val narrationController: NarrationController,
 ) : ViewModel() {
     private val attachmentId: String = savedStateHandle["attachmentId"] ?: ""
@@ -51,7 +61,7 @@ class AttachmentViewerViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            pdfAnnotationRepository.cleanupLegacyIncompatibleAnnotations()
+            pdfAnnotationRepository.cleanupGenuinelyInvalidAnnotations()
         }
         if (initialPageIndex < 0) {
             viewModelScope.launch {
@@ -87,6 +97,33 @@ class AttachmentViewerViewModel @Inject constructor(
                 flowOf(emptyList())
             }
         }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val pdfAnnotationSegments: StateFlow<List<PdfAnnotationSegmentEntity>> =
+        pdfSecondaryDataEnabled.flatMapLatest { enabled ->
+            if (enabled) {
+                pdfAnnotationRepository.observeSegmentsForAttachment(attachmentId)
+            } else {
+                flowOf(emptyList())
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val studyNotes: StateFlow<List<NoteEntity>> =
+        noteRepository.observeAllNotes()
+            .map { notes -> notes.filter { it.deletedAt == null } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val pdfReferences: StateFlow<List<LibraryReferencedNote>> =
+        knowledgeRepository.observeLibraryReferences()
+            .map { references -> references.filter { it.attachmentId == attachmentId } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val annotationTags: StateFlow<Map<String, List<KnowledgeTagChip>>> =
+        knowledgeRepository.observeTagsByTargetType(KnowledgeRepository.TargetAnnotation)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    val attachmentTags: StateFlow<List<KnowledgeTagChip>> =
+        knowledgeRepository.observeTagsFor(KnowledgeRepository.TargetAttachment, attachmentId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val documentText: StateFlow<DocumentTextUiState> =
@@ -178,6 +215,27 @@ class AttachmentViewerViewModel @Inject constructor(
         narrationController.startAzure("attachment:${file.id}", file.fileName, text, bodyStartOffset = startOffset)
     }
 
+    fun startOpenAiNarration(selection: String? = null) {
+        val file = attachment.value ?: return
+        val text = selection?.trim().takeUnless { it.isNullOrBlank() } ?: documentText.value.text
+        if (text.isBlank()) return
+        narrationController.start("attachment:${file.id}", file.fileName, text)
+    }
+
+    fun startDeviceNarration(selection: String? = null) {
+        val file = attachment.value ?: return
+        val text = selection?.trim().takeUnless { it.isNullOrBlank() } ?: documentText.value.text
+        if (text.isBlank()) return
+        narrationController.startDevice("attachment:${file.id}", file.fileName, text)
+    }
+
+    fun startAzureNarration(selection: String?) {
+        val file = attachment.value ?: return
+        val text = selection?.trim().takeUnless { it.isNullOrBlank() } ?: documentText.value.text
+        if (text.isBlank()) return
+        narrationController.startAzure("attachment:${file.id}", file.fileName, text)
+    }
+
     fun addPdfHighlight(
         libraryFolderId: String?,
         pageIndex: Int,
@@ -203,6 +261,28 @@ class AttachmentViewerViewModel @Inject constructor(
                 Log.d("MyVaultPdfHighlight", "ViewModel highlight insert result=$saved attachmentId=$attachmentId")
             }
             onSaved(saved)
+        }
+    }
+
+    fun addPdfSelectedTextAnnotation(
+        libraryFolderId: String?,
+        selectedText: String,
+        segments: List<PdfAnnotationSegmentInput>,
+        color: String,
+        noteText: String?,
+        onSaved: (String?) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            onSaved(
+                pdfAnnotationRepository.addSelectedTextAnnotation(
+                    attachmentId = attachmentId,
+                    libraryFolderId = libraryFolderId,
+                    segments = segments,
+                    selectedText = selectedText,
+                    color = color,
+                    noteText = noteText,
+                ),
+            )
         }
     }
 
@@ -273,6 +353,65 @@ class AttachmentViewerViewModel @Inject constructor(
 
     fun deletePdfAnnotation(annotationId: String) {
         viewModelScope.launch { pdfAnnotationRepository.delete(annotationId) }
+    }
+
+    fun addAttachmentTag(name: String) {
+        viewModelScope.launch {
+            knowledgeRepository.addTag(KnowledgeRepository.TargetAttachment, attachmentId, name)
+        }
+    }
+
+    fun removeAttachmentTag(tagId: String) {
+        viewModelScope.launch {
+            knowledgeRepository.removeTag(KnowledgeRepository.TargetAttachment, attachmentId, tagId)
+        }
+    }
+
+    fun addAnnotationTag(annotationId: String, name: String) {
+        viewModelScope.launch {
+            knowledgeRepository.addTag(KnowledgeRepository.TargetAnnotation, annotationId, name)
+        }
+    }
+
+    fun removeAnnotationTag(annotationId: String, tagId: String) {
+        viewModelScope.launch {
+            knowledgeRepository.removeTag(KnowledgeRepository.TargetAnnotation, annotationId, tagId)
+        }
+    }
+
+    fun linkAnnotationToStudyNote(annotationId: String, noteId: String) {
+        viewModelScope.launch { knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotationId) }
+    }
+
+    fun createStudyNoteFromAnnotation(annotationId: String, onCreated: (String) -> Unit = {}) {
+        val annotation = pdfAnnotations.value.firstOrNull { it.id == annotationId } ?: return
+        val file = attachment.value ?: return
+        viewModelScope.launch {
+            val excerpt = annotation.selectedText?.trim().orEmpty()
+                .ifBlank { annotation.noteText?.trim().orEmpty() }
+            val title = annotation.displayTitle
+                ?: excerpt.takeIf { it.isNotBlank() }?.take(48)
+                ?: "PDF highlight - page ${annotation.pageIndex + 1}"
+            val body = buildString {
+                appendLine(title)
+                appendLine()
+                appendLine("Source: ${file.fileName}")
+                appendLine("Page: ${annotation.pageIndex + 1}")
+                if (excerpt.isNotBlank()) {
+                    appendLine()
+                    appendLine(excerpt)
+                }
+                appendLine()
+                appendLine("Notes:")
+            }
+            val noteId = noteRepository.createImportedRichTextNote(
+                title = title,
+                text = body,
+                styleMarksJson = "[]",
+            )
+            knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotationId)
+            onCreated(noteId)
+        }
     }
 }
 

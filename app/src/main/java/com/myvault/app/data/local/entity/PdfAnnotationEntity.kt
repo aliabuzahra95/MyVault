@@ -27,6 +27,7 @@ data class PdfAnnotationEntity(
     val annotationType: String = TYPE_HIGHLIGHT,
     val textSize: Float = 16f,
     val backgroundColor: String = BACKGROUND_NONE,
+    val selectedText: String? = null,
     val displayTitle: String? = null,
     val displayFolderId: String? = null,
     val createdAt: Long,
@@ -39,6 +40,18 @@ data class PdfAnnotationEntity(
         const val BACKGROUND_NONE = "none"
     }
 }
+
+fun PdfAnnotationEntity.isCompatibilityPreservedPdfTextBox(): Boolean =
+    annotationType == PdfAnnotationEntity.TYPE_TEXT_BOX &&
+        attachmentId.isNotBlank() &&
+        pageIndex >= 0 &&
+        left.isFinite() &&
+        top.isFinite() &&
+        right.isFinite() &&
+        bottom.isFinite() &&
+        right > left &&
+        bottom > top &&
+        !noteText.isNullOrBlank()
 
 fun PdfAnnotationEntity.isCurrentPdfAnnotation(): Boolean =
     when (annotationType) {

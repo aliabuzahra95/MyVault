@@ -14,6 +14,7 @@ import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfAnnotationSegmentDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
@@ -35,6 +36,7 @@ import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
@@ -52,6 +54,7 @@ import com.myvault.app.data.local.entity.TagEntity
         NoteTableEntity::class,
         PdfReadingProgressEntity::class,
         PdfAnnotationEntity::class,
+        PdfAnnotationSegmentEntity::class,
         SourceBacklinkEntity::class,
         KnowledgeTagEntity::class,
         KnowledgeTagLinkEntity::class,
@@ -62,7 +65,7 @@ import com.myvault.app.data.local.entity.TagEntity
         CourseStickyNoteEntity::class,
         CourseConceptCardEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -76,6 +79,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun noteTableDao(): NoteTableDao
     abstract fun pdfReadingProgressDao(): PdfReadingProgressDao
     abstract fun pdfAnnotationDao(): PdfAnnotationDao
+    abstract fun pdfAnnotationSegmentDao(): PdfAnnotationSegmentDao
     abstract fun sourceBacklinkDao(): SourceBacklinkDao
     abstract fun knowledgeTagDao(): KnowledgeTagDao
     abstract fun noteVersionDao(): NoteVersionDao
@@ -540,6 +544,33 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pdf_annotations ADD COLUMN selectedText TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pdf_annotation_segments (
+                        annotationId TEXT NOT NULL,
+                        orderIndex INTEGER NOT NULL,
+                        pageIndex INTEGER NOT NULL,
+                        `left` REAL NOT NULL,
+                        `top` REAL NOT NULL,
+                        `right` REAL NOT NULL,
+                        `bottom` REAL NOT NULL,
+                        PRIMARY KEY(annotationId, orderIndex),
+                        FOREIGN KEY(annotationId) REFERENCES pdf_annotations(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_pdf_annotation_segments_annotationId ON pdf_annotation_segments(annotationId)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_pdf_annotation_segments_pageIndex ON pdf_annotation_segments(pageIndex)",
+                )
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -567,6 +598,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_24_25,
             MIGRATION_25_26,
             MIGRATION_26_27,
+            MIGRATION_27_28,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

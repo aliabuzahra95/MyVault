@@ -423,11 +423,12 @@ Expected production files:
 
 Frozen references: 18-22.
 
-Pre-stage audit: `docs/STAGE_5_PDF_AMENDMENT.md` inventories 55 production PDF
-capabilities/contracts. It identifies mandatory decisions for true text
-selection, manual rectangle highlighting, text-box lifecycle, PDF Activity,
-page-note/annotation actions, narration, file actions, page jump and immersive
-mode. This stage remains blocked pending a frozen PDF amendment.
+The frozen PDF amendment and compatibility decision resolve the pre-stage
+blockers. Stage 5 uses the existing AndroidX renderer behind one Frozen reader
+shell. Genuine selection supplies actual text and ordered page rectangles;
+multi-rectangle geometry and selected text are stored additively while the
+legacy parent rectangle remains backward-compatible. Historic text boxes are
+preserved read-only and never deleted merely by opening a PDF.
 
 Preserve: renderer lifecycle, cached document, vertical scroll, zoom/pan,
 selection, highlights, geometry, annotations, progress, extraction, export,
@@ -436,6 +437,26 @@ narration, file actions, and linked-note behavior.
 Tests: repeated document switching, drawer/annotation panel resize without blank
 rerender, zoom stability, annotation geometry at multiple zooms, progress,
 offline cache, dark/OLED paper, and screenshots.
+
+Approved implementation files also include the additive Room 27 -> 28
+migration, `PdfAnnotationSegmentEntity`/DAO, annotation repository adapters,
+optional backup geometry extension, navigation wiring, and focused migration,
+geometry, preservation, and source-contract tests. This narrow Stage 5 change
+does not alter attachment identity, reading-progress semantics, legacy
+annotation fields, or the production narration engines.
+
+Runtime verification completed in the installed production app at a 412 x 892
+logical viewport. Evidence covers genuine selection, selected-text and Draw
+highlights, notes, tags, Study links, Activity search/filters, page jump,
+immersive restore, Device TTS, Explorer resize stability, and Light/Dark/OLED.
+An isolated two-page fixture also verified continuous page flow, page-2 jump and
+resume persistence. A real multiline AndroidX selection was saved as one parent
+annotation with 3,553 selected characters and 54 ordered child segments; all
+segments remained anchored after scroll-away/back and document close/reopen.
+AndroidX Select All remained page-local in this runtime, so cross-page selection
+is covered structurally and by automated compatibility tests rather than by a
+fabricated emulator gesture.
+The destructive Android/Web backup round trip remains reserved for Stage 10.
 
 ### Stage 6 - Courses
 

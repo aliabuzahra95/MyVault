@@ -95,7 +95,7 @@ class AskAiSurfaceDecommissionContractTest {
 
         val database = source("data/local/VaultDatabase.kt")
         val backup = source("data/repository/BackupRepository.kt")
-        assertTrue(database.contains("version = 27"))
+        assertTrue(database.contains("version = 28"))
         assertTrue(database.contains("DROP TABLE IF EXISTS ai_messages"))
         assertTrue(database.contains("DROP TABLE IF EXISTS home_chat_history"))
         assertTrue(database.contains("DROP TABLE IF EXISTS library_ai_file_cache"))

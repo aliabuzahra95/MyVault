@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.ext.SdkExtensions
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -128,19 +129,27 @@ import android.text.TextPaint
 import androidx.pdf.ExperimentalPdfApi
 import androidx.pdf.PdfPoint
 import androidx.pdf.PdfRect
+import androidx.pdf.selection.model.TextSelection
 import androidx.pdf.viewer.fragment.PdfViewerFragment
 import androidx.pdf.view.Highlight
 import androidx.pdf.view.PdfView as AndroidxPdfView
 import com.myvault.app.BuildConfig
 import com.myvault.app.R
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
+import com.myvault.app.data.local.entity.isCompatibilityPreservedPdfTextBox
 import com.myvault.app.data.local.entity.isCurrentPdfAnnotation
+import com.myvault.app.data.local.entity.resolvedGeometrySegments
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.narration.AzureNarrationProgress
 import com.myvault.app.data.repository.kindLabel
 import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.DocumentTextExtractor
+import com.myvault.app.data.repository.KnowledgeTagChip
+import com.myvault.app.data.repository.LibraryReferencedNote
+import com.myvault.app.data.repository.PdfAnnotationSegmentInput
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -188,6 +197,29 @@ private object PdfViewerCallbackRegistry {
 
 private const val NativePdfAnnotationOverlayTag = "myvault_pdf_annotation_overlay"
 
+private class NativePdfHostLayout(context: Context) : FrameLayout(context) {
+    var onUnclaimedSingleTap: () -> Unit = {}
+
+    private val tapObserver = GestureDetector(
+        context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent): Boolean = true
+
+            override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
+                onUnclaimedSingleTap()
+                // This host only observes the gesture. PdfView, links, selection, and the
+                // annotation overlay retain ownership of the original touch stream.
+                return false
+            }
+        },
+    )
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        tapObserver.onTouchEvent(event)
+        return super.dispatchTouchEvent(event)
+    }
+}
+
 private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
     var pdfView: AndroidxPdfView? = null
         set(value) {
@@ -200,6 +232,11 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
             postInvalidateOnAnimation()
         }
     var annotations: List<PdfAnnotationEntity> = emptyList()
+        set(value) {
+            field = value
+            postInvalidateOnAnimation()
+        }
+    var annotationSegments: List<PdfAnnotationSegmentEntity> = emptyList()
         set(value) {
             field = value
             postInvalidateOnAnimation()
@@ -268,10 +305,19 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
                 .asSequence()
                 .filter { it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT }
                 .forEach { annotation ->
-                    val bounds = annotation.toNativeOverlayBounds() ?: return@forEach
                     fillPaint.style = Paint.Style.FILL
                     fillPaint.color = annotation.color.toPdfHighlightPreviewArgb()
-                    canvas.drawRoundRect(bounds, 8f, 8f, fillPaint)
+                    annotation.resolvedGeometrySegments(annotationSegments).forEach { segment ->
+                        val bounds = segment.toNativeOverlayBounds() ?: return@forEach
+                        canvas.drawRoundRect(bounds, 8f, 8f, fillPaint)
+                    }
+                }
+            annotations
+                .asSequence()
+                .filter(PdfAnnotationEntity::isCompatibilityPreservedPdfTextBox)
+                .forEach { annotation ->
+                    val bounds = annotation.toNativeOverlayBounds() ?: return@forEach
+                    drawTextBox(canvas, annotation, bounds)
                 }
         }
         val start = dragStart
@@ -442,12 +488,33 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
 
     private fun annotationAt(x: Float, y: Float): PdfAnnotationEntity? =
         annotations.asReversed().firstOrNull { annotation ->
-            if (annotation.annotationType != PdfAnnotationEntity.TYPE_HIGHLIGHT) return@firstOrNull false
-            val bounds = annotation.toNativeOverlayBounds() ?: return@firstOrNull false
-            x in bounds.left..bounds.right && y in bounds.top..bounds.bottom
+            when {
+                annotation.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT ->
+                    annotation.resolvedGeometrySegments(annotationSegments).any { segment ->
+                        val bounds = segment.toNativeOverlayBounds() ?: return@any false
+                        x in bounds.left..bounds.right && y in bounds.top..bounds.bottom
+                    }
+                annotation.isCompatibilityPreservedPdfTextBox() -> {
+                    val bounds = annotation.toNativeOverlayBounds() ?: return@firstOrNull false
+                    x in bounds.left..bounds.right && y in bounds.top..bounds.bottom
+                }
+                else -> false
+            }
         }
 
-    private fun PdfAnnotationEntity.toNativeOverlayBounds(): RectF? {
+    private fun PdfAnnotationSegmentEntity.toNativeOverlayBounds(): RectF? =
+        toNativeOverlayBounds(pageIndex, left, top, right, bottom)
+
+    private fun PdfAnnotationEntity.toNativeOverlayBounds(): RectF? =
+        toNativeOverlayBounds(pageIndex, left, top, right, bottom)
+
+    private fun toNativeOverlayBounds(
+        pageIndex: Int,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+    ): RectF? {
         if (pageIndex !in 0 until pageCount) return null
         if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite()) return null
         if (right <= left || bottom <= top) return null
@@ -512,6 +579,10 @@ fun AttachmentViewerScreen(
     attachment: AttachmentEntity?,
     pdfProgress: PdfReadingProgressEntity? = null,
     pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
+    pdfAnnotationSegments: List<PdfAnnotationSegmentEntity> = emptyList(),
+    studyNotes: List<NoteEntity> = emptyList(),
+    pdfReferences: List<LibraryReferencedNote> = emptyList(),
+    pdfAnnotationTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
     documentText: String = "",
     documentTextLoading: Boolean = false,
     documentTextError: String? = null,
@@ -519,10 +590,13 @@ fun AttachmentViewerScreen(
     azureNarrationProgress: AzureNarrationProgress? = null,
     initialPageIndex: Int? = null,
     onBackClick: () -> Unit,
+    onMenuClick: () -> Unit = onBackClick,
+    onOwnHeaderChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     onPdfProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit = { _, _ -> },
     onPdfFirstLoaded: () -> Unit = {},
     onAddPdfHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String, onSaved: (Boolean) -> Unit) -> Unit = { _, _, _, _, _, _, _, callback -> callback(false) },
+    onAddPdfSelectedTextAnnotation: (libraryFolderId: String?, selectedText: String, segments: List<PdfAnnotationSegmentInput>, color: String, noteText: String?, onSaved: (String?) -> Unit) -> Unit = { _, _, _, _, _, callback -> callback(null) },
     onUpdatePdfHighlightColor: (annotationId: String, color: String) -> Unit = { _, _ -> },
     onUpdatePdfAnnotationNote: (annotationId: String, noteText: String) -> Unit = { _, _ -> },
     onAddPdfPageNote: (libraryFolderId: String?, pageIndex: Int, noteText: String, onSaved: (Boolean) -> Unit) -> Unit = { _, _, _, callback -> callback(false) },
@@ -530,12 +604,56 @@ fun AttachmentViewerScreen(
     onUpdatePdfTextBox: (annotationId: String, text: String, color: String, textSize: Float, backgroundColor: String) -> Unit = { _, _, _, _, _ -> },
     onUpdatePdfTextBoxBounds: (annotationId: String, left: Float, top: Float, right: Float, bottom: Float) -> Unit = { _, _, _, _, _ -> },
     onDeletePdfAnnotation: (annotationId: String) -> Unit = {},
+    onAddPdfAnnotationTag: (annotationId: String, name: String) -> Unit = { _, _ -> },
+    onRemovePdfAnnotationTag: (annotationId: String, tagId: String) -> Unit = { _, _ -> },
+    onLinkPdfAnnotationToStudyNote: (annotationId: String, noteId: String) -> Unit = { _, _ -> },
+    onCreateStudyNoteFromPdfAnnotation: (annotationId: String, onCreated: (String) -> Unit) -> Unit = { _, _ -> },
+    onOpenStudyNote: (noteId: String) -> Unit = {},
+    onStartDevicePdfNarration: (selection: String?) -> Unit = {},
+    onStartOpenAiPdfNarration: (selection: String?) -> Unit = {},
+    onStartAzurePdfNarration: (selection: String?) -> Unit = {},
     onDeleteAttachment: () -> Unit = {},
     onExportAttachment: (Uri) -> Unit = {},
     onAzureListenClick: () -> Unit = {},
     onAzureResumeClick: () -> Unit = {},
     onAzureListenFromHere: (Int) -> Unit = {},
 ) {
+    LaunchedEffect(attachment?.mimeType) {
+        attachment?.let { onOwnHeaderChanged(it.mimeType == "application/pdf") }
+    }
+
+    if (attachment?.mimeType == "application/pdf") {
+        FrozenPdfReaderScreen(
+            attachment = attachment,
+            progress = pdfProgress,
+            annotations = pdfAnnotations,
+            annotationSegments = pdfAnnotationSegments,
+            studyNotes = studyNotes,
+            references = pdfReferences,
+            annotationTags = pdfAnnotationTags,
+            initialPageIndex = initialPageIndex,
+            onMenuClick = onMenuClick,
+            onProgressChanged = onPdfProgressChanged,
+            onFirstLoaded = onPdfFirstLoaded,
+            onAddDrawHighlight = onAddPdfHighlight,
+            onAddSelectedTextAnnotation = onAddPdfSelectedTextAnnotation,
+            onUpdateAnnotationColor = onUpdatePdfHighlightColor,
+            onUpdateAnnotationNote = onUpdatePdfAnnotationNote,
+            onAddPageNote = onAddPdfPageNote,
+            onDeleteAnnotation = onDeletePdfAnnotation,
+            onAddAnnotationTag = onAddPdfAnnotationTag,
+            onRemoveAnnotationTag = onRemovePdfAnnotationTag,
+            onLinkAnnotationToStudyNote = onLinkPdfAnnotationToStudyNote,
+            onCreateStudyNoteFromAnnotation = onCreateStudyNoteFromPdfAnnotation,
+            onOpenStudyNote = onOpenStudyNote,
+            onStartDeviceNarration = onStartDevicePdfNarration,
+            onStartOpenAiNarration = onStartOpenAiPdfNarration,
+            onStartAzureNarration = onStartAzurePdfNarration,
+            modifier = modifier,
+        )
+        return
+    }
+
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
     var deleteConfirmOpen by remember { mutableStateOf(false) }
@@ -1085,17 +1203,6 @@ private fun PdfAttachmentViewer(
                     onPdfViewReady = { view ->
                         pdfView = view
                         view.setBackgroundColor(insetColorArgb)
-                        view.setOnLongClickListener {
-                            view.clearCurrentSelection()
-                            true
-                        }
-                        view.addOnSelectionChangedListener(
-                            object : AndroidxPdfView.OnSelectionChangedListener {
-                                override fun onSelectionChanged(selection: androidx.pdf.selection.Selection?) {
-                                    if (selection != null) view.post { view.clearCurrentSelection() }
-                                }
-                            },
-                        )
                         view.addOnGestureStateChangedListener(
                             object : AndroidxPdfView.OnGestureStateChangedListener {
                                 override fun onGestureStateChanged(newState: Int) {
@@ -1436,10 +1543,11 @@ private fun PdfAttachmentViewer(
 }
 
 @Composable
-private fun AndroidxPdfViewer(
+internal fun AndroidxPdfViewer(
     file: File,
     modifier: Modifier = Modifier,
     annotations: List<PdfAnnotationEntity>,
+    annotationSegments: List<PdfAnnotationSegmentEntity> = emptyList(),
     viewportTick: Long,
     pageCount: Int,
     highlightColor: String,
@@ -1450,6 +1558,8 @@ private fun AndroidxPdfViewer(
     onUpdateTextBoxBounds: (PdfAnnotationEntity, PdfRect) -> Unit,
     onSelectAnnotation: (PdfAnnotationEntity) -> Unit,
     onAddHighlightRect: (PdfRect, String) -> Unit,
+    onTextSelectionChanged: (PdfTextSelectionUi?) -> Unit = {},
+    onUnclaimedSingleTap: () -> Unit = {},
     onPdfViewReady: (AndroidxPdfView) -> Unit,
     onError: (Throwable) -> Unit,
 ) {
@@ -1462,6 +1572,8 @@ private fun AndroidxPdfViewer(
     val latestOnUpdateTextBoxBounds = rememberUpdatedState(onUpdateTextBoxBounds)
     val latestOnSelectAnnotation = rememberUpdatedState(onSelectAnnotation)
     val latestOnAddHighlightRect = rememberUpdatedState(onAddHighlightRect)
+    val latestOnTextSelectionChanged = rememberUpdatedState(onTextSelectionChanged)
+    val latestOnUnclaimedSingleTap = rememberUpdatedState(onUnclaimedSingleTap)
     val fragmentTag = remember(file.absolutePath) {
         "myvault_pdf_viewer_${file.absolutePath.hashCode()}"
     }
@@ -1469,7 +1581,7 @@ private fun AndroidxPdfViewer(
     AndroidView(
         modifier = modifier,
         factory = { viewContext ->
-            FrameLayout(viewContext).apply {
+            NativePdfHostLayout(viewContext).apply {
                 setBackgroundColor(insetColorArgb)
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1517,6 +1629,21 @@ private fun AndroidxPdfViewer(
                     uri = uri,
                     onPdfViewReady = { view ->
                         annotationOverlay.pdfView = view
+                        view.addOnSelectionChangedListener(
+                            object : AndroidxPdfView.OnSelectionChangedListener {
+                                override fun onSelectionChanged(selection: androidx.pdf.selection.Selection?) {
+                                    val textSelection = selection as? TextSelection
+                                    latestOnTextSelectionChanged.value(
+                                        textSelection?.let {
+                                            PdfTextSelectionUi(
+                                                text = it.text.toString(),
+                                                bounds = it.bounds,
+                                            )
+                                        },
+                                    )
+                                }
+                            },
+                        )
                         latestOnPdfViewReady.value(view)
                     },
                     onError = latestOnError.value,
@@ -1524,9 +1651,11 @@ private fun AndroidxPdfViewer(
             }
         },
         update = { root ->
+            root.onUnclaimedSingleTap = { latestOnUnclaimedSingleTap.value() }
             val currentViewportTick = viewportTick
             val overlay = root.findViewWithTag<NativePdfAnnotationOverlayView>(NativePdfAnnotationOverlayTag)
             overlay?.annotations = annotations
+            overlay?.annotationSegments = annotationSegments
             overlay?.pageCount = pageCount
             overlay?.highlightColor = highlightColor
             overlay?.drawMode = drawHighlightMode
@@ -1534,13 +1663,13 @@ private fun AndroidxPdfViewer(
             overlay?.selectMode = annotationPickMode
             if (currentViewportTick >= 0L) overlay?.postInvalidateOnAnimation()
             root.hideAndroidxPdfToolboxDescendants()
-            overlay?.pdfView?.setHighlights(emptyList())
             overlay?.onCreateTextBox = { latestOnCreateTextBox.value(it) }
             overlay?.onUpdateTextBoxBounds = { annotation, rect -> latestOnUpdateTextBoxBounds.value(annotation, rect) }
             overlay?.onSelectAnnotation = { latestOnSelectAnnotation.value(it) }
             overlay?.onAddHighlight = { rect, color -> latestOnAddHighlightRect.value(rect, color) }
         },
         onRelease = { releasedRoot ->
+            releasedRoot.onUnclaimedSingleTap = {}
             val activity = context.findFragmentActivity()
             releasedRoot.releaseNativePdfViewer(activity, fragmentTag)
             PdfViewerCallbackRegistry.onPdfViewReady = null
@@ -1554,6 +1683,7 @@ private fun FrameLayout.releaseNativePdfViewer(activity: FragmentActivity?, frag
         runCatching { overlay.pdfView?.setHighlights(emptyList()) }
         overlay.pdfView = null
         overlay.annotations = emptyList()
+        overlay.annotationSegments = emptyList()
         overlay.onCreateTextBox = {}
         overlay.onUpdateTextBoxBounds = { _, _ -> }
         overlay.onSelectAnnotation = {}
@@ -1574,6 +1704,11 @@ private fun FrameLayout.releaseNativePdfViewer(activity: FragmentActivity?, frag
 
     removeAllViews()
 }
+
+internal data class PdfTextSelectionUi(
+    val text: String,
+    val bounds: List<PdfRect>,
+)
 
 private fun FragmentContainerView.attachPdfFragmentWhenReady(
     activity: FragmentActivity,

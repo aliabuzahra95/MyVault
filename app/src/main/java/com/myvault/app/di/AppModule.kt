@@ -13,6 +13,7 @@ import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfAnnotationSegmentDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
@@ -66,6 +67,9 @@ object AppModule {
 
     @Provides
     fun providePdfAnnotationDao(database: VaultDatabase): PdfAnnotationDao = database.pdfAnnotationDao()
+
+    @Provides
+    fun providePdfAnnotationSegmentDao(database: VaultDatabase): PdfAnnotationSegmentDao = database.pdfAnnotationSegmentDao()
 
     @Provides
     fun provideSourceBacklinkDao(database: VaultDatabase): SourceBacklinkDao = database.sourceBacklinkDao()

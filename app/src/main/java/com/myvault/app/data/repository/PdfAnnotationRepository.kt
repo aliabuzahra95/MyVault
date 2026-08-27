@@ -6,8 +6,11 @@ import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.KnowledgeTagDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfAnnotationSegmentDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
+import com.myvault.app.data.local.entity.isValidPdfAnnotationSegment
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,6 +19,7 @@ import javax.inject.Singleton
 class PdfAnnotationRepository @Inject constructor(
     private val database: VaultDatabase,
     private val annotationDao: PdfAnnotationDao,
+    private val segmentDao: PdfAnnotationSegmentDao,
     private val knowledgeTagDao: KnowledgeTagDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
 ) {
@@ -23,14 +27,71 @@ class PdfAnnotationRepository @Inject constructor(
 
     fun observeForAttachment(attachmentId: String) = annotationDao.observeForAttachment(attachmentId)
 
-    suspend fun cleanupLegacyIncompatibleAnnotations() {
-        val ids = annotationDao.getLegacyIncompatibleIds()
+    fun observeSegmentsForAttachment(attachmentId: String) = segmentDao.observeForAttachment(attachmentId)
+
+    suspend fun cleanupGenuinelyInvalidAnnotations() {
+        val ids = annotationDao.getGenuinelyInvalidIds()
         if (ids.isEmpty()) return
         database.withTransaction {
             annotationDao.deleteByIds(ids)
             sourceBacklinkDao.deleteForAnnotations(ids)
             knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, ids)
         }
+    }
+
+    suspend fun addSelectedTextAnnotation(
+        attachmentId: String,
+        libraryFolderId: String?,
+        segments: List<PdfAnnotationSegmentInput>,
+        selectedText: String,
+        color: String,
+        noteText: String? = null,
+    ): String? {
+        val cleanText = selectedText.trim()
+        if (attachmentId.isBlank() || cleanText.isBlank()) return null
+
+        val normalizedSegments = segments.mapIndexedNotNull { orderIndex, segment ->
+            val normalized = PdfAnnotationSegmentEntity(
+                annotationId = "pending",
+                orderIndex = orderIndex,
+                pageIndex = segment.pageIndex.coerceAtLeast(0),
+                left = minOf(segment.left, segment.right),
+                top = minOf(segment.top, segment.bottom),
+                right = maxOf(segment.left, segment.right),
+                bottom = maxOf(segment.top, segment.bottom),
+            )
+            normalized.takeIf { it.isValidPdfAnnotationSegment() }
+        }
+        if (normalizedSegments.isEmpty()) return null
+
+        val annotationId = UUID.randomUUID().toString()
+        val firstSegment = normalizedSegments.first()
+        val now = System.currentTimeMillis()
+        val annotation = PdfAnnotationEntity(
+            id = annotationId,
+            attachmentId = attachmentId,
+            libraryFolderId = libraryFolderId,
+            pageIndex = firstSegment.pageIndex,
+            left = firstSegment.left,
+            top = firstSegment.top,
+            right = firstSegment.right,
+            bottom = firstSegment.bottom,
+            color = color.sanitizedPdfAnnotationColor(defaultColor = "yellow"),
+            noteText = noteText?.trim()?.ifBlank { null },
+            annotationType = PdfAnnotationEntity.TYPE_HIGHLIGHT,
+            selectedText = cleanText,
+            displayTitle = noteText?.trim()?.ifBlank { null }?.take(60) ?: cleanText.take(60),
+            displayFolderId = libraryFolderId,
+            createdAt = now,
+            updatedAt = now,
+        )
+        database.withTransaction {
+            annotationDao.upsert(annotation)
+            segmentDao.upsertAll(
+                normalizedSegments.map { it.copy(annotationId = annotationId) },
+            )
+        }
+        return annotationId
     }
 
     suspend fun addHighlight(
@@ -226,12 +287,21 @@ class PdfAnnotationRepository @Inject constructor(
     suspend fun delete(id: String) {
         if (id.isBlank()) return
         database.withTransaction {
+            segmentDao.deleteForAnnotation(id)
             annotationDao.deleteById(id)
             sourceBacklinkDao.deleteForAnnotations(listOf(id))
             knowledgeTagDao.deleteLinksForTargets(KnowledgeRepository.TargetAnnotation, listOf(id))
         }
     }
 }
+
+data class PdfAnnotationSegmentInput(
+    val pageIndex: Int,
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+)
 
 internal fun String.sanitizedPdfAnnotationColor(defaultColor: String): String =
     when (lowercase()) {

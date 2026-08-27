@@ -14,6 +14,7 @@ import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.NoteTableDao
 import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
+import com.myvault.app.data.local.dao.PdfAnnotationSegmentDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
@@ -34,6 +35,9 @@ import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
+import com.myvault.app.data.local.entity.isCompatibilityPreservedPdfTextBox
+import com.myvault.app.data.local.entity.isValidPdfAnnotationSegment
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
@@ -81,6 +85,7 @@ class BackupRepository @Inject constructor(
     private val noteVersionDao: NoteVersionDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
+    private val pdfAnnotationSegmentDao: PdfAnnotationSegmentDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
     private val knowledgeTagDao: KnowledgeTagDao,
     private val vaultPreferences: VaultPreferences,
@@ -195,6 +200,9 @@ class BackupRepository @Inject constructor(
         val pdfReadingProgress = pdfReadingProgressDao.getAll().filter { it.attachmentId in backupAttachmentIds }
         val pdfAnnotations = pdfAnnotationDao.getAll().filter { it.attachmentId in backupAttachmentIds }
         val backupAnnotationIds = pdfAnnotations.map { it.id }.toSet()
+        val pdfAnnotationSegments = pdfAnnotationSegmentDao.getAll().filter {
+            it.annotationId in backupAnnotationIds && it.isValidPdfAnnotationSegment()
+        }
         val sourceBacklinks = sourceBacklinkDao.getAll().filter {
             it.noteId in backupNoteIds &&
                 it.attachmentId in backupAttachmentIds &&
@@ -237,6 +245,7 @@ class BackupRepository @Inject constructor(
             attachments = attachments,
             pdfReadingProgress = pdfReadingProgress,
             pdfAnnotations = pdfAnnotations,
+            pdfAnnotationSegments = pdfAnnotationSegments,
             sourceBacklinks = sourceBacklinks,
             knowledgeTags = knowledgeTags,
             knowledgeTagLinks = knowledgeTagLinks,
@@ -274,6 +283,7 @@ class BackupRepository @Inject constructor(
         val attachments = entries.requireJsonArray("attachments.json")
         val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
         val pdfAnnotations = entries.optionalJsonArray("pdf_annotations.json")
+        val pdfAnnotationSegments = entries.optionalJsonArraySafely(PDF_ANNOTATION_GEOMETRY_FILE)
         val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
         val courses = entries.optionalJsonArray("courses.json")
         val courseConceptCards = entries.optionalJsonArray("course_concept_cards.json")
@@ -469,6 +479,16 @@ class BackupRepository @Inject constructor(
                 "Backup contains an invalid PDF text box size."
             }
         }
+        val segmentKeys = mutableSetOf<String>()
+        pdfAnnotationSegments.mapJsonObjectsSafely { segment ->
+            val entity = segment.toPdfAnnotationSegmentEntityOrNull() ?: return@mapJsonObjectsSafely
+            check(entity.annotationId in activeAnnotationIds) {
+                "Backup contains PDF selection geometry without a matching annotation."
+            }
+            check(segmentKeys.add("${entity.annotationId}:${entity.orderIndex}")) {
+                "Backup contains duplicate PDF selection geometry."
+            }
+        }
         val sourceBacklinkIds = List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index).getString("id") }.toSet()
         check(sourceBacklinkIds.size == sourceBacklinks.length()) { "Backup contains duplicate source reference IDs." }
         List(sourceBacklinks.length()) { index -> sourceBacklinks.getJSONObject(index) }.forEach { link ->
@@ -601,11 +621,15 @@ class BackupRepository @Inject constructor(
                 .mapJson { it.toPdfAnnotationEntity() }
                 .filter {
                     it.attachmentId in restoredAttachmentIds &&
-                        isValidPdfAnnotationRect(it.left, it.top, it.right, it.bottom) &&
+                        it.hasRestorablePdfAnnotationGeometry() &&
                         (it.libraryFolderId == null || it.libraryFolderId in restoredLibraryFolderIds) &&
                         (it.displayFolderId == null || it.displayFolderId in restoredLibraryFolderIds)
                 }
             val restoredAnnotationIds = pdfAnnotations.map { it.id }.toSet()
+            val pdfAnnotationSegments = entries.optionalJsonArraySafely(PDF_ANNOTATION_GEOMETRY_FILE)
+                .mapJsonObjectsSafely { it.toPdfAnnotationSegmentEntityOrNull() }
+                .filter { it.annotationId in restoredAnnotationIds }
+                .distinctBy { it.annotationId to it.orderIndex }
             val sourceBacklinks = entries.optionalJsonArray("source_backlinks.json")
                 .mapJson { it.toSourceBacklinkEntity() }
                 .filter {
@@ -670,6 +694,7 @@ class BackupRepository @Inject constructor(
                 }
                 if (pdfReadingProgress.isNotEmpty()) pdfReadingProgressDao.upsertAll(pdfReadingProgress)
                 if (pdfAnnotations.isNotEmpty()) pdfAnnotationDao.upsertAll(pdfAnnotations)
+                if (pdfAnnotationSegments.isNotEmpty()) pdfAnnotationSegmentDao.upsertAll(pdfAnnotationSegments)
                 if (sourceBacklinks.isNotEmpty()) sourceBacklinkDao.upsertAll(sourceBacklinks)
                 if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
                 if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
@@ -959,6 +984,7 @@ private data class BackupSnapshot(
     val attachments: List<AttachmentEntity>,
     val pdfReadingProgress: List<PdfReadingProgressEntity>,
     val pdfAnnotations: List<PdfAnnotationEntity>,
+    val pdfAnnotationSegments: List<PdfAnnotationSegmentEntity>,
     val sourceBacklinks: List<SourceBacklinkEntity>,
     val knowledgeTags: List<KnowledgeTagEntity>,
     val knowledgeTagLinks: List<KnowledgeTagLinkEntity>,
@@ -983,6 +1009,7 @@ private data class BackupSnapshot(
         destinationDir.writeJsonFile("attachments.json", attachments.toJsonArray { it.toBackupJson() })
         destinationDir.writeJsonFile("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile(PDF_ANNOTATION_GEOMETRY_FILE, pdfAnnotationSegments.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("source_backlinks.json", sourceBacklinks.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("knowledge_tags.json", knowledgeTags.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("knowledge_tag_links.json", knowledgeTagLinks.toJsonArray { it.toJson() })
@@ -1007,6 +1034,7 @@ private data class BackupSnapshot(
         zip.writeJson("attachments.json", attachments.toJsonArray { it.toBackupJson() })
         zip.writeJson("pdf_reading_progress.json", pdfReadingProgress.toJsonArray { it.toJson() })
         zip.writeJson("pdf_annotations.json", pdfAnnotations.toJsonArray { it.toJson() })
+        zip.writeJson(PDF_ANNOTATION_GEOMETRY_FILE, pdfAnnotationSegments.toJsonArray { it.toJson() })
         zip.writeJson("source_backlinks.json", sourceBacklinks.toJsonArray { it.toJson() })
         zip.writeJson("knowledge_tags.json", knowledgeTags.toJsonArray { it.toJson() })
         zip.writeJson("knowledge_tag_links.json", knowledgeTagLinks.toJsonArray { it.toJson() })
@@ -1388,6 +1416,7 @@ private fun PdfAnnotationEntity.toJson(): JSONObject =
         .put("bottom", bottom)
         .put("color", color)
         .put("noteText", noteText)
+        .put("selectedText", selectedText)
         .put("annotationType", annotationType)
         .put("textSize", textSize)
         .put("backgroundColor", backgroundColor)
@@ -1395,6 +1424,16 @@ private fun PdfAnnotationEntity.toJson(): JSONObject =
         .put("displayFolderId", displayFolderId)
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
+
+private fun PdfAnnotationSegmentEntity.toJson(): JSONObject =
+    JSONObject()
+        .put("annotationId", annotationId)
+        .put("orderIndex", orderIndex)
+        .put("pageIndex", pageIndex)
+        .put("left", left)
+        .put("top", top)
+        .put("right", right)
+        .put("bottom", bottom)
 
 private fun TagEntity.toJson(): JSONObject =
     JSONObject().put("name", name)
@@ -1561,6 +1600,7 @@ private fun JSONObject.toPdfAnnotationEntity(): PdfAnnotationEntity =
         bottom = optDouble("bottom", 0.0).toFloat(),
         color = optString("color").sanitizedPdfAnnotationColor(defaultColor = "yellow"),
         noteText = optNullableString("noteText"),
+        selectedText = optNullableString("selectedText"),
         annotationType = when (optString("annotationType", PdfAnnotationEntity.TYPE_HIGHLIGHT)) {
             PdfAnnotationEntity.TYPE_HIGHLIGHT,
             PdfAnnotationEntity.TYPE_TEXT_BOX,
@@ -1575,6 +1615,19 @@ private fun JSONObject.toPdfAnnotationEntity(): PdfAnnotationEntity =
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
     )
+
+private fun JSONObject.toPdfAnnotationSegmentEntityOrNull(): PdfAnnotationSegmentEntity? =
+    runCatching {
+        PdfAnnotationSegmentEntity(
+            annotationId = getString("annotationId"),
+            orderIndex = getInt("orderIndex"),
+            pageIndex = getInt("pageIndex"),
+            left = getDouble("left").toFloat(),
+            top = getDouble("top").toFloat(),
+            right = getDouble("right").toFloat(),
+            bottom = getDouble("bottom").toFloat(),
+        )
+    }.getOrNull()?.takeIf { it.isValidPdfAnnotationSegment() }
 
 private fun JSONObject.toSourceBacklinkEntity(): SourceBacklinkEntity =
     SourceBacklinkEntity(
@@ -1659,11 +1712,32 @@ private fun Map<String, String>.requireJsonArray(name: String): JSONArray =
 private fun Map<String, String>.optionalJsonArray(name: String): JSONArray =
     get(name)?.toJsonArray() ?: JSONArray()
 
+private fun Map<String, String>.optionalJsonArraySafely(name: String): JSONArray =
+    get(name)?.let { encoded -> runCatching { encoded.toJsonArray() }.getOrNull() } ?: JSONArray()
+
 private fun <T> List<T>.toJsonArray(transform: (T) -> JSONObject): JSONArray =
     JSONArray().also { array -> forEach { array.put(transform(it)) } }
 
 private fun <T> JSONArray.mapJson(transform: (JSONObject) -> T): List<T> =
     List(length()) { index -> transform(getJSONObject(index)) }
+
+private fun <T : Any> JSONArray.mapJsonObjectsSafely(transform: (JSONObject) -> T?): List<T> =
+    buildList {
+        for (index in 0 until length()) {
+            optJSONObject(index)?.let(transform)?.let(::add)
+        }
+    }
+
+private fun PdfAnnotationEntity.hasRestorablePdfAnnotationGeometry(): Boolean =
+    when (annotationType) {
+        PdfAnnotationEntity.TYPE_HIGHLIGHT,
+        PdfAnnotationEntity.TYPE_PAGE_NOTE,
+        -> isValidPdfAnnotationRect(left, top, right, bottom)
+        PdfAnnotationEntity.TYPE_TEXT_BOX -> isCompatibilityPreservedPdfTextBox()
+        else -> false
+    }
+
+private const val PDF_ANNOTATION_GEOMETRY_FILE = "pdf_annotation_geometry.json"
 
 private fun JSONArray?.toStringSet(): Set<String> {
     val array = this ?: return emptySet()

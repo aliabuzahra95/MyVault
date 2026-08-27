@@ -75,8 +75,7 @@ interface PdfAnnotationDao {
     @Query(
         """
         SELECT id FROM pdf_annotations
-        WHERE annotationType = 'text_box'
-           OR annotationType NOT IN ('highlight', 'page_note')
+        WHERE annotationType NOT IN ('highlight', 'page_note', 'text_box')
            OR (
                 annotationType = 'highlight'
                 AND (
@@ -86,14 +85,24 @@ interface PdfAnnotationDao {
                     OR bottom <= top
                     OR right - left < 0.5
                     OR bottom - top < 0.5
-                    OR (right <= 1.2 AND bottom <= 1.2)
                 )
            )
            OR (
                 annotationType = 'page_note'
                 AND (attachmentId = '' OR pageIndex < 0 OR noteText IS NULL OR TRIM(noteText) = '')
            )
+           OR (
+                annotationType = 'text_box'
+                AND (
+                    attachmentId = ''
+                    OR pageIndex < 0
+                    OR right <= left
+                    OR bottom <= top
+                    OR noteText IS NULL
+                    OR TRIM(noteText) = ''
+                )
+           )
         """,
     )
-    suspend fun getLegacyIncompatibleIds(): List<String>
+    suspend fun getGenuinelyInvalidIds(): List<String>
 }

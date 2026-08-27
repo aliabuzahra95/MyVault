@@ -118,6 +118,15 @@ fun VaultNavHost(
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    val currentAttachmentId = currentBackStackEntry?.arguments?.getString("attachmentId")
+    var attachmentViewerOwnsHeader by remember { mutableStateOf(true) }
+    LaunchedEffect(currentRoute, currentAttachmentId) {
+        if (currentRoute == VaultDestination.AttachmentViewer.route) {
+            // PDFs own the compact reader header. Start in that mode so the PDF
+            // renderer never mounts beneath the shell's legacy menu band.
+            attachmentViewerOwnsHeader = true
+        }
+    }
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
     var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
     var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -318,14 +327,15 @@ fun VaultNavHost(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
-            ) ||
+            ) || (currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) ||
                 (currentRoute == VaultDestination.Home.route &&
                     rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library)),
             menuVisible = currentRoute !in setOf(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
-            ) && !corpusSearchActive,
+            ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
+                !corpusSearchActive,
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -1176,12 +1186,20 @@ fun VaultNavHost(
             val resolvedInitialPageIndex by viewModel.resolvedInitialPageIndex.collectAsStateWithLifecycle()
             val pdfProgress by viewModel.pdfProgress.collectAsStateWithLifecycle()
             val pdfAnnotations by viewModel.pdfAnnotations.collectAsStateWithLifecycle()
+            val pdfAnnotationSegments by viewModel.pdfAnnotationSegments.collectAsStateWithLifecycle()
+            val studyNotes by viewModel.studyNotes.collectAsStateWithLifecycle()
+            val pdfReferences by viewModel.pdfReferences.collectAsStateWithLifecycle()
+            val pdfAnnotationTags by viewModel.annotationTags.collectAsStateWithLifecycle()
             val documentText by viewModel.documentText.collectAsStateWithLifecycle()
             val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
             AttachmentViewerScreen(
                 attachment = attachment,
                 pdfProgress = pdfProgress,
                 pdfAnnotations = pdfAnnotations,
+                pdfAnnotationSegments = pdfAnnotationSegments,
+                studyNotes = studyNotes,
+                pdfReferences = pdfReferences,
+                pdfAnnotationTags = pdfAnnotationTags,
                 documentText = documentText.text,
                 documentTextLoading = documentText.isLoading,
                 documentTextError = documentText.error,
@@ -1191,9 +1209,12 @@ fun VaultNavHost(
                 azureNarrationProgress = azureNarrationProgress,
                 initialPageIndex = resolvedInitialPageIndex,
                 onBackClick = { navController.popBackStack() },
+                onMenuClick = onOpenNavigation,
+                onOwnHeaderChanged = { attachmentViewerOwnsHeader = it },
                 onPdfProgressChanged = viewModel::updatePdfProgress,
                 onPdfFirstLoaded = viewModel::loadPdfSecondaryData,
                 onAddPdfHighlight = viewModel::addPdfHighlight,
+                onAddPdfSelectedTextAnnotation = viewModel::addPdfSelectedTextAnnotation,
                 onUpdatePdfHighlightColor = viewModel::updatePdfHighlightColor,
                 onUpdatePdfAnnotationNote = viewModel::updatePdfAnnotationNote,
                 onAddPdfPageNote = viewModel::addPdfPageNote,
@@ -1201,6 +1222,16 @@ fun VaultNavHost(
                 onUpdatePdfTextBox = viewModel::updatePdfTextBox,
                 onUpdatePdfTextBoxBounds = viewModel::updatePdfTextBoxBounds,
                 onDeletePdfAnnotation = viewModel::deletePdfAnnotation,
+                onAddPdfAnnotationTag = viewModel::addAnnotationTag,
+                onRemovePdfAnnotationTag = viewModel::removeAnnotationTag,
+                onLinkPdfAnnotationToStudyNote = viewModel::linkAnnotationToStudyNote,
+                onCreateStudyNoteFromPdfAnnotation = viewModel::createStudyNoteFromAnnotation,
+                onOpenStudyNote = { noteId ->
+                    navController.navigate(VaultDestination.Reading.route(noteId))
+                },
+                onStartDevicePdfNarration = viewModel::startDeviceNarration,
+                onStartOpenAiPdfNarration = viewModel::startOpenAiNarration,
+                onStartAzurePdfNarration = viewModel::startAzureNarration,
                 onDeleteAttachment = {
                     viewModel.deleteAttachment {
                         Toast.makeText(context, "Attachment deleted", Toast.LENGTH_SHORT).show()

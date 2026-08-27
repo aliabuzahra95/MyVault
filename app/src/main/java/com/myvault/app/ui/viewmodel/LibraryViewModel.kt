@@ -332,7 +332,7 @@ class LibraryViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            pdfAnnotationRepository.cleanupLegacyIncompatibleAnnotations()
+            pdfAnnotationRepository.cleanupGenuinelyInvalidAnnotations()
         }
         viewModelScope.launch {
             liveUiState.collect { state ->

@@ -1,0 +1,108 @@
+MyVault Stage 5 PDF Runtime Fixture
+
+Page and selection verification document
+
+This document exists only to verify the production PDF reader. It contains
+selectable text, multiple lines, and enough content to flow across pages.
+
+Section 1 - Selection geometry
+
+Genuine PDF text selection must preserve every selected line as one logical
+annotation while retaining ordered page-aware rectangles for rendering.
+
+The first compatibility rectangle remains available to older clients, while
+new Android versions retain the complete selection geometry additively.
+
+Historic annotations must remain intact when the reader opens and closes.
+
+Line 01: The reader keeps selectable text anchored to the source document.
+Line 02: Highlight colours change one logical annotation, not its fragments.
+Line 03: Notes, tags, and Study links remain attached to the parent record.
+Line 04: Drawing remains distinct from genuine selected-text highlighting.
+Line 05: Opening Explorer must not recreate or blank the PDF renderer.
+Line 06: Immersive mode hides chrome without moving the document position.
+Line 07: The compact page counter opens the page-jump sheet.
+Line 08: Page notes remain separate from selected-text notes.
+Line 09: Activity filters use real persisted production data.
+Line 10: White PDF paper remains unchanged in Light, Dark, and OLED themes.
+Line 11: Zoom and pan must not detach annotations from their source text.
+Line 12: Reopening the document must restore reading progress safely.
+Line 13: Native selection and custom actions must coexist with scrolling.
+Line 14: The reader must preserve links and file identity.
+Line 15: Backup extensions remain optional for older clients.
+Line 16: Invalid extension geometry falls back to the parent rectangle.
+Line 17: Historic text boxes are preserved even when creation is hidden.
+Line 18: No viewer initialization may delete compatibility records.
+Line 19: Narration uses existing production providers and playback state.
+Line 20: The global mini-player remains unchanged by the PDF reader port.
+Line 21: Selected text can create a linked Study note.
+Line 22: Existing Study notes can be linked from annotation actions.
+Line 23: Annotation tags remain distinct from attachment tags.
+Line 24: Current-page activity remains a secondary surface.
+Line 25: File-management actions remain owned by Library.
+Line 26: Continuous vertical pages remain native to AndroidX PDF.
+Line 27: Loading and unavailable states remain truthful.
+Line 28: Multi-line selection must remain one logical annotation.
+Line 29: Ordered segments must survive save and reopen.
+Line 30: Deleting the parent removes all child segments.
+
+Section 2 - Repeated navigation
+
+The second section provides additional content so the document spans several
+pages and can verify middle-page and last-page navigation.
+
+Line 31: Page navigation rejects zero and values beyond the page count.
+Line 32: A valid middle page scrolls to the requested destination.
+Line 33: Returning from PDF Activity preserves the selected annotation target.
+Line 34: Explorer opening changes available width without remounting content.
+Line 35: Closing Explorer restores width without a white renderer flash.
+Line 36: Theme changes preserve annotation and page state.
+Line 37: Annotation note text remains available in Activity search.
+Line 38: Draw highlights remain correctly positioned after a relaunch.
+Line 39: Selection rectangles remain ordered across wrapped lines.
+Line 40: Cross-page selections remain page-aware when AndroidX supplies them.
+Line 41: Copy uses actual renderer-selected text rather than OCR.
+Line 42: The Note action quotes the actual selected text.
+Line 43: Listen from here receives the renderer selection text.
+Line 44: Page notes do not fabricate selected-text context.
+Line 45: The annotation count reflects real current-page data.
+Line 46: The activity destination remains contextual, not a permanent rail.
+Line 47: Reader overflow remains compact and restrained.
+Line 48: Save to device and Delete remain outside reader chrome.
+Line 49: PDF content is never inverted for OLED.
+Line 50: The surrounding OLED canvas remains true black.
+Line 51: Dark mode remains visually distinct from OLED.
+Line 52: Light mode uses the shared cool MyVault application canvas.
+Line 53: Selection controls remain legible over white PDF paper.
+Line 54: Bottom sheets retain modal focus and system insets.
+Line 55: Back exits immersive mode before leaving the document.
+Line 56: Unclaimed single taps reveal hidden chrome.
+Line 57: Drawing and links must not trigger chrome reveal accidentally.
+Line 58: Zoom gestures remain owned by the native renderer.
+Line 59: TalkBack labels identify reader controls clearly.
+Line 60: No mock or fabricated annotation data is shown.
+
+Section 3 - Final page
+
+The final page verifies last-page navigation, long scrolling, and persistence.
+
+Line 61: Last-page navigation reaches this section.
+Line 62: Reading progress records the current page and total count.
+Line 63: Reopening returns to the stored page where production supports it.
+Line 64: Existing attachment identity remains unchanged.
+Line 65: Existing annotation IDs remain unchanged.
+Line 66: Existing relationship IDs remain unchanged.
+Line 67: Room migration remains additive and non-destructive.
+Line 68: Legacy annotations need no bulk rewrite.
+Line 69: New annotations retain a valid representative legacy rectangle.
+Line 70: Complete geometry remains in ordered child segment rows.
+Line 71: Selected text is optional for draw and legacy annotations.
+Line 72: Selected text comes directly from AndroidX selection.
+Line 73: Malformed child data cannot delete the logical parent.
+Line 74: Backup restore ignores malformed extensions safely.
+Line 75: Older clients can ignore the additive geometry file.
+Line 76: Web parsing remains compatible with the legacy annotation file.
+Line 77: Full destructive backup restore remains reserved for Stage 10.
+Line 78: Stage 5 changes do not begin Courses work.
+Line 79: The frozen PDF design remains the visual authority.
+Line 80: This final line marks the end of the runtime fixture.

@@ -1,0 +1,35 @@
+MyVault Stage 5 PDF Reader Verification
+
+This document exists only to verify the production PDF reader on the isolated emulator.
+The first paragraph spans several visual lines so that a selected-text highlight can be checked across multiple line rectangles without collapsing into one oversized bounding box.
+
+English and Arabic mixed direction check:
+Knowledge is preserved through careful reading. العلم النافع يحتاج إلى فهم وتدبر.
+
+Reader behavior checklist:
+- Continuous vertical scrolling
+- Pinch zoom and pan
+- Exact selected-text copy
+- Multi-line highlight geometry
+- Notes, tags, and Study links
+- Page activity and navigation
+
+Second section
+
+The geometry on this page should remain anchored when the viewport width changes, when the Explorer opens and closes, and when the user returns from another document.
+
+Repeated text for scrolling verification.
+Line 01: The reader should remain responsive and stable.
+Line 02: The toolbar must not remount the PDF document.
+Line 03: Highlights should stay attached to selected text.
+Line 04: Page notes should remain distinct from text notes.
+Line 05: Historic text boxes remain visible but read-only.
+Line 06: Activity entries navigate to the correct page.
+Line 07: Search and filters operate on real annotation data.
+Line 08: Dark and OLED themes retain a white PDF paper canvas.
+Line 09: Immersive mode restores chrome on a deliberate tap.
+Line 10: Reading progress resumes after reopening the document.
+
+Page break marker
+
+This final section gives the document enough content for vertical scrolling and page navigation. The implementation must preserve AndroidX PDF rendering, real text selection, zoom, and pan while replacing only the surrounding presentation.
