@@ -213,11 +213,23 @@ The canonical cross-stage deferred list remains
 
 ### Stage 4 blockers
 
-1. Note export and version history.
-2. Backlinks, knowledge tags, source references, and note links.
-3. Tables, child notes/subnotes, attachments, favorite, and advanced block tools.
-4. Narration and formatting-provider actions not represented in the frozen
-   editor chrome.
+The complete pre-Stage-4 audit is recorded in
+`docs/STAGE_4_EDITOR_AMENDMENT.md`. Stage 4 remains blocked pending approval of:
+
+1. metadata placement for timestamps and word/character counts;
+2. Frozen Quote and Clear-formatting controls whose exact visible production
+   commands/semantics do not currently exist;
+3. separate URL-link and structured note-link presentation;
+4. tables, attachments and their document-canvas anatomy;
+5. backlinks, knowledge tags and PDF source references;
+6. Pin, Favourite and Delete placement in the restrained Note overflow;
+7. version history/restore and TXT/PDF export surfaces;
+8. narration entry, provider selection, active-sentence/follow state and its
+   still-deferred global mini-player dependency;
+9. Structure Only, Intelligent Structure and formatting-result actions without
+   restoring the unfrozen floating AI pill;
+10. retained dormant Checklist/Divider and CleanFormat/FormatNote engine
+    compatibility without inventing new visible controls.
 
 ### Stage 5 blockers
 
@@ -368,6 +380,10 @@ Expected production files:
 - shared editor chrome/sheets and tests
 
 Frozen references: 14-17.
+
+Pre-stage audit: `docs/STAGE_4_EDITOR_AMENDMENT.md` inventories 63 production
+capabilities. No Stage 4 presentation implementation may begin until its action
+hierarchy and explicit conflicts are approved.
 
 Preserve: rich text and style marks, selection, undo/redo, blocks, tables,
 attachments, links, tags, versions, export, narration, formatting, autosave, and
