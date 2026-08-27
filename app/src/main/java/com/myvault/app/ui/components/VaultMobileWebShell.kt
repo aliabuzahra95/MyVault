@@ -134,6 +134,7 @@ fun VaultMobileWebShell(
     onExplorerAddSelected: (Int, VaultMobileWebExplorerNode?) -> Unit = { _, _ -> },
     onExplorerMoreSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
     contentStartsInMenuBar: Boolean = false,
+    menuVisible: Boolean = true,
     content: @Composable (onOpenNavigation: () -> Unit) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -326,13 +327,15 @@ fun VaultMobileWebShell(
                     .statusBarsPadding(),
             ) {
                 content { scope.launch { drawerState.open() } }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .padding(horizontal = 12.dp),
-                    content = menuButton,
-                )
+                if (menuVisible) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .padding(horizontal = 12.dp),
+                        content = menuButton,
+                    )
+                }
             }
         } else {
             Column(

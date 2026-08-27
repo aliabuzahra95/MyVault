@@ -131,6 +131,7 @@ fun VaultNavHost(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var explorerActionTarget by remember { mutableStateOf<ExplorerActionTarget?>(null) }
+    var corpusSearchActive by remember { mutableStateOf(false) }
 
     LaunchedEffect(preferences.workspace, libraryViewModel) {
         libraryViewModel.setLibraryMode(
@@ -302,6 +303,7 @@ fun VaultNavHost(
             contentStartsInMenuBar = currentRoute == VaultDestination.Settings.route ||
                 (currentRoute == VaultDestination.Home.route &&
                     rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Study, VaultRootMode.Library)),
+            menuVisible = currentRoute != VaultDestination.Settings.route && !corpusSearchActive,
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -390,6 +392,7 @@ fun VaultNavHost(
                 studyContent = {
                     HomeScreen(
                         uiState = studyState,
+                        onCorpusSearchActiveChange = { corpusSearchActive = it },
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
@@ -594,6 +597,7 @@ fun VaultNavHost(
                 libraryContent = {
                     LibraryScreen(
                         uiState = libraryState,
+                        onCorpusSearchActiveChange = { corpusSearchActive = it },
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = ::switchWorkspace,
@@ -671,6 +675,7 @@ fun VaultNavHost(
                 personalContent = {
                     HomeScreen(
                         uiState = personalState,
+                        onCorpusSearchActiveChange = { corpusSearchActive = it },
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
@@ -763,6 +768,7 @@ fun VaultNavHost(
                 personalLibraryContent = {
                     LibraryScreen(
                         uiState = libraryState,
+                        onCorpusSearchActiveChange = { corpusSearchActive = it },
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = ::switchWorkspace,

@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.automirrored.rounded.NoteAdd
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Audiotrack
@@ -77,6 +78,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +98,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
@@ -115,6 +119,7 @@ import com.myvault.app.ui.components.CorpusHeader
 import com.myvault.app.ui.components.CorpusLeafRow
 import com.myvault.app.ui.components.CorpusPinnedItem
 import com.myvault.app.ui.components.CorpusPinnedStrip
+import com.myvault.app.ui.components.CorpusSearchSummary
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenuExpansion
@@ -183,6 +188,7 @@ fun HomeScreen(
     dashboardFontSizeSp: Float = 14f,
     currentFolderMode: String = FOLDER_MODE_STUDY,
     fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
+    onCorpusSearchActiveChange: (Boolean) -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
     BackHandler(enabled = uiState.searchQuery.isNotBlank()) {
@@ -217,6 +223,12 @@ fun HomeScreen(
     var stickyNoteDialogOpen by remember { mutableStateOf(false) }
     var stickyNoteInput by remember { mutableStateOf("") }
     var studySearchOpen by rememberSaveable { mutableStateOf(uiState.searchQuery.isNotBlank()) }
+    LaunchedEffect(studySearchOpen) {
+        onCorpusSearchActiveChange(studySearchOpen)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onCorpusSearchActiveChange(false) }
+    }
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var manageMenuOpen by remember { mutableStateOf(false) }
     var manageRenameFolderOpen by remember { mutableStateOf(false) }
@@ -263,6 +275,7 @@ fun HomeScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .zIndex(if (studySearchOpen) 1f else 0f)
             .background(colors.bg),
     ) {
         StudyMobileWebContent(
@@ -305,7 +318,7 @@ fun HomeScreen(
                 onClick = { studyCreateMenuOpen = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 14.dp, bottom = fabBottomPadding),
+                    .padding(end = 16.dp, bottom = if (fabBottomPadding < 18.dp) 18.dp else fabBottomPadding),
             )
         }
     }
@@ -917,15 +930,19 @@ private fun StudyMobileWebContent(
         uiState.workspace.flatMap { it.flattenNotes() }.distinctBy { it.id }
     }
     val pinnedNotes = remember(allNotes) { allNotes.filter { it.pinned }.take(3) }
-    val visibleWorkspace = remember(displayedWorkspace, searchQuery) {
-        displayedWorkspace.filterStudyTree(searchQuery)
-    }
     val searching = searchQuery.isNotBlank()
+    val matchingFolders = remember(allFolders, searchQuery) {
+        if (!searching) emptyList() else allFolders.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+    val matchingNotes = remember(allNotes, searchQuery) {
+        if (!searching) emptyList() else allNotes.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
 
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
+            .zIndex(if (searchOpen) 1f else 0f)
             .background(colors.bg),
         contentPadding = PaddingValues(
             start = 14.dp,
@@ -963,7 +980,9 @@ private fun StudyMobileWebContent(
         if (pinnedNotes.isNotEmpty() && !searching) {
             item(key = "corpus_study_pinned") {
                 CorpusPinnedStrip(
-                    items = pinnedNotes.map { CorpusPinnedItem(it.id, it.name) },
+                    items = pinnedNotes.map { note ->
+                        CorpusPinnedItem(note.id, note.name, uiState.workspace.parentFolderName(note.id))
+                    },
                     onClick = onOpenNote,
                     onLongPress = { id -> allNotes.firstOrNull { it.id == id }?.let(onMore) },
                     modifier = Modifier.padding(bottom = 10.dp),
@@ -971,20 +990,59 @@ private fun StudyMobileWebContent(
             }
         }
 
-        if (visibleWorkspace.isEmpty()) {
+        if (searching && matchingFolders.isEmpty() && matchingNotes.isEmpty()) {
             item(key = "corpus_study_empty") {
                 CorpusEmptyState(
                     icon = Icons.Rounded.FolderOpen,
-                    title = if (searching) "No matching notes or folders" else "No study items yet",
+                    title = "No matching notes or folders",
+                )
+            }
+        } else if (searching) {
+            item(key = "corpus_study_search_results") {
+                Column {
+                    val resultLabel = when {
+                        matchingFolders.isEmpty() -> "${matchingNotes.size} ${if (matchingNotes.size == 1) "note" else "notes"}"
+                        matchingNotes.isEmpty() -> "${matchingFolders.size} ${if (matchingFolders.size == 1) "folder" else "folders"}"
+                        else -> "${matchingFolders.size + matchingNotes.size} results"
+                    }
+                    CorpusSearchSummary(resultLabel = resultLabel, contextLabel = "in Study")
+                    matchingFolders.forEach { folder ->
+                        CorpusFolderRow(
+                            title = folder.name,
+                            count = folder.count.takeIf { it > 0 } ?: folder.children.size,
+                            expanded = false,
+                            onToggle = { onToggleFolder(folder) },
+                            onLongPress = { onMore(folder) },
+                            onAdd = null,
+                        )
+                    }
+                    matchingNotes.forEach { note ->
+                        CorpusLeafRow(
+                            title = note.name,
+                            icon = Icons.Outlined.Description,
+                            onClick = { onOpenNote(note.id) },
+                            onLongPress = { onMore(note) },
+                            pinned = note.pinned,
+                            attachmentCount = note.attachmentCount,
+                            showFullTitle = uiState.showFullNoteTitles,
+                        )
+                    }
+                }
+            }
+        } else if (displayedWorkspace.isEmpty()) {
+            item(key = "corpus_study_empty") {
+                CorpusEmptyState(
+                    icon = Icons.Rounded.FolderOpen,
+                    title = "No study items yet",
                 )
             }
         } else {
             item(key = "corpus_study_tree") {
                 Column {
-                    visibleWorkspace.forEach { item ->
+                    displayedWorkspace.forEach { item ->
                         StudyCorpusItem(
                             item = item,
-                            searching = searching,
+                            searching = false,
                             isFolderExpanded = isFolderExpanded,
                             onToggleFolder = onToggleFolder,
                             onCreateInside = onCreateInside,
@@ -1014,11 +1072,11 @@ private fun StudyCorpusItem(
         val expanded = searching || isFolderExpanded(item.id)
         CorpusFolderRow(
             title = item.name,
-            count = item.children.size,
+            count = item.count.takeIf { it > 0 } ?: item.children.size,
             expanded = expanded,
             onToggle = { onToggleFolder(item) },
             onLongPress = { onMore(item) },
-            onAdd = { onCreateInside(item) },
+            onAdd = null,
         )
         if (expanded) {
             item.children.forEach { child ->
@@ -1037,7 +1095,7 @@ private fun StudyCorpusItem(
     } else {
         CorpusLeafRow(
             title = item.name,
-            icon = Icons.Rounded.Description,
+            icon = Icons.Outlined.Description,
             onClick = { onOpenNote(item.id) },
             onLongPress = { onMore(item) },
             pinned = item.pinned,
@@ -1769,6 +1827,16 @@ private fun VaultTreeItem.flattenFolders(): List<VaultTreeItem> =
     } else {
         emptyList()
     }
+
+private fun List<VaultTreeItem>.parentFolderName(itemId: String): String? {
+    forEach { folder ->
+        if (folder.type == VaultTreeItemType.Folder) {
+            if (folder.children.any { it.id == itemId }) return folder.name
+            folder.children.parentFolderName(itemId)?.let { return it }
+        }
+    }
+    return null
+}
 
 private fun List<VaultTreeItem>.selectedTreeItems(selectedItemIds: Map<String, Boolean>): List<VaultTreeItem> {
     val selected = mutableListOf<VaultTreeItem>()

@@ -10,6 +10,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.DarkMode
@@ -63,6 +65,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -984,7 +987,19 @@ private fun FrozenThemeModeRow(
             Text(description, style = FrozenSettingsTypography.rowSubtitle, color = colors.textSecondary)
         }
         if (selected) {
-            Icon(Icons.Rounded.Verified, null, modifier = Modifier.size(16.dp), tint = colors.accent)
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .border(1.dp, colors.accent, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(10.dp),
+                    tint = colors.accent,
+                )
+            }
         }
     }
 }
@@ -1125,8 +1140,13 @@ private fun FrozenSettingsPage(
         ) {
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onNavigation, contentPadding = PaddingValues(6.dp)) {
-                        Icon(navigationIcon, navigationDescription, tint = colors.text)
+                    IconButton(onClick = onNavigation, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            navigationIcon,
+                            navigationDescription,
+                            modifier = Modifier.size(18.dp),
+                            tint = colors.text,
+                        )
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(title, style = FrozenSettingsTypography.pageTitle, color = colors.text)

@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -72,6 +73,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,6 +91,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.CompactActionGroup
 import com.myvault.app.ui.components.CompactPrimaryAction
@@ -103,6 +107,7 @@ import com.myvault.app.ui.components.CorpusHeader
 import com.myvault.app.ui.components.CorpusLeafRow
 import com.myvault.app.ui.components.CorpusPinnedItem
 import com.myvault.app.ui.components.CorpusPinnedStrip
+import com.myvault.app.ui.components.CorpusSearchSummary
 import com.myvault.app.ui.components.FloatingAction
 import com.myvault.app.ui.components.FloatingActionMenu
 import com.myvault.app.ui.components.FloatingActionMenuExpansion
@@ -172,6 +177,7 @@ fun LibraryScreen(
     onViewAllAnnotationsClick: () -> Unit = {},
     fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
     modifier: Modifier = Modifier,
+    onCorpusSearchActiveChange: (Boolean) -> Unit = {},
 ) {
     LibraryArchiveScreen(
         title = "Library",
@@ -222,6 +228,7 @@ fun LibraryScreen(
         onViewAllAnnotationsClick = onViewAllAnnotationsClick,
         fabBottomPadding = fabBottomPadding,
         modifier = modifier,
+        onCorpusSearchActiveChange = onCorpusSearchActiveChange,
     )
 }
 
@@ -361,6 +368,7 @@ private fun LibraryArchiveScreen(
     onViewAllAnnotationsClick: () -> Unit = {},
     fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
     modifier: Modifier = Modifier,
+    onCorpusSearchActiveChange: (Boolean) -> Unit = {},
 ) {
     val colors = VaultThemeTokens.colors
     var folderDialog by remember { mutableStateOf<LibraryFolderDialog?>(null) }
@@ -390,6 +398,12 @@ private fun LibraryArchiveScreen(
     var quickBackupConfirmOpen by remember { mutableStateOf(false) }
     var displayModeDialogOpen by remember { mutableStateOf(false) }
     var librarySearchOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(librarySearchOpen) {
+        onCorpusSearchActiveChange(librarySearchOpen)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onCorpusSearchActiveChange(false) }
+    }
     var librarySearchQuery by remember { mutableStateOf("") }
     var rootCreateMenuOpen by remember { mutableStateOf(false) }
     var folderCreateMenuOpen by remember { mutableStateOf(false) }
@@ -430,6 +444,7 @@ private fun LibraryArchiveScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .zIndex(if (librarySearchOpen) 1f else 0f)
             .background(colors.bg),
     ) {
         LazyColumn(
@@ -454,7 +469,9 @@ private fun LibraryArchiveScreen(
             if (uiState.pinnedFiles.isNotEmpty() && query.isBlank()) {
                 item(key = "corpus_library_pinned") {
                     CorpusPinnedStrip(
-                        items = uiState.pinnedFiles.take(3).map { CorpusPinnedItem(it.id, it.name) },
+                        items = uiState.pinnedFiles.take(3).map { file ->
+                            CorpusPinnedItem(file.id, file.name, allFolders.parentFolderName(file.id))
+                        },
                         onClick = onAttachmentClick,
                         onLongPress = { id ->
                             allFiles.firstOrNull { it.id == id }?.let {
@@ -475,6 +492,12 @@ private fun LibraryArchiveScreen(
                 } else {
                     item(key = "corpus_library_search_results") {
                         Column {
+                            val resultLabel = when {
+                                matchingFolders.isEmpty() -> "${matchingFiles.size} ${if (matchingFiles.size == 1) "file" else "files"}"
+                                matchingFiles.isEmpty() -> "${matchingFolders.size} ${if (matchingFolders.size == 1) "folder" else "folders"}"
+                                else -> "${matchingFolders.size + matchingFiles.size} results"
+                            }
+                            CorpusSearchSummary(resultLabel = resultLabel, contextLabel = "in Library")
                             matchingFolders.forEach { folderItem ->
                                 CorpusFolderRow(
                                     title = folderItem.name,
@@ -553,7 +576,7 @@ private fun LibraryArchiveScreen(
             onClick = { rootCreateMenuOpen = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 14.dp, bottom = fabBottomPadding),
+                .padding(end = 16.dp, bottom = if (fabBottomPadding < 18.dp) 18.dp else fabBottomPadding),
         )
     }
 
@@ -2381,7 +2404,7 @@ private fun LibraryCorpusFolderItem(
         expanded = expanded,
         onToggle = { onFolderExpandedChange(folder.id, !expanded) },
         onLongPress = { onFolderLongPress(folder) },
-        onAdd = { onFolderCreate(folder) },
+        onAdd = null,
     )
     if (expanded) {
         folder.children.forEach { child ->
@@ -2416,7 +2439,7 @@ private fun LibraryCorpusFileRow(
 ) {
     CorpusLeafRow(
         title = file.name,
-        icon = Icons.Rounded.InsertDriveFile,
+        icon = Icons.Outlined.Description,
         onClick = { onAttachmentClick(file.id) },
         onLongPress = onLongPress,
         pinned = file.pinned,
@@ -2426,6 +2449,14 @@ private fun LibraryCorpusFileRow(
 
 private fun LibraryFolderItem.flatten(): List<LibraryFolderItem> =
     listOf(this) + children.flatMap { it.flatten() }
+
+private fun List<LibraryFolderItem>.parentFolderName(fileId: String): String? {
+    forEach { folder ->
+        if (folder.files.any { it.id == fileId }) return folder.name
+        folder.children.parentFolderName(fileId)?.let { return it }
+    }
+    return null
+}
 
 private fun LibraryFolderItem.containsFolder(folderId: String): Boolean =
     id == folderId || children.any { it.containsFolder(folderId) }
