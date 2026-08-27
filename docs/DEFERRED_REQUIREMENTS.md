@@ -30,7 +30,16 @@ Frozen prototype directory remains read-only.
 | Note formatting-provider actions | Structure Only, Intelligent Structure and result actions use frozen secondary sheet; hidden actions remain unexposed | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Reading-to-edit double-tap | Preserved as invisible compatibility gesture alongside frozen Edit affordance | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | OpenAI note narration provider row | Existing `NarrationProvider.OpenAi` handler shown as the approved third restrained Listen provider | Stage 4 production-specific decision | **RESOLVED FOR STAGE 4** |
-| Advanced PDF functions | Existing production functionality preserved | Pre-Stage-5 placement decisions | **DEFERRED** |
+| PDF text selection and Copy | AndroidX selection is currently cleared/suppressed, while Frozen requires true selected text and Copy | Frozen technical/design decision before Stage 5 | **STOP-AND-ASK** |
+| Manual rectangle highlight vs selected-text highlight | Production Draw mode stores a rectangle without selected text; it is not equivalent to Frozen selection highlighting | Decide whether both interactions remain and where Draw lives | **STOP-AND-ASK** |
+| PDF text-box annotation lifecycle | UI/repository paths exist, but validation/cleanup reject `text_box` and overlay interaction is unreachable | Decide supported repair vs compatibility-safe deprecation | **STOP-AND-ASK** |
+| PDF Activity final internal design | Stage 2 preserves it as a secondary contextual destination | Frozen Stage 5 subpage amendment | **DEFERRED** |
+| PDF page notes and annotation actions | Existing page notes, colors, existing-highlight actions and count state are preserved | Frozen Stage 5 placement amendment | **DEFERRED** |
+| PDF annotation tags and linked Study-note actions | Existing distinct tag/link/create-note/reference workflows are preserved | Frozen Stage 5 placement amendment | **DEFERRED** |
+| PDF narration entry | Extraction/narration engine paths exist, but the PDF UI does not currently invoke them and Frozen has no entry | Explicit Stage 5 product/design decision | **DEFERRED** |
+| PDF Save to device and Delete placement | Existing handlers remain available in legacy viewer/Library contexts | Decide reader overflow vs Library-only | **DEFERRED** |
+| PDF page-jump and immersive triggers | Frozen states exist, but exact production triggers are not yet approved | Frozen Stage 5 interaction amendment | **DEFERRED** |
+| Full destructive backup/restore regression | Not required to close Stage 4; no backup representation changed | Mandatory Stage 10 Android/Web regression | **DEFERRED TO STAGE 10** |
 | Qur'an audio-download management | Existing contextual route preserved | Before Stage 7 | **DEFERRED** |
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |
 | Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |

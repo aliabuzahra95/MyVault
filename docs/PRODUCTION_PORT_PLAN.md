@@ -223,9 +223,18 @@ requirement.
 
 ### Stage 5 blockers
 
-1. PDF activity feed.
-2. Page notes, text boxes, annotation tags, and linked Study-note actions.
-3. PDF narration, extraction, export, replace, and delete placement.
+The complete pre-Stage-5 audit is recorded in
+`docs/STAGE_5_PDF_AMENDMENT.md`. Stage 5 implementation is not authorized.
+
+1. Frozen selected-text actions conflict with production suppression of native
+   PDF text selection; manual rectangle highlighting is not equivalent.
+2. Text-box repository/UI intent conflicts with validation, cleanup and an
+   unreachable overlay interaction handler.
+3. PDF Activity internal presentation is not frozen.
+4. Page notes, annotation colors/tags, referenced notes and linked Study-note
+   actions need final placement.
+5. PDF narration, Save to device, Delete, page-jump and immersive triggers need
+   explicit placement decisions.
 
 ### Stage 7 blockers
 
@@ -395,6 +404,14 @@ player occupies the layout; the player itself remains unchanged and deferred.
 No Room schema, repository contract, note serialization or backup-format change
 was introduced.
 
+Approved checkpoint: commit
+`f5a969728a327ebb36d0928216b36c298ea87630`, tag `stage-4-approved`.
+The real installed app passed a production-like long-note Reading/Editing smoke:
+long scrolling, IME/toolbar stability, save/reopen and cleanup of the isolated
+test note. The Note Reading Edit action still uses the narrowly scoped dynamic
+mini-player offset; final global mini-player design remains deferred. A full
+destructive backup/restore round trip remains mandatory for Stage 10.
+
 ### Stage 5 - PDF Reader
 
 Expected production files:
@@ -405,6 +422,12 @@ Expected production files:
 - shared PDF chrome/selection/annotation sheets and tests
 
 Frozen references: 18-22.
+
+Pre-stage audit: `docs/STAGE_5_PDF_AMENDMENT.md` inventories 55 production PDF
+capabilities/contracts. It identifies mandatory decisions for true text
+selection, manual rectangle highlighting, text-box lifecycle, PDF Activity,
+page-note/annotation actions, narration, file actions, page jump and immersive
+mode. This stage remains blocked pending a frozen PDF amendment.
 
 Preserve: renderer lifecycle, cached document, vertical scroll, zoom/pan,
 selection, highlights, geometry, annotations, progress, extraction, export,

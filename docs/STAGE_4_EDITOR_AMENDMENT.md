@@ -390,3 +390,11 @@ Reading `Scaffold`; no emulator-specific coordinate is stored.
 
 Full destructive backup/restore round-trip verification remains mandatory in
 Stage 10.
+
+Stage 4 was finally approved at commit
+`f5a969728a327ebb36d0928216b36c298ea87630` and frozen with tag
+`stage-4-approved`. A production-like long-note smoke verified Reading scroll,
+Editing scroll, IME/formatting-toolbar stability, save/reopen, and normal
+navigation. The isolated smoke-test note was then permanently removed through
+the production Recently Deleted flow. No additional source change was required
+to freeze the checkpoint.
