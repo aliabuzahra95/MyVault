@@ -70,6 +70,26 @@ Frozen prototype directory remains read-only.
 | Memorise canonical repeat modes | 3x, 5x, 10x, and Until Stopped engines remain unreachable after Stage 7 | Explicit future placement or dormant decision | **DEFERRED ENGINE-ONLY** |
 | Memorise active-session backup | Live recording/conceal/analysis state remains transient; records and attempts remain backed up | Full destructive Android/Web round trip in Stage 10 | **RESOLVED DEVICE-LOCAL MAPPING; STAGE 10 REGRESSION OPEN** |
 
+## Pre-Stage 9 Real-Device Audit Additions
+
+The complete 29-item classification and evidence are frozen production-side in
+`docs/STAGE_9_REFINEMENT_PLAN.md`. The following newly observed items were not
+previously explicit rows in this register:
+
+| Requirement | Preservation / evidence | Resolution gate | Status |
+|---|---|---|---|
+| Qur'an Tafsir dismissal | Current inline expansion can make dismissal unreachable; Frozen amendment already specifies a Tafsir sheet | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
+| Qur'an reciter synchronization | One selected-reciter state exists, but asynchronous playback replacement can allow delayed/stale reciter use | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
+| Qur'an Surah picker typography | Existing English/Arabic/metadata values are undersized on a real device | Restrained token adjustment and viewport verification | **DIRECT CONSISTENCY REFINEMENT** |
+| Note attachments in Reading mode | Attachment state exists but document-flow rows are omitted despite the Frozen Editor contract | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
+| Note attachment domination in Edit mode | Focus-dependent large previews destabilize body layout | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
+| Editor paragraph token | Full `Paragraph` label consumes excessive toolbar width | Compact `P`/heading token refinement | **DIRECT CONSISTENCY REFINEMENT** |
+| Editor toolbar spacing | Visible item padding is too loose on phone widths | Compact spacing with preserved invisible hit targets | **DIRECT CONSISTENCY REFINEMENT** |
+| Global directional route motion | Frozen motion contract does not define whole-route forward/reverse slides | Dedicated Frozen motion amendment | **REQUIRES FROZEN AMENDMENT** |
+| PDF current-page annotation typography | Excerpts/metadata are too small on a real device | Restrained token adjustment | **DIRECT CONSISTENCY REFINEMENT** |
+| PDF annotation type distinction | Existing type data/icons need a clearer semantic mapping and highlight colour cue | Existing Frozen row-language refinement | **DIRECT CONSISTENCY REFINEMENT** |
+| Google Drive debug OAuth | Local debug SHA exists; checked-in Google services config has no Android OAuth entry | Separate OAuth configuration; Stage 10 uses correctly signed/configured build | **STAGE 10 / COMPATIBILITY** |
+
 ## Resolved Stage 6 Course Decisions
 
 | Requirement | Approved production mapping | Status |

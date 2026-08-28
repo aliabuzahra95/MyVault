@@ -642,3 +642,18 @@ explicit design amendment exists.
 Stage 1, Global Shell and Explorer, is authorized with these amendments. Stage
 2 and every unresolved later-stage feature remain unauthorized. The frozen
 prototype directory remains read-only.
+
+## 15. Pre-Stage 9 Refinement Gate
+
+Stage 8 is approved at
+`33730fca22a37020a8aee07b991f03a670d98b17` and protected by the pushed
+`stage-8-approved` tag. The documentation-only real-device refinement audit is
+recorded in `docs/STAGE_9_REFINEMENT_PLAN.md`.
+
+The audit identifies 29 active requirements: five direct functional fixes,
+seven direct consistency refinements, ten items requiring a Frozen amendment,
+and seven Stage 10/compatibility items. Stage 9 implementation remains blocked
+until the user authorizes a specific batch. Global Search, global route motion,
+the primary PDF Draw Highlight workflow, the persistent PDF annotation pill,
+Dashboard, final utility destinations, outgoing Share, and the global narration
+mini-player may not be implemented without their required amendments.
