@@ -1,18 +1,14 @@
 package com.myvault.app.ui.screens
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -93,9 +89,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -112,11 +106,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
-import com.myvault.app.data.repository.kindLabel
-import com.myvault.app.data.repository.sizeLabel
 import com.myvault.app.data.repository.SourceReferenceCard
 import com.myvault.app.data.repository.toRelativeTime
-import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.EditorTool
 import com.myvault.app.ui.components.EditorToolbar
 import com.myvault.app.ui.components.IconBtn
@@ -136,13 +127,10 @@ import com.myvault.app.data.formatting.NoteFormattingUiState
 import com.myvault.app.ui.viewmodel.NoteUiState
 import com.myvault.app.ui.viewmodel.NoteTableUiState
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.text.NumberFormat
 
 @OptIn(FlowPreview::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -933,7 +921,7 @@ fun EditorScreen(
                         }
                     }
 
-                    if (!bodyFocused && (uiState.attachmentsLoading || uiState.attachments.isNotEmpty())) {
+                    if (uiState.attachmentsLoading || uiState.attachments.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(VaultSpacing.md))
                         EditorAttachmentPreviewSection(
                             attachments = uiState.attachments,
@@ -2550,35 +2538,20 @@ private fun EditorAttachmentPreviewSection(
     onAttachmentClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
         Text(
             text = "Attachments",
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
             color = VaultThemeTokens.colors.textMuted,
         )
-        Crossfade(
-            targetState = attachments,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-            label = "editorAttachmentsHydration",
-        ) { hydratedAttachments ->
-            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                if (loading && hydratedAttachments.isEmpty()) {
-                    EditorAttachmentHydrationPlaceholder(count = attachmentCount)
-                } else {
-                    hydratedAttachments.forEach { attachment ->
-                        when {
-                            attachment.mimeType.startsWith("image/") -> {
-                                EditorImageAttachmentPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
-                            }
-                            attachment.mimeType == "application/pdf" -> {
-                                EditorPdfAttachmentPreview(attachment = attachment, onClick = { onAttachmentClick(attachment.id) })
-                            }
-                            else -> {
-                                EditorAttachmentRow(attachment, onClick = { onAttachmentClick(attachment.id) })
-                            }
-                        }
-                    }
-                }
+        if (loading && attachments.isEmpty()) {
+            EditorAttachmentHydrationPlaceholder(count = attachmentCount)
+        } else {
+            attachments.forEach { attachment ->
+                AttachmentSheetRow(
+                    attachment = attachment,
+                    onClick = { onAttachmentClick(attachment.id) },
+                )
             }
         }
     }
@@ -2621,117 +2594,6 @@ private fun EditorAttachmentHydrationPlaceholder(count: Int) {
         }
     }
 }
-
-@Composable
-private fun EditorImageAttachmentPreview(attachment: AttachmentEntity, onClick: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    val bitmap by androidx.compose.runtime.produceState<Bitmap?>(null, attachment.localPath) {
-        value = withContext(Dispatchers.IO) { decodeEditorPreviewBitmap(attachment.localPath, maxSize = 1400) }
-    }
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = VaultShapes.lg,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-            val loadedBitmap = bitmap
-            if (loadedBitmap != null) {
-                Image(
-                    bitmap = loadedBitmap.asImageBitmap(),
-                    contentDescription = attachment.fileName,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp, max = 320.dp),
-                    contentScale = ContentScale.Fit,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AttachmentThumbnail(mimeType = attachment.mimeType, localPath = attachment.localPath, kind = attachment.kindLabel(), size = 48.dp)
-                }
-            }
-            AttachmentPreviewCaption(attachment)
-        }
-    }
-}
-
-@Composable
-private fun EditorPdfAttachmentPreview(attachment: AttachmentEntity, onClick: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = VaultShapes.lg,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AttachmentThumbnail(mimeType = attachment.mimeType, localPath = attachment.localPath, kind = attachment.kindLabel(), size = 88.dp)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(attachment.fileName, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700), color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${attachment.sizeLabel()} · PDF preview", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-                Text("Tap to open", style = MaterialTheme.typography.labelSmall, color = colors.accent)
-            }
-        }
-    }
-}
-
-@Composable
-private fun AttachmentPreviewCaption(attachment: AttachmentEntity) {
-    val colors = VaultThemeTokens.colors
-    Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
-        Text(attachment.fileName, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700), color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${attachment.sizeLabel()} · Tap to open", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-    }
-}
-
-@Composable
-private fun EditorAttachmentRow(attachment: AttachmentEntity, onClick: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        ) {
-            AttachmentThumbnail(mimeType = attachment.mimeType, localPath = attachment.localPath, kind = attachment.kindLabel(), size = 34.dp)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(attachment.fileName, style = MaterialTheme.typography.bodyMedium, color = colors.text)
-                Text("${attachment.sizeLabel()} · ${attachment.kindLabel()}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-            }
-        }
-    }
-}
-
-private fun decodeEditorPreviewBitmap(localPath: String, maxSize: Int): Bitmap? =
-    runCatching {
-        val file = File(localPath)
-        if (!file.exists()) return@runCatching null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-        var sampleSize = 1
-        while (bounds.outWidth / sampleSize > maxSize || bounds.outHeight / sampleSize > maxSize) {
-            sampleSize *= 2
-        }
-        BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sampleSize })
-    }.getOrNull()
 
 private fun NoteFormattingProvider.noteFormattingModelLabel(fast: Boolean): String =
     when (this) {

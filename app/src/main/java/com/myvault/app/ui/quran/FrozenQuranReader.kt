@@ -1,16 +1,15 @@
 package com.myvault.app.ui.quran
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -172,18 +171,12 @@ internal fun FrozenQuranAyah(
     translationEnabled: Boolean,
     reflections: List<QuranReflectionItem>,
     isBookmarked: Boolean,
-    tafsir: String,
-    tafsirSources: List<TafsirSourceUiModel>,
-    selectedTafsirSourceId: Int,
-    isTafsirExpanded: Boolean,
-    isTafsirLoading: Boolean,
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
     onSelect: () -> Unit,
     onDoubleClick: () -> Unit,
     onListen: () -> Unit,
     onToggleTafsir: () -> Unit,
-    onSelectTafsirSource: (Int) -> Unit,
     onReflect: () -> Unit,
     onEditReflection: (QuranReflectionItem) -> Unit,
     onCopy: () -> Unit,
@@ -275,21 +268,6 @@ internal fun FrozenQuranAyah(
                     )
                 }
             }
-        }
-
-        AnimatedVisibility(
-            visible = isTafsirExpanded,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-        ) {
-            FrozenTafsir(
-                tafsir = tafsir,
-                sources = tafsirSources,
-                selectedSourceId = selectedTafsirSourceId,
-                loading = isTafsirLoading,
-                onSelectSource = onSelectTafsirSource,
-                onRetry = onToggleTafsir,
-            )
         }
 
         if (selected) {
@@ -386,49 +364,98 @@ private fun FrozenTranslation(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FrozenTafsir(
+internal fun QuranTafsirSheet(
+    ayah: QuranAyah?,
     tafsir: String,
     sources: List<TafsirSourceUiModel>,
     selectedSourceId: Int,
     loading: Boolean,
     onSelectSource: (Int) -> Unit,
+    onDismiss: () -> Unit,
     onRetry: () -> Unit,
 ) {
+    if (ayah == null) return
     val colors = VaultThemeTokens.colors
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = colors.bg,
+        contentColor = colors.text,
+        scrimColor = colors.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = null,
     ) {
-        Text("TAFSIR", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.textMuted)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(sources, key = { it.id }) { source ->
-                val selected = source.id == selectedSourceId
-                Text(
-                    text = source.name,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700),
-                    color = if (selected) colors.accent else colors.textSecondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selected) colors.accentSoft else colors.surface)
-                        .border(1.dp, if (selected) colors.accentBorder else colors.border, RoundedCornerShape(999.dp))
-                        .clickable { onSelectSource(source.id) }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Tafsir", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W800), color = colors.text)
+                    Text("Ayah ${ayah.ayahNumber}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                }
+                FrozenQuranIconButton(Icons.Rounded.Close, "Close Tafsir", onDismiss)
             }
-        }
-        when {
-            loading -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.5.dp, color = colors.accent)
-                Text("Loading tafsir...", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = colors.surface,
+                border = BorderStroke(1.dp, colors.border),
+                tonalElevation = 0.dp,
+            ) {
+                Column {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(sources, key = { it.id }) { source ->
+                            val selected = source.id == selectedSourceId
+                            Text(
+                                text = source.name,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700),
+                                color = if (selected) colors.accent else colors.textSecondary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(if (selected) colors.accentSoft else colors.bg)
+                                    .border(1.dp, if (selected) colors.accentBorder else colors.border, RoundedCornerShape(999.dp))
+                                    .clickable { onSelectSource(source.id) }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = colors.border.copy(alpha = 0.7f))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 560.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp),
+                    ) {
+                        when {
+                            loading -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.5.dp, color = colors.accent)
+                                Text("Loading tafsir...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                            }
+                            tafsir.isNotBlank() -> Text(
+                                tafsir,
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                                color = colors.textSecondary,
+                            )
+                            else -> Text(
+                                "Tafsir unavailable. Tap to retry.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.textSecondary,
+                                modifier = Modifier.clickable(onClick = onRetry),
+                            )
+                        }
+                    }
+                }
             }
-            tafsir.isNotBlank() -> Text(tafsir, style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp), color = colors.textSecondary)
-            else -> Text(
-                "Tafsir unavailable. Tap to retry.",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-                modifier = Modifier.clickable(onClick = onRetry),
-            )
         }
     }
 }

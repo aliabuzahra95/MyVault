@@ -16,7 +16,7 @@ Frozen prototype directory remains read-only.
 | Qur'an bookmark management and Save wording | Selected ayah uses Bookmark/Remove bookmark; reader overflow opens backed-up bookmark list | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Qur'an recent-location management | Reader overflow opens the real latest-five locations | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Qur'an translation footnotes | Maududi explanatory footnotes expand inline from real production content | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
-| Qur'an Tafsir source management | Reader settings and inline Tafsir surface use the production source list and states | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an Tafsir source management | Reader settings and the dismissible Tafsir sheet use the production source list and states | Frozen Qur'an amendment plus direct Stage 9 dismissal correction | **RESOLVED IN STAGE 7; DISMISSAL FIXED IN STAGE 9** |
 | Qur'an Surah picker filters/Juz grouping | Full-screen picker retains All/Meccan/Medinan and Juz grouping | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Qur'an reader-to-Memorise handoff | Selected ayah More -> Memorise from here hands the exact verse to the existing Memorise destination | Implemented from Frozen Qur'an amendment; detailed Memorise UI remains Stage 8 | **RESOLVED IN STAGE 7** |
 | Qur'an double-tap save-position gesture | Existing invisible gesture remains and updates the backed-up reading position | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
@@ -29,7 +29,7 @@ Frozen prototype directory remains read-only.
 | Clear-formatting command | Only proven `Clear selected colour` is exposed; no generic clear-all semantics | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | URL link vs structured note-link controls | Kept distinct as Add web link and Link to note under More Formatting | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Note tables and advanced block controls | Table uses frozen More Formatting/context surfaces; dormant Checklist/Divider stay engine-only | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
-| Note attachments management | Frozen Attachments sheet plus document-flow attachment presentation | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
+| Note attachments management | Frozen Attachments sheet plus compact document-flow rows in Reading and Editing | Frozen Editor amendment plus direct Stage 9 regression correction | **RESOLVED; READING/EDIT LAYOUT FIXED IN STAGE 9** |
 | Note knowledge surfaces | Tags, backlinks and PDF source references remain distinct in Knowledge & references | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Note version history / restore | Frozen Version history and restore-confirmation surfaces | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Note export | Frozen Export surface invokes existing TXT/PDF callbacks | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
@@ -53,9 +53,9 @@ Frozen prototype directory remains read-only.
 | Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |
 | PDF annotation/count pill refinement | Stage 5 production behavior remains intact | Later visual refinement pass | **DEFERRED REFINEMENT** |
 | Preset PDF highlight-colour workflow refinement | Stage 5 production behavior remains intact | Later visual refinement pass | **DEFERRED REFINEMENT** |
-| PDF Activity typography refinement | Stage 5 production behavior remains intact | Later visual refinement pass | **DEFERRED REFINEMENT** |
-| Explorer font-size refinement | Approved Explorer remains unchanged | Later shared-shell visual refinement | **DEFERRED REFINEMENT** |
-| PDF reader Explorer edge-swipe disable | Existing Stage 5 interaction remains unchanged | Later PDF interaction refinement | **DEFERRED REFINEMENT** |
+| PDF Activity typography refinement | Restrained one-step typography increase applied without changing row architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
+| Explorer font-size refinement | Primary application/tree labels increased one restrained step; metadata/counts preserved | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
+| PDF reader Explorer edge-swipe disable | Drawer gesture disabled on the PDF route only; hamburger and other routes retained | Authorized Stage 9 Batch A1 | **RESOLVED IN STAGE 9** |
 | Memorise empty state and target entry | Existing targets route directly; new targets begin from the Qur'an handoff and whole-Surah entry without invented overview chrome | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
 | Qur'an-to-Memorise exact-ayah session handoff | Exact ayah opens a dedicated session and auto-records immediately or after permission grant | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
 | Memorise Revision schedule language | No scheduler language is shown; only truthful production statuses/counts | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
@@ -78,16 +78,16 @@ previously explicit rows in this register:
 
 | Requirement | Preservation / evidence | Resolution gate | Status |
 |---|---|---|---|
-| Qur'an Tafsir dismissal | Current inline expansion can make dismissal unreachable; Frozen amendment already specifies a Tafsir sheet | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
-| Qur'an reciter synchronization | One selected-reciter state exists, but asynchronous playback replacement can allow delayed/stale reciter use | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
-| Qur'an Surah picker typography | Existing English/Arabic/metadata values are undersized on a real device | Restrained token adjustment and viewport verification | **DIRECT CONSISTENCY REFINEMENT** |
-| Note attachments in Reading mode | Attachment state exists but document-flow rows are omitted despite the Frozen Editor contract | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
-| Note attachment domination in Edit mode | Focus-dependent large previews destabilize body layout | Direct Stage 9 functional correction after authorization | **DIRECT FUNCTIONAL FIX** |
-| Editor paragraph token | Full `Paragraph` label consumes excessive toolbar width | Compact `P`/heading token refinement | **DIRECT CONSISTENCY REFINEMENT** |
-| Editor toolbar spacing | Visible item padding is too loose on phone widths | Compact spacing with preserved invisible hit targets | **DIRECT CONSISTENCY REFINEMENT** |
+| Qur'an Tafsir dismissal | Approved modal sheet now has fixed header/X, independent body scroll, Back-first and swipe dismissal | Authorized Stage 9 Batch A2 | **RESOLVED IN STAGE 9** |
+| Qur'an reciter synchronization | One selected state now drives Settings, player and playback; stale preparation is cancelled/ignored | Authorized Stage 9 Batch A2 | **RESOLVED IN STAGE 9** |
+| Qur'an Surah picker typography | English, Arabic and metadata increased one restrained step with density retained | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
+| Note attachments in Reading mode | Real compact attachment rows render in document flow and use existing open handlers | Authorized Stage 9 Batch A1 | **RESOLVED IN STAGE 9** |
+| Note attachment domination in Edit mode | Focus-dependent large previews replaced by stable compact document-flow rows | Authorized Stage 9 Batch A1 | **RESOLVED IN STAGE 9** |
+| Editor paragraph token | Compact `P`/`H1`-`H4` tokens retain the existing style chooser and semantics | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
+| Editor toolbar spacing | Visible padding tightened while controls and horizontal access remain intact | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Global directional route motion | Frozen motion contract does not define whole-route forward/reverse slides | Dedicated Frozen motion amendment | **REQUIRES FROZEN AMENDMENT** |
-| PDF current-page annotation typography | Excerpts/metadata are too small on a real device | Restrained token adjustment | **DIRECT CONSISTENCY REFINEMENT** |
-| PDF annotation type distinction | Existing type data/icons need a clearer semantic mapping and highlight colour cue | Existing Frozen row-language refinement | **DIRECT CONSISTENCY REFINEMENT** |
+| PDF current-page annotation typography | Excerpts/metadata increased one restrained step without changing sheet architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
+| PDF annotation type distinction | Highlight, Note and Study Link now use distinct semantic icons; highlights retain their saved colour cue | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Google Drive debug OAuth | Local debug SHA exists; checked-in Google services config has no Android OAuth entry | Separate OAuth configuration; Stage 10 uses correctly signed/configured build | **STAGE 10 / COMPATIBILITY** |
 
 ## Resolved Stage 6 Course Decisions

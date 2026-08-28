@@ -594,12 +594,12 @@ private fun SurahRow(
         ) {
             Text(
                 text = surah.name,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.W700),
                 color = titleColor,
             )
             Text(
                 text = "${surah.type} · ${surah.ayat} ayat",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
                 color = colors.textSecondary,
             )
         }
@@ -610,7 +610,7 @@ private fun SurahRow(
                 fontFamily = QuranSelectorUthmaniHafsFamily,
                 textDirection = TextDirection.ContentOrRtl,
                 fontWeight = FontWeight.W400,
-                fontSize = 20.sp,
+                fontSize = 21.sp,
             ),
             color = colors.text,
             textAlign = TextAlign.End,

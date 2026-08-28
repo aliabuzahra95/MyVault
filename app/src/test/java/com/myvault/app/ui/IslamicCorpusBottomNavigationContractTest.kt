@@ -118,12 +118,14 @@ class VaultMobileWebNavigationContractTest {
     }
 
     @Test
-    fun `drawer keeps interactive swipe gestures enabled`() {
+    fun `drawer swipe stays enabled except while the PDF reader is open`() {
         val component = source("ui/components/VaultMobileWebShell.kt")
+        val navigation = source("ui/navigation/VaultNavHost.kt")
 
-        assertTrue(component.contains("gesturesEnabled = true"))
+        assertTrue(component.contains("gesturesEnabled = drawerGesturesEnabled"))
         assertTrue(component.contains("Modifier.systemGestureExclusion"))
         assertTrue(component.contains("drawerGestureEdgeWidth"))
+        assertTrue(navigation.contains("drawerGesturesEnabled = currentRoute != VaultDestination.AttachmentViewer.route"))
     }
 
     @Test

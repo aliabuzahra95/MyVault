@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.BorderColor
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -1162,7 +1163,7 @@ private fun FrozenPdfActivity(
                 }
                 Column(Modifier.weight(1f)) {
                     Text("PDF Activity", fontSize = 14.sp, fontWeight = FontWeight.W800, color = colors.text)
-                    Text(attachment.fileName, fontSize = 8.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(attachment.fileName, fontSize = 9.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = { onSearchOpenChange(!searchOpen) }) {
                     Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "Search PDF activity", Modifier.size(20.dp), tint = colors.text)
@@ -1185,7 +1186,7 @@ private fun FrozenPdfActivity(
                     FilterChip(
                         selected = filter == choice,
                         onClick = { onFilterChange(choice) },
-                        label = { Text(choice.label, fontSize = 8.sp) },
+                        label = { Text(choice.label, fontSize = 9.5.sp) },
                         leadingIcon = if (filter == choice) {
                             { Icon(Icons.Rounded.Check, null, Modifier.size(12.dp)) }
                         } else null,
@@ -1218,19 +1219,20 @@ private fun FrozenPdfActivity(
 @Composable
 private fun FrozenActivityAnnotationRow(annotation: PdfAnnotationEntity, onClick: () -> Unit, onActions: () -> Unit) {
     val colors = VaultThemeTokens.colors
+    val isNote = annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = VaultSpacing.screen, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE) Icons.Rounded.StickyNote2 else Icons.Rounded.Draw,
-            null,
+            if (isNote) Icons.Rounded.StickyNote2 else Icons.Rounded.BorderColor,
+            if (isNote) "Note" else "Highlight",
             Modifier.size(17.dp),
-            tint = colors.textSecondary,
+            tint = if (isNote) colors.textSecondary else pdfColour(annotation.color),
         )
         Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
-            Text(annotationActivityTitle(annotation), fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(annotationActivitySubtitle(annotation), fontSize = 8.sp, color = colors.textMuted)
+            Text(annotationActivityTitle(annotation), fontSize = 12.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(annotationActivitySubtitle(annotation), fontSize = 9.5.sp, color = colors.textMuted)
         }
         IconButton(onClick = onActions) {
             Icon(Icons.Rounded.MoreHoriz, "Annotation actions", Modifier.size(17.dp), tint = colors.textMuted)
@@ -1246,10 +1248,10 @@ private fun FrozenActivityReferenceRow(reference: LibraryReferencedNote, onClick
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = VaultSpacing.screen, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Link, null, Modifier.size(17.dp), tint = colors.textSecondary)
+        Icon(Icons.Rounded.Link, "Study link", Modifier.size(17.dp), tint = colors.textSecondary)
         Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
-            Text(reference.noteTitle, fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("Linked Study note", fontSize = 8.sp, color = colors.textMuted)
+            Text(reference.noteTitle, fontSize = 12.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("Linked Study note", fontSize = 9.5.sp, color = colors.textMuted)
         }
         Icon(Icons.Rounded.BookmarkBorder, null, Modifier.size(16.dp), tint = colors.textMuted)
     }
@@ -1258,11 +1260,13 @@ private fun FrozenActivityReferenceRow(reference: LibraryReferencedNote, onClick
 
 @Composable
 private fun FrozenAnnotationRow(annotation: PdfAnnotationEntity, onClick: () -> Unit) {
+    val isNote = annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
     FrozenSheetRow(
         label = annotationActivityTitle(annotation),
-        icon = if (annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE) Icons.Rounded.StickyNote2 else Icons.Rounded.Draw,
+        icon = if (isNote) Icons.Rounded.StickyNote2 else Icons.Rounded.BorderColor,
         onClick = onClick,
         subtitle = annotationActivitySubtitle(annotation),
+        iconTint = if (isNote) null else pdfColour(annotation.color),
     )
 }
 
@@ -1286,23 +1290,29 @@ private fun FrozenSectionLabel(label: String) {
     Text(
         label,
         modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
-        fontSize = 8.sp,
+        fontSize = 9.5.sp,
         fontWeight = FontWeight.W800,
         color = colors.textMuted,
     )
 }
 
 @Composable
-private fun FrozenSheetRow(label: String, icon: ImageVector, onClick: () -> Unit, subtitle: String? = null) {
+private fun FrozenSheetRow(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+    iconTint: Color? = null,
+) {
     val colors = VaultThemeTokens.colors
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = VaultSpacing.screen, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, Modifier.size(18.dp), tint = colors.textSecondary)
+        Icon(icon, null, Modifier.size(18.dp), tint = iconTint ?: colors.textSecondary)
         Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            subtitle?.let { Text(it, fontSize = 9.sp, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            Text(label, fontSize = 13.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            subtitle?.let { Text(it, fontSize = 10.sp, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
     }
 }
@@ -1337,6 +1347,7 @@ private fun annotationActivitySubtitle(annotation: PdfAnnotationEntity): String 
 private fun pdfColour(name: String): Color = when (name) {
     "blue" -> Color(0xFF9ED8FF)
     "green" -> Color(0xFFAEE8C3)
+    "red" -> Color(0xFFFF8F94)
     "pink" -> Color(0xFFFFB4C8)
     "orange" -> Color(0xFFFFC58A)
     else -> Color(0xFFFFE27A)

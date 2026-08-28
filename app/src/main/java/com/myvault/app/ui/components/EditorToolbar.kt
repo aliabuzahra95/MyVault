@@ -39,7 +39,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultShapes
-import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 
 @Composable
@@ -58,7 +57,7 @@ fun EditorToolbar(
         border = BorderStroke(1.dp, colors.border),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -66,7 +65,7 @@ fun EditorToolbar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 tools.forEach { tool ->
                     ToolbarIcon(
@@ -98,17 +97,24 @@ private fun ToolbarIcon(tool: EditorTool, active: Boolean, enabled: Boolean, onC
         border = if (active) BorderStroke(1.dp, colors.accentBorder) else null,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = if (tool.label.length <= 2) 8.dp else 10.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = if (tool.isStyleToken) 8.dp else 7.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            Icon(tool.icon, contentDescription = tool.label, modifier = Modifier.size(15.dp))
-            if (tool.showLabel) {
-                Text(tool.label, fontWeight = FontWeight.W600)
+            if (tool.isStyleToken) {
+                Text(tool.label, fontWeight = FontWeight.W700)
+            } else {
+                Icon(tool.icon, contentDescription = tool.label, modifier = Modifier.size(15.dp))
+                if (tool.showLabel) {
+                    Text(tool.label, fontWeight = FontWeight.W600)
+                }
             }
         }
     }
 }
+
+private val EditorTool.isStyleToken: Boolean
+    get() = this in setOf(EditorTool.Paragraph, EditorTool.Heading, EditorTool.Heading2, EditorTool.Heading3, EditorTool.Heading4)
 
 enum class EditorTool(
     val label: String,
@@ -117,7 +123,7 @@ enum class EditorTool(
 ) {
     Undo("Undo", Icons.AutoMirrored.Rounded.Undo),
     Redo("Redo", Icons.AutoMirrored.Rounded.Redo),
-    Paragraph("Paragraph", Icons.Rounded.Notes, true),
+    Paragraph("P", Icons.Rounded.Notes, true),
     Heading("H1", Icons.Rounded.Title, true),
     Heading2("H2", Icons.Rounded.Title, true),
     Heading3("H3", Icons.Rounded.Title, true),

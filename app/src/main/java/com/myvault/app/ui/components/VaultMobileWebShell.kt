@@ -135,6 +135,7 @@ fun VaultMobileWebShell(
     onExplorerMoreSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
     contentStartsInMenuBar: Boolean = false,
     menuVisible: Boolean = true,
+    drawerGesturesEnabled: Boolean = true,
     content: @Composable (onOpenNavigation: () -> Unit) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -167,8 +168,8 @@ fun VaultMobileWebShell(
         }
     }
 
-    ModalNavigationDrawer(
-        modifier = Modifier.systemGestureExclusion { coordinates ->
+    val drawerModifier = if (drawerGesturesEnabled) {
+        Modifier.systemGestureExclusion { coordinates ->
             val height = coordinates.size.height.toFloat()
             val zoneTop = ((height - drawerGestureZoneHeight) / 2f).coerceAtLeast(0f)
             Rect(
@@ -177,9 +178,15 @@ fun VaultMobileWebShell(
                 right = drawerGestureEdgeWidth.coerceAtMost(coordinates.size.width.toFloat()),
                 bottom = (zoneTop + drawerGestureZoneHeight).coerceAtMost(height),
             )
-        },
+        }
+    } else {
+        Modifier
+    }
+
+    ModalNavigationDrawer(
+        modifier = drawerModifier,
         drawerState = drawerState,
-        gesturesEnabled = true,
+        gesturesEnabled = drawerGesturesEnabled,
         scrimColor = colors.scrim,
         drawerContent = {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -445,7 +452,7 @@ private fun DrawerExplorerSectionRow(
                 text = label,
                 modifier = Modifier.weight(1f),
                 color = if (selected) colors.text else colors.textSecondary,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.W700,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -538,7 +545,7 @@ private fun DrawerExplorerNode(
                 text = node.label,
                 modifier = Modifier.weight(1f),
                 color = if (selected) colors.text else colors.textSecondary,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = if (node.type == VaultMobileWebExplorerNodeType.Folder || selected) FontWeight.W700 else FontWeight.W500,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -698,7 +705,7 @@ private fun DrawerNavigationRow(
             text = label,
             modifier = Modifier.weight(1f),
             color = contentColor,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.W700 else FontWeight.W500,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

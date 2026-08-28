@@ -72,6 +72,7 @@ internal fun QuranReaderSurface(
     onOpenBookmark: (String) -> Unit,
     onOpenReflectionsHub: () -> Unit,
     onOpenReciterPicker: (QuranAyah) -> Unit,
+    onOpenReciterPreferencePicker: (QuranAyah) -> Unit,
     onDismissReciterPicker: () -> Unit,
     onSelectAudioReciter: (AudioReciterUiModel) -> Unit,
     onPlayAudioForAyah: (QuranAyah) -> Unit,
@@ -112,10 +113,11 @@ internal fun QuranReaderSurface(
     }
 
     BackHandler(
-        enabled = optionsOpen || overflowOpen || bookmarksOpen || recentsOpen || downloadsOpen ||
+        enabled = uiState.expandedTafsirVerseKey != null || optionsOpen || overflowOpen || bookmarksOpen || recentsOpen || downloadsOpen ||
             moreTargetKey != null || reflectionTargetKey != null || selectedWordId != null,
     ) {
         when {
+            uiState.expandedTafsirVerseKey != null -> onToggleTafsir(uiState.expandedTafsirVerseKey)
             selectedWordId != null -> selectedWordId = null
             reflectionTargetKey != null -> reflectionTargetKey = null
             moreTargetKey != null -> moreTargetKey = null
@@ -187,11 +189,6 @@ internal fun QuranReaderSurface(
                             translationEnabled = uiState.translationEnabled,
                             reflections = uiState.reflectionsByVerse[ayah.verseKey].orEmpty(),
                             isBookmarked = ayah.verseKey in uiState.bookmarkedVerseKeys,
-                            tafsir = uiState.tafsirByVerse[tafsirCacheKey(ayah.verseKey, uiState.selectedTafsirSourceId)].orEmpty(),
-                            tafsirSources = uiState.availableTafsirSources,
-                            selectedTafsirSourceId = uiState.selectedTafsirSourceId,
-                            isTafsirExpanded = uiState.expandedTafsirVerseKey == ayah.verseKey,
-                            isTafsirLoading = tafsirCacheKey(ayah.verseKey, uiState.selectedTafsirSourceId) in uiState.loadingTafsirVerseKeys,
                             isAudioPlaying = uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer?.isPlaying == true,
                             isAudioLoading = uiState.audioLoadingVerseKey == ayah.verseKey,
                             onSelect = { selectedVerseKey = ayah.verseKey.takeUnless { it == selectedVerseKey } },
@@ -204,7 +201,6 @@ internal fun QuranReaderSurface(
                                 else onPlayAudioForAyah(ayah)
                             },
                             onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
-                            onSelectTafsirSource = onSelectTafsirSource,
                             onReflect = {
                                 reflectionEditTargetId = uiState.reflectionsByVerse[ayah.verseKey]?.firstOrNull()?.noteId
                                 reflectionTargetKey = ayah.verseKey
@@ -311,7 +307,7 @@ internal fun QuranReaderSurface(
                     onSetTranslationSource = onSetTranslationSource,
                     onSetTajweedEnabled = onSetTajweedEnabled,
                     onChooseReciter = {
-                        uiState.ayahs.getOrNull((currentAyah - 1).coerceAtLeast(0))?.let(onOpenReciterPicker)
+                        uiState.ayahs.getOrNull((currentAyah - 1).coerceAtLeast(0))?.let(onOpenReciterPreferencePicker)
                         optionsOpen = false
                     },
                     onSelectTafsirSource = onSelectTafsirSource,
@@ -349,6 +345,17 @@ internal fun QuranReaderSurface(
         )
         val selectedWord = selectedWordId?.let { id -> uiState.ayahs.asSequence().flatMap { it.words.asSequence() }.firstOrNull { it.wordId == id } }
         QuranWordInfoSheet(selectedWord, onDismiss = { selectedWordId = null })
+        val tafsirAyah = uiState.ayahs.firstOrNull { it.verseKey == uiState.expandedTafsirVerseKey }
+        QuranTafsirSheet(
+            ayah = tafsirAyah,
+            tafsir = tafsirAyah?.let { uiState.tafsirByVerse[tafsirCacheKey(it.verseKey, uiState.selectedTafsirSourceId)] }.orEmpty(),
+            sources = uiState.availableTafsirSources,
+            selectedSourceId = uiState.selectedTafsirSourceId,
+            loading = tafsirAyah?.let { tafsirCacheKey(it.verseKey, uiState.selectedTafsirSourceId) in uiState.loadingTafsirVerseKeys } == true,
+            onSelectSource = onSelectTafsirSource,
+            onDismiss = { uiState.expandedTafsirVerseKey?.let(onToggleTafsir) },
+            onRetry = { onSelectTafsirSource(uiState.selectedTafsirSourceId) },
+        )
         QuranReciterPickerSheet(
             visible = uiState.reciterPickerAyah != null,
             ayahNumber = uiState.reciterPickerAyah?.ayahNumber ?: 1,

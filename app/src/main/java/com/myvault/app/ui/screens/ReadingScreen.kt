@@ -316,6 +316,19 @@ fun ReadingScreen(
                     ReadOnlyNoteTable(table = table)
                 }
             }
+            if (uiState.attachmentsLoading || uiState.attachments.isNotEmpty()) {
+                item { SectionLabel(label = "Attachments") }
+                if (uiState.attachmentsLoading && uiState.attachments.isEmpty()) {
+                    item { AttachmentHydrationPlaceholder(count = uiState.attachmentCount) }
+                }
+                items(uiState.attachments, key = { it.id }) { attachment ->
+                    AttachmentSheetRow(
+                        attachment = attachment,
+                        onClick = { onAttachmentClick(attachment.id) },
+                        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                    )
+                }
+            }
         }
     }
 
@@ -1224,11 +1237,12 @@ internal fun NoteInfoStat(
 internal fun AttachmentSheetRow(
     attachment: AttachmentEntity,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         color = colors.inset,
         shape = VaultShapes.md,
         border = BorderStroke(1.dp, colors.border),

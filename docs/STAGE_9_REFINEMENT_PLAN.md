@@ -1,6 +1,6 @@
 # Stage 9 Real-Device Refinement Plan
 
-Status: **AUDIT COMPLETE - IMPLEMENTATION NOT AUTHORIZED**
+Status: **BATCHES A1, A2, AND B IMPLEMENTED AND VERIFIED**
 
 This document records the pre-Stage-9 production audit performed against the
 approved Stage 8 commit
@@ -20,22 +20,48 @@ The Frozen Design Master and all approved amendments remain authoritative.
 
 ## 2. Classification Summary
 
-There are **29 active requirements** after Stage 8:
+The pre-implementation audit identified 29 requirements. The 12 authorized
+direct items are now resolved, leaving **17 active requirements**:
 
 | Classification | Count |
 |---|---:|
-| A. Direct functional fix | 5 |
-| B. Direct consistency refinement | 7 |
+| A. Direct functional fix | 0 active / 5 resolved |
+| B. Direct consistency refinement | 0 active / 7 resolved |
 | C. Requires Frozen design amendment | 10 |
 | D. Stage 10 / compatibility | 7 |
-| **Total active** | **29** |
+| **Total active** | **17** |
+
+## 2.1 Authorized Direct-Batch Result
+
+The implementation was performed from audit commit
+`5f0dc161955960933465460cf025f6d31941556e` without modifying the read-only
+Frozen prototype, Room, backup formats, repositories, canonical Qur'an data,
+PDF rendering, or note serialization.
+
+- Reading and Editing now render real Note attachments as compact rows in the
+  document flow. Runtime proof used a restored Note with two PDF attachments.
+- Explorer drawer gestures are disabled only on the PDF reader route; the
+  hamburger remains wired and all non-PDF routes keep their drawer gesture.
+- Tafsir now uses the approved modal sheet with fixed header/X, independent
+  body scrolling, swipe dismissal, and Tafsir-first Android Back handling.
+- Reader Settings, player chrome, persistence, and playback now share one
+  selected reciter. Stale preparation is cancelled/ignored. Runtime proof
+  switched an active Al-Baqara ayah 4 from Abdul Basit (Murattal) to
+  Abdur-Rahman as-Sudais and restarted the same ayah immediately.
+- Surah picker, editor toolbar, PDF activity/annotation surfaces, annotation
+  type cues, and Explorer primary labels received only the approved restrained
+  typography/spacing adjustments.
+
+Runtime captures are stored under `artifacts/stage-9/runtime/`. They include
+Reading/Edit attachments, compact toolbar, Surah picker, Tafsir, active reciter
+player, PDF reader/activity, and Explorer states.
 
 The previously reported Qur'an-to-Memorise exact-ayah handoff is not included
 in the active count. Stage 8 runtime evidence confirms it is resolved.
 
 ## 3. Complete Active Inventory
 
-### A. Direct Functional Fixes
+### A. Direct Functional Fixes - Resolved
 
 | # | Issue and evidence | Current cause | Desired behavior | Risk | Runtime tests |
 |---:|---|---|---|---|---|
@@ -45,7 +71,7 @@ in the active count. Stage 8 runtime evidence confirms it is resolved.
 | 4 | Note attachments dominate Edit mode. `EditorScreen.kt` conditionally inserts previews only when the body is unfocused and gives image previews up to 320 dp height inside a separately constrained layout. | Focus-dependent insertion plus large previews causes reflow and can squeeze the editable body, resembling a takeover rather than document flow. | Keep body primary; use compact stable attachment rows in document flow; remove focus-triggered layout jumps while preserving add/open/remove handlers. | High: IME, focus, selection, and scroll ownership. | Keyboard open/close; focus transitions; large and multiple images; long note; cursor visibility; attachment CRUD; save/reopen. |
 | 5 | PDF Explorer edge-swipe conflict. `VaultMobileWebShell.kt` enables `ModalNavigationDrawer` gestures globally; the PDF route has no suppression input. | Global drawer gesture competes with horizontal PDF pan/zoom. | Disable drawer edge gesture only while the PDF reader route is active; retain hamburger opening and all other routes' edge gesture. | Medium: shared shell route state and Back behavior. | Zoomed/unzoomed horizontal pan near both edges; hamburger; Back; rotate/recompose; leave PDF and confirm gesture returns. |
 
-### B. Direct Consistency Refinements
+### B. Direct Consistency Refinements - Resolved
 
 | # | Issue and evidence | Current values/cause | Approved refinement | Risk | Runtime tests |
 |---:|---|---|---|---|---|
@@ -156,7 +182,10 @@ already answer their presentation and no data/engine redesign is required.
 
 ## 7. Authorization Boundary
 
-This plan does not authorize Stage 9 implementation. Application source,
-canonical Qur'an data, audio engines, PDF renderer, Room schema, backup format,
-and repository contracts remain unchanged. Each Frozen-amendment item is a hard
-gate until a corresponding visual/interaction amendment is approved.
+Only Batches A1, A2, and B were authorized and implemented. Application source
+outside those direct fixes, canonical Qur'an data, audio engines, PDF renderer,
+Room schema, backup format, and repository contracts remain unchanged. Every
+item in sections C and D remains a hard gate. Global Search, global navigation
+motion, primary Draw Highlight workflow, the floating PDF annotation pill,
+Dashboard, outgoing Share, final utility destinations, and the global narration
+mini-player were not changed.

@@ -338,6 +338,7 @@ fun VaultNavHost(
                         VaultRootMode.Quran,
                         VaultRootMode.Memorise,
                     )),
+            drawerGesturesEnabled = currentRoute != VaultDestination.AttachmentViewer.route,
             menuVisible = currentRoute !in setOf(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
@@ -577,6 +578,7 @@ fun VaultNavHost(
                             navController.navigate(VaultDestination.QuranReflections.route)
                         },
                         onOpenReciterPicker = quranViewModel::openReciterPicker,
+                        onOpenReciterPreferencePicker = quranViewModel::openReciterPreferencePicker,
                         onDismissReciterPicker = quranViewModel::dismissReciterPicker,
                         onSelectAudioReciter = quranViewModel::playWithReciter,
                         onPlayAudioForAyah = quranViewModel::playAudioForAyah,
