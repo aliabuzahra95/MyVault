@@ -544,7 +544,7 @@ Stage 10.
 
 ### Stage 9 - Cross-Screen Consistency
 
-Status: **DIRECT BATCHES A1, A2, AND B IMPLEMENTED AND VERIFIED**
+Status: **ALL AUTHORIZED STAGE 9 BATCHES IMPLEMENTED AND VERIFIED**
 
 Implemented from audit commit
 `5f0dc161955960933465460cf025f6d31941556e`: Note attachment document-flow
@@ -558,10 +558,15 @@ It does not alter Room, backup, canonical Qur'an data, note serialization, the
 PDF renderer, or repository contracts. Runtime proof is stored under
 `artifacts/stage-9/runtime/`.
 
-Still blocked behind Frozen amendments: Global Search, global directional route
-motion, primary Draw Highlight priority, the persistent PDF annotation pill,
-Dashboard, outgoing Share, final Attachments/Favourites destinations, and the
-global narration mini-player design.
+The final Frozen Stage 9 amendment additionally resolved Global Search,
+Dashboard, final Explorer Attachments/Favourites destinations, primary repeated
+Draw Highlight with its compact annotation pill, the global Note/PDF narration
+player, and restrained directional route motion. These changes preserve the
+existing production state/handlers and do not alter Room, backup, canonical
+Qur'an data, note serialization, PDF geometry, or repository contracts.
+
+Still deferred: outgoing Study/Library Share and every Stage 10 compatibility
+gate, including destructive Android/Web backup/restore and debug OAuth.
 
 Checks: spacing, typography, colors, icons, radii, elevation, motion, haptics,
 sheets, RTL, insets, font scaling, accessibility, and responsiveness. No feature
@@ -666,11 +671,8 @@ Stage 8 is approved at
 `stage-8-approved` tag. The documentation-only real-device refinement audit is
 recorded in `docs/STAGE_9_REFINEMENT_PLAN.md`.
 
-The audit identified 29 requirements. The five direct functional fixes and
-seven direct consistency refinements were authorized and resolved in Stage 9
-Batches A1, A2, and B. The remaining 17 active requirements are ten Frozen
-amendment items and seven Stage 10/compatibility items. Global Search, global
-route motion, the primary PDF Draw Highlight workflow, the persistent PDF
-annotation pill, Dashboard, final utility destinations, outgoing Share, and the
-global narration mini-player may not be implemented without their required
-amendments.
+The audit identified 29 requirements. Five direct functional fixes and seven
+direct consistency refinements were resolved in Batches A1, A2, and B. The
+final Frozen Stage 9 amendment then resolved eight of the ten amendment items
+through Batches C1-C4. The nine requirements still active are outgoing Study
+and Library Share plus seven Stage 10/compatibility items.

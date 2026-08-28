@@ -14,18 +14,15 @@ class WorkspaceFabAndQuranChromeContractTest {
         .first { Files.exists(it.resolve("app/src/main/java/com/myvault/app/ui/navigation/VaultNavHost.kt")) }
 
     @Test
-    fun `workspace FABs are circular and sit just above the fixed navigation`() {
+    fun `workspace FABs are circular and clear the measured narration player`() {
         val component = source("ui/components/FloatingActionMenu.kt")
         val navigation = source("ui/navigation/VaultNavHost.kt")
 
         assertTrue(component.contains("shape = CircleShape"))
         assertTrue(component.contains("val fixedBottomBarFabPadding: Dp = 12.dp"))
-        assertEquals(
-            5,
-            navigation.countOccurrences(
-                "fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding",
-            ),
-        )
+        assertTrue(navigation.contains("narrationMiniPlayerHeightPx"))
+        assertTrue(navigation.contains("narrationOccupiedBottom + 10.dp"))
+        assertEquals(5, navigation.countOccurrences("fabBottomPadding = floatingActionBottomPadding"))
     }
 
     @Test

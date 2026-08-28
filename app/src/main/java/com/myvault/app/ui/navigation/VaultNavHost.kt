@@ -1,6 +1,9 @@
 package com.myvault.app.ui.navigation
 
 import android.widget.Toast
+import android.provider.Settings
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -10,12 +13,19 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -45,8 +55,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.IntOffset
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -60,7 +73,6 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
-import com.myvault.app.ui.components.FloatingActionStackDefaults
 import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.VaultExplorerActionHost
 import com.myvault.app.ui.components.VaultExplorerMoveTarget
@@ -81,6 +93,8 @@ import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
 import com.myvault.app.ui.screens.FrozenMemoriseScreen
+import com.myvault.app.ui.screens.FrozenDashboardScreen
+import com.myvault.app.ui.screens.FrozenFavouritesScreen
 import com.myvault.app.ui.screens.PdfActivityFeedScreen
 import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.QuranReflectionsHubScreen
@@ -139,11 +153,22 @@ fun VaultNavHost(
     var narrationMiniPlayerHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val narrationMiniPlayerHeight = with(density) { narrationMiniPlayerHeightPx.toDp() }
+    val systemBottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     LaunchedEffect(narrationState.isActive) {
         narrationMiniPlayerVisibility.targetState = narrationState.isActive
     }
     val narrationMiniPlayerOccupiesSpace =
         narrationMiniPlayerVisibility.currentState || narrationMiniPlayerVisibility.targetState
+    val narrationOccupiedBottom = if (narrationMiniPlayerOccupiesSpace) {
+        systemBottomInset + 12.dp + narrationMiniPlayerHeight
+    } else {
+        0.dp
+    }
+    val floatingActionBottomPadding = if (narrationMiniPlayerOccupiesSpace) {
+        narrationOccupiedBottom + 10.dp
+    } else {
+        18.dp
+    }
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
     val homeViewModel: HomeViewModel = hiltViewModel()
@@ -154,6 +179,20 @@ fun VaultNavHost(
     val libraryViewModel: LibraryViewModel = hiltViewModel()
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val layoutDirection = LocalLayoutDirection.current
+    val routeMotionDisabled = remember(context) {
+        Settings.Global.getFloat(
+            context.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) == 0f
+    }
+    val routeMotionDistancePx = with(density) { 18.dp.roundToPx() } *
+        if (layoutDirection == LayoutDirection.Ltr) 1 else -1
+    val routeMotionSpec = tween<IntOffset>(
+        durationMillis = 210,
+        easing = CubicBezierEasing(0.2f, 0.75f, 0.25f, 1f),
+    )
     val lifecycleOwner = LocalLifecycleOwner.current
     var explorerActionTarget by remember { mutableStateOf<ExplorerActionTarget?>(null) }
     var corpusSearchActive by remember { mutableStateOf(false) }
@@ -299,11 +338,17 @@ fun VaultNavHost(
             selectedExplorerNodeId = selectedExplorerNodeId,
             onItemSelected = { index -> selectRootMode(rootModes[index]) },
             onDashboardSelected = {
-                selectRootMode(
-                    if (preferences.workspace == WORKSPACE_PERSONAL) VaultRootMode.Personal else VaultRootMode.Study,
-                )
+                navController.navigate(VaultDestination.Dashboard.route)
             },
             onSearchSelected = { navController.navigate(VaultDestination.Search.route) },
+            onAttachmentsSelected = {
+                navController.navigate(
+                    VaultDestination.Attachments.route(
+                        if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL else FOLDER_MODE_STUDY,
+                    ),
+                )
+            },
+            onFavouritesSelected = { navController.navigate(VaultDestination.Favourites.route) },
             onSettingsSelected = { navController.navigate(VaultDestination.Settings.route) },
             onThemeSelected = {
                 shellViewModel.setTheme(
@@ -311,10 +356,13 @@ fun VaultNavHost(
                 )
             },
             selectedApplicationDestination = when (currentRoute) {
+                VaultDestination.Dashboard.route -> VaultMobileWebApplicationDestination.Dashboard
                 VaultDestination.Search.route -> VaultMobileWebApplicationDestination.Search
                 VaultDestination.Settings.route -> VaultMobileWebApplicationDestination.Settings
                 else -> null
             },
+            attachmentsSelected = currentRoute == VaultDestination.Attachments.route,
+            favouritesSelected = currentRoute == VaultDestination.Favourites.route,
             explorerSections = shellExplorerSections,
             onExplorerNodeSelected = { sectionIndex, node ->
                 openExplorerNode(rootModes[sectionIndex], node)
@@ -326,6 +374,10 @@ fun VaultNavHost(
                 explorerActionTarget = ExplorerActionTarget(rootModes[sectionIndex], node)
             },
             contentStartsInMenuBar = currentRoute in setOf(
+                VaultDestination.Dashboard.route,
+                VaultDestination.Search.route,
+                VaultDestination.Attachments.route,
+                VaultDestination.Favourites.route,
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
@@ -340,6 +392,10 @@ fun VaultNavHost(
                     )),
             drawerGesturesEnabled = currentRoute != VaultDestination.AttachmentViewer.route,
             menuVisible = currentRoute !in setOf(
+                VaultDestination.Dashboard.route,
+                VaultDestination.Search.route,
+                VaultDestination.Attachments.route,
+                VaultDestination.Favourites.route,
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
@@ -350,6 +406,30 @@ fun VaultNavHost(
         NavHost(
             navController = navController,
             startDestination = VaultDestination.Home.route,
+            enterTransition = {
+                if (routeMotionDisabled) EnterTransition.None else {
+                    slideInHorizontally(routeMotionSpec) { routeMotionDistancePx } +
+                        fadeIn(tween(210, easing = CubicBezierEasing(0.2f, 0.75f, 0.25f, 1f)))
+                }
+            },
+            exitTransition = {
+                if (routeMotionDisabled) ExitTransition.None else {
+                    slideOutHorizontally(routeMotionSpec) { -routeMotionDistancePx } +
+                        fadeOut(tween(170, easing = CubicBezierEasing(0.2f, 0.75f, 0.25f, 1f)))
+                }
+            },
+            popEnterTransition = {
+                if (routeMotionDisabled) EnterTransition.None else {
+                    slideInHorizontally(routeMotionSpec) { -routeMotionDistancePx } +
+                        fadeIn(tween(210, easing = CubicBezierEasing(0.2f, 0.75f, 0.25f, 1f)))
+                }
+            },
+            popExitTransition = {
+                if (routeMotionDisabled) ExitTransition.None else {
+                    slideOutHorizontally(routeMotionSpec) { routeMotionDistancePx } +
+                        fadeOut(tween(170, easing = CubicBezierEasing(0.2f, 0.75f, 0.25f, 1f)))
+                }
+            },
         ) {
         composable(VaultDestination.Home.route) {
             key(preferences.workspace) {
@@ -429,7 +509,7 @@ fun VaultNavHost(
                         },
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
-                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
+                        fabBottomPadding = floatingActionBottomPadding,
                     )
                 },
                 studyContent = {
@@ -527,7 +607,7 @@ fun VaultNavHost(
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         currentFolderMode = FOLDER_MODE_STUDY,
-                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
+                        fabBottomPadding = floatingActionBottomPadding,
                     )
                 },
                 quranContent = {
@@ -711,7 +791,7 @@ fun VaultNavHost(
                         },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         showFullFileTitles = preferences.showFullFileTitles,
-                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
+                        fabBottomPadding = floatingActionBottomPadding,
                     )
                 },
                 personalContent = {
@@ -804,7 +884,7 @@ fun VaultNavHost(
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         dashboardFontSizeSp = preferences.dashboardFontSize.toDashboardFontSizeSp(),
                         currentFolderMode = FOLDER_MODE_PERSONAL,
-                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
+                        fabBottomPadding = floatingActionBottomPadding,
                     )
                 },
                 personalLibraryContent = {
@@ -882,11 +962,22 @@ fun VaultNavHost(
                         },
                         quickBackupRecommended = preferences.quickBackupRecommended(),
                         showFullFileTitles = preferences.showFullFileTitles,
-                        fabBottomPadding = FloatingActionStackDefaults.fixedBottomBarFabPadding,
+                        fabBottomPadding = floatingActionBottomPadding,
                     )
                     },
                 )
             }
+        }
+        composable(VaultDestination.Dashboard.route) {
+            FrozenDashboardScreen(
+                continueFile = libraryState.continueReading,
+                recentFiles = libraryState.recentFiles,
+                pinnedNotes = if (preferences.workspace == WORKSPACE_PERSONAL) personalState.pinnedNotes else studyState.pinnedNotes,
+                pinnedFiles = libraryState.pinnedFiles,
+                onMenuClick = onOpenNavigation,
+                onOpenNote = ::openNote,
+                onOpenFile = { navController.navigate(VaultDestination.AttachmentViewer.route(it)) },
+            )
         }
         composable(
             route = VaultDestination.LibraryFolder.route,
@@ -1146,7 +1237,7 @@ fun VaultNavHost(
                 onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
                 narrationMiniPlayerVisible = narrationMiniPlayerOccupiesSpace,
-                narrationMiniPlayerHeight = narrationMiniPlayerHeight,
+                narrationMiniPlayerHeight = narrationOccupiedBottom,
             )
         }
         composable(VaultDestination.Search.route) {
@@ -1154,7 +1245,9 @@ fun VaultNavHost(
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             SearchScreen(
                 uiState = uiState,
-                onBackClick = { navController.popBackStack() },
+                files = libraryState.files,
+                courses = coursesState.courses,
+                onMenuClick = onOpenNavigation,
                 onQueryChange = viewModel::setQuery,
                 onNoteClick = { noteId ->
                     navController.navigate(
@@ -1165,6 +1258,30 @@ fun VaultNavHost(
                         },
                     )
                 },
+                onFolderClick = { folder ->
+                    if (folder.mode.contains("library", ignoreCase = true)) {
+                        navController.navigate(VaultDestination.LibraryFolder.route(folder.id, folder.mode))
+                    } else {
+                        navController.navigate(VaultDestination.FolderView.route(folder.id))
+                    }
+                },
+                onFileClick = { navController.navigate(VaultDestination.AttachmentViewer.route(it)) },
+                onCourseClick = { courseId ->
+                    coursesViewModel.selectCourse(courseId)
+                    selectedIslamicRootMode = VaultRootMode.Courses.name
+                    navController.popBackStack(VaultDestination.Home.route, false)
+                },
+            )
+        }
+        composable(VaultDestination.Favourites.route) {
+            val favourites = remember(preferences.workspace, studyState.workspace, personalState.workspace) {
+                val tree = if (preferences.workspace == WORKSPACE_PERSONAL) personalState.workspace else studyState.workspace
+                tree.flatMap { it.flattenFavouriteNotes() }
+            }
+            FrozenFavouritesScreen(
+                favourites = favourites,
+                onMenuClick = onOpenNavigation,
+                onOpenNote = ::openNote,
             )
         }
         composable(VaultDestination.QuranReflections.route) {
@@ -1256,6 +1373,8 @@ fun VaultNavHost(
                 onAzureListenClick = viewModel::startAzureNarration,
                 onAzureResumeClick = viewModel::resumeAzureNarration,
                 onAzureListenFromHere = viewModel::startAzureNarrationFromSelection,
+                narrationMiniPlayerVisible = narrationMiniPlayerOccupiesSpace,
+                narrationMiniPlayerHeight = narrationOccupiedBottom,
             )
         }
         composable(
@@ -1266,8 +1385,7 @@ fun VaultNavHost(
             val attachments by viewModel.attachments.collectAsStateWithLifecycle()
             AttachmentsScreen(
                 attachments = attachments,
-                onBackClick = { navController.popBackStack() },
-                onSearchClick = { navController.navigate(VaultDestination.Search.route) },
+                onMenuClick = onOpenNavigation,
                 onAttachmentClick = { attachmentId ->
                     navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                 },
@@ -1559,10 +1677,8 @@ fun VaultNavHost(
             visibleState = narrationMiniPlayerVisibility,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(
-                    horizontal = VaultSpacing.screen,
-                    vertical = if (currentRoute == VaultDestination.Home.route) 88.dp else VaultSpacing.md,
-                ),
+                .navigationBarsPadding()
+                .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
             enter = fadeIn(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)) +
                 slideInVertically(
                     animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
@@ -1576,8 +1692,6 @@ fun VaultNavHost(
         ) {
             NarrationMiniPlayer(
                 state = narrationState,
-                selectedVoice = narrationState.voice,
-                onVoiceChange = narrationViewModel::restartWithVoice,
                 onPrimaryAction = {
                     if (narrationState.status != NarrationPlaybackStatus.Preparing &&
                         narrationState.status != NarrationPlaybackStatus.Generating
@@ -1586,9 +1700,7 @@ fun VaultNavHost(
                     }
                 },
                 onStop = narrationViewModel::stop,
-                onSpeedChange = narrationViewModel::setSpeed,
                 onSeek = narrationViewModel::seekTo,
-                onSkipBy = narrationViewModel::skipBy,
                 onProgressTick = narrationViewModel::refreshProgress,
                 modifier = Modifier.onSizeChanged { narrationMiniPlayerHeightPx = it.height },
             )
@@ -1680,12 +1792,18 @@ private fun String.rootModes(): List<VaultRootMode> =
         listOf(VaultRootMode.Personal, VaultRootMode.Library)
     } else {
         listOf(
-            VaultRootMode.Courses,
             VaultRootMode.Study,
             VaultRootMode.Library,
+            VaultRootMode.Courses,
             VaultRootMode.Quran,
             VaultRootMode.Memorise,
         )
+    }
+
+private fun VaultTreeItem.flattenFavouriteNotes(): List<VaultTreeItem> =
+    buildList {
+        if (type == VaultTreeItemType.Note && favourite) add(this@flattenFavouriteNotes)
+        children.forEach { addAll(it.flattenFavouriteNotes()) }
     }
 
 private fun buildExplorerSections(

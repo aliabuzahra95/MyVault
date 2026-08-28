@@ -117,6 +117,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
@@ -617,6 +618,8 @@ fun AttachmentViewerScreen(
     onAzureListenClick: () -> Unit = {},
     onAzureResumeClick: () -> Unit = {},
     onAzureListenFromHere: (Int) -> Unit = {},
+    narrationMiniPlayerVisible: Boolean = false,
+    narrationMiniPlayerHeight: Dp = 0.dp,
 ) {
     LaunchedEffect(attachment?.mimeType) {
         attachment?.let { onOwnHeaderChanged(it.mimeType == "application/pdf") }
@@ -649,6 +652,8 @@ fun AttachmentViewerScreen(
             onStartDeviceNarration = onStartDevicePdfNarration,
             onStartOpenAiNarration = onStartOpenAiPdfNarration,
             onStartAzureNarration = onStartAzurePdfNarration,
+            narrationMiniPlayerVisible = narrationMiniPlayerVisible,
+            narrationMiniPlayerHeight = narrationMiniPlayerHeight,
             modifier = modifier,
         )
         return

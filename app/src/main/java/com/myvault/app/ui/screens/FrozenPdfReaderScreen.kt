@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -73,6 +74,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.pdf.PdfRect
@@ -144,6 +146,8 @@ internal fun FrozenPdfReaderScreen(
     onStartDeviceNarration: (selection: String?) -> Unit,
     onStartOpenAiNarration: (selection: String?) -> Unit,
     onStartAzureNarration: (selection: String?) -> Unit,
+    narrationMiniPlayerVisible: Boolean = false,
+    narrationMiniPlayerHeight: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -168,6 +172,7 @@ internal fun FrozenPdfReaderScreen(
     var tagDraft by remember(attachment.id) { mutableStateOf("") }
     var drawHighlightMode by remember(attachment.id) { mutableStateOf(false) }
     var drawColour by remember(attachment.id) { mutableStateOf("yellow") }
+    var drawColourPickerOpen by remember(attachment.id) { mutableStateOf(false) }
     var overflowOpen by remember(attachment.id) { mutableStateOf(false) }
     var immersive by remember(attachment.id) { mutableStateOf(false) }
     var activityOpen by remember(attachment.id) { mutableStateOf(false) }
@@ -195,6 +200,15 @@ internal fun FrozenPdfReaderScreen(
                 (it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT && !it.noteText.isNullOrBlank())
         }
     }
+    val highlightCount = remember(visibleAnnotations) {
+        visibleAnnotations.count { it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT }
+    }
+    val noteCount = remember(visibleAnnotations) {
+        visibleAnnotations.count {
+            it.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !it.noteText.isNullOrBlank()
+        }
+    }
+    val annotationPillBottom = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight + 10.dp else 16.dp
 
     LaunchedEffect(pdfReady, initialPageIndex, pageCount, pdfView) {
         val view = pdfView ?: return@LaunchedEffect
@@ -296,7 +310,6 @@ internal fun FrozenPdfReaderScreen(
                         color,
                     ) { saved ->
                         transientMessage = if (saved) "Highlight saved" else "Highlight not saved"
-                        if (saved) drawHighlightMode = false
                     }
                 },
                 onTextSelectionChanged = { selection = it },
@@ -437,12 +450,41 @@ internal fun FrozenPdfReaderScreen(
             )
         }
 
-        if (drawHighlightMode && !activityOpen) {
+        if (pdfReady && !activityOpen && sheet == PdfReaderSheet.None && selection == null) {
+            FrozenPdfAnnotationPill(
+                highlightCount = highlightCount,
+                noteCount = noteCount,
+                color = drawColour,
+                drawMode = drawHighlightMode,
+                colorPickerOpen = drawColourPickerOpen,
+                onDrawHighlight = {
+                    drawHighlightMode = true
+                    drawColourPickerOpen = false
+                },
+                onToggleColorPicker = { drawColourPickerOpen = !drawColourPickerOpen },
+                onColorChange = {
+                    drawColour = it
+                    drawColourPickerOpen = false
+                },
+                onOpenActivity = { activityOpen = true },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = annotationPillBottom)
+                    .zIndex(6f),
+            )
+        }
+
+        if (drawHighlightMode && !activityOpen && sheet == PdfReaderSheet.None) {
             FrozenDrawHighlightBar(
                 color = drawColour,
-                onColorChange = { drawColour = it },
-                onClose = { drawHighlightMode = false },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(VaultSpacing.md),
+                onClose = {
+                    drawHighlightMode = false
+                    drawColourPickerOpen = false
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = annotationPillBottom + 55.dp)
+                    .zIndex(7f),
             )
         }
 
@@ -1087,30 +1129,171 @@ private fun FrozenPageJumpSheet(
 }
 
 @Composable
+private fun FrozenPdfAnnotationPill(
+    highlightCount: Int,
+    noteCount: Int,
+    color: String,
+    drawMode: Boolean,
+    colorPickerOpen: Boolean,
+    onDrawHighlight: () -> Unit,
+    onToggleColorPicker: () -> Unit,
+    onColorChange: (String) -> Unit,
+    onOpenActivity: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Box(modifier = modifier) {
+        if (colorPickerOpen) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 55.dp),
+                shape = VaultShapes.lg,
+                color = colors.surface,
+                border = BorderStroke(1.dp, colors.border),
+                shadowElevation = 6.dp,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    listOf("yellow", "blue", "green", "pink").forEach { option ->
+                        Surface(
+                            onClick = { onColorChange(option) },
+                            modifier = Modifier.size(28.dp),
+                            shape = CircleShape,
+                            color = Color.Transparent,
+                            border = BorderStroke(
+                                if (color == option) 2.dp else 1.dp,
+                                if (color == option) colors.text else colors.border,
+                            ),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Box(
+                                    Modifier
+                                        .size(18.dp)
+                                        .background(pdfColour(option), CircleShape),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier.width(252.dp).height(47.dp),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            color = colors.surface.copy(alpha = 0.96f),
+            border = BorderStroke(1.dp, colors.border),
+            shadowElevation = 7.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    onClick = onDrawHighlight,
+                    modifier = Modifier.height(35.dp),
+                    shape = VaultShapes.md,
+                    color = if (drawMode) colors.accentSoft else Color.Transparent,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.BorderColor,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (drawMode) colors.accent else colors.text,
+                        )
+                        Text(
+                            "Highlight",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.W700,
+                            color = if (drawMode) colors.accent else colors.text,
+                        )
+                    }
+                }
+                Surface(
+                    onClick = onToggleColorPicker,
+                    modifier = Modifier.size(width = 35.dp, height = 35.dp),
+                    shape = VaultShapes.md,
+                    color = Color.Transparent,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(18.dp).background(pdfColour(color), CircleShape))
+                    }
+                }
+                Surface(
+                    onClick = onOpenActivity,
+                    modifier = Modifier.weight(1f).height(35.dp),
+                    shape = VaultShapes.md,
+                    color = Color.Transparent,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 7.dp),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            "$highlightCount highlight${if (highlightCount == 1) "" else "s"}",
+                            fontSize = 9.sp,
+                            lineHeight = 11.sp,
+                            color = colors.textSecondary,
+                        )
+                        Text(
+                            "$noteCount note${if (noteCount == 1) "" else "s"}",
+                            fontSize = 9.sp,
+                            lineHeight = 11.sp,
+                            color = colors.textSecondary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun FrozenDrawHighlightBar(
     color: String,
-    onColorChange: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier,
 ) {
     val colors = VaultThemeTokens.colors
-    Surface(modifier = modifier, shape = VaultShapes.pill, color = colors.surface, shadowElevation = 5.dp) {
+    Surface(
+        modifier = modifier.width(250.dp).height(43.dp),
+        shape = VaultShapes.lg,
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.border),
+        shadowElevation = 6.dp,
+    ) {
         Row(
-            modifier = Modifier.padding(horizontal = VaultSpacing.sm, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            modifier = Modifier.padding(start = 12.dp, end = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Draw Highlight", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.text)
-            listOf("yellow", "blue", "green", "pink").forEach { name ->
-                Surface(
-                    modifier = Modifier.size(24.dp).clickable { onColorChange(name) },
-                    shape = CircleShape,
-                    color = pdfColour(name),
-                    border = BorderStroke(if (color == name) 2.dp else 1.dp, if (color == name) colors.accent else colors.border),
-                ) {}
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.BorderColor, null, Modifier.size(16.dp), tint = colors.textSecondary)
+                Column {
+                    Text("Draw Highlight", fontSize = 10.5.sp, fontWeight = FontWeight.W700, color = colors.text)
+                    Text("Drag a rectangle · $color", fontSize = 8.5.sp, color = colors.textSecondary)
+                }
             }
-            IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Rounded.Close, "Exit draw highlight", Modifier.size(16.dp), tint = colors.text)
+            Surface(
+                onClick = onClose,
+                modifier = Modifier.height(31.dp),
+                shape = VaultShapes.md,
+                color = colors.accent,
+            ) {
+                Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
+                    Text("Done", fontSize = 10.5.sp, fontWeight = FontWeight.W700, color = Color.White)
+                }
             }
         }
     }

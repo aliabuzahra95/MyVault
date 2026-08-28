@@ -2,6 +2,7 @@ package com.myvault.app.ui.navigation
 
 sealed class VaultDestination(val route: String, val label: String) {
     data object Home : VaultDestination("home", "Home")
+    data object Dashboard : VaultDestination("dashboard", "Dashboard")
     data object FolderView : VaultDestination("folder/{folderId}", "Folder View") {
         fun route(folderId: String) = "folder/$folderId"
     }
@@ -19,6 +20,7 @@ sealed class VaultDestination(val route: String, val label: String) {
             "attachment/$attachmentId?page=${pageIndex ?: -1}"
     }
     data object Search : VaultDestination("search", "Search")
+    data object Favourites : VaultDestination("favourites", "Favourites")
     data object QuranReflections : VaultDestination("quran-reflections", "Qur'an Reflections")
     data object Attachments : VaultDestination("attachments/{mode}", "Attachments") {
         fun route(mode: String) = "attachments/$mode"

@@ -10,8 +10,8 @@ Frozen prototype directory remains read-only.
 |---|---|---|---|
 | Outgoing Study Share | No action shown; inbound Send-to-MyVault/import remains unchanged | Separate sharing semantics/design decision | **DEFERRED - NEW FUNCTIONALITY** |
 | Outgoing Library Share | No action shown; inbound Send-to-MyVault/import remains unchanged | Separate sharing semantics/design decision | **DEFERRED - NEW FUNCTIONALITY** |
-| Workspace Attachments final placement | Study root FAB -> Tools -> Attachments | Final Frozen destination amendment | **TEMPORARY PLACEMENT** |
-| Aggregate Favourites final placement | Study root FAB -> Tools -> Favourites | Final Frozen destination amendment | **TEMPORARY PLACEMENT** |
+| Workspace Attachments final placement | Final Explorer destination invokes the existing production route; temporary Study FAB entry removed | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
+| Aggregate Favourites final placement | Final Explorer destination invokes the existing aggregate note-favourites state; temporary Study FAB entry removed | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | Qur'an Reflections Hub final placement | Reader overflow -> Reflections; temporary Study FAB entry removed | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Qur'an bookmark management and Save wording | Selected ayah uses Bookmark/Remove bookmark; reader overflow opens backed-up bookmark list | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Qur'an recent-location management | Reader overflow opens the real latest-five locations | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
@@ -20,9 +20,9 @@ Frozen prototype directory remains read-only.
 | Qur'an Surah picker filters/Juz grouping | Full-screen picker retains All/Meccan/Medinan and Juz grouping | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Qur'an reader-to-Memorise handoff | Selected ayah More -> Memorise from here hands the exact verse to the existing Memorise destination | Implemented from Frozen Qur'an amendment; detailed Memorise UI remains Stage 8 | **RESOLVED IN STAGE 7** |
 | Qur'an double-tap save-position gesture | Existing invisible gesture remains and updates the backed-up reading position | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
-| Dashboard final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
-| Global Search final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
-| Global narration mini-player design/placement | Current production presentation and behavior preserved; Note Reading Edit collision is resolved by a dynamic measured offset | Dedicated final global player design amendment | **DEFERRED; NOTE READING COLLISION RESOLVED** |
+| Dashboard final redesign | Truthful Continue, Recent, and Pinned sections use the final compact Frozen presentation | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
+| Global Search final redesign | Compact initial, empty, and grouped real-result states use existing production navigation | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
+| Global narration mini-player design/placement | Final collapsed/expanded Note/PDF player preserves the engine and uses measured collision offsets | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | Narration Settings placement | Reading & Listening, including Azure subpage | Implemented and verified in Stage 3; mini-player remains separate | **RESOLVED IN STAGE 3; MINI-PLAYER NOT RESOLVED** |
 | Note metadata placement | Note info sheet: Updated, Words, Characters | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | Quote formatting command | Existing serializable Quote mark receives the frozen direct toolbar adapter | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
@@ -38,7 +38,7 @@ Frozen prototype directory remains read-only.
 | Reading-to-edit double-tap | Preserved as invisible compatibility gesture alongside frozen Edit affordance | Frozen Editor amendment | **RESOLVED FOR STAGE 4** |
 | OpenAI note narration provider row | Existing `NarrationProvider.OpenAi` handler shown as the approved third restrained Listen provider | Stage 4 production-specific decision | **RESOLVED FOR STAGE 4** |
 | PDF text selection and Copy | Genuine AndroidX selected text and ordered page rectangles feed the Frozen selection actions | Frozen PDF amendment plus additive compatibility decision | **RESOLVED FOR STAGE 5** |
-| Manual rectangle highlight vs selected-text highlight | Draw Highlight remains a distinct single-rectangle workflow; selected-text highlight uses genuine text geometry | Frozen PDF amendment | **RESOLVED FOR STAGE 5** |
+| Manual rectangle highlight vs selected-text highlight | Draw Highlight is the primary repeated colour-first rectangle workflow; selected-text highlight and geometry remain supported | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | PDF text-box annotation lifecycle | Historic valid text boxes are preserved and read-only; no creation/editing UI is exposed | Frozen PDF compatibility decision | **RESOLVED FOR STAGE 5 COMPATIBILITY** |
 | PDF Activity final internal design | Contextual Activity route uses frozen search, filters, rows, navigation and annotation actions | Frozen PDF amendment | **RESOLVED FOR STAGE 5** |
 | PDF page notes and annotation actions | Current-page sheet, page notes, colour/note/tag/link/create/delete actions use frozen secondary surfaces | Frozen PDF amendment | **RESOLVED FOR STAGE 5** |
@@ -51,8 +51,8 @@ Frozen prototype directory remains read-only.
 | Qur'an audio-download management | Reader overflow opens the existing real download manager; expanded player exposes current-Surah download | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |
 | Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |
-| PDF annotation/count pill refinement | Stage 5 production behavior remains intact | Later visual refinement pass | **DEFERRED REFINEMENT** |
-| Preset PDF highlight-colour workflow refinement | Stage 5 production behavior remains intact | Later visual refinement pass | **DEFERRED REFINEMENT** |
+| PDF annotation/count pill refinement | Real highlight/note counts, selected colour, Draw entry, Activity access, insets, and player collision are implemented | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
+| Preset PDF highlight-colour workflow refinement | Four existing production colours are selectable before repeated Draw Highlight rectangles | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | PDF Activity typography refinement | Restrained one-step typography increase applied without changing row architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Explorer font-size refinement | Primary application/tree labels increased one restrained step; metadata/counts preserved | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | PDF reader Explorer edge-swipe disable | Drawer gesture disabled on the PDF route only; hamburger and other routes retained | Authorized Stage 9 Batch A1 | **RESOLVED IN STAGE 9** |
@@ -85,7 +85,7 @@ previously explicit rows in this register:
 | Note attachment domination in Edit mode | Focus-dependent large previews replaced by stable compact document-flow rows | Authorized Stage 9 Batch A1 | **RESOLVED IN STAGE 9** |
 | Editor paragraph token | Compact `P`/`H1`-`H4` tokens retain the existing style chooser and semantics | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Editor toolbar spacing | Visible padding tightened while controls and horizontal access remain intact | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
-| Global directional route motion | Frozen motion contract does not define whole-route forward/reverse slides | Dedicated Frozen motion amendment | **REQUIRES FROZEN AMENDMENT** |
+| Global directional route motion | Ordinary routes use restrained 210 ms forward/reverse slides; reduced motion disables translation | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | PDF current-page annotation typography | Excerpts/metadata increased one restrained step without changing sheet architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | PDF annotation type distinction | Highlight, Note and Study Link now use distinct semantic icons; highlights retain their saved colour cue | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Google Drive debug OAuth | Local debug SHA exists; checked-in Google services config has no Android OAuth entry | Separate OAuth configuration; Stage 10 uses correctly signed/configured build | **STAGE 10 / COMPATIBILITY** |
@@ -120,8 +120,8 @@ previously explicit rows in this register:
 
 - **Narration Settings**: provider, Azure credentials/region, and voice choices.
   These have a proposed Stage 3 Settings hierarchy.
-- **Global Narration Mini-player**: playback presentation and global placement.
-  This remains deferred and is not resolved by placing narration Settings.
+- **Global Narration Mini-player**: final Note/PDF playback presentation and
+  measured global placement were resolved by the Frozen Stage 9 amendment.
 
 ## Register Rule
 

@@ -343,14 +343,6 @@ fun HomeScreen(
                     studyCreateMenuOpen = false
                     importPicker.launch(arrayOf("*/*"))
                 },
-                PremiumAction("Attachments", Icons.Rounded.AttachFile, section = "TOOLS") {
-                    studyCreateMenuOpen = false
-                    onOpenAttachmentsClick()
-                },
-                PremiumAction("Favourites", Icons.Rounded.Star, section = "TOOLS") {
-                    studyCreateMenuOpen = false
-                    manageFavouriteNotesOpen = true
-                },
                 PremiumAction("Organise existing items", Icons.Rounded.SwapVert, section = "ORGANISE") {
                     studyCreateMenuOpen = false
                     manageMenuOpen = true

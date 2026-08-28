@@ -37,6 +37,8 @@ import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -125,9 +127,13 @@ fun VaultMobileWebShell(
     onItemSelected: (Int) -> Unit,
     onDashboardSelected: () -> Unit,
     onSearchSelected: () -> Unit,
+    onAttachmentsSelected: () -> Unit,
+    onFavouritesSelected: () -> Unit,
     onSettingsSelected: () -> Unit,
     onThemeSelected: () -> Unit,
     selectedApplicationDestination: VaultMobileWebApplicationDestination? = null,
+    attachmentsSelected: Boolean = false,
+    favouritesSelected: Boolean = false,
     explorerSections: List<VaultMobileWebExplorerSection> = emptyList(),
     selectedExplorerNodeId: String? = null,
     onExplorerNodeSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
@@ -293,6 +299,20 @@ fun VaultMobileWebShell(
                                             }
                                         }
                                     }
+                                }
+                                if (item.label == "Library") {
+                                    DrawerNavigationRow(
+                                        label = "Workspace Attachments",
+                                        icon = Icons.Outlined.AttachFile,
+                                        selected = attachmentsSelected,
+                                        onClick = { closeDrawerThen(onAttachmentsSelected) },
+                                    )
+                                    DrawerNavigationRow(
+                                        label = "Favourites",
+                                        icon = Icons.Outlined.StarOutline,
+                                        selected = favouritesSelected,
+                                        onClick = { closeDrawerThen(onFavouritesSelected) },
+                                    )
                                 }
                             }
                         }

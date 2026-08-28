@@ -1,6 +1,6 @@
 # Stage 9 Real-Device Refinement Plan
 
-Status: **BATCHES A1, A2, AND B IMPLEMENTED AND VERIFIED**
+Status: **BATCHES A1, A2, B, C1, C2, C3, AND C4 IMPLEMENTED AND VERIFIED**
 
 This document records the pre-Stage-9 production audit performed against the
 approved Stage 8 commit
@@ -20,16 +20,17 @@ The Frozen Design Master and all approved amendments remain authoritative.
 
 ## 2. Classification Summary
 
-The pre-implementation audit identified 29 requirements. The 12 authorized
-direct items are now resolved, leaving **17 active requirements**:
+The pre-implementation audit identified 29 requirements. The 12 direct items
+and eight final-amendment items are now resolved, leaving **9 active
+requirements**:
 
 | Classification | Count |
 |---|---:|
 | A. Direct functional fix | 0 active / 5 resolved |
 | B. Direct consistency refinement | 0 active / 7 resolved |
-| C. Requires Frozen design amendment | 10 |
+| C. Requires Frozen design amendment | 2 active / 8 resolved |
 | D. Stage 10 / compatibility | 7 |
-| **Total active** | **17** |
+| **Total active** | **9** |
 
 ## 2.1 Authorized Direct-Batch Result
 
@@ -83,20 +84,20 @@ in the active count. Stage 8 runtime evidence confirms it is resolved.
 | 11 | PDF annotation type distinction. Current Frozen rows select different icons for page note, draw/highlight, and Study link, but highlight rows do not use their saved colour cue consistently. | Existing semantic data is present but the row mapping is too visually neutral. | Within the approved row language: marker/highlighter plus saved colour for Highlight, comment/note icon for Note, link/reference icon for Study Link. No new surface. | Low/Medium: contrast for pale colours and legacy annotations. | Every type; every supported colour; legacy/null values; Light/Dark/OLED; TalkBack type label. |
 | 12 | Explorer typography. `VaultMobileWebShell.kt` currently uses about 13 sp application rows, 12 sp tree rows, 10 sp counts, and 9.5 sp section labels. | The main hierarchy, not the profile header, is the likely undersized area. | Test application rows at 14 sp and tree rows at 13 sp first. Retain counts/section labels unless device evidence requires a smaller adjustment. Do not jump blindly to 17 sp. | Medium: long names, nesting, and vertical density. | 360/412/430 dp; deep trees; Arabic/mixed names; long titles; counts; collapsed/expanded states. |
 
-### C. Requires Frozen Design Amendment
+### C. Frozen Design Amendment Result
 
 | # | Requirement | Why implementation is blocked | Required amendment/test gate |
 |---:|---|---|---|
-| 13 | Global Search redesign | No final Frozen Search reference exists; current legacy layout is intentionally preserved. | Freeze root composition, search/close behavior, results, empty/loading states, keyboard, and motion before code changes. |
-| 14 | Global directional navigation motion | The Frozen motion specification defines drawers/sheets/state changes but not a global forward/reverse route-slide system; the port plan also rejects animated whole-page replacement. | Freeze route hierarchy/direction, duration/easing, interruption, predictive Back, root-to-root behavior, and reduced motion. |
-| 15 | PDF primary Draw Highlight workflow and preset colour | Promoting rectangle drawing over selected-text highlighting changes visible interaction priority. | Freeze entry action, active-mode state, colour persistence, exit/cancel, repeated rectangles, and coexistence with genuine text selection. |
-| 16 | Floating PDF annotation/highlight pill | This is a new persistent PDF control with count, colour, and mode state. | Freeze placement, collapsed/expanded states, counts, colour control, occlusion rules, animation, zoom/pan behavior, and accessibility. |
+| 13 | Global Search redesign | Implemented from the final Frozen Stage 9 amendment using real Notes, Folders, Files/PDFs, and Courses results. | **RESOLVED IN STAGE 9 C2** |
+| 14 | Global directional navigation motion | Implemented as restrained 210 ms forward/reverse route slides with reduced-motion handling. | **RESOLVED IN STAGE 9 C4** |
+| 15 | PDF primary Draw Highlight workflow and preset colour | Draw Highlight now supports colour-first repeated rectangle creation while genuine text selection remains intact. | **RESOLVED IN STAGE 9 C1** |
+| 16 | Floating PDF annotation/highlight pill | Implemented with real highlight/note counts, current colour, activity access, system insets, and narration-player clearance. | **RESOLVED IN STAGE 9 C1** |
 | 17 | Outgoing Study Share | No outgoing production handler or frozen sharing semantics exists. | Decide exported content, rich-text conversion, title/body format, and attachments before UI. |
 | 18 | Outgoing Library Share | No outgoing production handler or frozen sharing semantics exists. | Decide underlying file/link/metadata, permissions, and failure states before UI. |
-| 19 | Workspace Attachments final placement | It is temporarily reachable from Study FAB -> Tools. | Freeze its permanent navigation destination; do not treat the temporary entry as final. |
-| 20 | Aggregate Favourites final placement | It is temporarily reachable from Study FAB -> Tools. | Freeze its permanent navigation destination and hierarchy. |
-| 21 | Dashboard final redesign | Legacy Dashboard was explicitly preserved because no Frozen reference exists. | Dedicated Frozen Dashboard amendment. |
-| 22 | Global narration mini-player final design | Existing production player remains a deliberate legacy exception; only known collisions are locally adapted around it. | Freeze global placement, chrome, screen collisions, keyboard/sheet behavior, and motion. |
+| 19 | Workspace Attachments final placement | Final Explorer destination implemented and temporary Study FAB entry removed. | **RESOLVED IN STAGE 9 C2** |
+| 20 | Aggregate Favourites final placement | Final Explorer destination implemented and temporary Study FAB entry removed. | **RESOLVED IN STAGE 9 C2** |
+| 21 | Dashboard final redesign | Frozen compact Continue, Recent, and Pinned presentation now uses truthful production state only. | **RESOLVED IN STAGE 9 C2** |
+| 22 | Global narration mini-player final design | One measured collapsed/expanded player now preserves the existing engine and dynamically clears Note, PDF, FAB, and system-inset surfaces. | **RESOLVED IN STAGE 9 C3** |
 
 ### D. Stage 10 / Compatibility
 
@@ -180,12 +181,25 @@ The audit found four concrete Stage 4/7 implementation regressions:
 These are classified as direct fixes because the approved Frozen contracts
 already answer their presentation and no data/engine redesign is required.
 
-## 7. Authorization Boundary
+## 7. Final Amendment Implementation
 
-Only Batches A1, A2, and B were authorized and implemented. Application source
-outside those direct fixes, canonical Qur'an data, audio engines, PDF renderer,
-Room schema, backup format, and repository contracts remain unchanged. Every
-item in sections C and D remains a hard gate. Global Search, global navigation
-motion, primary Draw Highlight workflow, the floating PDF annotation pill,
-Dashboard, outgoing Share, final utility destinations, and the global narration
-mini-player were not changed.
+The final Frozen checkpoint
+`myvault-ui-prototype-frozen-stage-9-refinement-20260828-181132-AEST`
+authorized and resolved Batches C1-C4. Production now includes the compact PDF
+annotation pill and repeated Draw Highlight flow, final Search and Dashboard,
+Explorer Attachments/Favourites destinations, the collapsed/expanded global
+Note/PDF narration player, and directional route motion.
+
+Runtime verification at the 412 x 892 logical reference viewport confirmed:
+
+- repeated PDF rectangles increased the real count from one to three while Draw
+  mode remained active;
+- Explorer final destination order and real Attachments/Favourites routes;
+- truthful Search and Dashboard states;
+- Device TTS playback with collapsed/expanded player states;
+- dynamic Note Edit, PDF pill, and FAB clearance around the measured player;
+- PDF pill and expanded narration player visible together without overlap.
+
+Canonical Qur'an data, audio engines, PDF rendering/geometry, Room schema,
+backup format, note serialization, and repository contracts remain unchanged.
+Outgoing Study/Library Share and all Stage 10 compatibility items remain open.
