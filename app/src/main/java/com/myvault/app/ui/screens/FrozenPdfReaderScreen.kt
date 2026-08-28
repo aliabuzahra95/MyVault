@@ -4,6 +4,7 @@ package com.myvault.app.ui.screens
 
 import android.graphics.RectF
 import android.view.View
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -102,6 +104,7 @@ private enum class PdfReaderSheet {
     SelectionColours,
     SelectionNote,
     SelectionMore,
+    LocalActivity,
     CurrentPage,
     PageNote,
     AnnotationActions,
@@ -179,6 +182,7 @@ internal fun FrozenPdfReaderScreen(
     var activitySearchOpen by remember(attachment.id) { mutableStateOf(false) }
     var activityQuery by remember(attachment.id) { mutableStateOf("") }
     var activityFilter by remember(attachment.id) { mutableStateOf(PdfActivityFilter.All) }
+    var localActivityFilter by remember(attachment.id) { mutableStateOf(PdfActivityFilter.All) }
     var jumpDraft by remember(attachment.id) { mutableStateOf("") }
     var transientMessage by remember(attachment.id) { mutableStateOf<String?>(null) }
 
@@ -209,6 +213,30 @@ internal fun FrozenPdfReaderScreen(
         }
     }
     val annotationPillBottom = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight + 10.dp else 16.dp
+
+    BackHandler(
+        enabled = drawColourPickerOpen ||
+            sheet != PdfReaderSheet.None ||
+            drawHighlightMode ||
+            selection != null ||
+            overflowOpen ||
+            activityOpen ||
+            immersive,
+    ) {
+        when {
+            drawColourPickerOpen -> drawColourPickerOpen = false
+            sheet == PdfReaderSheet.LocalActivity -> sheet = PdfReaderSheet.None
+            drawHighlightMode -> drawHighlightMode = false
+            sheet == PdfReaderSheet.SelectionColours ||
+                sheet == PdfReaderSheet.SelectionNote ||
+                sheet == PdfReaderSheet.SelectionMore -> sheet = PdfReaderSheet.None
+            selection != null -> selection = null
+            sheet != PdfReaderSheet.None -> sheet = PdfReaderSheet.None
+            overflowOpen -> overflowOpen = false
+            activityOpen -> activityOpen = false
+            immersive -> immersive = false
+        }
+    }
 
     LaunchedEffect(pdfReady, initialPageIndex, pageCount, pdfView) {
         val view = pdfView ?: return@LaunchedEffect
@@ -466,7 +494,7 @@ internal fun FrozenPdfReaderScreen(
                     drawColour = it
                     drawColourPickerOpen = false
                 },
-                onOpenActivity = { activityOpen = true },
+                onOpenActivity = { sheet = PdfReaderSheet.LocalActivity },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = annotationPillBottom)
@@ -591,6 +619,31 @@ internal fun FrozenPdfReaderScreen(
                     }
                 },
             ),
+        )
+        PdfReaderSheet.LocalActivity -> FrozenLocalPdfActivitySheet(
+            annotations = visibleAnnotations,
+            references = references,
+            filter = localActivityFilter,
+            onFilterChange = { localActivityFilter = it },
+            onDismiss = { sheet = PdfReaderSheet.None },
+            onAnnotationClick = { annotation ->
+                pdfView?.scrollToAnnotation(annotation, annotationSegments)
+                pageIndex = annotation.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                sheet = PdfReaderSheet.None
+            },
+            onAnnotationActions = { annotation ->
+                if (annotation.isCompatibilityPreservedPdfTextBox()) {
+                    transientMessage = "Historic text box is read-only"
+                } else {
+                    selectedAnnotationId = annotation.id
+                    sheet = PdfReaderSheet.AnnotationActions
+                }
+            },
+            onReferenceClick = { onOpenStudyNote(it.noteId) },
+            onViewAllActivity = {
+                sheet = PdfReaderSheet.None
+                activityOpen = true
+            },
         )
         PdfReaderSheet.CurrentPage -> FrozenCurrentPageSheet(
             pageIndex = pageIndex,
@@ -744,7 +797,7 @@ private fun FrozenPdfHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = attachment.fileName,
-                    fontSize = 12.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.W800,
                     color = colors.text,
                     maxLines = 1,
@@ -752,7 +805,7 @@ private fun FrozenPdfHeader(
                 )
                 Text(
                     text = "Library",
-                    fontSize = 8.sp,
+                    fontSize = 9.5.sp,
                     color = colors.textMuted,
                     maxLines = 1,
                 )
@@ -760,7 +813,7 @@ private fun FrozenPdfHeader(
             TextButton(onClick = onPageClick) {
                 Text(
                     text = "${pageIndex + 1} / ${pageCount.coerceAtLeast(1)}",
-                    fontSize = 9.sp,
+                    fontSize = 10.5.sp,
                     color = colors.textMuted,
                 )
             }
@@ -976,6 +1029,86 @@ private fun FrozenCurrentPageSheet(
 }
 
 @Composable
+private fun FrozenLocalPdfActivitySheet(
+    annotations: List<PdfAnnotationEntity>,
+    references: List<LibraryReferencedNote>,
+    filter: PdfActivityFilter,
+    onFilterChange: (PdfActivityFilter) -> Unit,
+    onDismiss: () -> Unit,
+    onAnnotationClick: (PdfAnnotationEntity) -> Unit,
+    onAnnotationActions: (PdfAnnotationEntity) -> Unit,
+    onReferenceClick: (LibraryReferencedNote) -> Unit,
+    onViewAllActivity: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val filteredAnnotations = remember(annotations, filter) {
+        annotations.filter { annotation ->
+            when (filter) {
+                PdfActivityFilter.All -> true
+                PdfActivityFilter.Highlights ->
+                    annotation.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT && annotation.noteText.isNullOrBlank()
+                PdfActivityFilter.Notes ->
+                    annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
+                PdfActivityFilter.StudyLinks -> false
+            }
+        }
+    }
+    val filteredReferences = remember(references, filter) {
+        references.takeIf { filter == PdfActivityFilter.All || filter == PdfActivityFilter.StudyLinks }.orEmpty()
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
+        Column(modifier = Modifier.fillMaxWidth().heightIn(min = 340.dp, max = 460.dp)) {
+            FrozenSheetHeader("PDF annotations", onDismiss)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                PdfActivityFilter.entries.forEach { choice ->
+                    FilterChip(
+                        selected = filter == choice,
+                        onClick = { onFilterChange(choice) },
+                        label = { Text(choice.label, fontSize = 10.5.sp) },
+                        leadingIcon = if (filter == choice) {
+                            { Icon(Icons.Rounded.Check, null, Modifier.size(13.dp)) }
+                        } else null,
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                filteredAnnotations.forEach { annotation ->
+                    FrozenActivityAnnotationRow(
+                        annotation = annotation,
+                        onClick = { onAnnotationClick(annotation) },
+                        onActions = { onAnnotationActions(annotation) },
+                    )
+                }
+                filteredReferences.forEach { reference ->
+                    FrozenActivityReferenceRow(reference, onClick = { onReferenceClick(reference) })
+                }
+                if (filteredAnnotations.isEmpty() && filteredReferences.isEmpty()) {
+                    Text(
+                        "No ${filter.label.lowercase()} in this PDF",
+                        modifier = Modifier.padding(VaultSpacing.screen),
+                        fontSize = 13.sp,
+                        color = colors.textMuted,
+                    )
+                }
+            }
+            TextButton(
+                onClick = onViewAllActivity,
+                modifier = Modifier.align(Alignment.End).padding(horizontal = VaultSpacing.md, vertical = 4.dp),
+            ) {
+                Text("View all activity", fontSize = 12.5.sp, fontWeight = FontWeight.W700)
+            }
+        }
+    }
+}
+
+@Composable
 private fun FrozenAnnotationActionsSheet(
     annotation: PdfAnnotationEntity,
     onDismiss: () -> Unit,
@@ -1147,7 +1280,8 @@ private fun FrozenPdfAnnotationPill(
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 55.dp),
+                    .padding(bottom = 55.dp)
+                    .zIndex(2f),
                 shape = VaultShapes.lg,
                 color = colors.surface,
                 border = BorderStroke(1.dp, colors.border),
@@ -1182,7 +1316,7 @@ private fun FrozenPdfAnnotationPill(
         }
 
         Surface(
-            modifier = Modifier.width(252.dp).height(47.dp),
+            modifier = Modifier.width(252.dp).height(47.dp).zIndex(1f),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
             color = colors.surface.copy(alpha = 0.96f),
             border = BorderStroke(1.dp, colors.border),
@@ -1292,7 +1426,7 @@ private fun FrozenDrawHighlightBar(
                 color = colors.accent,
             ) {
                 Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
-                    Text("Done", fontSize = 10.5.sp, fontWeight = FontWeight.W700, color = Color.White)
+                    Text("Exit", fontSize = 10.5.sp, fontWeight = FontWeight.W700, color = Color.White)
                 }
             }
         }
@@ -1345,8 +1479,8 @@ private fun FrozenPdfActivity(
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to PDF", Modifier.size(20.dp), tint = colors.text)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("PDF Activity", fontSize = 14.sp, fontWeight = FontWeight.W800, color = colors.text)
-                    Text(attachment.fileName, fontSize = 9.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("PDF Activity", fontSize = 15.sp, fontWeight = FontWeight.W800, color = colors.text)
+                    Text(attachment.fileName, fontSize = 10.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton(onClick = { onSearchOpenChange(!searchOpen) }) {
                     Icon(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search, "Search PDF activity", Modifier.size(20.dp), tint = colors.text)
@@ -1369,7 +1503,7 @@ private fun FrozenPdfActivity(
                     FilterChip(
                         selected = filter == choice,
                         onClick = { onFilterChange(choice) },
-                        label = { Text(choice.label, fontSize = 9.5.sp) },
+                        label = { Text(choice.label, fontSize = 10.5.sp) },
                         leadingIcon = if (filter == choice) {
                             { Icon(Icons.Rounded.Check, null, Modifier.size(12.dp)) }
                         } else null,
@@ -1414,8 +1548,8 @@ private fun FrozenActivityAnnotationRow(annotation: PdfAnnotationEntity, onClick
             tint = if (isNote) colors.textSecondary else pdfColour(annotation.color),
         )
         Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
-            Text(annotationActivityTitle(annotation), fontSize = 12.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(annotationActivitySubtitle(annotation), fontSize = 9.5.sp, color = colors.textMuted)
+            Text(annotationActivityTitle(annotation), fontSize = 13.2.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(annotationActivitySubtitle(annotation), fontSize = 10.5.sp, color = colors.textMuted)
         }
         IconButton(onClick = onActions) {
             Icon(Icons.Rounded.MoreHoriz, "Annotation actions", Modifier.size(17.dp), tint = colors.textMuted)
@@ -1433,8 +1567,8 @@ private fun FrozenActivityReferenceRow(reference: LibraryReferencedNote, onClick
     ) {
         Icon(Icons.Rounded.Link, "Study link", Modifier.size(17.dp), tint = colors.textSecondary)
         Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
-            Text(reference.noteTitle, fontSize = 12.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("Linked Study note", fontSize = 9.5.sp, color = colors.textMuted)
+            Text(reference.noteTitle, fontSize = 13.2.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("Linked Study note", fontSize = 10.5.sp, color = colors.textMuted)
         }
         Icon(Icons.Rounded.BookmarkBorder, null, Modifier.size(16.dp), tint = colors.textMuted)
     }
@@ -1473,7 +1607,7 @@ private fun FrozenSectionLabel(label: String) {
     Text(
         label,
         modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
-        fontSize = 9.5.sp,
+        fontSize = 10.5.sp,
         fontWeight = FontWeight.W800,
         color = colors.textMuted,
     )

@@ -691,3 +691,17 @@ Final release promotion is blocked until the release-signed build completes a
 real Google Drive backup/restore and a physical-device PDF pinch/pan/annotation
 alignment smoke. Outgoing Study and Library Share remain deferred new
 functionality. Stage 10 must not be marked fully accepted before those gates.
+
+## 17. Post-Stage-10 Physical Correction Pass
+
+The authorized P1-P3 physical-review corrections are recorded in
+`docs/POST_STAGE_10_PHYSICAL_CORRECTIONS.md`. They refine Explorer persistence
+and typography, Study/Library hierarchy motion, the PDF draw/activity workflow,
+Course density, Dashboard typography, and Qur'an picker/selection readability
+without changing Room, repositories, PDF geometry, canonical Qur'an data, or
+backup schemas.
+
+Optional folder colours remain deferred because correct persistence requires a
+Room migration and an explicit additive backup/Web compatibility decision. The
+corrected release candidate still requires physical PDF gesture/alignment and
+release-signed Google Drive acceptance before release promotion.

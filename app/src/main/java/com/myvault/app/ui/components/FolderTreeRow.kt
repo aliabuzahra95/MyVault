@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -258,6 +259,7 @@ private fun FolderTreeSingleRow(
     val effectiveDepth = depth.coerceAtMost(3)
     val movable = isFolder || organizeAllItems
     val rowVerticalPadding = when {
+        flatHierarchy -> 3.dp
         !isFolder && notePreviewLines > 0 && item.preview.isNotBlank() -> 7.dp
         !isFolder -> 6.dp
         isFolder -> 7.dp
@@ -306,6 +308,7 @@ private fun FolderTreeSingleRow(
             )
             .heightIn(
                 min = when {
+                    flatHierarchy -> 38.dp
                     isFolder && topLevel -> 48.dp
                     isFolder -> 44.dp
                     else -> 44.dp
@@ -389,10 +392,15 @@ private fun FolderTreeSingleRow(
 
             if (isFolder) {
                 Icon(
-                    imageVector = Icons.Rounded.Folder,
+                    imageVector = if (flatHierarchy && !topLevel) Icons.Rounded.FolderOpen else Icons.Rounded.Folder,
                     contentDescription = null,
                     modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
-                    tint = if (flatHierarchy) colors.textSecondary else if (topLevel) colors.accent else colors.textSecondary,
+                    tint = when {
+                        flatHierarchy && topLevel -> colors.text
+                        flatHierarchy -> colors.textSecondary
+                        topLevel -> colors.accent
+                        else -> colors.textSecondary
+                    },
                 )
             } else {
                 Box(

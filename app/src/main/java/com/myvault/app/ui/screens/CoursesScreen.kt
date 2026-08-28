@@ -540,14 +540,12 @@ private fun CourseHeader(
     }
     Column(
         modifier = Modifier.padding(
-            start = 60.dp,
             top = VaultSpacing.md,
-            end = VaultSpacing.lg,
             bottom = VaultSpacing.sm,
         ),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(start = 60.dp, end = VaultSpacing.lg),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -573,7 +571,9 @@ private fun CourseHeader(
         }
         continueTitle?.let {
             Spacer(Modifier.height(10.dp))
-            ContinueLessonCard(continueTitle = it, onContinue = onContinue)
+            Box(Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen)) {
+                ContinueLessonCard(continueTitle = it, onContinue = onContinue)
+            }
         }
     }
 

@@ -40,7 +40,7 @@ fun AttachmentsScreen(
                 Text(
                     "Files and images attached across your workspace.",
                     modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
-                    fontSize = 10.5.sp,
+                    fontSize = 11.5.sp,
                     color = colors.textMuted,
                 )
             }
@@ -67,6 +67,8 @@ fun AttachmentsScreen(
                             else -> Icons.Rounded.AttachFile
                         },
                         onClick = { if (attachment.id.isNotBlank()) onAttachmentClick(attachment.id) },
+                        titleFontSize = 13.sp,
+                        metaFontSize = 10.5.sp,
                     )
                 }
             }

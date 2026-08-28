@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.repository.toRelativeTime
 import com.myvault.app.ui.components.IconBtn
@@ -373,7 +374,7 @@ private fun PdfGroupCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = group.fileName,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
                         color = colors.text,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -384,18 +385,18 @@ private fun PdfGroupCard(
                     ) {
                         Text(
                             text = "${group.totalCount} activity item${if (group.totalCount == 1) "" else "s"}",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp),
                             color = colors.textSecondary,
                         )
                         if (timeLabel.isNotBlank()) {
                             Text(
                                 text = "•",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp),
                                 color = colors.textMuted,
                             )
                             Text(
                                 text = timeLabel,
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp),
                                 color = colors.textMuted,
                             )
                         }
@@ -505,13 +506,13 @@ private fun ActivityItemRow(
                 ) {
                     Text(
                         text = "Page ${activity.pageIndex + 1}",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                         color = colors.textMuted,
                     )
                 }
                 Text(
                     text = titleText,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
                     color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -519,7 +520,7 @@ private fun ActivityItemRow(
                 if (descriptionText.isNotBlank()) {
                     Text(
                         text = descriptionText,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp),
                         color = colors.textSecondary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,

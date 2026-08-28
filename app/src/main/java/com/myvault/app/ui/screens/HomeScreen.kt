@@ -110,6 +110,7 @@ import com.myvault.app.ui.components.CompactPrimaryAction
 import com.myvault.app.ui.components.CompactViewAction
 import com.myvault.app.ui.components.CompactWorkspaceHeader
 import com.myvault.app.ui.components.CorpusEmptyState
+import com.myvault.app.ui.components.CorpusExpandedChildren
 import com.myvault.app.ui.components.CorpusAction
 import com.myvault.app.ui.components.CorpusActionGroup
 import com.myvault.app.ui.components.CorpusActionSheet
@@ -1057,6 +1058,7 @@ private fun StudyMobileWebContent(
                             onOpenNote = onOpenNote,
                             onMore = onMore,
                             showFullTitle = uiState.showFullNoteTitles,
+                            depth = 0,
                         )
                     }
                 }
@@ -1075,6 +1077,7 @@ private fun StudyCorpusItem(
     onOpenNote: (String) -> Unit,
     onMore: (VaultTreeItem) -> Unit,
     showFullTitle: Boolean,
+    depth: Int,
 ) {
     if (item.type == VaultTreeItemType.Folder) {
         val expanded = searching || isFolderExpanded(item.id)
@@ -1085,8 +1088,9 @@ private fun StudyCorpusItem(
             onToggle = { onToggleFolder(item) },
             onLongPress = { onMore(item) },
             onAdd = null,
+            depth = depth,
         )
-        if (expanded) {
+        CorpusExpandedChildren(expanded = expanded) {
             item.children.forEach { child ->
                 StudyCorpusItem(
                     item = child,
@@ -1097,6 +1101,7 @@ private fun StudyCorpusItem(
                     onOpenNote = onOpenNote,
                     onMore = onMore,
                     showFullTitle = showFullTitle,
+                    depth = depth + 1,
                 )
             }
         }
@@ -1109,6 +1114,7 @@ private fun StudyCorpusItem(
             pinned = item.pinned,
             attachmentCount = item.attachmentCount,
             showFullTitle = showFullTitle,
+            depth = depth,
         )
     }
 }

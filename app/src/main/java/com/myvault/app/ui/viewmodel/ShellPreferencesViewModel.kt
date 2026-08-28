@@ -35,6 +35,10 @@ class ShellPreferencesViewModel @Inject constructor(
         viewModelScope.launch { preferences.setWorkspace(workspace) }
     }
 
+    fun setExplorerExpandedKeys(keys: Set<String>) {
+        viewModelScope.launch { preferences.setExplorerExpandedKeys(keys) }
+    }
+
     fun pushGoogleDriveSync(onComplete: (String) -> Unit) {
         googleDriveRestoreController.get().startPush { result ->
             onComplete(result.displayMessage())

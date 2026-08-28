@@ -120,6 +120,7 @@ data class VaultMobileWebExplorerSection(
 @Composable
 fun VaultMobileWebShell(
     workspaceLabel: String,
+    workspaceKey: String,
     accountEmail: String,
     onWorkspaceSelected: (String) -> Unit,
     items: List<VaultMobileWebNavigationItem>,
@@ -135,6 +136,8 @@ fun VaultMobileWebShell(
     attachmentsSelected: Boolean = false,
     favouritesSelected: Boolean = false,
     explorerSections: List<VaultMobileWebExplorerSection> = emptyList(),
+    persistedExpandedExplorerKeys: Set<String> = emptySet(),
+    onPersistExpandedExplorerKeys: (Set<String>) -> Unit = {},
     selectedExplorerNodeId: String? = null,
     onExplorerNodeSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
     onExplorerAddSelected: (Int, VaultMobileWebExplorerNode?) -> Unit = { _, _ -> },
@@ -150,8 +153,31 @@ fun VaultMobileWebShell(
     val density = LocalDensity.current
     val drawerGestureEdgeWidth = with(density) { 24.dp.toPx() }
     val drawerGestureZoneHeight = with(density) { 200.dp.toPx() }
-    var expandedExplorerKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val workspaceExpansionPrefix = "$workspaceKey::"
+    var expandedExplorerKeys by rememberSaveable(workspaceKey) {
+        mutableStateOf(
+            persistedExpandedExplorerKeys
+                .mapNotNull { it.removePrefix(workspaceExpansionPrefix).takeIf { key -> key != it } },
+        )
+    }
     var workspaceChooserOpen by rememberSaveable { mutableStateOf(false) }
+
+    fun persistExpandedKeys(updatedKeys: List<String>) {
+        expandedExplorerKeys = updatedKeys.distinct()
+        onPersistExpandedExplorerKeys(
+            persistedExpandedExplorerKeys
+                .filterNot { it.startsWith(workspaceExpansionPrefix) }
+                .toSet() + expandedExplorerKeys.map { "$workspaceExpansionPrefix$it" },
+        )
+    }
+
+    LaunchedEffect(workspaceKey, persistedExpandedExplorerKeys) {
+        val restored = persistedExpandedExplorerKeys
+            .mapNotNull { it.removePrefix(workspaceExpansionPrefix).takeIf { key -> key != it } }
+        if (restored.toSet() != expandedExplorerKeys.toSet()) {
+            expandedExplorerKeys = restored
+        }
+    }
 
     LaunchedEffect(selectedExplorerNodeId, explorerSections) {
         val selectedId = selectedExplorerNodeId ?: return@LaunchedEffect
@@ -163,7 +189,7 @@ fun VaultMobileWebShell(
                     add("node:${section.navigationIndex}:${node.type}:${node.id}")
                 }
             }
-            expandedExplorerKeys = (expandedExplorerKeys + keys).distinct()
+            persistExpandedKeys(expandedExplorerKeys + keys)
         }
     }
 
@@ -263,7 +289,7 @@ fun VaultMobileWebShell(
                                         expanded = expanded,
                                         canAdd = explorerSection.canAdd,
                                         onToggle = {
-                                            expandedExplorerKeys = expandedExplorerKeys.toggleKey(sectionKey)
+                                            persistExpandedKeys(expandedExplorerKeys.toggleKey(sectionKey))
                                         },
                                         onOpen = { closeDrawerThen { onItemSelected(index) } },
                                         onAdd = {
@@ -284,7 +310,7 @@ fun VaultMobileWebShell(
                                                     expandedKeys = expandedExplorerKeys,
                                                     selectedNodeId = selectedExplorerNodeId,
                                                     onToggle = { key ->
-                                                        expandedExplorerKeys = expandedExplorerKeys.toggleKey(key)
+                                                        persistExpandedKeys(expandedExplorerKeys.toggleKey(key))
                                                     },
                                                     onOpen = { selectedNode ->
                                                         closeDrawerThen { onExplorerNodeSelected(index, selectedNode) }
@@ -472,7 +498,7 @@ private fun DrawerExplorerSectionRow(
                 text = label,
                 modifier = Modifier.weight(1f),
                 color = if (selected) colors.text else colors.textSecondary,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.W700,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -513,7 +539,7 @@ private fun DrawerExplorerNode(
     val expandable = node.type == VaultMobileWebExplorerNodeType.Folder && node.children.isNotEmpty()
     val expanded = nodeKey in expandedKeys
     val selected = node.id == selectedNodeId
-    val indent = (12 + depth * 12).dp
+    val indent = (8 + depth.coerceAtMost(3) * 8).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -548,7 +574,7 @@ private fun DrawerExplorerNode(
                     onClick = { onOpen(node) },
                     onLongClick = if (node.canManage) ({ onMore(node) }) else null,
                 ),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -565,7 +591,7 @@ private fun DrawerExplorerNode(
                 text = node.label,
                 modifier = Modifier.weight(1f),
                 color = if (selected) colors.text else colors.textSecondary,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 fontWeight = if (node.type == VaultMobileWebExplorerNodeType.Folder || selected) FontWeight.W700 else FontWeight.W500,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

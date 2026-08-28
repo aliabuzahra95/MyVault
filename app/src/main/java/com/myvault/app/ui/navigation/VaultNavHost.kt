@@ -331,6 +331,7 @@ fun VaultNavHost(
     Box(modifier = Modifier.fillMaxSize()) {
         VaultMobileWebShell(
             workspaceLabel = preferences.workspace.workspaceLabel(),
+            workspaceKey = preferences.workspace,
             accountEmail = preferences.googleDriveAccountEmail,
             onWorkspaceSelected = ::switchWorkspace,
             items = shellNavigationItems,
@@ -364,6 +365,8 @@ fun VaultNavHost(
             attachmentsSelected = currentRoute == VaultDestination.Attachments.route,
             favouritesSelected = currentRoute == VaultDestination.Favourites.route,
             explorerSections = shellExplorerSections,
+            persistedExpandedExplorerKeys = preferences.explorerExpandedKeys,
+            onPersistExpandedExplorerKeys = shellViewModel::setExplorerExpandedKeys,
             onExplorerNodeSelected = { sectionIndex, node ->
                 openExplorerNode(rootModes[sectionIndex], node)
             },

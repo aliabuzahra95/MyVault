@@ -1,5 +1,10 @@
 package com.myvault.app.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -26,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PushPin
@@ -37,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -304,15 +311,22 @@ fun CorpusFolderRow(
     onToggle: () -> Unit,
     onLongPress: () -> Unit,
     onAdd: (() -> Unit)? = null,
+    depth: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(170),
+        label = "Corpus folder chevron",
+    )
+    val visibleDepth = depth.coerceIn(0, 2)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 38.dp)
             .combinedClickable(onClick = onToggle, onLongClick = onLongPress)
-            .padding(horizontal = 2.dp),
+            .padding(start = (visibleDepth * 8 + 2).dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -320,19 +334,24 @@ fun CorpusFolderRow(
             contentDescription = if (expanded) "Collapse $title" else "Expand $title",
             modifier = Modifier
                 .size(16.dp)
-                .rotate(if (expanded) 90f else 0f),
+                .rotate(rotation),
             tint = colors.textMuted,
         )
         Spacer(Modifier.width(5.dp))
-        Icon(Icons.Outlined.Folder, null, modifier = Modifier.size(21.dp), tint = colors.textSecondary)
+        Icon(
+            if (depth > 0) Icons.Outlined.FolderOpen else Icons.Outlined.Folder,
+            null,
+            modifier = Modifier.size(if (depth > 0) 19.dp else 21.dp),
+            tint = if (depth > 0) colors.textMuted else colors.textSecondary,
+        )
         Text(
             text = title,
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 7.dp, end = 8.dp),
             color = colors.text,
-            fontSize = 14.5.sp,
-            fontWeight = FontWeight(670),
+            fontSize = if (depth > 0) 14.sp else 14.5.sp,
+            fontWeight = if (depth > 0) FontWeight.W600 else FontWeight(670),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -369,9 +388,11 @@ fun CorpusLeafRow(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
     trailingText: String? = null,
+    supportingText: String? = null,
     pinned: Boolean = false,
     attachmentCount: Int = 0,
     showFullTitle: Boolean = false,
+    depth: Int = 0,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
@@ -379,22 +400,35 @@ fun CorpusLeafRow(
             .fillMaxWidth()
             .heightIn(min = 35.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongPress)
-            .padding(start = 1.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = (depth.coerceIn(0, 2) * 8 + 1).dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, modifier = Modifier.size(21.dp), tint = colors.textMuted)
-        Text(
-            text = title,
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 7.dp, end = 7.dp),
-            color = colors.text,
-            fontSize = 13.2.sp,
-            lineHeight = 17.sp,
-            fontWeight = FontWeight.W400,
-            maxLines = if (showFullTitle) 4 else 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        ) {
+            Text(
+                text = title,
+                color = colors.text,
+                fontSize = 13.2.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.W400,
+                maxLines = if (showFullTitle) 4 else 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!supportingText.isNullOrBlank()) {
+                Text(
+                    text = supportingText,
+                    color = colors.textMuted,
+                    fontSize = 10.5.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         if (pinned) {
             Icon(Icons.Rounded.PushPin, "Pinned", modifier = Modifier.size(13.dp), tint = colors.textMuted)
             Spacer(Modifier.width(5.dp))
@@ -406,6 +440,20 @@ fun CorpusLeafRow(
         if (!trailingText.isNullOrBlank()) {
             Text(trailingText, color = colors.textMuted, fontSize = 11.sp, maxLines = 1)
         }
+    }
+}
+
+@Composable
+fun CorpusExpandedChildren(
+    expanded: Boolean,
+    content: @Composable () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically(animationSpec = tween(190)),
+        exit = shrinkVertically(animationSpec = tween(165)),
+    ) {
+        Column(content = { content() })
     }
 }
 

@@ -67,8 +67,8 @@ internal fun FrozenDestinationHeader(
             }
         }
         Column(Modifier.padding(start = 4.dp)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.W800, color = colors.text)
-            Text(subtitle, fontSize = 9.5.sp, color = colors.textMuted)
+            Text(title, fontSize = 17.sp, fontWeight = FontWeight.W800, color = colors.text)
+            Text(subtitle, fontSize = 11.sp, color = colors.textMuted)
         }
     }
 }
@@ -169,7 +169,7 @@ internal fun FrozenFavouritesScreen(
                 Text(
                     "Notes you marked as favourites.",
                     modifier = Modifier.padding(horizontal = 2.dp, vertical = 6.dp),
-                    fontSize = 10.5.sp,
+                    fontSize = 11.5.sp,
                     color = colors.textMuted,
                 )
             }
@@ -188,7 +188,13 @@ internal fun FrozenFavouritesScreen(
                 }
             } else {
                 items(favourites, key = { it.id }) { item ->
-                    DashboardRow(item.name, "Study · Note", Icons.Rounded.Star) { onOpenNote(item.id) }
+                    DashboardRow(
+                        title = item.name,
+                        meta = "Study · Note",
+                        icon = Icons.Rounded.Star,
+                        titleFontSize = 13.sp,
+                        metaFontSize = 10.5.sp,
+                    ) { onOpenNote(item.id) }
                 }
             }
         }
@@ -200,8 +206,8 @@ private fun DashboardSection(label: String, meta: String? = null, content: @Comp
     val colors = VaultThemeTokens.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label.uppercase(), fontSize = 9.5.sp, fontWeight = FontWeight.W800, color = colors.textMuted)
-            meta?.let { Text(it, fontSize = 9.sp, color = colors.textMuted) }
+            Text(label.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.W800, color = colors.textMuted)
+            meta?.let { Text(it, fontSize = 10.5.sp, color = colors.textMuted) }
         }
         content()
     }
@@ -213,12 +219,14 @@ internal fun DashboardRow(
     meta: String,
     icon: ImageVector,
     outlined: Boolean = false,
+    titleFontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    metaFontSize: androidx.compose.ui.unit.TextUnit = 11.sp,
     onClick: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(if (outlined) 57.dp else 49.dp),
+        modifier = Modifier.fillMaxWidth().height(if (outlined) 61.dp else 52.dp),
         shape = if (outlined) VaultShapes.lg else VaultShapes.md,
         color = if (outlined) colors.surface else Color.Transparent,
         border = if (outlined) BorderStroke(1.dp, colors.border) else null,
@@ -230,8 +238,8 @@ internal fun DashboardRow(
         ) {
             Icon(icon, null, Modifier.size(18.dp), tint = colors.textSecondary)
             Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 11.7.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(meta, fontSize = 9.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, fontSize = titleFontSize, fontWeight = FontWeight.W700, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(meta, fontSize = metaFontSize, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, Modifier.size(16.dp), tint = colors.textMuted)
         }
@@ -251,8 +259,8 @@ private fun DashboardPinnedItem(title: String, meta: String, onClick: () -> Unit
         Row(Modifier.padding(horizontal = 9.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.PushPin, null, Modifier.size(15.dp), tint = colors.accent)
             Column(Modifier.padding(start = 5.dp)) {
-                Text(title, fontSize = 10.7.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(meta, fontSize = 8.8.sp, color = colors.textMuted)
+                Text(title, fontSize = 12.2.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(meta, fontSize = 10.2.sp, color = colors.textMuted)
             }
         }
     }

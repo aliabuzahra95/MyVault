@@ -1,7 +1,13 @@
 package com.myvault.app.ui.quran
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -187,12 +193,17 @@ internal fun FrozenQuranAyah(
     val colors = VaultThemeTokens.colors
     var expandedFootnoteId by rememberSaveable(ayah.verseKey, translation) { mutableStateOf<String?>(null) }
     val shape = RoundedCornerShape(10.dp)
+    val selectedBackground by animateColorAsState(
+        targetValue = if (selected) colors.accentSoft.copy(alpha = 0.08f) else Color.Transparent,
+        animationSpec = tween(durationMillis = 155, easing = FastOutSlowInEasing),
+        label = "ayah-selected-surface",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp)
             .clip(shape)
-            .background(if (selected) colors.accentSoft.copy(alpha = 0.08f) else Color.Transparent)
+            .background(selectedBackground)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -270,7 +281,11 @@ internal fun FrozenQuranAyah(
             }
         }
 
-        if (selected) {
+        AnimatedVisibility(
+            visible = selected,
+            enter = fadeIn(tween(130)) + slideInVertically(tween(155, easing = FastOutSlowInEasing)) { it / 5 },
+            exit = fadeOut(tween(100)) + slideOutVertically(tween(125, easing = FastOutSlowInEasing)) { it / 5 },
+        ) {
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()

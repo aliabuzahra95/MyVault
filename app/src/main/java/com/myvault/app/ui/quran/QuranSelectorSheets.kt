@@ -359,12 +359,12 @@ internal fun QuranSurahSelectorOverlay(
                     ) {
                         Text(
                             text = "${filtered.size} Surahs",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                             color = colors.textSecondary,
                         )
                         Text(
                             text = "Tap to open",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                             color = colors.textMuted,
                         )
                     }
@@ -536,7 +536,7 @@ private fun JuzDivider(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700, letterSpacing = 0.3.sp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.W700, letterSpacing = 0.3.sp),
             color = colors.textMuted,
         )
     }
@@ -582,7 +582,7 @@ private fun SurahRow(
             }
             Text(
                 text = surah.num.toString(),
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W500),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.W500),
                 color = colors.textSecondary,
                 modifier = Modifier.padding(start = if (isCurrent) 10.dp else 0.dp),
             )
@@ -594,12 +594,12 @@ private fun SurahRow(
         ) {
             Text(
                 text = surah.name,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.W700),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.W700),
                 color = titleColor,
             )
             Text(
                 text = "${surah.type} · ${surah.ayat} ayat",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.5.sp),
                 color = colors.textSecondary,
             )
         }
@@ -610,7 +610,7 @@ private fun SurahRow(
                 fontFamily = QuranSelectorUthmaniHafsFamily,
                 textDirection = TextDirection.ContentOrRtl,
                 fontWeight = FontWeight.W400,
-                fontSize = 21.sp,
+                fontSize = 23.sp,
             ),
             color = colors.text,
             textAlign = TextAlign.End,

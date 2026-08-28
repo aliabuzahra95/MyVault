@@ -101,6 +101,7 @@ import com.myvault.app.ui.components.CorpusAction
 import com.myvault.app.ui.components.CorpusActionGroup
 import com.myvault.app.ui.components.CorpusActionSheet
 import com.myvault.app.ui.components.CorpusEmptyState
+import com.myvault.app.ui.components.CorpusExpandedChildren
 import com.myvault.app.ui.components.CorpusFab
 import com.myvault.app.ui.components.CorpusFolderRow
 import com.myvault.app.ui.components.CorpusHeader
@@ -554,6 +555,7 @@ private fun LibraryArchiveScreen(
                                     selectedFile = it
                                     fileActionDialogOpen = true
                                 },
+                                depth = 0,
                             )
                         }
                         uiState.files.forEach { file ->
@@ -2396,6 +2398,7 @@ private fun LibraryCorpusFolderItem(
     onFolderLongPress: (LibraryFolderItem) -> Unit,
     onAttachmentClick: (String) -> Unit,
     onFileLongPress: (LibraryFileItem) -> Unit,
+    depth: Int,
 ) {
     val expanded = folder.id in expandedFolderIds
     CorpusFolderRow(
@@ -2405,8 +2408,9 @@ private fun LibraryCorpusFolderItem(
         onToggle = { onFolderExpandedChange(folder.id, !expanded) },
         onLongPress = { onFolderLongPress(folder) },
         onAdd = null,
+        depth = depth,
     )
-    if (expanded) {
+    CorpusExpandedChildren(expanded = expanded) {
         folder.children.forEach { child ->
             LibraryCorpusFolderItem(
                 folder = child,
@@ -2417,6 +2421,7 @@ private fun LibraryCorpusFolderItem(
                 onFolderLongPress = onFolderLongPress,
                 onAttachmentClick = onAttachmentClick,
                 onFileLongPress = onFileLongPress,
+                depth = depth + 1,
             )
         }
         folder.files.forEach { file ->
@@ -2425,6 +2430,7 @@ private fun LibraryCorpusFolderItem(
                 showFullFileTitles = showFullFileTitles,
                 onAttachmentClick = onAttachmentClick,
                 onLongPress = { onFileLongPress(file) },
+                depth = depth + 1,
             )
         }
     }
@@ -2436,6 +2442,7 @@ private fun LibraryCorpusFileRow(
     showFullFileTitles: Boolean,
     onAttachmentClick: (String) -> Unit,
     onLongPress: () -> Unit,
+    depth: Int = 0,
 ) {
     CorpusLeafRow(
         title = file.name,
@@ -2444,7 +2451,21 @@ private fun LibraryCorpusFileRow(
         onLongPress = onLongPress,
         pinned = file.pinned,
         showFullTitle = showFullFileTitles,
+        supportingText = file.pdfActivityMetadata(),
+        depth = depth,
     )
+}
+
+private fun LibraryFileItem.pdfActivityMetadata(): String? {
+    if (mimeType != "application/pdf") return null
+    val parts = buildList {
+        if (highlightCount > 0) add("$highlightCount highlight${if (highlightCount == 1) "" else "s"}")
+        if (annotationNoteCount > 0) add("$annotationNoteCount note${if (annotationNoteCount == 1) "" else "s"}")
+        if (pageIndex != null && pageCount != null && pageCount > 0) {
+            add("Page ${pageIndex.coerceIn(0, pageCount - 1) + 1} of $pageCount")
+        }
+    }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
 private fun LibraryFolderItem.flatten(): List<LibraryFolderItem> =

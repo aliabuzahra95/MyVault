@@ -67,6 +67,7 @@ data class VaultUserPreferences(
     val quranMemorizationRecords: List<MemorizationRecord> = emptyList(),
     val quranMemorizationAttempts: List<QuranMemorizationSavedAttempt> = emptyList(),
     val quranSurahMemorizationAttempts: List<QuranSurahMemorizationSavedAttempt> = emptyList(),
+    val explorerExpandedKeys: Set<String> = emptySet(),
     val expandedFolderIds: Set<String> = emptySet(),
     val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
@@ -131,6 +132,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 quranSurahMemorizationAttempts = preferences[Keys.QuranSurahMemorizationAttempts].orEmpty()
                     .mapNotNull { it.toQuranSurahMemorizationSavedAttemptOrNull() }
                     .sortedByDescending { it.timestampMs },
+                explorerExpandedKeys = preferences[Keys.ExplorerExpandedKeys].orEmpty(),
                 expandedFolderIds = preferences[Keys.ExpandedFolderIds].orEmpty(),
                 pinnedExpandedByMode = preferences[Keys.PinnedExpandedByMode].orEmpty()
                     .mapNotNull { entry ->
@@ -441,6 +443,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         }
     }
 
+    suspend fun setExplorerExpandedKeys(keys: Set<String>) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.ExplorerExpandedKeys] = keys
+        }
+    }
+
     suspend fun setPinnedExpanded(mode: String, expanded: Boolean) {
         context.vaultDataStore.edit { preferences ->
             val updated = preferences[Keys.PinnedExpandedByMode].orEmpty()
@@ -515,6 +523,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val QuranMemorizationRecords: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_memorization_records")
         val QuranMemorizationAttempts: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_memorization_attempts")
         val QuranSurahMemorizationAttempts: Preferences.Key<Set<String>> = stringSetPreferencesKey("quran_surah_memorization_attempts")
+        val ExplorerExpandedKeys: Preferences.Key<Set<String>> = stringSetPreferencesKey("explorer_expanded_keys")
         val ExpandedFolderIds: Preferences.Key<Set<String>> = stringSetPreferencesKey("expanded_folder_ids")
         val PinnedExpandedByMode: Preferences.Key<Set<String>> = stringSetPreferencesKey("pinned_expanded_by_mode")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")

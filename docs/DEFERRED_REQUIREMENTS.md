@@ -89,6 +89,8 @@ previously explicit rows in this register:
 | PDF current-page annotation typography | Excerpts/metadata increased one restrained step without changing sheet architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | PDF annotation type distinction | Highlight, Note and Study Link now use distinct semantic icons; highlights retain their saved colour cue | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Google Drive debug OAuth | Debug SHA is separate and remains unconfigured; release candidate uses the established production certificate | Debug setup is optional; live release-account round trip remains required | **DEBUG DEFERRED; RELEASE DEVICE TEST BLOCKED** |
+| Optional folder/subfolder colours | `FolderEntity` and the explicit folder backup payload have no colour field; correct persistence requires Room and backup/Web compatibility design | Separate schema and compatibility approval | **DEFERRED - NOT SAFE IN CORRECTION PASS** |
+| Post-Stage-10 corrected RC physical acceptance | PDF touch drawing/pinch alignment and release-signed Drive round trip require a connected physical device | Physical-device installation and real account test | **RELEASE DEVICE TEST BLOCKED** |
 
 ## Resolved Stage 6 Course Decisions
 
