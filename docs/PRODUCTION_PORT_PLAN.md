@@ -1,6 +1,6 @@
 # MyVault Android Frozen Design Master Production Port Plan
 
-Status: Stages 1-7 implemented; Stage 8 remains unauthorized.
+Status: Stages 1-9 approved; Stage 10 final regression and acceptance in progress.
 
 Date: 2026-08-26
 
@@ -674,5 +674,20 @@ recorded in `docs/STAGE_9_REFINEMENT_PLAN.md`.
 The audit identified 29 requirements. Five direct functional fixes and seven
 direct consistency refinements were resolved in Batches A1, A2, and B. The
 final Frozen Stage 9 amendment then resolved eight of the ten amendment items
-through Batches C1-C4. The nine requirements still active are outgoing Study
-and Library Share plus seven Stage 10/compatibility items.
+through Batches C1-C4. The Stage 10 compatibility audit and controlled
+destructive restore are documented in `docs/STAGE_10_FINAL_ACCEPTANCE.md`.
+
+## 16. Stage 10 Release Gate
+
+Stage 10 produced a correctly production-signed release candidate and completed
+the unit, lint, isolated Android restore, historic PDF annotation,
+multi-rectangle geometry, and Android/Web additive compatibility checks. It
+also corrected two proven regressions without changing Room or backup schemas:
+the Study batch organisation bar was remounted with workspace-wide pin
+semantics, and PDF source backlink restore stopped clamping document
+coordinates to `0..1`.
+
+Final release promotion is blocked until the release-signed build completes a
+real Google Drive backup/restore and a physical-device PDF pinch/pan/annotation
+alignment smoke. Outgoing Study and Library Share remain deferred new
+functionality. Stage 10 must not be marked fully accepted before those gates.

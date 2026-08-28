@@ -1629,17 +1629,17 @@ private fun JSONObject.toPdfAnnotationSegmentEntityOrNull(): PdfAnnotationSegmen
         )
     }.getOrNull()?.takeIf { it.isValidPdfAnnotationSegment() }
 
-private fun JSONObject.toSourceBacklinkEntity(): SourceBacklinkEntity =
+internal fun JSONObject.toSourceBacklinkEntity(): SourceBacklinkEntity =
     SourceBacklinkEntity(
         id = getString("id"),
         noteId = getString("noteId"),
         attachmentId = getString("attachmentId"),
         annotationId = optNullableString("annotationId"),
         pageIndex = getInt("pageIndex").coerceAtLeast(0),
-        left = optNullableFloat("left")?.coerceIn(0f, 1f),
-        top = optNullableFloat("top")?.coerceIn(0f, 1f),
-        right = optNullableFloat("right")?.coerceIn(0f, 1f),
-        bottom = optNullableFloat("bottom")?.coerceIn(0f, 1f),
+        left = optNullableFloat("left"),
+        top = optNullableFloat("top"),
+        right = optNullableFloat("right"),
+        bottom = optNullableFloat("bottom"),
         createdAt = getLong("createdAt"),
     )
 

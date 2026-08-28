@@ -313,7 +313,29 @@ fun HomeScreen(
             onDoneOrganizing = { organizeMode = false },
             listState = listState,
         )
-        if (!organizeMode) {
+        if (manageSelectionMode) {
+            SelectionManageBar(
+                selectedCount = selectedItems.size,
+                selectedNoteCount = selectedNotes.size,
+                onMoveNotes = { moveSelectedNotesOpen = true },
+                onPinNotes = {
+                    selectedNotes.forEach { onSetNotePinnedClick(it.id, true) }
+                    selectedItemIds.clear()
+                },
+                onFavouriteNotes = {
+                    selectedNotes.forEach { onSetNoteFavouriteClick(it.id, true) }
+                    selectedItemIds.clear()
+                },
+                onDelete = { deleteSelectedOpen = true },
+                onDone = {
+                    selectedItemIds.clear()
+                    manageSelectionMode = false
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (fabBottomPadding < 18.dp) 18.dp else fabBottomPadding),
+            )
+        } else if (!organizeMode) {
             CorpusFab(
                 onClick = { studyCreateMenuOpen = true },
                 modifier = Modifier

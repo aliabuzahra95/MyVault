@@ -47,10 +47,10 @@ Frozen prototype directory remains read-only.
 | PDF Save to device and Delete placement | Kept Library-owned; no duplicate reader actions | Frozen PDF amendment | **RESOLVED FOR STAGE 5** |
 | PDF page-jump and immersive triggers | Page counter/overflow open page jump; overflow enters immersive and an unclaimed canvas tap restores chrome | Frozen PDF amendment | **RESOLVED FOR STAGE 5** |
 | PDF multi-rectangle backup compatibility | Optional ordered geometry extension plus legacy representative rectangle; malformed extension falls back safely | Approved additive Stage 5 compatibility extension | **RESOLVED FOR STAGE 5; DESTRUCTIVE ROUND TRIP IN STAGE 10** |
-| Full destructive backup/restore regression | Not required to close Stage 5; additive PDF geometry compatibility is covered non-destructively | Mandatory Stage 10 Android/Web regression | **DEFERRED TO STAGE 10** |
+| Full destructive backup/restore regression | Controlled production export, clear and restore completed; source-backlink coordinate regression corrected and exact multi-rectangle geometry retained | Stage 10 Android/Web regression | **RESOLVED IN STAGE 10** |
 | Qur'an audio-download management | Reader overflow opens the existing real download manager; expanded player exposes current-Surah download | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
-| Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |
-| Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |
+| Library legacy view-mode preferences | Stored values remain safely parsed/backed up but do not alter the Frozen Corpus Browser; no selector or migration | Stage 10 compatibility audit | **RESOLVED AS HARMLESS LEGACY STATE** |
+| Study batch pin semantics | Repository history proves the batch action invokes workspace-wide `isPinned`; Stage 10 restores the accidentally unmounted selection bar without changing pin fields | Stage 10 regression verification | **RESOLVED IN STAGE 10** |
 | PDF annotation/count pill refinement | Real highlight/note counts, selected colour, Draw entry, Activity access, insets, and player collision are implemented | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | Preset PDF highlight-colour workflow refinement | Four existing production colours are selectable before repeated Draw Highlight rectangles | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | PDF Activity typography refinement | Restrained one-step typography increase applied without changing row architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
@@ -67,8 +67,8 @@ Frozen prototype directory remains read-only.
 | Memorise recording review and transcription failures | Playback, re-record, retry, provider/network errors, timeout, empty transcript and analysis failure preserve captured audio | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
 | Memorise result-state mapping | Correct, missing, extra, repeated, and unclear states use canonical overlays; extras remain separate | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
 | Memorise session exit/end-of-Surah/process restoration | Dedicated Back, Next/Surah complete, and process-safe non-recording restoration implemented | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
-| Memorise canonical repeat modes | 3x, 5x, 10x, and Until Stopped engines remain unreachable after Stage 7 | Explicit future placement or dormant decision | **DEFERRED ENGINE-ONLY** |
-| Memorise active-session backup | Live recording/conceal/analysis state remains transient; records and attempts remain backed up | Full destructive Android/Web round trip in Stage 10 | **RESOLVED DEVICE-LOCAL MAPPING; STAGE 10 REGRESSION OPEN** |
+| Memorise canonical repeat modes | 3x, 5x, 10x, and Until Stopped remain compatible engine-only values and are not exposed by Frozen UI | Stage 10 compatibility audit | **RESOLVED AS DORMANT COMPATIBILITY** |
+| Memorise active-session backup | Live recording/conceal/analysis state remains intentionally transient; persisted records and attempts remain in the backup contract | Stage 10 compatibility audit; populated-attempt device fixture still desirable | **RESOLVED DEVICE-LOCAL MAPPING** |
 
 ## Pre-Stage 9 Real-Device Audit Additions
 
@@ -88,7 +88,7 @@ previously explicit rows in this register:
 | Global directional route motion | Ordinary routes use restrained 210 ms forward/reverse slides; reduced motion disables translation | Final Frozen Stage 9 amendment | **RESOLVED IN STAGE 9** |
 | PDF current-page annotation typography | Excerpts/metadata increased one restrained step without changing sheet architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | PDF annotation type distinction | Highlight, Note and Study Link now use distinct semantic icons; highlights retain their saved colour cue | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
-| Google Drive debug OAuth | Local debug SHA exists; checked-in Google services config has no Android OAuth entry | Separate OAuth configuration; Stage 10 uses correctly signed/configured build | **STAGE 10 / COMPATIBILITY** |
+| Google Drive debug OAuth | Debug SHA is separate and remains unconfigured; release candidate uses the established production certificate | Debug setup is optional; live release-account round trip remains required | **DEBUG DEFERRED; RELEASE DEVICE TEST BLOCKED** |
 
 ## Resolved Stage 6 Course Decisions
 
