@@ -1,8 +1,28 @@
 # Pre-Stage 7 Qur'an Production Audit
 
-Status: **AUDIT COMPLETE - STAGE 7 NOT AUTHORIZED**
+Status: **STAGE 7 IMPLEMENTED - RUNTIME VERIFICATION IN PROGRESS**
 
 Scope: Production Qur'an functionality compared with Frozen Design Master references 27-34 and 49. This document records presentation coverage and unresolved placement decisions only. No application code, canonical corpus, Room schema, repository contract, audio engine, or backup representation was changed.
+
+## Stage 7 Frozen Implementation Resolution
+
+The final frozen Qur'an amendment at
+`myvault-ui-prototype-frozen-quran-amendment-audio-correction-20260828-114230-AEST`
+resolved the pre-implementation placement gaps as follows:
+
+- the reader opens at the persisted Surah and ayah and renders canonical production content as a continuous document;
+- the warm Light canvas is Qur'an-specific; Dark and OLED use their shared semantic theme backgrounds;
+- the Surah title opens the full-screen picker with All, Meccan, Medinan, Juz grouping, name lookup, and exact numeric lookup;
+- ayah selection exposes Listen, Tafsir, Reflect, Copy, Bookmark/Remove bookmark, and More;
+- reader overflow owns Bookmarks, Recent locations, Reflections, Audio downloads, and Reader settings;
+- Maududi footnotes expand inline and translation size remains the real 80-130% production preference;
+- Tafsir retains the production source list and loading/error/empty handling;
+- Qur'an recitation uses one floating component with collapsed and expanded states, production seek/transport/speed controls, reciter selection, and current-Surah download;
+- More -> Memorise from here invokes the existing memorisation state and hands the exact verse to the existing Memorise destination;
+- the invisible double-tap reading-position gesture is preserved;
+- the temporary Study root Tools -> Qur'an Reflections entry is removed after the reader overflow route becomes available.
+
+No canonical text, word metadata, Tajweed ranges, Room schema, IDs, repository contracts, or backup representation changed in Stage 7.
 
 ## A. Authoritative References And Checkpoint
 
@@ -344,3 +364,40 @@ No proposed solution may modify canonical text, word IDs, Tajweed ranges, reflec
 **A Frozen prototype amendment is required. Stage 7 cannot proceed directly.**
 
 The production engines are sufficient for the approved core reader. The blocker is presentation placement for the twelve existing production states above. Stage 7 implementation must wait until those states are explicitly frozen.
+
+## W. Stage 7 Implementation Resolution
+
+**Status: IMPLEMENTED AND VERIFIED on 2026-08-28.** The earlier audit and
+decision gate above are retained as historical evidence. They were resolved by
+the frozen Qur'an amendment checkpoint
+`myvault-ui-prototype-frozen-quran-amendment-audio-correction-20260828-114230-AEST`.
+
+The production reader now uses the frozen compact header, continuous canonical
+ayah canvas, selected-ayah action strip, inline translations/footnotes,
+reflections, source-aware Tafsir states, full-screen Surah picker, bookmarks,
+recent locations, reader settings, one floating recitation player, downloads,
+and the exact-verse Memorise handoff. The temporary Study entry for Qur'an
+Reflections was removed after the reader-overflow route became live.
+
+Approved runtime corrections made during acceptance:
+
+- the Surah picker uses compact unframed rows, one close control, opt-in search,
+  All/Meccan/Medinan filters, Juz grouping, and exact numeric references;
+- selected ayahs use a restrained transient tint without changing canonical
+  text or Tajweed data;
+- Reader Settings uses the compact frozen sheet and excludes the legacy debug
+  `Word IDs` row while retaining the diagnostic source outside this surface;
+- Arabic size, translation display/source/size, Tajweed, reciter, and default
+  Tafsir source remain wired to real production preferences;
+- playback speed remains in the expanded player and Audio Downloads remains in
+  reader overflow, as frozen;
+- `Memorise from here` persisted the selected `2:255` record exactly during the
+  acceptance test. The Stage 8 dashboard may independently calculate `2:1` as
+  the first unmemorised continuation; that existing engine semantic was not
+  changed in Stage 7.
+
+Runtime acceptance used the installed `com.myvault.app` debug build on the
+Pixel 9 Pro emulator at 412 dp logical width. Device audio playback, pause,
+single collapsed player, Light/Dark/OLED canvases, exact-reference navigation,
+Reflections Hub routing, Back navigation, and persisted handoff state passed.
+The complete destructive Android/Web backup round trip remains Stage 10 work.

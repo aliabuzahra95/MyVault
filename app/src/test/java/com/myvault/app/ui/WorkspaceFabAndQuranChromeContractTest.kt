@@ -51,7 +51,8 @@ class WorkspaceFabAndQuranChromeContractTest {
         assertFalse(reader.contains("QuranContinueReadingCard("))
         assertFalse(reader.contains("quran_continue_"))
         assertFalse(chrome.contains("internal fun QuranContinueReadingCard"))
-        assertTrue(reader.contains("val readerHeaderItemCount = 1 + if (latestSurahTestAttempt != null) 1 else 0"))
+        assertTrue(reader.contains("val headerCount = 1"))
+        assertFalse(reader.contains("QuranLastSurahTestChip("))
     }
 
     private fun source(relativePath: String): String =

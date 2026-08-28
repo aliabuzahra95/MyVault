@@ -351,12 +351,6 @@ fun HomeScreen(
                     studyCreateMenuOpen = false
                     manageFavouriteNotesOpen = true
                 },
-                *if (currentFolderMode == FOLDER_MODE_STUDY) arrayOf(
-                    PremiumAction("Qur'an Reflections", Icons.Rounded.AutoStories, section = "TOOLS") {
-                        studyCreateMenuOpen = false
-                        onQuranReflectionsClick()
-                    },
-                ) else emptyArray(),
                 PremiumAction("Organise existing items", Icons.Rounded.SwapVert, section = "ORGANISE") {
                     studyCreateMenuOpen = false
                     manageMenuOpen = true

@@ -33,6 +33,7 @@ import com.myvault.app.ui.theme.VaultThemeTokens
 
 @Composable
 fun QuranShellScreen(
+    onOpenNavigation: () -> Unit,
     workspaceTitle: String,
     workspaceOptions: List<String>,
     onWorkspaceSelected: (String) -> Unit,
@@ -55,6 +56,7 @@ fun QuranShellScreen(
     onUpdateReflection: (String, QuranAyah, String, String) -> Unit,
     onDeleteReflection: (String) -> Unit,
     onOpenBookmark: (String) -> Unit,
+    onOpenReflectionsHub: () -> Unit,
     onOpenReciterPicker: (QuranAyah) -> Unit,
     onDismissReciterPicker: () -> Unit,
     onSelectAudioReciter: (AudioReciterUiModel) -> Unit,
@@ -79,6 +81,7 @@ fun QuranShellScreen(
     onToggleIncorrectMemorization: (QuranAyah) -> Unit,
     onToggleWeakMemorization: (QuranAyah) -> Unit,
     onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
+    onMemoriseFromHere: (QuranAyah) -> Unit,
     onPendingScrollHandled: () -> Unit,
     showNavigationHeader: Boolean = true,
     modifier: Modifier = Modifier,
@@ -121,6 +124,7 @@ fun QuranShellScreen(
 
             QuranReaderSurface(
                 uiState = uiState,
+                onOpenNavigation = onOpenNavigation,
                 onOpenSelector = { selectorOpen = true },
                 onSetArabicFontPercent = onSetArabicFontPercent,
                 onSetTranslationFontPercent = onSetTranslationFontPercent,
@@ -135,6 +139,7 @@ fun QuranShellScreen(
                 onUpdateReflection = onUpdateReflection,
                 onDeleteReflection = onDeleteReflection,
                 onOpenBookmark = onOpenBookmark,
+                onOpenReflectionsHub = onOpenReflectionsHub,
                 onOpenReciterPicker = onOpenReciterPicker,
                 onDismissReciterPicker = onDismissReciterPicker,
                 onSelectAudioReciter = onSelectAudioReciter,
@@ -148,17 +153,7 @@ fun QuranShellScreen(
                 onChooseOtherReciter = onChooseOtherReciter,
                 onRefreshAudioDownloads = onRefreshAudioDownloads,
                 onDownloadSurahAudio = onDownloadSurahAudio,
-                onStartMemorizingAyah = onStartMemorizingAyah,
-                onRemoveMemorizingAyah = onRemoveMemorizingAyah,
-                onToggleMemorizedAyah = onToggleMemorizedAyah,
-                onMarkRevisedAyah = onMarkRevisedAyah,
-                onAiListenAttemptCompleted = onAiListenAttemptCompleted,
-                onSurahTestAttemptCompleted = onSurahTestAttemptCompleted,
-                onMarkCurrentSurahMemorized = onMarkCurrentSurahMemorized,
-                onToggleNeedsRevisionMemorization = onToggleNeedsRevisionMemorization,
-                onToggleIncorrectMemorization = onToggleIncorrectMemorization,
-                onToggleWeakMemorization = onToggleWeakMemorization,
-                onSetMemorizationConcealAmount = onSetMemorizationConcealAmount,
+                onMemoriseFromHere = onMemoriseFromHere,
                 onPendingScrollHandled = onPendingScrollHandled,
                 modifier = Modifier.fillMaxSize(),
             )

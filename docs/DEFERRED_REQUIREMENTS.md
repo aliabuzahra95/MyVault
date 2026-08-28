@@ -12,14 +12,14 @@ Frozen prototype directory remains read-only.
 | Outgoing Library Share | No action shown; inbound Send-to-MyVault/import remains unchanged | Separate sharing semantics/design decision | **DEFERRED - NEW FUNCTIONALITY** |
 | Workspace Attachments final placement | Study root FAB -> Tools -> Attachments | Final Frozen destination amendment | **TEMPORARY PLACEMENT** |
 | Aggregate Favourites final placement | Study root FAB -> Tools -> Favourites | Final Frozen destination amendment | **TEMPORARY PLACEMENT** |
-| Qur'an Reflections Hub final placement | Study root FAB -> Tools -> Qur'an Reflections; production Hub is newest-first and opens the exact ayah | Frozen Qur'an amendment before Stage 7 | **TEMPORARY PLACEMENT / STOP-AND-ASK** |
-| Qur'an bookmark management and Save wording | Backed-up verse-key bookmarks remain reachable from the legacy reader; Frozen selected-ayah `Save` has not formally been mapped to Bookmark/Remove bookmark | Frozen Qur'an amendment before Stage 7 | **STOP-AND-ASK** |
-| Qur'an recent-location management | Backed-up latest-five Surah/ayah locations remain in production; Frozen reader has no final chips/list destination | Frozen Qur'an amendment before Stage 7 | **STOP-AND-ASK** |
-| Qur'an translation footnotes | Maududi explanatory footnotes remain real production content with temporary cache; Frozen reader has no expansion treatment | Frozen Qur'an amendment before Stage 7 | **STOP-AND-ASK** |
-| Qur'an Tafsir source management | Bundled and remote Arabic/English sources remain production-owned; Frozen Tafsir sheet does not fully place source selection/states | Frozen Qur'an amendment before Stage 7 | **STOP-AND-ASK** |
-| Qur'an Surah picker filters/Juz grouping | Production picker has All/Meccan/Medinan filters and Juz grouping; Frozen picker does not specify them | Frozen Qur'an amendment before Stage 7 | **STOP-AND-ASK** |
-| Qur'an reader-to-Memorise handoff | Memorise/test/AI Listen engines and backed-up state are preserved; permanent reader controls cannot be removed or retained without a frozen handoff treatment | Frozen Qur'an amendment before Stage 7; detailed Memorise UI in Stage 8 | **STOP-AND-ASK / DEFERRED TO STAGE 8** |
-| Qur'an double-tap save-position gesture | Existing invisible gesture updates the backed-up reading position | Frozen Qur'an amendment before Stage 7 | **STOP-AND-ASK** |
+| Qur'an Reflections Hub final placement | Reader overflow -> Reflections; temporary Study FAB entry removed | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an bookmark management and Save wording | Selected ayah uses Bookmark/Remove bookmark; reader overflow opens backed-up bookmark list | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an recent-location management | Reader overflow opens the real latest-five locations | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an translation footnotes | Maududi explanatory footnotes expand inline from real production content | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an Tafsir source management | Reader settings and inline Tafsir surface use the production source list and states | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an Surah picker filters/Juz grouping | Full-screen picker retains All/Meccan/Medinan and Juz grouping | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
+| Qur'an reader-to-Memorise handoff | Selected ayah More -> Memorise from here hands the exact verse to the existing Memorise destination | Implemented from Frozen Qur'an amendment; detailed Memorise UI remains Stage 8 | **RESOLVED IN STAGE 7** |
+| Qur'an double-tap save-position gesture | Existing invisible gesture remains and updates the backed-up reading position | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Dashboard final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
 | Global Search final redesign | Current production presentation preserved | Dedicated Frozen reference/amendment | **DEFERRED** |
 | Global narration mini-player design/placement | Current production presentation and behavior preserved; Note Reading Edit collision is resolved by a dynamic measured offset | Dedicated final global player design amendment | **DEFERRED; NOTE READING COLLISION RESOLVED** |
@@ -48,7 +48,7 @@ Frozen prototype directory remains read-only.
 | PDF page-jump and immersive triggers | Page counter/overflow open page jump; overflow enters immersive and an unclaimed canvas tap restores chrome | Frozen PDF amendment | **RESOLVED FOR STAGE 5** |
 | PDF multi-rectangle backup compatibility | Optional ordered geometry extension plus legacy representative rectangle; malformed extension falls back safely | Approved additive Stage 5 compatibility extension | **RESOLVED FOR STAGE 5; DESTRUCTIVE ROUND TRIP IN STAGE 10** |
 | Full destructive backup/restore regression | Not required to close Stage 5; additive PDF geometry compatibility is covered non-destructively | Mandatory Stage 10 Android/Web regression | **DEFERRED TO STAGE 10** |
-| Qur'an audio-download management | Existing on-demand, single-Surah and batch download engine preserved; device-local media is not backed up | Frozen contextual action plus dedicated manager amendment before Stage 7 | **STOP-AND-ASK** |
+| Qur'an audio-download management | Reader overflow opens the existing real download manager; expanded player exposes current-Surah download | Implemented from Frozen Qur'an amendment | **RESOLVED IN STAGE 7** |
 | Library legacy view-mode preferences | Stored values retained; no Frozen selector | Only revisit on a demonstrated runtime conflict | **DEFERRED COMPATIBILITY** |
 | Study batch pin semantics | Must prove whether production batch handler changes `isPinned` or `isFolderPinned` | Before wiring that batch action | **STOP-AND-ASK** |
 
@@ -74,8 +74,8 @@ Frozen prototype directory remains read-only.
 | Formatting-account product name | Supabase-backed formatting session | Visible neutral name `Formatting account` | **RESOLVED IN STAGE 3** |
 | Storage usage categories | Production can calculate only total local MyVault size | Show truthful total only; no fabricated category bars | **APPROVED PRODUCTION-SPECIFIC MAPPING** |
 | Recently Deleted item types | Production supports deleted notes/folders only | Show only real notes/folders; no PDF-trash mock or new engine | **APPROVED PRODUCTION-SPECIFIC MAPPING** |
-| Qur'an translation text size | Existing independent 80-130% reader preference is backed up and absent from Frozen Reader Settings | Add an approved contextual Reader Settings row | **STOP-AND-ASK BEFORE STAGE 7** |
-| Qur'an playback speed | Existing global 0.5x/1x/1.5x/2x backed-up audio preference is absent from Frozen | Approve placement in expanded reciter/audio surface or Reader Settings | **STOP-AND-ASK BEFORE STAGE 7** |
+| Qur'an translation text size | Existing independent 80-130% reader preference is backed up | Compact contextual Reader Settings slider | **RESOLVED IN STAGE 7** |
+| Qur'an playback speed | Existing global 0.5x/1x/1.5x/2x backed-up audio preference | Compact expanded-player choices | **RESOLVED IN STAGE 7** |
 | Pinned-expanded preference backup gap | Persisted model and backup mapper are not aligned | Do not repair opportunistically; address in compatibility work if authorized | **DEFERRED COMPATIBILITY** |
 
 ## Separation Of Narration Concerns

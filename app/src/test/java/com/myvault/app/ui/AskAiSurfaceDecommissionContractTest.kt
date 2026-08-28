@@ -167,14 +167,15 @@ class AskAiSurfaceDecommissionContractTest {
     }
 
     @Test
-    fun `Quran AI Listen remains a protected reachable memorisation utility`() {
+    fun `Quran AI Listen remains protected behind the Memorise handoff`() {
         val reader = source("ui/quran/QuranReaderSurface.kt")
-        val ayahCard = source("ui/quran/QuranAyahCard.kt")
+        val navigation = source("ui/navigation/VaultNavHost.kt")
         val listenSheet = source("ui/quran/QuranMemorizationSheets.kt")
 
-        assertTrue(reader.contains("QuranAiListenSheet("))
-        assertTrue(reader.contains("onAiListenAttemptCompleted"))
-        assertTrue(ayahCard.contains("AI Listen"))
+        assertTrue(reader.contains("onMemoriseFromHere"))
+        assertFalse(reader.contains("QuranAiListenSheet("))
+        assertTrue(navigation.contains("pendingMemoriseVerseKey"))
+        assertTrue(navigation.contains("VaultRootMode.Memorise.name"))
         assertTrue(listenSheet.contains("QuranMemorizationRecorder"))
         assertTrue(listenSheet.contains("SpeechRecognitionProviderType"))
     }

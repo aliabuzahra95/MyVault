@@ -1,6 +1,6 @@
 # MyVault Android Frozen Design Master Production Port Plan
 
-Status: audit and plan only. No Frozen Design Master UI has been implemented.
+Status: Stages 1-7 implemented; Stage 8 remains unauthorized.
 
 Date: 2026-08-26
 
@@ -236,12 +236,13 @@ The complete pre-Stage-5 audit is recorded in
 5. PDF narration, Save to device, Delete, page-jump and immersive triggers need
    explicit placement decisions.
 
-### Stage 7 blockers
+### Stage 7 resolved amendment
 
-1. Separate Qur'an Reflections Hub destination.
-2. Bookmark/recent-location management surfaces beyond the shown reader state.
-3. Audio-download management and some repeat/memorisation controls not shown in
-   the frozen screenshots.
+The final frozen Qur'an amendment resolves the Reflections Hub, bookmark and
+recent-location management, translation footnotes, Tafsir sources, Surah picker,
+audio/download presentation, double-tap reading-position compatibility, and the
+reader-to-Memorise handoff. Normal-reader Memorise controls are removed; the
+existing Memorise engine remains intact behind the exact-verse handoff.
 
 ### System entry points not requiring redesign unless surfaced
 
@@ -485,6 +486,16 @@ No Course entity, Room schema, repository contract or backup representation was
 changed.
 
 ### Stage 7 - Qur'an
+
+Implemented: resume-first continuous canonical reader; warm Light canvas;
+compact header and full-screen Surah picker; selected-ayah actions; reader
+overflow; real bookmarks, recents and reflections; translations and inline
+footnotes; source-aware Tafsir; one collapsed/expanded floating Qur'an audio
+component; reciter/speed/download wiring; exact-verse Memorise handoff; and
+Light/Dark/OLED presentation. The temporary Study Reflections entry was removed.
+
+No canonical corpus, Room schema, repository contract, IDs, or backup format
+changed.
 
 Expected production files:
 

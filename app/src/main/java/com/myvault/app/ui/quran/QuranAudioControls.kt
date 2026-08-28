@@ -26,6 +26,8 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -653,6 +656,7 @@ internal fun QuranAudioMiniPlayer(
     onSetSpeed: (Float) -> Unit,
     onChooseOtherReciter: () -> Unit,
     onClose: () -> Unit,
+    onDownloadCurrentSurah: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -660,6 +664,73 @@ internal fun QuranAudioMiniPlayer(
     val speedOptions = listOf(0.5f, 1f, 1.5f, 2f)
     var sliderPosition by remember(player.progressMs, player.durationMs) {
         mutableFloatStateOf(player.progressMs.toFloat())
+    }
+    var expanded by remember { mutableStateOf(false) }
+
+    if (!expanded) {
+        val progress = if (player.durationMs > 0L) {
+            (player.progressMs.toFloat() / player.durationMs.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        Box(
+            modifier = modifier
+                .shadow(9.dp, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.surface.copy(alpha = 0.99f))
+                .border(1.dp, colors.border.copy(alpha = 0.86f), RoundedCornerShape(16.dp))
+                .clickable { expanded = true },
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(colors.accentSoft).clickable(onClick = onTogglePlayback),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (player.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (player.isPlaying) "Pause" else "Play",
+                            tint = colors.accent,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "$surahName · Ayah ${player.ayahNumber}",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W800),
+                            color = colors.text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = player.reciterName.ifBlank { "Qur'an audio" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Icon(Icons.Rounded.KeyboardArrowUp, "Expand player", tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.Rounded.Close,
+                        "Close player",
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(18.dp).clickable(onClick = onClose),
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = colors.accent,
+                    trackColor = colors.border,
+                )
+            }
+        }
+        return
     }
 
     Box(
@@ -735,16 +806,22 @@ internal fun QuranAudioMiniPlayer(
                         }
                     }
                     Icon(
-                        imageVector = Icons.Rounded.Stop,
-                        contentDescription = "Close player",
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "Collapse player",
                         tint = colors.textMuted,
                         modifier = Modifier
                             .size(18.dp)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = onClose,
+                                onClick = { expanded = false },
                             ),
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close player",
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(18.dp).clickable(onClick = onClose),
                     )
                 }
             }
@@ -802,6 +879,22 @@ internal fun QuranAudioMiniPlayer(
                 }
                 AudioPlayerButton(icon = Icons.Rounded.Forward10, onClick = onSkipForward)
                 AudioPlayerButton(icon = Icons.Rounded.SkipNext, onClick = onNextAyah)
+            }
+
+            Spacer(Modifier.height(9.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(colors.elevated)
+                    .border(1.dp, colors.border, RoundedCornerShape(11.dp))
+                    .clickable(onClick = onDownloadCurrentSurah)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.Download, null, tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+                Text("Download this Surah", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700), color = colors.text)
             }
         }
     }

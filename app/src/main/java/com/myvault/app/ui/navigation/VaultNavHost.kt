@@ -130,6 +130,7 @@ fun VaultNavHost(
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
     var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
     var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingMemoriseVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
@@ -333,13 +334,15 @@ fun VaultNavHost(
                         VaultRootMode.Courses,
                         VaultRootMode.Study,
                         VaultRootMode.Library,
+                        VaultRootMode.Quran,
                     )),
             menuVisible = currentRoute !in setOf(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
             ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
-                !corpusSearchActive,
+                !corpusSearchActive &&
+                !(currentRoute == VaultDestination.Home.route && rootModes.getOrNull(selectedRootIndex) == VaultRootMode.Quran),
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -533,6 +536,7 @@ fun VaultNavHost(
                         pendingQuranVerseKey = null
                     }
                     QuranShellScreen(
+                        onOpenNavigation = onOpenNavigation,
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = ::switchWorkspace,
@@ -567,6 +571,9 @@ fun VaultNavHost(
                         onUpdateReflection = quranViewModel::updateReflectionForAyah,
                         onDeleteReflection = quranViewModel::deleteReflection,
                         onOpenBookmark = quranViewModel::openBookmarkedAyah,
+                        onOpenReflectionsHub = {
+                            navController.navigate(VaultDestination.QuranReflections.route)
+                        },
                         onOpenReciterPicker = quranViewModel::openReciterPicker,
                         onDismissReciterPicker = quranViewModel::dismissReciterPicker,
                         onSelectAudioReciter = quranViewModel::playWithReciter,
@@ -591,6 +598,11 @@ fun VaultNavHost(
                         onToggleIncorrectMemorization = quranViewModel::toggleIncorrectMemorization,
                         onToggleWeakMemorization = quranViewModel::toggleWeakMemorization,
                         onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
+                        onMemoriseFromHere = { ayah ->
+                            quranViewModel.startMemorizingAyah(ayah)
+                            pendingMemoriseVerseKey = ayah.verseKey
+                            selectedIslamicRootMode = VaultRootMode.Memorise.name
+                        },
                         onPendingScrollHandled = quranViewModel::consumePendingScrollVerse,
                         showNavigationHeader = false,
                     )
@@ -598,6 +610,14 @@ fun VaultNavHost(
                 memoriseContent = {
                     val memoriseViewModel: MemoriseViewModel = hiltViewModel()
                     val memoriseState by memoriseViewModel.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(pendingMemoriseVerseKey) {
+                        val verseKey = pendingMemoriseVerseKey ?: return@LaunchedEffect
+                        val surahNumber = verseKey.substringBefore(':').toIntOrNull() ?: return@LaunchedEffect
+                        val ayahNumber = verseKey.substringAfter(':').toIntOrNull() ?: return@LaunchedEffect
+                        memoriseViewModel.selectSurah(surahNumber)
+                        memoriseViewModel.selectAyah(ayahNumber)
+                        pendingMemoriseVerseKey = null
+                    }
                     MemoriseShellScreen(
                         uiState = memoriseState,
                         workspaceTitle = preferences.workspace.workspaceLabel(),

@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -60,7 +61,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +94,7 @@ internal fun QuranBookmarksSheet(
     bookmarkedVerseKeys: Set<String>,
     onDismiss: () -> Unit,
     onOpenBookmark: (String) -> Unit,
+    onRemoveBookmark: (String) -> Unit,
 ) {
     if (!visible) return
     val colors = VaultThemeTokens.colors
@@ -205,14 +206,25 @@ internal fun QuranBookmarksSheet(
                                         color = colors.textSecondary,
                                     )
                                 }
-                                Text(
-                                    text = surah.arabic,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontFamily = QuranSelectorUthmaniHafsFamily,
-                                        textDirection = TextDirection.ContentOrRtl,
-                                    ),
-                                    color = colors.text,
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = surah.arabic,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontFamily = QuranSelectorUthmaniHafsFamily,
+                                            textDirection = TextDirection.ContentOrRtl,
+                                        ),
+                                        color = colors.text,
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Rounded.Bookmark,
+                                        contentDescription = "Remove bookmark",
+                                        tint = colors.accent,
+                                        modifier = Modifier
+                                            .padding(start = 10.dp)
+                                            .size(18.dp)
+                                            .clickable { onRemoveBookmark(key) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -236,12 +248,8 @@ internal fun QuranSurahSelectorOverlay(
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
-    val dismissInteraction = remember { MutableInteractionSource() }
-    val panelInteraction = remember { MutableInteractionSource() }
     val listState: LazyListState = rememberLazyListState()
-    val panelShape = RoundedCornerShape(24.dp)
-    val searchFocusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
+    var searchVisible by remember(visible) { mutableStateOf(search.isNotBlank()) }
     var ayahSearchIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(visible) {
         if (visible && ayahSearchIndex.isEmpty()) {
@@ -250,13 +258,6 @@ internal fun QuranSurahSelectorOverlay(
                     context.assets.open("qpc_hafs.json").bufferedReader().use { it.readText() },
                 ).toAyahSearchIndex()
             }
-        }
-    }
-    LaunchedEffect(visible) {
-        if (visible) {
-            delay(30L)
-            searchFocusRequester.requestFocus()
-            keyboardController?.show()
         }
     }
     val ayahResults = remember(search, typeFilter, ayahSearchIndex) {
@@ -277,54 +278,23 @@ internal fun QuranSurahSelectorOverlay(
 
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)) +
-            slideInVertically(
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                initialOffsetY = { -it / 4 },
-            ),
-        exit = fadeOut(animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)) +
-            slideOutVertically(
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                targetOffsetY = { -it / 5 },
-            ),
+        enter = fadeIn(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing)),
     ) {
         BackHandler(onBack = onDismiss)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(colors.bg.copy(alpha = 0.46f))
-                .clickable(
-                    interactionSource = dismissInteraction,
-                    indication = null,
-                    onClick = onDismiss,
-                ),
+                .background(colors.bg),
         ) {
             Column(
                 modifier = Modifier
+                    .fillMaxSize()
                     .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .shadow(12.dp, panelShape, clip = false)
-                    .clip(panelShape)
                     .background(colors.bg)
-                    .border(1.dp, colors.border.copy(alpha = 0.8f), panelShape)
-                    .clickable(
-                        interactionSource = panelInteraction,
-                        indication = null,
-                        onClick = {},
-                    )
                     .padding(bottom = 8.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = 720.dp)
                     .align(Alignment.TopCenter),
             ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 8.dp, bottom = 4.dp)
-                        .size(width = 34.dp, height = 4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(colors.border),
-                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -333,16 +303,40 @@ internal fun QuranSurahSelectorOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "Select Surah",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
-                        color = colors.text,
-                    )
-                    IconBtn(
-                        icon = Icons.Rounded.Close,
-                        contentDescription = "Close",
-                        onClick = onDismiss,
-                    )
+                    Column {
+                        Text(
+                            text = "Choose Surah",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
+                            color = colors.text,
+                        )
+                        Text(
+                            text = quranCatalog.firstOrNull { it.num == selectedSurah }
+                                ?.let { "Currently reading ${it.name}" }
+                                .orEmpty(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = "Search Surahs",
+                            tint = colors.text,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clickable { searchVisible = !searchVisible }
+                                .padding(10.dp),
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            tint = colors.text,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clickable(onClick = onDismiss)
+                                .padding(10.dp),
+                        )
+                    }
                 }
 
                 Column(
@@ -352,12 +346,28 @@ internal fun QuranSurahSelectorOverlay(
                         .padding(bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    QuranSearchBar(
-                        query = search,
-                        onQueryChange = onSearchChange,
-                        focusRequester = searchFocusRequester,
-                    )
+                    if (searchVisible) {
+                        QuranSearchBar(
+                            query = search,
+                            onQueryChange = onSearchChange,
+                        )
+                    }
                     QuranTypeFilters(selected = typeFilter, onSelected = onTypeFilterChange)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "${filtered.size} Surahs",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                        )
+                        Text(
+                            text = "Tap to open",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textMuted,
+                        )
+                    }
                 }
 
                 LazyColumn(
@@ -365,12 +375,12 @@ internal fun QuranSurahSelectorOverlay(
                         .fillMaxWidth()
                         .padding(horizontal = 15.dp),
                     state = listState,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     if (ayahResults.isNotEmpty()) {
                         item(key = "ayah_results_label") {
                             JuzDivider(juzNumber = 0, label = "Ayah results")
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(2.dp))
                         }
                         items(
                             items = ayahResults,
@@ -386,7 +396,7 @@ internal fun QuranSurahSelectorOverlay(
                     juzGroups.forEach { (juz, surahs) ->
                         item(key = "juz_$juz") {
                             JuzDivider(juzNumber = juz)
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(2.dp))
                         }
                         items(items = surahs, key = { it.num }) { surah ->
                             SurahRow(
@@ -457,10 +467,10 @@ private fun QuranTypeFilters(
     onSelected: (String) -> Unit,
 ) {
     Row(
-        modifier = Modifier.padding(bottom = 14.dp),
+        modifier = Modifier.padding(bottom = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        listOf("All 114" to "All", "Makki" to "Makki", "Madani" to "Madani").forEach { (label, key) ->
+        listOf("All 114" to "All", "Meccan" to "Makki", "Medinan" to "Madani").forEach { (label, key) ->
             QuranFilterPill(
                 label = label,
                 selected = selected == key,
@@ -507,7 +517,7 @@ private fun QuranFilterPill(
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }
 
@@ -520,7 +530,7 @@ private fun JuzDivider(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 2.dp),
+            .padding(top = 8.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -528,11 +538,6 @@ private fun JuzDivider(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W700, letterSpacing = 0.3.sp),
             color = colors.textMuted,
-        )
-        HorizontalDivider(
-            modifier = Modifier.weight(1f),
-            thickness = 1.dp,
-            color = colors.border,
         )
     }
 }
@@ -545,96 +550,71 @@ private fun SurahRow(
 ) {
     val colors = VaultThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
-    val bg by animateColorAsState(
-        targetValue = if (isCurrent) colors.elevated else colors.surface,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "surahRowBg",
-    )
-    val border by animateColorAsState(
-        targetValue = if (isCurrent) colors.borderStrong else colors.border,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "surahRowBorder",
-    )
     val titleColor by animateColorAsState(
-        targetValue = colors.text,
+        targetValue = if (isCurrent) colors.accent else colors.text,
         animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
         label = "surahRowTitle",
     )
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = bg,
-        border = BorderStroke(1.dp, border),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                )
-                .padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                .size(width = 36.dp, height = 46.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(colors.bg),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = surah.num.toString(),
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700),
-                    color = colors.textSecondary,
+            if (isCurrent) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .size(width = 2.dp, height = 20.dp)
+                        .background(colors.accent),
                 )
             }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = surah.name,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.W800,
-                        fontSize = 19.sp,
-                    ),
-                    color = titleColor,
-                )
-                Text(
-                    text = "${surah.type} • ${surah.ayat} ayat",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-            }
-
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = surah.arabic,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = QuranSelectorUthmaniHafsFamily,
-                        textDirection = TextDirection.ContentOrRtl,
-                        fontWeight = FontWeight.W400,
-                        fontSize = 20.sp,
-                    ),
-                    color = colors.text,
-                )
-                Text(
-                    text = "Juz ${surah.juz}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textMuted,
-                )
-            }
+            Text(
+                text = surah.num.toString(),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W500),
+                color = colors.textSecondary,
+                modifier = Modifier.padding(start = if (isCurrent) 10.dp else 0.dp),
+            )
         }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            Text(
+                text = surah.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W700),
+                color = titleColor,
+            )
+            Text(
+                text = "${surah.type} · ${surah.ayat} ayat",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textSecondary,
+            )
+        }
+
+        Text(
+            text = surah.arabic,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = QuranSelectorUthmaniHafsFamily,
+                textDirection = TextDirection.ContentOrRtl,
+                fontWeight = FontWeight.W400,
+                fontSize = 20.sp,
+            ),
+            color = colors.text,
+            textAlign = TextAlign.End,
+        )
     }
 }
 
