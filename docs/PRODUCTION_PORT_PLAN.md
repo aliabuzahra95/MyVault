@@ -518,21 +518,29 @@ recreation, and screenshots.
 
 ### Stage 8 - Memorise
 
-Expected production files:
+Status: **IMPLEMENTED AND VERIFIED; AWAITING STAGE APPROVAL**
 
-- `ui/screens/MemoriseShellScreen.kt`
-- memorisation presentation components under `ui/quran`
-- `ui/viewmodel/MemoriseViewModel.kt` only for presentation adapters
-- targeted memorisation tests
+Production files:
 
-Frozen references: 35-42.
+- `ui/screens/FrozenMemoriseScreen.kt`
+- `ui/screens/FrozenMemoriseSession.kt`
+- `ui/viewmodel/MemoriseViewModel.kt`
+- `ui/navigation/VaultNavHost.kt`
+- existing memorisation/provider/recorder engines unchanged
 
-Preserve: overview state, group/surah/ayah selection, session, Hide 1/2, Hide
-All, recording, pause/resume, speech recognition, analysis, scoring, results,
-revision/weak/incorrect states, and persisted attempts.
+Frozen references: original 35-42 and final Memorise amendment 01-28.
 
-Tests: every frozen state transition, interruption, permission denial, audio
-focus, process recreation, persisted result, reduced motion, and screenshots.
+Implemented: truthful overview/statuses, exact direct sessions, Qur'an handoff
+auto-record, concealment, permission states, WAV recording/review/playback,
+Google/OpenAI transcription, deterministic results, retry/failure states,
+attempt history/detail, whole-Surah testing, end state, process-safe recovery,
+and Light/Dark/OLED presentation.
+
+Verified with JBR 21 unit tests/lint/APK, real configured provider calls, a real
+persisted OpenAI result, process recreation, and 412 x 892 screenshot
+comparisons. No canonical Qur'an, Room, recorder, provider, scoring, persistence
+or backup representation changed. Destructive Android/Web restore remains
+Stage 10.
 
 ### Stage 9 - Cross-Screen Consistency
 

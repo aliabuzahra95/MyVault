@@ -80,7 +80,7 @@ import com.myvault.app.ui.screens.FolderViewScreen
 import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
-import com.myvault.app.ui.screens.MemoriseShellScreen
+import com.myvault.app.ui.screens.FrozenMemoriseScreen
 import com.myvault.app.ui.screens.PdfActivityFeedScreen
 import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.QuranReflectionsHubScreen
@@ -131,6 +131,7 @@ fun VaultNavHost(
     var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
     var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingMemoriseAutoRecord by rememberSaveable { mutableStateOf(false) }
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
@@ -335,6 +336,7 @@ fun VaultNavHost(
                         VaultRootMode.Study,
                         VaultRootMode.Library,
                         VaultRootMode.Quran,
+                        VaultRootMode.Memorise,
                     )),
             menuVisible = currentRoute !in setOf(
                 VaultDestination.Settings.route,
@@ -342,7 +344,7 @@ fun VaultNavHost(
                 VaultDestination.Reading.route,
             ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
                 !corpusSearchActive &&
-                !(currentRoute == VaultDestination.Home.route && rootModes.getOrNull(selectedRootIndex) == VaultRootMode.Quran),
+                !(currentRoute == VaultDestination.Home.route && rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Quran, VaultRootMode.Memorise)),
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -601,6 +603,7 @@ fun VaultNavHost(
                         onMemoriseFromHere = { ayah ->
                             quranViewModel.startMemorizingAyah(ayah)
                             pendingMemoriseVerseKey = ayah.verseKey
+                            pendingMemoriseAutoRecord = true
                             selectedIslamicRootMode = VaultRootMode.Memorise.name
                         },
                         onPendingScrollHandled = quranViewModel::consumePendingScrollVerse,
@@ -610,45 +613,25 @@ fun VaultNavHost(
                 memoriseContent = {
                     val memoriseViewModel: MemoriseViewModel = hiltViewModel()
                     val memoriseState by memoriseViewModel.uiState.collectAsStateWithLifecycle()
+                    val memoriseSessionState by memoriseViewModel.sessionState.collectAsStateWithLifecycle()
                     LaunchedEffect(pendingMemoriseVerseKey) {
                         val verseKey = pendingMemoriseVerseKey ?: return@LaunchedEffect
-                        val surahNumber = verseKey.substringBefore(':').toIntOrNull() ?: return@LaunchedEffect
-                        val ayahNumber = verseKey.substringAfter(':').toIntOrNull() ?: return@LaunchedEffect
-                        memoriseViewModel.selectSurah(surahNumber)
-                        memoriseViewModel.selectAyah(ayahNumber)
+                        memoriseViewModel.openSession(verseKey, autoRecord = pendingMemoriseAutoRecord)
                         pendingMemoriseVerseKey = null
+                        pendingMemoriseAutoRecord = false
                     }
-                    MemoriseShellScreen(
+                    FrozenMemoriseScreen(
                         uiState = memoriseState,
-                        workspaceTitle = preferences.workspace.workspaceLabel(),
-                        workspaceOptions = WorkspaceLabels,
-                        onWorkspaceSelected = ::switchWorkspace,
-                        onThemeClick = {
-                            shellViewModel.setTheme(
-                                preferences.theme.quickToggle(),
-                            )
-                        },
-                        onQuickBackupClick = {
-                            shellViewModel.pushGoogleDriveSync {
-                                Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
-                        quickBackupRecommended = preferences.quickBackupRecommended(),
-                        onSelectGroup = memoriseViewModel::selectGroup,
-                        onSelectSurah = memoriseViewModel::selectSurah,
-                        onSelectAyah = memoriseViewModel::selectAyah,
-                        onStartSelectedAyah = memoriseViewModel::startSelectedAyah,
-                        onMarkSelectedSurahMemorized = memoriseViewModel::markSelectedSurahMemorized,
-                        onMarkReviewed = memoriseViewModel::markReviewed,
-                        onToggleMemorized = memoriseViewModel::toggleMemorized,
-                        onToggleRevision = memoriseViewModel::toggleRevision,
-                        onToggleIncorrect = memoriseViewModel::toggleIncorrect,
-                        onToggleWeak = memoriseViewModel::toggleWeak,
-                        onOpenAyah = { verseKey ->
-                            pendingQuranVerseKey = verseKey
-                            selectedIslamicRootMode = VaultRootMode.Quran.name
-                        },
+                        sessionState = memoriseSessionState,
+                        onOpenNavigation = onOpenNavigation,
+                        onOpenSession = memoriseViewModel::openSession,
+                        onOpenWholeSurah = memoriseViewModel::openWholeSurah,
+                        onCloseSession = memoriseViewModel::closeSession,
+                        onNextAyah = memoriseViewModel::openNextAyah,
+                        onConsumeAutoRecord = memoriseViewModel::consumeAutoRecordRequest,
+                        onSetStatus = memoriseViewModel::setStatus,
+                        onRecordAttempt = memoriseViewModel::recordAttempt,
+                        onRecordSurahAttempt = memoriseViewModel::recordSurahAttempt,
                     )
                 },
                 libraryContent = {

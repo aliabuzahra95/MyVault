@@ -1,6 +1,6 @@
 # Pre-Stage 8 Memorise Production Audit
 
-Status: **AUDIT COMPLETE - FROZEN AMENDMENT REQUIRED BEFORE STAGE 8**
+Status: **FROZEN AMENDMENT IMPLEMENTED AND VERIFIED - AWAITING STAGE 8 APPROVAL**
 
 Scope: Production Memorise functionality compared with Frozen Design Master references 35-42 and the approved Stage 7 Qur'an-to-Memorise handoff. This is a documentation-only audit. No Stage 1-7 application code, canonical Qur'an content, speech engine, persistence model, or backup representation was changed.
 
@@ -297,3 +297,54 @@ Stage 8 has new design blockers. Before implementation, freeze decisions for:
 **STAGE 8 REQUIRES A FROZEN PROTOTYPE AMENDMENT.**
 
 The production one-ayah engines can support the core Frozen happy path without data-model changes, but the unresolved production states and whole-Surah capability require explicit visual/interaction decisions. Stage 8 implementation must not begin until those decisions are approved and frozen.
+
+## S. Approved Frozen Amendment Implementation
+
+The final Memorise amendment at
+`myvault-ui-prototype-frozen-memorise-amendment-final-20260828-150155-AEST`
+resolved the audit blockers and is implemented through one production
+Memorise overview/session system.
+
+Implemented presentation and routing:
+
+- truthful five-state overview, Continue, Surah progress, Set status, Attempts,
+  Attempt Detail, and Test whole Surah;
+- dedicated canonical ayah/whole-Surah session with Hide Off, 1/2, and All;
+- exact Qur'an Reader `Memorise from here` handoff;
+- automatic recording only for that Qur'an handoff, both for existing
+  permission and immediately after a successful permission grant;
+- Ready, Recording, Paused, Recording complete, captured-audio playback,
+  Re-record, Analyzing, Results, Details, transcription/analysis/recording
+  failures, empty speech, retry, end-of-Surah, Dark, and OLED states;
+- secondary Google Chirp/OpenAI Transcribe provider selection using the
+  existing production engines;
+- process recreation returns to the persisted Memorise overview and never
+  fabricates an active recorder.
+
+Production engine boundaries remain unchanged: canonical Qur'an repositories,
+word IDs, Arabic normalization, alignment, scoring, recorder, providers,
+attempt factories, preference history limits, entities, and backup mappings.
+No Room migration or backup/schema extension was introduced.
+
+## T. Verification Evidence
+
+- JBR 21 `testDebugUnitTest`, `lintDebug`, and `assembleDebug`: PASS.
+- Targeted memorisation analysis, scoring, dashboard, attempt-persistence,
+  whole-Surah, and OpenAI provider unit suites: PASS.
+- Real installed `com.myvault.app` at 412 x 892 logical viewport:
+  permission request/grant, auto-record handoff, ordinary non-auto session,
+  record, timer, pause, resume, stop, review, playback state, re-record,
+  provider selection, retry, Attempts, Attempt Detail, whole-Surah entry,
+  process recreation, Back, Light, and OLED exercised.
+- Google Chirp reached the configured production service and returned the
+  expected recoverable empty-transcript state for emulator silence.
+- OpenAI Transcribe completed a real transcription, deterministic analysis,
+  persisted attempt, Results, and Details flow.
+- Side-by-side and difference evidence is stored under
+  `artifacts/stage-8/comparisons` and runtime captures under
+  `artifacts/stage-8/runtime` (local verification artifacts, not production
+  source).
+
+Full destructive Android/Web backup and restore remains a mandatory Stage 10
+regression. Temporary WAV recordings, active recording, concealment, and live
+analysis remain device-local and outside backup exactly as before.

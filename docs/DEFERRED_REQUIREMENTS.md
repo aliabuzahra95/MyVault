@@ -56,19 +56,19 @@ Frozen prototype directory remains read-only.
 | PDF Activity typography refinement | Stage 5 production behavior remains intact | Later visual refinement pass | **DEFERRED REFINEMENT** |
 | Explorer font-size refinement | Approved Explorer remains unchanged | Later shared-shell visual refinement | **DEFERRED REFINEMENT** |
 | PDF reader Explorer edge-swipe disable | Existing Stage 5 interaction remains unchanged | Later PDF interaction refinement | **DEFERRED REFINEMENT** |
-| Memorise empty state and new-target entry | Production start sheet remains the only current target selector; no Frozen placement exists | Frozen Stage 8 amendment | **STOP-AND-ASK** |
-| Qur'an-to-Memorise exact-ayah session handoff | Stage 7 passes the exact key, but current Memorise route opens overview rather than a session | Frozen Stage 8 route decision | **STOP-AND-ASK** |
-| Memorise Revision schedule language | Production has review state/timestamps but no due-date scheduling engine | Truthful Frozen Stage 8 mapping | **STOP-AND-ASK** |
-| Memorise manual status actions | Memorised, revision, incorrect, difficult, and review actions remain backed-up production behavior | Frozen Stage 8 secondary-action placement | **STOP-AND-ASK** |
-| Memorise attempt history | Latest 50 ayah and whole-Surah attempts remain persisted/backed up | Frozen Stage 8 destination decision | **STOP-AND-ASK** |
-| Whole-Surah memorisation test | Engine/data remain preserved but UI is dormant and absent from Frozen single-ayah references | Frozen Stage 8 placement or explicit dormant decision | **STOP-AND-ASK** |
-| Memorise microphone permission/error states | Production requires request, denied, permanently-denied, and capture-failure handling | Frozen Stage 8 state amendment | **STOP-AND-ASK** |
-| Memorise speech-provider selection | Google Chirp and OpenAI Transcribe engines are preserved; old choice was transient | Frozen Stage 8 placement/persistence decision | **STOP-AND-ASK** |
-| Memorise recording review and transcription failures | Playback, re-record, retry, provider errors, timeout, and empty transcript have no Frozen placement | Frozen Stage 8 state amendment | **STOP-AND-ASK** |
-| Memorise result-state mapping | Extra, repeated, and unknown/low-confidence states exceed Frozen correct/missed language | Frozen Stage 8 result amendment | **STOP-AND-ASK** |
-| Memorise session exit/end-of-Surah/process restoration | No dedicated production session route currently defines these behaviours | Frozen Stage 8 navigation decision | **STOP-AND-ASK** |
+| Memorise empty state and target entry | Existing targets route directly; new targets begin from the Qur'an handoff and whole-Surah entry without invented overview chrome | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Qur'an-to-Memorise exact-ayah session handoff | Exact ayah opens a dedicated session and auto-records immediately or after permission grant | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise Revision schedule language | No scheduler language is shown; only truthful production statuses/counts | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise manual status actions | Exact five production statuses use the compact Set status surface | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise attempt history | Real latest ayah and whole-Surah attempts have History and Detail destinations | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Whole-Surah memorisation test | Existing whole-Surah engine is reachable through the Frozen session language | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise microphone permission/error states | Request, denied/settings, capture failure, and empty recording use Frozen recovery states | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise speech-provider selection | Existing transient Google Chirp/OpenAI choice uses the secondary provider sheet | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise recording review and transcription failures | Playback, re-record, retry, provider/network errors, timeout, empty transcript and analysis failure preserve captured audio | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise result-state mapping | Correct, missing, extra, repeated, and unclear states use canonical overlays; extras remain separate | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
+| Memorise session exit/end-of-Surah/process restoration | Dedicated Back, Next/Surah complete, and process-safe non-recording restoration implemented | Final Frozen Memorise amendment | **RESOLVED IN STAGE 8** |
 | Memorise canonical repeat modes | 3x, 5x, 10x, and Until Stopped engines remain unreachable after Stage 7 | Explicit future placement or dormant decision | **DEFERRED ENGINE-ONLY** |
-| Memorise active-session backup | Live target/recording/conceal state is transient; existing records and attempts are backed up | Only revisit if process-persistent sessions are authorized | **DEFERRED COMPATIBILITY** |
+| Memorise active-session backup | Live recording/conceal/analysis state remains transient; records and attempts remain backed up | Full destructive Android/Web round trip in Stage 10 | **RESOLVED DEVICE-LOCAL MAPPING; STAGE 10 REGRESSION OPEN** |
 
 ## Resolved Stage 6 Course Decisions
 
