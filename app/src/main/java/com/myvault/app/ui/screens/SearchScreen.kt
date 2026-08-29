@@ -117,7 +117,7 @@ fun SearchScreen(
                 if (uiState.notes.isNotEmpty()) {
                     item { SearchSectionLabel("Notes") }
                     items(uiState.notes, key = { "note:${it.id}" }) { result ->
-                        SearchRow(result.title, "Study / ${result.folder}", Icons.Rounded.Description) { onNoteClick(result.id) }
+                        SearchRow(result.title, result.folder, Icons.Rounded.Description) { onNoteClick(result.id) }
                     }
                 }
                 if (uiState.folders.isNotEmpty()) {

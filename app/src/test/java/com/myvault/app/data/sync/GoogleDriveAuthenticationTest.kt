@@ -29,4 +29,11 @@ class GoogleDriveAuthenticationTest {
         assertFalse("Invalid credentials".isRemoteConsentMessage())
         assertFalse(null.isRemoteConsentMessage())
     }
+
+    @Test
+    fun `remote comparison uses only current account manifest version`() {
+        assertFalse(hasNewerRemoteDriveVersion(remoteVersion = 90L, accountManifestVersion = 100L))
+        assertTrue(hasNewerRemoteDriveVersion(remoteVersion = 90L, accountManifestVersion = 0L))
+        assertFalse(hasNewerRemoteDriveVersion(remoteVersion = 0L, accountManifestVersion = 100L))
+    }
 }

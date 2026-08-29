@@ -8,14 +8,17 @@ data class NoteSearchResult(
     val id: String,
     val title: String,
     val bodyPlainText: String,
+    val folderId: String?,
     val folderName: String?,
+    val folderMode: String?,
 )
 
 @Dao
 interface SearchDao {
     @Query(
         """
-        SELECT notes.id AS id, COALESCE(notes.title, '') AS title, COALESCE(notes.bodyPlainText, '') AS bodyPlainText, folders.name AS folderName
+        SELECT notes.id AS id, COALESCE(notes.title, '') AS title, COALESCE(notes.bodyPlainText, '') AS bodyPlainText,
+            folders.id AS folderId, folders.name AS folderName, folders.mode AS folderMode
         FROM notes
         LEFT JOIN folders ON folders.id = notes.folderId
         WHERE notes.deletedAt IS NULL
@@ -31,7 +34,8 @@ interface SearchDao {
 
     @Query(
         """
-        SELECT notes.id AS id, COALESCE(notes.title, '') AS title, COALESCE(notes.bodyPlainText, '') AS bodyPlainText, folders.name AS folderName
+        SELECT notes.id AS id, COALESCE(notes.title, '') AS title, COALESCE(notes.bodyPlainText, '') AS bodyPlainText,
+            folders.id AS folderId, folders.name AS folderName, folders.mode AS folderMode
         FROM notes_fts
         INNER JOIN notes ON notes_fts.rowid = notes.rowid
         LEFT JOIN folders ON folders.id = notes.folderId

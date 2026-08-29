@@ -16,7 +16,6 @@ import com.myvault.app.data.repository.BackupRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -43,6 +42,9 @@ private const val HttpUnauthorized = 401
 
 internal fun shouldRefreshDriveToken(responseCode: Int, attempt: Int): Boolean =
     responseCode == HttpUnauthorized && attempt == 0
+
+internal fun hasNewerRemoteDriveVersion(remoteVersion: Long, accountManifestVersion: Long): Boolean =
+    remoteVersion > 0L && remoteVersion > accountManifestVersion
 
 private class DriveAuthenticationException : IllegalStateException(DriveReconnectMessage)
 
@@ -101,13 +103,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         onProgress: suspend (DriveRestoreProgress) -> Unit = {},
     ): DriveSyncResult = withContext(Dispatchers.IO) {
         onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive backup"))
-        val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
+        val driveAccount = driveAccountOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
+        val drive = driveAccount.client
         val vault = drive.ensureMyVaultLayout()
         val remoteManifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
         val remoteManifest = remoteManifestFile?.let { drive.downloadJsonObject(it.id) }
         val remoteVersion = remoteManifest?.optLong("cloudVersion", 0L) ?: 0L
-        val lastSyncedVersion = preferences.userPreferences.first().lastGoogleDriveManifestAt
-        if (!force && remoteVersion > 0L && remoteVersion > lastSyncedVersion) {
+        val lastSyncedVersion = preferences.googleDriveSyncMetadata(driveAccount.email).lastManifestAt
+        if (!force && hasNewerRemoteDriveVersion(remoteVersion, lastSyncedVersion)) {
             return@withContext DriveSyncResult.Conflict(
                 DriveConflictMessage,
             )
@@ -201,7 +204,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     runCatching { drive.deleteFile(stale.cloudFileId) }
                 }
 
-            preferences.markGoogleDriveSync(cloudVersion)
+            preferences.markGoogleDriveSync(driveAccount.email, cloudVersion)
 
             DriveSyncResult.Success(
                 "Drive push complete: $uploadedMetadata metadata file(s), $uploadedFiles file(s) uploaded, $skippedFiles unchanged file(s) skipped.",
@@ -218,7 +221,8 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         onProgress: suspend (DriveRestoreProgress) -> Unit = {},
     ): DriveSyncResult = withContext(Dispatchers.IO) {
         onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive restore"))
-        val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
+        val driveAccount = driveAccountOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
+        val drive = driveAccount.client
         val vault = drive.ensureMyVaultLayout()
         val manifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
             ?: return@withContext DriveSyncResult.Failure("No MyVault Drive sync manifest found yet. Push from your latest device first.")
@@ -276,7 +280,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             val restored = backupRepository.restoreBackupFromFile(zipFile)
             onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Finalising, message = "Finalising restore"))
             val cloudVersion = manifest.optLong("cloudVersion", System.currentTimeMillis())
-            preferences.markGoogleDriveSync(cloudVersion)
+            preferences.markGoogleDriveSync(driveAccount.email, cloudVersion)
             val missingFilesMessage = if (restored.missingAttachmentCount > 0) {
                 " ${restored.missingAttachmentCount} unavailable attachment file(s) were skipped; all other vault data was restored."
             } else {
@@ -295,15 +299,17 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     }
 
     suspend fun checkForRemoteUpdates(): DriveSyncResult = withContext(Dispatchers.IO) {
-        val drive = driveOrFailure() ?: return@withContext DriveSyncResult.Skipped("Connect Google Drive first.")
+        val driveAccount = driveAccountOrFailure() ?: return@withContext DriveSyncResult.Skipped("Connect Google Drive first.")
+        val drive = driveAccount.client
         val vault = drive.ensureMyVaultLayout()
         val remoteVersion = drive.findChild(vault.manifests.id, SyncManifestFile)
             ?.let { drive.downloadJsonObject(it.id).optLong("cloudVersion", 0L) }
             ?: 0L
-        val localVersion = preferences.userPreferences.first().lastGoogleDriveManifestAt
+        val localVersion = preferences.googleDriveSyncMetadata(driveAccount.email).lastManifestAt
         when {
             remoteVersion <= 0L -> DriveSyncResult.Skipped("No Drive sync has been pushed yet.")
-            remoteVersion > localVersion -> DriveSyncResult.Conflict("New MyVault updates are available from Drive.")
+            hasNewerRemoteDriveVersion(remoteVersion, localVersion) ->
+                DriveSyncResult.Conflict("New MyVault updates are available from Drive.")
             else -> DriveSyncResult.Success("Drive sync is up to date.")
         }
     }
@@ -314,11 +320,22 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             .requestScopes(DriveScope)
             .build()
 
-    private fun driveOrFailure(): DriveApiClient? {
+    private suspend fun driveAccountOrFailure(): AuthorizedDriveAccount? {
         val account = GoogleSignIn.getLastSignedInAccount(context) ?: return null
         if (!GoogleSignIn.hasPermissions(account, DriveScope)) return null
-        return DriveApiClient(context, account)
+        val email = account.email?.trim().orEmpty()
+        if (email.isBlank()) return null
+        preferences.setGoogleDriveAccountEmail(email)
+        return AuthorizedDriveAccount(
+            email = email,
+            client = DriveApiClient(context, account),
+        )
     }
+
+    private data class AuthorizedDriveAccount(
+        val email: String,
+        val client: DriveApiClient,
+    )
 
     private fun File.toMetadataDriveEntries(): List<DriveEntry> =
         listFiles()

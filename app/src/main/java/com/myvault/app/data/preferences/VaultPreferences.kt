@@ -26,6 +26,7 @@ import com.myvault.app.data.quran.memorization.toQuranSurahMemorizationSavedAtte
 import com.myvault.app.data.quran.memorization.toSurahAttemptPreferenceEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -87,6 +88,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
     val userPreferences: Flow<VaultUserPreferences> =
         context.vaultDataStore.data.map { preferences ->
+            val googleDriveAccountEmail = preferences[Keys.GoogleDriveAccountEmail].orEmpty()
+            val googleDriveMetadata = resolveGoogleDriveSyncMetadata(
+                accountEmail = googleDriveAccountEmail,
+                scopedEntries = preferences[Keys.GoogleDriveSyncMetadataByAccount].orEmpty(),
+                legacyLastSyncAt = preferences[Keys.LastGoogleDriveSyncAt] ?: 0L,
+                legacyLastManifestAt = preferences[Keys.LastGoogleDriveManifestAt] ?: 0L,
+            )
             VaultUserPreferences(
                 theme = VaultThemeMode.fromStoredValues(
                     themeModeV2 = preferences[Keys.ThemeModeV2],
@@ -107,9 +115,9 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 securityLockEnabled = preferences[Keys.SecurityLockEnabled] ?: false,
                 securityLockTimeoutMs = preferences[Keys.SecurityLockTimeoutMs] ?: 30_000L,
                 lastLocalBackupAt = preferences[Keys.LastLocalBackupAt] ?: 0L,
-                googleDriveAccountEmail = preferences[Keys.GoogleDriveAccountEmail].orEmpty(),
-                lastGoogleDriveSyncAt = preferences[Keys.LastGoogleDriveSyncAt] ?: 0L,
-                lastGoogleDriveManifestAt = preferences[Keys.LastGoogleDriveManifestAt] ?: 0L,
+                googleDriveAccountEmail = googleDriveAccountEmail,
+                lastGoogleDriveSyncAt = googleDriveMetadata.lastSyncAt,
+                lastGoogleDriveManifestAt = googleDriveMetadata.lastManifestAt,
                 quranLastReadSurah = preferences[Keys.QuranLastReadSurah] ?: 1,
                 quranLastReadAyah = preferences[Keys.QuranLastReadAyah] ?: 1,
                 quranArabicFontPercent = preferences[Keys.QuranArabicFontPercent] ?: 100,
@@ -280,14 +288,50 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
 
     suspend fun setGoogleDriveAccountEmail(email: String) {
         context.vaultDataStore.edit { preferences ->
-            preferences[Keys.GoogleDriveAccountEmail] = email
+            val displayEmail = email.trim()
+            val metadata = preferences[Keys.GoogleDriveSyncMetadataByAccount]
+                .orEmpty()
+                .toGoogleDriveSyncMetadataByAccount()[normalizeGoogleDriveAccount(displayEmail)]
+                ?: GoogleDriveSyncMetadata()
+            preferences[Keys.GoogleDriveAccountEmail] = displayEmail
+            preferences[Keys.LastGoogleDriveSyncAt] = metadata.lastSyncAt
+            preferences[Keys.LastGoogleDriveManifestAt] = metadata.lastManifestAt
         }
     }
 
-    suspend fun markGoogleDriveSync(cloudManifestAt: Long) {
+    suspend fun googleDriveSyncMetadata(accountEmail: String): GoogleDriveSyncMetadata {
+        val account = normalizeGoogleDriveAccount(accountEmail)
+        if (account.isBlank()) return GoogleDriveSyncMetadata()
+        return context.vaultDataStore.data.first()[Keys.GoogleDriveSyncMetadataByAccount]
+            .orEmpty()
+            .toGoogleDriveSyncMetadataByAccount()[account]
+            ?: GoogleDriveSyncMetadata()
+    }
+
+    suspend fun markGoogleDriveSync(
+        accountEmail: String,
+        cloudManifestAt: Long,
+        syncedAt: Long = System.currentTimeMillis(),
+    ) {
+        val account = normalizeGoogleDriveAccount(accountEmail)
+        require(account.isNotBlank()) { "Google Drive account is required before recording sync metadata." }
         context.vaultDataStore.edit { preferences ->
-            preferences[Keys.LastGoogleDriveSyncAt] = System.currentTimeMillis()
-            preferences[Keys.LastGoogleDriveManifestAt] = cloudManifestAt
+            val updated = preferences[Keys.GoogleDriveSyncMetadataByAccount]
+                .orEmpty()
+                .toGoogleDriveSyncMetadataByAccount()
+                .toMutableMap()
+                .apply {
+                    this[account] = GoogleDriveSyncMetadata(
+                        lastSyncAt = syncedAt.coerceAtLeast(0L),
+                        lastManifestAt = cloudManifestAt.coerceAtLeast(0L),
+                    )
+                }
+            preferences[Keys.GoogleDriveSyncMetadataByAccount] = updated.toGoogleDriveSyncMetadataEntries()
+
+            if (normalizeGoogleDriveAccount(preferences[Keys.GoogleDriveAccountEmail].orEmpty()) == account) {
+                preferences[Keys.LastGoogleDriveSyncAt] = syncedAt.coerceAtLeast(0L)
+                preferences[Keys.LastGoogleDriveManifestAt] = cloudManifestAt.coerceAtLeast(0L)
+            }
         }
     }
 
@@ -508,6 +552,8 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val GoogleDriveAccountEmail: Preferences.Key<String> = stringPreferencesKey("google_drive_account_email")
         val LastGoogleDriveSyncAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_sync_at")
         val LastGoogleDriveManifestAt: Preferences.Key<Long> = longPreferencesKey("last_google_drive_manifest_at")
+        val GoogleDriveSyncMetadataByAccount: Preferences.Key<Set<String>> =
+            stringSetPreferencesKey("google_drive_sync_metadata_by_account")
         val QuranLastReadSurah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_surah")
         val QuranLastReadAyah: Preferences.Key<Int> = intPreferencesKey("quran_last_read_ayah")
         val QuranArabicFontPercent: Preferences.Key<Int> = intPreferencesKey("quran_arabic_font_percent")

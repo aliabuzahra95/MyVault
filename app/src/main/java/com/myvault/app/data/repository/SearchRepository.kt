@@ -4,8 +4,12 @@ import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
+import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.ui.components.SearchResultData
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlin.math.max
@@ -28,13 +32,17 @@ class SearchRepository @Inject constructor(
         } else {
             searchDao.searchActiveNotes(normalizedQuery.toLikePattern(), limit = 40)
         }
-        return noteResults
-            .map { notes ->
+        return combine(noteResults, folderDao.observeAll()) { notes, folders ->
+                val foldersById = folders.associateBy { it.id }
                 notes.map {
                     SearchResultData(
                         title = it.title,
                         snippet = it.bodyPlainText.compactSearchSnippet(normalizedQuery),
-                        folder = it.folderName ?: "Unfiled",
+                        folder = buildSearchLocation(
+                            folderId = it.folderId,
+                            folderMode = it.folderMode,
+                            foldersById = foldersById,
+                        ),
                         id = it.id,
                     )
                 }
@@ -57,6 +65,32 @@ class SearchRepository @Inject constructor(
                 .toList()
         }
     }
+}
+
+internal fun buildSearchLocation(
+    folderId: String?,
+    folderMode: String?,
+    foldersById: Map<String, FolderEntity>,
+): String {
+    val rootLabel = when {
+        folderMode == FOLDER_MODE_PERSONAL -> "Personal"
+        folderMode == FOLDER_MODE_LIBRARY || folderMode == FOLDER_MODE_PERSONAL_LIBRARY -> "Library"
+        folderMode?.startsWith("course:") == true -> "Courses"
+        else -> "Study"
+    }
+    if (folderId == null) return "$rootLabel / Unfiled"
+
+    val names = mutableListOf<String>()
+    val visited = mutableSetOf<String>()
+    var currentId: String? = folderId
+    while (currentId != null && visited.add(currentId)) {
+        val folder = foldersById[currentId] ?: break
+        folder.name.trim().takeIf { it.isNotEmpty() }?.let(names::add)
+        currentId = folder.parentId
+    }
+    return (listOf(rootLabel) + names.asReversed()).joinToString(" / ")
+        .takeIf { names.isNotEmpty() }
+        ?: "$rootLabel / Unfiled"
 }
 
 private fun String.toLikePattern(): String =
