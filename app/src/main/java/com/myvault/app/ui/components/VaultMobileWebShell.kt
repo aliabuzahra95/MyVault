@@ -271,7 +271,17 @@ fun VaultMobileWebShell(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             DrawerSectionLabel(if (workspaceLabel == "Personal") "Workspace" else "Knowledge")
-                            items.forEachIndexed { index, item ->
+                            val orderedItems = if (workspaceLabel == "Personal") {
+                                items.withIndex().toList()
+                            } else {
+                                val explorerOrder = listOf("Qur'an", "Memorise", "Study", "Library", "Courses")
+                                items.withIndex().sortedBy { indexed ->
+                                    explorerOrder.indexOf(indexed.value.label).takeIf { it >= 0 } ?: Int.MAX_VALUE
+                                }
+                            }
+                            orderedItems.forEach { indexedItem ->
+                                val index = indexedItem.index
+                                val item = indexedItem.value
                                 val explorerSection = explorerSections.firstOrNull { it.navigationIndex == index }
                                 if (explorerSection == null) {
                                     DrawerNavigationRow(
@@ -327,18 +337,23 @@ fun VaultMobileWebShell(
                                         }
                                     }
                                 }
-                                if (item.label == "Library") {
-                                    DrawerNavigationRow(
-                                        label = "Workspace Attachments",
-                                        icon = Icons.Outlined.AttachFile,
-                                        selected = attachmentsSelected,
-                                        onClick = { closeDrawerThen(onAttachmentsSelected) },
-                                    )
+                                val showWorkspaceTools = if (workspaceLabel == "Personal") {
+                                    item.label == "Library"
+                                } else {
+                                    item.label == "Courses"
+                                }
+                                if (showWorkspaceTools) {
                                     DrawerNavigationRow(
                                         label = "Favourites",
                                         icon = Icons.Outlined.StarOutline,
                                         selected = favouritesSelected,
                                         onClick = { closeDrawerThen(onFavouritesSelected) },
+                                    )
+                                    DrawerNavigationRow(
+                                        label = "Workspace Attachments",
+                                        icon = Icons.Outlined.AttachFile,
+                                        selected = attachmentsSelected,
+                                        onClick = { closeDrawerThen(onAttachmentsSelected) },
                                     )
                                 }
                             }

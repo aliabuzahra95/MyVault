@@ -2,6 +2,8 @@ package com.myvault.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -89,6 +92,7 @@ internal fun FrozenDashboardScreen(
     onOpenFile: (String) -> Unit,
     onOpenQuran: (String) -> Unit,
     onOpenReflection: (QuranReflectionItem) -> Unit,
+    onViewAllReflections: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -99,30 +103,16 @@ internal fun FrozenDashboardScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = VaultSpacing.screen, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(17.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            continueFile?.let { file ->
+            if (continueFile != null || quranContinue != null) {
                 item {
                     DashboardSection("Continue") {
-                        DashboardRow(
-                            title = file.name,
-                            meta = file.pageIndex?.let { "Continue PDF · Page ${it + 1}" } ?: "Continue PDF",
-                            icon = Icons.Rounded.PictureAsPdf,
-                            outlined = true,
-                            onClick = { onOpenFile(file.id) },
-                        )
-                    }
-                }
-            }
-            quranContinue?.let { quran ->
-                item {
-                    DashboardSection("Qur'an") {
-                        DashboardRow(
-                            title = "${quran.surahName} · ${quran.surahNumber}:${quran.ayahNumber}",
-                            meta = "Continue from your last reading position",
-                            icon = Icons.AutoMirrored.Rounded.MenuBook,
-                            outlined = true,
-                            onClick = { onOpenQuran(quran.verseKey) },
+                        DashboardContinueGrid(
+                            continueFile = continueFile,
+                            quranContinue = quranContinue,
+                            onOpenFile = onOpenFile,
+                            onOpenQuran = onOpenQuran,
                         )
                     }
                 }
@@ -142,13 +132,11 @@ internal fun FrozenDashboardScreen(
             }
             if (reflections.isNotEmpty()) {
                 item {
-                    DashboardSection("Reflections", "Recent") {
+                    DashboardSection("Reflections", actionLabel = "View all", onAction = onViewAllReflections) {
                         Column {
-                            reflections.take(3).forEach { reflection ->
-                                DashboardRow(
-                                    title = "${reflection.surahName} · ${reflection.surahNumber}:${reflection.ayahNumber}",
-                                    meta = reflection.reflectionPreview,
-                                    icon = Icons.Outlined.ChatBubbleOutline,
+                            reflections.take(8).forEach { reflection ->
+                                DashboardReflectionRow(
+                                    reflection = reflection,
                                     onClick = { onOpenReflection(reflection) },
                                 )
                             }
@@ -187,6 +175,172 @@ internal fun FrozenDashboardScreen(
         }
     }
 }
+
+@Composable
+private fun DashboardContinueGrid(
+    continueFile: LibraryFileItem?,
+    quranContinue: HomeQuranContinue?,
+    onOpenFile: (String) -> Unit,
+    onOpenQuran: (String) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val stackCards = maxWidth < 320.dp
+        if (continueFile != null && quranContinue != null) {
+            if (stackCards) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DashboardPdfContinueCard(continueFile, onOpenFile, Modifier.fillMaxWidth().height(180.dp))
+                    DashboardQuranContinueCard(quranContinue, onOpenQuran, Modifier.fillMaxWidth().height(180.dp))
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DashboardPdfContinueCard(continueFile, onOpenFile, Modifier.weight(1f).height(196.dp))
+                    DashboardQuranContinueCard(quranContinue, onOpenQuran, Modifier.weight(1f).height(196.dp))
+                }
+            }
+        } else {
+            continueFile?.let {
+                DashboardPdfContinueCard(it, onOpenFile, Modifier.fillMaxWidth().height(180.dp))
+            }
+            quranContinue?.let {
+                DashboardQuranContinueCard(it, onOpenQuran, Modifier.fillMaxWidth().height(180.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardPdfContinueCard(
+    file: LibraryFileItem,
+    onOpenFile: (String) -> Unit,
+    modifier: Modifier,
+) {
+    DashboardContinueCard(
+        type = "PDF",
+        title = file.name.withoutPdfExtension(),
+        metadata = when {
+            file.pageIndex != null && file.pageCount != null -> "Page ${file.pageIndex + 1} of ${file.pageCount}"
+            file.pageIndex != null -> "Page ${file.pageIndex + 1}"
+            else -> "Document"
+        },
+        icon = Icons.Rounded.PictureAsPdf,
+        onClick = { onOpenFile(file.id) },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun DashboardQuranContinueCard(
+    quran: HomeQuranContinue,
+    onOpenQuran: (String) -> Unit,
+    modifier: Modifier,
+) {
+    DashboardContinueCard(
+        type = "Qur'an",
+        title = quran.surahName,
+        metadata = "${quran.surahNumber}:${quran.ayahNumber}",
+        icon = Icons.AutoMirrored.Rounded.MenuBook,
+        onClick = { onOpenQuran(quran.verseKey) },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun DashboardContinueCard(
+    type: String,
+    title: String,
+    metadata: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = VaultShapes.lg,
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(icon, null, Modifier.size(20.dp), tint = colors.textSecondary)
+            Text(
+                type.uppercase(),
+                modifier = Modifier.padding(top = 5.dp),
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.W700,
+                color = colors.textMuted,
+            )
+            Box(
+                modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    title,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.W700,
+                    color = colors.text,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Text(metadata, fontSize = 11.5.sp, color = colors.textMuted, maxLines = 1)
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text("Continue", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.textSecondary)
+                Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, Modifier.size(14.dp), tint = colors.textMuted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardReflectionRow(reflection: QuranReflectionItem, onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 62.dp),
+        shape = VaultShapes.md,
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(18.dp), tint = colors.textSecondary)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${reflection.surahName} · ${reflection.surahNumber}:${reflection.ayahNumber}",
+                    fontSize = 12.5.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.W700,
+                    color = colors.text,
+                )
+                Text(
+                    reflection.reflectionPreview,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = colors.textMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, Modifier.size(15.dp), tint = colors.textMuted)
+        }
+    }
+}
+
+private fun String.withoutPdfExtension(): String =
+    if (endsWith(".pdf", ignoreCase = true)) dropLast(4) else this
 
 @Composable
 internal fun FrozenFavouritesScreen(
@@ -239,12 +393,33 @@ internal fun FrozenFavouritesScreen(
 }
 
 @Composable
-private fun DashboardSection(label: String, meta: String? = null, content: @Composable () -> Unit) {
+private fun DashboardSection(
+    label: String,
+    meta: String? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
     val colors = VaultThemeTokens.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.W800, color = colors.textMuted)
-            meta?.let { Text(it, fontSize = 10.5.sp, color = colors.textMuted) }
+            when {
+                actionLabel != null && onAction != null -> Surface(
+                    onClick = onAction,
+                    color = Color.Transparent,
+                    shape = VaultShapes.sm,
+                ) {
+                    Text(
+                        actionLabel,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.W700,
+                        color = colors.textSecondary,
+                    )
+                }
+                meta != null -> Text(meta, fontSize = 10.5.sp, color = colors.textMuted)
+            }
         }
         content()
     }

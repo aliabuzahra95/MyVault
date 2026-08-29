@@ -147,6 +147,7 @@ fun VaultNavHost(
     var pendingMemoriseVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseAutoRecord by rememberSaveable { mutableStateOf(false) }
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
+    var defaultLandingHandled by rememberSaveable { mutableStateOf(false) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val narrationMiniPlayerVisibility = remember { MutableTransitionState(false) }
@@ -310,8 +311,18 @@ fun VaultNavHost(
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
+        defaultLandingHandled = true
         navController.navigate(VaultDestination.Editor.route(noteId))
         onPendingOpenNoteConsumed()
+    }
+
+    LaunchedEffect(currentRoute, pendingOpenNoteId, defaultLandingHandled) {
+        if (!defaultLandingHandled && pendingOpenNoteId == null && currentRoute == VaultDestination.Home.route) {
+            defaultLandingHandled = true
+            navController.navigate(VaultDestination.Dashboard.route) {
+                launchSingleTop = true
+            }
+        }
     }
 
     LaunchedEffect(currentRoute) {
@@ -620,7 +631,6 @@ fun VaultNavHost(
                     LaunchedEffect(pendingQuranVerseKey) {
                         val verseKey = pendingQuranVerseKey ?: return@LaunchedEffect
                         quranViewModel.openBookmarkedAyah(verseKey)
-                        pendingQuranVerseKey = null
                     }
                     QuranShellScreen(
                         onOpenNavigation = onOpenNavigation,
@@ -692,7 +702,10 @@ fun VaultNavHost(
                             pendingMemoriseAutoRecord = true
                             selectedIslamicRootMode = VaultRootMode.Memorise.name
                         },
-                        onPendingScrollHandled = quranViewModel::consumePendingScrollVerse,
+                        onPendingScrollHandled = {
+                            quranViewModel.consumePendingScrollVerse()
+                            pendingQuranVerseKey = null
+                        },
                         showNavigationHeader = false,
                     )
                 },
@@ -997,6 +1010,9 @@ fun VaultNavHost(
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
                     navController.popBackStack(VaultDestination.Home.route, false)
                     selectedIslamicRootMode = VaultRootMode.Quran.name
+                },
+                onViewAllReflections = {
+                    navController.navigate(VaultDestination.QuranReflections.route)
                 },
             )
         }
