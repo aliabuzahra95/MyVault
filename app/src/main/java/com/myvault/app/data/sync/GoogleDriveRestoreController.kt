@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,11 +28,18 @@ class GoogleDriveRestoreController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val _state = MutableStateFlow(DriveRestoreState())
     val state: StateFlow<DriveRestoreState> = _state.asStateFlow()
+    private var trackedWorkId: UUID? = null
 
     init {
         workManager.getWorkInfosForUniqueWorkFlow(DriveSyncWorker.UniqueWorkName)
             .onEach { infos ->
-                _state.value = infos.firstOrNull()?.toDriveRestoreState() ?: DriveRestoreState()
+                val selected = selectDriveWorkInfo(infos, trackedWorkId)
+                if (selected != null) {
+                    trackedWorkId = selected.id
+                    _state.value = selected.toDriveRestoreState()
+                } else if (!_state.value.active) {
+                    _state.value = DriveRestoreState()
+                }
             }
             .launchIn(scope)
     }
@@ -55,7 +63,7 @@ class GoogleDriveRestoreController @Inject constructor(
     }
 
     private fun enqueue(operation: String, startedMessage: String, onComplete: (DriveSyncResult) -> Unit) {
-        if (_state.value.active) {
+        if (!canStartDriveOperation(_state.value)) {
             onComplete(DriveSyncResult.Skipped("Google Drive sync is already running."))
             return
         }
@@ -63,6 +71,15 @@ class GoogleDriveRestoreController @Inject constructor(
             .setInputData(workDataOf(DriveSyncWorker.KeyOperation to operation))
             .addTag(DriveSyncWorker.Tag)
             .build()
+        trackedWorkId = request.id
+        _state.value = DriveRestoreState(
+            active = true,
+            progress = DriveRestoreProgress(
+                stage = DriveRestoreStage.Preparing,
+                message = operation.progressTitle(),
+            ),
+            operation = operation.toDriveSyncOperation(),
+        )
         workManager.enqueueUniqueWork(DriveSyncWorker.UniqueWorkName, ExistingWorkPolicy.KEEP, request)
         onComplete(DriveSyncResult.Success(startedMessage))
     }
@@ -76,15 +93,33 @@ fun DriveSyncResult.displayMessage(): String =
         is DriveSyncResult.Failure -> message
     }
 
-private fun WorkInfo.toDriveRestoreState(): DriveRestoreState {
+internal fun selectDriveWorkInfo(infos: List<WorkInfo>, trackedWorkId: UUID?): WorkInfo? =
+    trackedWorkId?.let { id -> infos.firstOrNull { it.id == id } }
+        ?: infos.firstOrNull { !it.state.isFinished }
+
+internal fun canStartDriveOperation(state: DriveRestoreState): Boolean = !state.active
+
+internal fun WorkInfo.toDriveRestoreState(): DriveRestoreState {
     val progressStage = progress.getString(DriveSyncWorker.KeyStage)?.toDriveRestoreStage() ?: DriveRestoreStage.Preparing
     val outputStage = outputData.getString(DriveSyncWorker.KeyStage)?.toDriveRestoreStage()
     val stage = outputStage ?: progressStage
     val outputMessage = outputData.getString(DriveSyncWorker.KeyMessage)
     val progressMessage = progress.getString(DriveSyncWorker.KeyMessage).orEmpty()
     val message = outputMessage ?: progressMessage
-    val current = progress.getInt(DriveSyncWorker.KeyCurrent, 0)
-    val total = progress.getInt(DriveSyncWorker.KeyTotal, 0)
+    val operation = (outputData.getString(DriveSyncWorker.KeyOperation)
+        ?: progress.getString(DriveSyncWorker.KeyOperation))
+        .toDriveSyncOperation()
+    val current = if (state.isFinished) {
+        outputData.getInt(DriveSyncWorker.KeyCurrent, 0)
+    } else {
+        progress.getInt(DriveSyncWorker.KeyCurrent, 0)
+    }
+    val total = if (state.isFinished) {
+        outputData.getInt(DriveSyncWorker.KeyTotal, 0)
+    } else {
+        progress.getInt(DriveSyncWorker.KeyTotal, 0)
+    }
+    val completedAt = outputData.getLong(DriveSyncWorker.KeyCompletedAt, 0L)
     return when (state) {
         WorkInfo.State.ENQUEUED,
         WorkInfo.State.RUNNING,
@@ -92,24 +127,46 @@ private fun WorkInfo.toDriveRestoreState(): DriveRestoreState {
         -> DriveRestoreState(
             active = true,
             progress = DriveRestoreProgress(stage = stage, message = message, current = current, total = total),
+            operation = operation,
         )
         WorkInfo.State.SUCCEEDED -> DriveRestoreState(
             active = false,
-            progress = DriveRestoreProgress(stage = outputStage ?: DriveRestoreStage.Complete, message = message),
+            progress = DriveRestoreProgress(
+                stage = outputStage ?: DriveRestoreStage.Complete,
+                message = message,
+                current = current,
+                total = total,
+            ),
             message = message,
+            operation = operation,
+            completedAt = completedAt,
         )
         WorkInfo.State.FAILED -> DriveRestoreState(
             active = false,
             progress = DriveRestoreProgress(stage = DriveRestoreStage.Failed, message = message.ifBlank { "Google Drive sync failed." }),
             message = message.ifBlank { "Google Drive sync failed." },
+            operation = operation,
         )
         WorkInfo.State.CANCELLED -> DriveRestoreState(
             active = false,
             progress = DriveRestoreProgress(stage = DriveRestoreStage.Failed, message = "Google Drive sync was cancelled."),
             message = "Google Drive sync was cancelled.",
+            operation = operation,
         )
     }
 }
 
 private fun String.toDriveRestoreStage(): DriveRestoreStage =
     DriveRestoreStage.entries.firstOrNull { it.name == this } ?: DriveRestoreStage.Preparing
+
+private fun String?.toDriveSyncOperation(): DriveSyncOperation =
+    when (this) {
+        DriveSyncWorker.OperationPush,
+        DriveSyncWorker.OperationForcePush,
+        -> DriveSyncOperation.Backup
+        DriveSyncWorker.OperationPull -> DriveSyncOperation.Restore
+        else -> DriveSyncOperation.None
+    }
+
+private fun String.progressTitle(): String =
+    if (this == DriveSyncWorker.OperationPull) "Starting Google Drive restore" else "Starting Google Drive backup"

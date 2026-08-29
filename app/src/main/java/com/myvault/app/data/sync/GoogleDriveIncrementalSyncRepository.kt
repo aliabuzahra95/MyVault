@@ -138,11 +138,16 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 ),
             )
             entries.forEachIndexed { index, entry ->
+                val progressMessage = if (entry.kind == EntryKindFile) {
+                    "Uploading file ${entry.fileName}"
+                } else {
+                    "Uploading metadata ${entry.fileName}"
+                }
                 onProgress(
                     DriveRestoreProgress(
                         stage = DriveRestoreStage.Uploading,
-                        message = if (entry.kind == EntryKindFile) "Uploading file ${entry.fileName}" else "Uploading metadata ${entry.fileName}",
-                        current = index + 1,
+                        message = progressMessage,
+                        current = index,
                         total = entries.size,
                     ),
                 )
@@ -152,6 +157,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     entry.sha256 = remote.sha256
                     entry.cloudFileId = currentDriveFile.id
                     skippedFiles += 1
+                    onProgress(
+                        DriveRestoreProgress(
+                            stage = DriveRestoreStage.Uploading,
+                            message = progressMessage,
+                            current = index + 1,
+                            total = entries.size,
+                        ),
+                    )
                     return@forEachIndexed
                 }
                 entry.ensureSha256()
@@ -165,6 +178,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     if (!reusableId.isNullOrBlank()) {
                         entry.cloudFileId = reusableId
                         if (entry.kind == EntryKindFile) skippedFiles += 1
+                        onProgress(
+                            DriveRestoreProgress(
+                                stage = DriveRestoreStage.Uploading,
+                                message = progressMessage,
+                                current = index + 1,
+                                total = entries.size,
+                            ),
+                        )
                         return@forEachIndexed
                     }
                 }
@@ -183,6 +204,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 )
                 entry.cloudFileId = uploaded.id
                 if (entry.kind == EntryKindFile) uploadedFiles += 1 else uploadedMetadata += 1
+                onProgress(
+                    DriveRestoreProgress(
+                        stage = DriveRestoreStage.Uploading,
+                        message = progressMessage,
+                        current = index + 1,
+                        total = entries.size,
+                    ),
+                )
             }
 
             onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Finalising, message = "Finalising Drive backup"))
@@ -923,10 +952,18 @@ data class DriveRestoreProgress(
         get() = total.takeIf { it > 0 }?.let { ((current.toFloat() / it.toFloat()) * 100f).toInt().coerceIn(0, 100) }
 }
 
+enum class DriveSyncOperation {
+    None,
+    Backup,
+    Restore,
+}
+
 data class DriveRestoreState(
     val active: Boolean = false,
     val progress: DriveRestoreProgress = DriveRestoreProgress(),
     val message: String? = null,
+    val operation: DriveSyncOperation = DriveSyncOperation.None,
+    val completedAt: Long = 0L,
 ) {
     val isFinished: Boolean
         get() = progress.stage == DriveRestoreStage.Complete || progress.stage == DriveRestoreStage.Failed

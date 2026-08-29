@@ -54,6 +54,26 @@ class GoogleDriveAccountMetadataTest {
     }
 
     @Test
+    fun `successful backup timestamp survives account scoped persistence`() {
+        val entries = mapOf(
+            "backup@example.com" to GoogleDriveSyncMetadata(
+                lastSyncAt = 1_788_000_000_000L,
+                lastManifestAt = 1_787_999_999_000L,
+            ),
+        ).toGoogleDriveSyncMetadataEntries()
+
+        val resolved = resolveGoogleDriveSyncMetadata(
+            accountEmail = "BACKUP@example.com",
+            scopedEntries = entries,
+            legacyLastSyncAt = 0L,
+            legacyLastManifestAt = 0L,
+        )
+
+        assertEquals(1_788_000_000_000L, resolved.lastSyncAt)
+        assertEquals(1_787_999_999_000L, resolved.lastManifestAt)
+    }
+
+    @Test
     fun `unattributed legacy globals are not assigned to active account`() {
         val resolved = resolveGoogleDriveSyncMetadata(
             accountEmail = "account-a@example.com",

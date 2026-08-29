@@ -104,7 +104,6 @@ import com.myvault.app.data.narration.AzureNarrationConfig
 import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.sync.DriveConflictMessage
 import com.myvault.app.data.sync.DriveRestoreState
-import com.myvault.app.data.sync.DriveRestoreStage
 import com.myvault.app.ui.viewmodel.DeletedItemUiState
 import com.myvault.app.ui.viewmodel.RecentlyDeletedUiState
 import java.text.SimpleDateFormat
@@ -1095,16 +1094,24 @@ private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: 
 
 @Composable
 private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDrivePull: () -> Unit) {
+    val lastBackupAt = state.confirmedLastBackupAt(preferences.lastGoogleDriveSyncAt)
     FrozenSettingsPage("Backup / Restore", onBack) {
         frozenSection("GOOGLE DRIVE") {
-            FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = preferences.lastGoogleDriveSyncAt.displayBackupTime(), enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active, onClick = onDrivePush)
+            FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = "Last backup: ${lastBackupAt.displayBackupTime()}", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active, onClick = onDrivePush)
             FrozenSettingsRow(Icons.Rounded.Restore, "Restore from Drive", value = if (state.active) "In progress" else "Latest Drive backup", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active, onClick = onDrivePull)
         }
         frozenSection("LOCAL BACKUP") {
             FrozenSettingsRow(Icons.Rounded.Backup, "Export backup file", value = preferences.lastLocalBackupAt.displayBackupTime(), onClick = onLocalBackup)
             FrozenSettingsRow(Icons.Rounded.Restore, "Import backup file", subtitle = "Choose a trusted .vaultbackup file", onClick = onLocalRestore)
         }
-        if (state.active) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen), color = VaultThemeTokens.colors.accent) }
+        if (state.active || state.isFinished) {
+            item {
+                DriveRestoreProgressCard(
+                    state = state,
+                    modifier = Modifier.padding(horizontal = VaultSpacing.screen),
+                )
+            }
+        }
     }
 }
 
@@ -1619,11 +1626,14 @@ private fun BackupSettingsDialog(
 }
 
 @Composable
-private fun DriveRestoreProgressCard(state: DriveRestoreState) {
+private fun DriveRestoreProgressCard(
+    state: DriveRestoreState,
+    modifier: Modifier = Modifier,
+) {
     val colors = VaultThemeTokens.colors
-    val progress = state.progress
+    val presentation = state.toDriveProgressPresentation()
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         color = colors.surface,
@@ -1641,11 +1651,11 @@ private fun DriveRestoreProgressCard(state: DriveRestoreState) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = if (progress.stage == DriveRestoreStage.Complete) "Drive sync complete" else progress.stage.label,
+                    text = presentation.title,
                     style = MaterialTheme.typography.labelLarge,
-                    color = colors.text,
+                    color = if (presentation.failed) MaterialTheme.colorScheme.error else colors.text,
                 )
-                progress.percent?.let {
+                presentation.percent?.let {
                     Text(
                         text = "$it%",
                         style = MaterialTheme.typography.labelMedium,
@@ -1653,20 +1663,28 @@ private fun DriveRestoreProgressCard(state: DriveRestoreState) {
                     )
                 }
             }
-            LinearProgressIndicator(
-                progress = { progress.percent?.div(100f) ?: if (state.active) 0.35f else 1f },
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.accent,
-                trackColor = colors.border,
-            )
+            when {
+                presentation.failed -> Unit
+                presentation.percent != null -> LinearProgressIndicator(
+                    progress = { presentation.percent / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = colors.accent,
+                    trackColor = colors.border,
+                )
+                state.active -> LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = colors.accent,
+                    trackColor = colors.border,
+                )
+            }
             Text(
-                text = progress.message.ifBlank { state.message.orEmpty() },
+                text = presentation.detail,
                 style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
+                color = if (presentation.failed) MaterialTheme.colorScheme.error else colors.textSecondary,
             )
-            if (progress.total > 0) {
+            presentation.itemProgress?.let { itemProgress ->
                 Text(
-                    text = "${progress.current.coerceAtMost(progress.total)} of ${progress.total} items",
+                    text = itemProgress,
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.textMuted,
                 )

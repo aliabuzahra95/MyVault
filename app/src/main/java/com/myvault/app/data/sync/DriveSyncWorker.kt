@@ -24,6 +24,8 @@ class DriveSyncWorker @AssistedInject constructor(
     private val googleDriveSyncRepository: GoogleDriveIncrementalSyncRepository,
 ) : CoroutineWorker(appContext, params) {
 
+    private var latestProgress = DriveRestoreProgress()
+
     override suspend fun doWork(): Result {
         val operation = inputData.getString(KeyOperation) ?: OperationPush
         val result = try {
@@ -43,7 +45,8 @@ class DriveSyncWorker @AssistedInject constructor(
             is DriveSyncResult.Success -> DriveRestoreStage.Complete
             else -> DriveRestoreStage.Failed
         }
-        val output = outputData(finalStage, result.displayMessage())
+        val completedAt = if (result is DriveSyncResult.Success) System.currentTimeMillis() else 0L
+        val output = outputData(finalStage, result.displayMessage(), operation, completedAt)
         return when (result) {
             is DriveSyncResult.Success -> Result.success(output)
             is DriveSyncResult.Conflict,
@@ -54,15 +57,17 @@ class DriveSyncWorker @AssistedInject constructor(
     }
 
     private suspend fun publishProgress(progress: DriveRestoreProgress) {
+        latestProgress = progress
+        val operation = inputData.getString(KeyOperation) ?: OperationPush
         setProgress(
             workDataOf(
                 KeyStage to progress.stage.name,
                 KeyMessage to progress.message,
                 KeyCurrent to progress.current,
                 KeyTotal to progress.total,
+                KeyOperation to operation,
             ),
         )
-        val operation = inputData.getString(KeyOperation) ?: OperationPush
         safeSetForeground(operation, progress)
     }
 
@@ -110,8 +115,15 @@ class DriveSyncWorker @AssistedInject constructor(
         manager.createNotificationChannel(channel)
     }
 
-    private fun outputData(stage: DriveRestoreStage, message: String): Data =
-        workDataOf(KeyStage to stage.name, KeyMessage to message)
+    private fun outputData(stage: DriveRestoreStage, message: String, operation: String, completedAt: Long): Data =
+        workDataOf(
+            KeyStage to stage.name,
+            KeyMessage to message,
+            KeyCurrent to latestProgress.current,
+            KeyTotal to latestProgress.total,
+            KeyOperation to operation,
+            KeyCompletedAt to completedAt,
+        )
 
     private fun String.progressTitle(): String =
         if (this == OperationPull) "Starting Google Drive restore" else "Starting Google Drive backup"
@@ -130,6 +142,7 @@ class DriveSyncWorker @AssistedInject constructor(
         const val KeyMessage = "message"
         const val KeyCurrent = "current"
         const val KeyTotal = "total"
+        const val KeyCompletedAt = "completed_at"
         private const val ChannelId = "myvault_drive_sync"
         private const val NotificationId = 2407
     }
