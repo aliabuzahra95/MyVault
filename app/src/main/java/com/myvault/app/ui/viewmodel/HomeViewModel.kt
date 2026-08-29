@@ -291,6 +291,15 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun revealFolderPath(mode: String, folderIds: List<String>) {
+        if (folderIds.isEmpty()) return
+        viewModelScope.launch {
+            val expandedIds = vaultPreferences.userPreferences.first().expandedFolderIds.toMutableSet()
+            folderIds.forEach { folderId -> expandedIds += "home:$mode:$folderId" }
+            vaultPreferences.setExpandedFolderIds(expandedIds)
+        }
+    }
+
     fun deleteFolder(folderId: String) {
         viewModelScope.launch { folderRepository.deleteFolderTree(folderId) }
     }

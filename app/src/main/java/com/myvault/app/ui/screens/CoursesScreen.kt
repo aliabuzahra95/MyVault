@@ -109,6 +109,8 @@ private data class PendingOverviewCourseAction(
 fun CoursesScreen(
     uiState: CoursesUiState,
     backHandlerEnabled: Boolean = true,
+    requestedCourseId: String? = null,
+    onRequestedCourseHandled: () -> Unit = {},
     onSelectCourse: (String) -> Unit,
     onCreateCourse: (String) -> Unit,
     onRenameCourse: (String, String) -> Unit,
@@ -157,6 +159,15 @@ fun CoursesScreen(
     var courseCreateActionsOpen by remember { mutableStateOf(false) }
     var overviewActionsCourse by remember { mutableStateOf<CourseEntity?>(null) }
     var pendingOverviewAction by remember { mutableStateOf<PendingOverviewCourseAction?>(null) }
+
+    LaunchedEffect(requestedCourseId, uiState.courses) {
+        val courseId = requestedCourseId ?: return@LaunchedEffect
+        if (uiState.courses.any { it.id == courseId }) {
+            openedCourseId = courseId
+            onSelectCourse(courseId)
+            onRequestedCourseHandled()
+        }
+    }
 
     LaunchedEffect(overviewActionsCourse, pendingOverviewAction) {
         val pending = pendingOverviewAction ?: return@LaunchedEffect

@@ -1,7 +1,8 @@
 package com.myvault.app.ui.navigation
 
 sealed class VaultDestination(val route: String, val label: String) {
-    data object Home : VaultDestination("home", "Home")
+    // Keep the established route string so restored navigation state remains compatible.
+    data object Knowledge : VaultDestination("home", "Knowledge")
     data object Dashboard : VaultDestination("dashboard", "Dashboard")
     data object FolderView : VaultDestination("folder/{folderId}", "Folder View") {
         fun route(folderId: String) = "folder/$folderId"

@@ -155,6 +155,20 @@ class CoursesViewModel @Inject constructor(
         }
     }
 
+    fun revealFolderPath(courseId: String, folderIds: List<String>) {
+        viewModelScope.launch {
+            val course = courseRepository.courses.first().firstOrNull { it.id == courseId } ?: return@launch
+            selectedCourseId.value = courseId
+            val courseRoot = courseRepository.ensureWorkspace(course)
+            rootFolderId.value = courseRoot
+            if (folderIds.isNotEmpty()) {
+                val expandedIds = vaultPreferences.userPreferences.first().expandedFolderIds.toMutableSet()
+                folderIds.forEach { folderId -> expandedIds += "folder:$courseRoot:$folderId" }
+                vaultPreferences.setExpandedFolderIds(expandedIds)
+            }
+        }
+    }
+
     fun createCourse(title: String) = viewModelScope.launch { selectCourse(courseRepository.createCourse(title)) }
     fun renameCourse(id: String, title: String) = viewModelScope.launch { courseRepository.renameCourse(id, title) }
     fun deleteCourse(id: String) = viewModelScope.launch { courseRepository.deleteCourse(id) }

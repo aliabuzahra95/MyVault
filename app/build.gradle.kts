@@ -105,6 +105,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SYNC_PROXY_URL", "\"$syncProxyUrl\"")
         buildConfigField("String", "SYNC_PROXY_TOKEN", "\"$syncProxyToken\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -184,6 +185,11 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260522")
+
+    androidTestImplementation("androidx.navigation:navigation-testing:2.9.8")
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

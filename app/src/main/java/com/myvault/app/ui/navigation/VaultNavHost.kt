@@ -146,6 +146,7 @@ fun VaultNavHost(
     var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseAutoRecord by rememberSaveable { mutableStateOf(false) }
+    var pendingCourseId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
@@ -235,7 +236,7 @@ fun VaultNavHost(
         ?: currentBackStackEntry?.arguments?.getString("folderId")
         ?: currentBackStackEntry?.arguments?.getString("libraryFolderId")
         ?: coursesState.activeCourse?.id
-            ?.takeIf { currentRoute == VaultDestination.Home.route && selectedRootModeName == VaultRootMode.Courses.name }
+            ?.takeIf { currentRoute == VaultDestination.Knowledge.route && selectedRootModeName == VaultRootMode.Courses.name }
             ?.let { COURSE_EXPLORER_PREFIX + it }
 
     fun openNote(noteId: String) {
@@ -254,41 +255,92 @@ fun VaultNavHost(
         } else if (mode != VaultRootMode.Personal) {
             selectedIslamicRootMode = mode.name
         }
-        if (currentRoute != VaultDestination.Home.route) {
-            navController.popBackStack(VaultDestination.Home.route, false)
+        if (currentRoute != VaultDestination.Knowledge.route) {
+            navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
         }
     }
 
+    fun revealCorpusFolder(mode: VaultRootMode, folderId: String) {
+        val tree = when (mode) {
+            VaultRootMode.Study -> studyState.workspace
+            VaultRootMode.Personal -> personalState.workspace
+            else -> emptyList()
+        }
+        val folderPath = tree.findTreeItemPath(folderId)
+            .orEmpty()
+            .filter { it.type == VaultTreeItemType.Folder }
+            .map { it.id }
+        homeViewModel.revealFolderPath(
+            if (mode == VaultRootMode.Personal) FOLDER_MODE_PERSONAL else FOLDER_MODE_STUDY,
+            folderPath,
+        )
+        if (mode == VaultRootMode.Personal) {
+            selectedPersonalRootMode = VaultRootMode.Personal.name
+            shellViewModel.setWorkspace(WORKSPACE_PERSONAL)
+        } else {
+            selectedIslamicRootMode = VaultRootMode.Study.name
+            shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+        }
+        navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
+    }
+
+    fun revealCourseLocation(courseId: String, folderId: String? = null) {
+        val folderPath = folderId
+            ?.let { coursesState.treesByCourse[courseId].orEmpty().findTreeItemPath(it) }
+            .orEmpty()
+            .filter { it.type == VaultTreeItemType.Folder }
+            .map { it.id }
+        pendingCourseId = courseId
+        coursesViewModel.revealFolderPath(courseId, folderPath)
+        shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+        selectedIslamicRootMode = VaultRootMode.Courses.name
+        navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
+    }
+
     fun openExplorerNode(mode: VaultRootMode, node: VaultMobileWebExplorerNode) {
-        selectRootMode(mode)
         when (mode) {
             VaultRootMode.Study, VaultRootMode.Personal -> when (node.type) {
-                VaultMobileWebExplorerNodeType.Folder -> navController.navigate(VaultDestination.FolderView.route(node.id))
-                VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
+                VaultMobileWebExplorerNodeType.Folder -> revealCorpusFolder(mode, node.id)
+                VaultMobileWebExplorerNodeType.Note -> {
+                    selectRootMode(mode)
+                    openNote(node.id)
+                }
                 VaultMobileWebExplorerNodeType.Document -> Unit
             }
-            VaultRootMode.Library -> when (node.type) {
-                VaultMobileWebExplorerNodeType.Folder -> navController.navigate(
-                    VaultDestination.LibraryFolder.route(
-                        node.id,
-                        if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
-                    ),
-                )
-                VaultMobileWebExplorerNodeType.Document -> navController.navigate(VaultDestination.AttachmentViewer.route(node.id))
-                VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
+            VaultRootMode.Library -> {
+                selectRootMode(mode)
+                when (node.type) {
+                    VaultMobileWebExplorerNodeType.Folder -> navController.navigate(
+                        VaultDestination.LibraryFolder.route(
+                            node.id,
+                            if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
+                        ),
+                    )
+                    VaultMobileWebExplorerNodeType.Document -> navController.navigate(VaultDestination.AttachmentViewer.route(node.id))
+                    VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
+                }
             }
             VaultRootMode.Courses -> {
-                if (node.id.startsWith(COURSE_EXPLORER_PREFIX)) {
-                    coursesViewModel.selectCourse(node.id.removePrefix(COURSE_EXPLORER_PREFIX))
-                } else {
-                    when (node.type) {
-                        VaultMobileWebExplorerNodeType.Folder -> navController.navigate(VaultDestination.FolderView.route(node.id))
-                        VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
-                        VaultMobileWebExplorerNodeType.Document -> Unit
+                val coursePath = shellExplorerSections
+                    .firstOrNull { section -> rootModes.getOrNull(section.navigationIndex) == VaultRootMode.Courses }
+                    ?.nodes
+                    ?.findExplorerNodePath(node.id)
+                    .orEmpty()
+                val courseId = coursePath.firstOrNull()
+                    ?.id
+                    ?.takeIf { it.startsWith(COURSE_EXPLORER_PREFIX) }
+                    ?.removePrefix(COURSE_EXPLORER_PREFIX)
+                when {
+                    courseId == null -> Unit
+                    node.id.startsWith(COURSE_EXPLORER_PREFIX) -> revealCourseLocation(courseId)
+                    node.type == VaultMobileWebExplorerNodeType.Folder -> revealCourseLocation(courseId, node.id)
+                    node.type == VaultMobileWebExplorerNodeType.Note -> {
+                        revealCourseLocation(courseId)
+                        openNote(node.id)
                     }
                 }
             }
-            else -> Unit
+            else -> selectRootMode(mode)
         }
     }
 
@@ -321,7 +373,7 @@ fun VaultNavHost(
     LaunchedEffect(pendingQuranVerseKey, currentRoute, preferences.workspace) {
         if (
             pendingQuranVerseKey != null &&
-            currentRoute == VaultDestination.Home.route &&
+            currentRoute == VaultDestination.Knowledge.route &&
             preferences.workspace == WORKSPACE_ISLAMIC_CORPUS
         ) {
             selectedIslamicRootMode = VaultRootMode.Quran.name
@@ -339,9 +391,9 @@ fun VaultNavHost(
             selectedExplorerNodeId = selectedExplorerNodeId,
             onItemSelected = { index -> selectRootMode(rootModes[index]) },
             onDashboardSelected = {
-                navController.navigate(VaultDestination.Dashboard.route)
+                navController.navigateToVaultRoot(VaultDestination.Dashboard.route)
             },
-            onSearchSelected = { navController.navigate(VaultDestination.Search.route) },
+            onSearchSelected = { navController.navigateToVaultRoot(VaultDestination.Search.route) },
             onAttachmentsSelected = {
                 navController.navigate(
                     VaultDestination.Attachments.route(
@@ -350,7 +402,7 @@ fun VaultNavHost(
                 )
             },
             onFavouritesSelected = { navController.navigate(VaultDestination.Favourites.route) },
-            onSettingsSelected = { navController.navigate(VaultDestination.Settings.route) },
+            onSettingsSelected = { navController.navigateToVaultRoot(VaultDestination.Settings.route) },
             onThemeSelected = {
                 shellViewModel.setTheme(
                     preferences.theme.quickToggle(),
@@ -385,7 +437,7 @@ fun VaultNavHost(
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
             ) || (currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) ||
-                (currentRoute == VaultDestination.Home.route &&
+                (currentRoute == VaultDestination.Knowledge.route &&
                     rootModes.getOrNull(selectedRootIndex) in setOf(
                         VaultRootMode.Courses,
                         VaultRootMode.Study,
@@ -404,7 +456,7 @@ fun VaultNavHost(
                 VaultDestination.Reading.route,
             ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
                 !corpusSearchActive &&
-                !(currentRoute == VaultDestination.Home.route && rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Quran, VaultRootMode.Memorise)),
+                !(currentRoute == VaultDestination.Knowledge.route && rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Quran, VaultRootMode.Memorise)),
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -434,7 +486,7 @@ fun VaultNavHost(
                 }
             },
         ) {
-        composable(VaultDestination.Home.route) {
+        composable(VaultDestination.Knowledge.route) {
             key(preferences.workspace) {
                 StudyLibraryPersonalShell(
                     workspace = preferences.workspace,
@@ -450,11 +502,13 @@ fun VaultNavHost(
                             selectedIslamicRootMode = mode.name
                         }
                     },
-                    rootBackHandlerEnabled = currentRoute == VaultDestination.Home.route,
+                    rootBackHandlerEnabled = currentRoute == VaultDestination.Knowledge.route,
                     coursesContent = {
                     CoursesScreen(
                         uiState = coursesState,
-                        backHandlerEnabled = currentRoute == VaultDestination.Home.route,
+                        backHandlerEnabled = currentRoute == VaultDestination.Knowledge.route,
+                        requestedCourseId = pendingCourseId,
+                        onRequestedCourseHandled = { pendingCourseId = null },
                         onSelectCourse = coursesViewModel::selectCourse,
                         onCreateCourse = coursesViewModel::createCourse,
                         onRenameCourse = coursesViewModel::renameCourse,
@@ -463,7 +517,7 @@ fun VaultNavHost(
                             coursesViewModel.openNote(noteId)
                             openNote(noteId)
                         },
-                        onOpenFolder = { folderId -> navController.navigate(VaultDestination.FolderView.route(folderId)) },
+                        onOpenFolder = { folderId -> coursesViewModel.setFolderExpanded(folderId, true) },
                         onNewNote = {
                             coursesViewModel.createNote { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
@@ -526,7 +580,7 @@ fun VaultNavHost(
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
                         onFolderClick = { folderId ->
-                            navController.navigate(VaultDestination.FolderView.route(folderId))
+                            revealCorpusFolder(VaultRootMode.Study, folderId)
                         },
                         onNoteClick = ::openNote,
                         onNewNoteClick = { folderId ->
@@ -811,7 +865,7 @@ fun VaultNavHost(
                         onWorkspaceSelected = ::switchWorkspace,
                         onSearchQueryChange = homeViewModel::setSearchQuery,
                         onSettingsClick = { navController.navigate(VaultDestination.Settings.route) },
-                        onFolderClick = {},
+                        onFolderClick = { folderId -> revealCorpusFolder(VaultRootMode.Personal, folderId) },
                         onNoteClick = ::openNote,
                         onNewNoteClick = { folderId ->
                             homeViewModel.createNote(folderId = folderId, mode = FOLDER_MODE_PERSONAL) { noteId ->
@@ -991,14 +1045,14 @@ fun VaultNavHost(
                 onOpenQuran = { verseKey ->
                     pendingQuranVerseKey = verseKey
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
-                    navController.popBackStack(VaultDestination.Home.route, false)
                     selectedIslamicRootMode = VaultRootMode.Quran.name
+                    navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
                 onOpenReflection = { reflection ->
                     pendingQuranVerseKey = reflection.verseKey
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
-                    navController.popBackStack(VaultDestination.Home.route, false)
                     selectedIslamicRootMode = VaultRootMode.Quran.name
+                    navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
                 onViewAllReflections = {
                     navController.navigate(VaultDestination.QuranReflections.route)
@@ -1183,7 +1237,7 @@ fun VaultNavHost(
                 onFavouriteChange = viewModel::setFavourite,
                 onDeleteNote = {
                     viewModel.deleteNote {
-                        navController.popBackStack(VaultDestination.Home.route, false)
+                        navController.leaveDeletedNote()
                     }
                 },
                 onExportText = { uri -> viewModel.exportText(uri) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
@@ -1241,7 +1295,7 @@ fun VaultNavHost(
                 defaultNarrationProvider = preferences.narrationProvider,
                 onDeleteNote = {
                     viewModel.deleteNote {
-                        navController.popBackStack(VaultDestination.Home.route, false)
+                        navController.leaveDeletedNote()
                     }
                 },
                 onExportText = { uri -> viewModel.exportText(uri) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
@@ -1288,15 +1342,21 @@ fun VaultNavHost(
                 onFolderClick = { folder ->
                     if (folder.mode.contains("library", ignoreCase = true)) {
                         navController.navigate(VaultDestination.LibraryFolder.route(folder.id, folder.mode))
+                    } else if (folder.mode.startsWith("course:")) {
+                        revealCourseLocation(folder.mode.removePrefix("course:"), folder.id)
                     } else {
-                        navController.navigate(VaultDestination.FolderView.route(folder.id))
+                        val mode = if (folder.mode == FOLDER_MODE_PERSONAL) VaultRootMode.Personal else VaultRootMode.Study
+                        shellViewModel.setWorkspace(
+                            if (mode == VaultRootMode.Personal) WORKSPACE_PERSONAL else WORKSPACE_ISLAMIC_CORPUS,
+                        )
+                        revealCorpusFolder(mode, folder.id)
                     }
                 },
                 onFileClick = { navController.navigate(VaultDestination.AttachmentViewer.route(it)) },
                 onCourseClick = { courseId ->
                     coursesViewModel.selectCourse(courseId)
                     selectedIslamicRootMode = VaultRootMode.Courses.name
-                    navController.popBackStack(VaultDestination.Home.route, false)
+                    navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
             )
         }
@@ -1320,8 +1380,8 @@ fun VaultNavHost(
                 onReflectionClick = { reflection ->
                     pendingQuranVerseKey = reflection.verseKey
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
-                    navController.popBackStack(VaultDestination.Home.route, false)
                     selectedIslamicRootMode = VaultRootMode.Quran.name
+                    navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
             )
         }
@@ -1772,6 +1832,14 @@ private fun List<VaultMobileWebExplorerNode>.findExplorerNodePath(
         node.children.findExplorerNodePath(nodeId)?.let { path ->
             return listOf(node) + path
         }
+    }
+    return null
+}
+
+private fun List<VaultTreeItem>.findTreeItemPath(itemId: String): List<VaultTreeItem>? {
+    for (item in this) {
+        if (item.id == itemId) return listOf(item)
+        item.children.findTreeItemPath(itemId)?.let { path -> return listOf(item) + path }
     }
     return null
 }

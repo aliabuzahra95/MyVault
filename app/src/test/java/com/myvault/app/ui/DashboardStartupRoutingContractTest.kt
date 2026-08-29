@@ -20,6 +20,8 @@ class DashboardStartupRoutingContractTest {
 
         assertTrue(navigation.contains("startDestination = VaultDestination.Dashboard.route"))
         assertFalse(navigation.contains("startDestination = VaultDestination.Home.route"))
+        assertFalse(navigation.contains("popBackStack(VaultDestination.Home.route"))
+        assertTrue(navigation.contains("navigateToVaultRoot(VaultDestination.Knowledge.route)"))
         assertFalse(navigation.contains("defaultLandingHandled"))
     }
 }
