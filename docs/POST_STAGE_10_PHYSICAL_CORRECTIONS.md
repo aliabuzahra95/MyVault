@@ -47,15 +47,22 @@ Global directional navigation motion is unchanged.
 
 `FolderEntity` has no colour field. Correct persistence would require a Room schema migration and explicit backup/Web compatibility changes. A device-local workaround would fail the requested backup/restore behavior. The optional feature was therefore not implemented in this correction pass.
 
-## Verification Boundary
+## Final Physical-Device Verification
 
-JBR 21 compilation, unit tests, Android lint and debug APK assembly passed after each implemented batch. Emulator checks covered installation, launch, Explorer restart persistence, and the updated Surah picker.
+Verified with the production-signed release candidate on a Samsung SM-S948B:
 
-The following remain release gates until a physical device is connected:
+- Explorer typography, long-name handling and persisted expansion state passed after force-stop/relaunch.
+- Draw Highlight auto-committed on finger release and remained active for repeated rectangles.
+- The colour chooser rendered above the PDF pill and remained inside the viewport.
+- Annotation counts opened the local half-height sheet; system Back closed PDF overlays before leaving the reader.
+- Physical pinch zoom, pan, annotation alignment and PDF edge-swipe suppression passed.
+- Course Continue proportions, compact hierarchy, Dashboard typography, Surah picker typography and selected-ayah actions passed with real production data.
 
-- repeated Draw Highlight touch workflow and colour chooser;
-- PDF pinch, pan and annotation alignment;
-- Course Continue/hierarchy proportions with real Course data;
-- selected-ayah motion on a physical display;
-- release-signed Google Drive sign-in, upload, discovery and controlled restore.
+The signed Google Drive gate passed with the connected production account:
 
+- a fresh 229-file Drive backup uploaded and finalised successfully;
+- the latest-backup timestamp and restore discovery updated correctly;
+- the fresh backup downloaded, verified, rebuilt files, restored the database and finalised successfully;
+- MyVault relaunched with the Study hierarchy and pinned content present.
+
+JBR 21 compilation, unit tests, Android lint, debug APK assembly and release APK assembly passed. The release candidate uses package `com.myvault.app`, version `0.1.0` (`1`), SHA-256 `e3fdf20fe39ba0b3c27864620f9bece381741fabaf97a5cd03d8143ce2467674`, and production certificate SHA-1 `77:D0:EE:6A:B8:DF:03:59:6D:50:B7:13:68:58:03:D7:76:F9:18:16`.
