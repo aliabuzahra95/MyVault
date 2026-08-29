@@ -147,7 +147,6 @@ fun VaultNavHost(
     var pendingMemoriseVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseAutoRecord by rememberSaveable { mutableStateOf(false) }
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
-    var defaultLandingHandled by rememberSaveable { mutableStateOf(false) }
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val narrationMiniPlayerVisibility = remember { MutableTransitionState(false) }
@@ -311,18 +310,8 @@ fun VaultNavHost(
 
     LaunchedEffect(pendingOpenNoteId) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
-        defaultLandingHandled = true
         navController.navigate(VaultDestination.Editor.route(noteId))
         onPendingOpenNoteConsumed()
-    }
-
-    LaunchedEffect(currentRoute, pendingOpenNoteId, defaultLandingHandled) {
-        if (!defaultLandingHandled && pendingOpenNoteId == null && currentRoute == VaultDestination.Home.route) {
-            defaultLandingHandled = true
-            navController.navigate(VaultDestination.Dashboard.route) {
-                launchSingleTop = true
-            }
-        }
     }
 
     LaunchedEffect(currentRoute) {
@@ -419,7 +408,7 @@ fun VaultNavHost(
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
-            startDestination = VaultDestination.Home.route,
+            startDestination = VaultDestination.Dashboard.route,
             enterTransition = {
                 if (routeMotionDisabled) EnterTransition.None else {
                     slideInHorizontally(routeMotionSpec) { routeMotionDistancePx } +
