@@ -250,6 +250,26 @@ fun VaultMobileWebShell(
                                 .verticalScroll(rememberScrollState())
                                 .padding(horizontal = 12.dp),
                         ) {
+                            DrawerSectionLabel("Application")
+                            DrawerNavigationRow(
+                                label = "Dashboard",
+                                icon = Icons.Outlined.Home,
+                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Dashboard,
+                                onClick = { closeDrawerThen(onDashboardSelected) },
+                            )
+                            DrawerNavigationRow(
+                                label = "Search",
+                                icon = Icons.Outlined.Search,
+                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Search,
+                                onClick = { closeDrawerThen(onSearchSelected) },
+                            )
+                            DrawerNavigationRow(
+                                label = "Settings",
+                                icon = Icons.Outlined.Settings,
+                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Settings,
+                                onClick = { closeDrawerThen(onSettingsSelected) },
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
                             DrawerSectionLabel(if (workspaceLabel == "Personal") "Workspace" else "Knowledge")
                             val orderedItems = if (workspaceLabel == "Personal") {
                                 items.withIndex().toList()
@@ -337,26 +357,6 @@ fun VaultMobileWebShell(
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            DrawerSectionLabel("Application")
-                            DrawerNavigationRow(
-                                label = "Dashboard",
-                                icon = Icons.Outlined.Home,
-                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Dashboard,
-                                onClick = { closeDrawerThen(onDashboardSelected) },
-                            )
-                            DrawerNavigationRow(
-                                label = "Search",
-                                icon = Icons.Outlined.Search,
-                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Search,
-                                onClick = { closeDrawerThen(onSearchSelected) },
-                            )
-                            DrawerNavigationRow(
-                                label = "Settings",
-                                icon = Icons.Outlined.Settings,
-                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Settings,
-                                onClick = { closeDrawerThen(onSettingsSelected) },
-                            )
                         }
                         DrawerUtilityRow(
                             accountEmail = accountEmail,

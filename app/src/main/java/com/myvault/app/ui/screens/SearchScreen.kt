@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -172,14 +173,14 @@ private fun SearchSectionLabel(label: String) {
 @Composable
 private fun SearchRow(title: String, meta: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     val colors = VaultThemeTokens.colors
-    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth().height(49.dp), shape = VaultShapes.md, color = Color.Transparent) {
+    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = VaultShapes.md, color = Color.Transparent) {
         Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, null, Modifier.size(18.dp), tint = colors.textSecondary)
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, fontSize = 11.7.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(meta, fontSize = 9.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

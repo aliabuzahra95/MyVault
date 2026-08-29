@@ -75,6 +75,25 @@ class VaultMobileWebNavigationContractTest {
     }
 
     @Test
+    fun `application destinations precede the ordered knowledge destinations`() {
+        val component = source("ui/components/VaultMobileWebShell.kt")
+
+        val applicationIndex = component.indexOf("DrawerSectionLabel(\"Application\")")
+        val knowledgeIndex = component.indexOf("DrawerSectionLabel(if (workspaceLabel == \"Personal\") \"Workspace\" else \"Knowledge\")")
+        assertTrue(applicationIndex >= 0)
+        assertTrue(knowledgeIndex > applicationIndex)
+        assertTrue(component.contains("listOf(\"Qur'an\", \"Memorise\", \"Study\", \"Library\", \"Courses\")"))
+    }
+
+    @Test
+    fun `global search result rows leave room for title and directory`() {
+        val search = source("ui/screens/SearchScreen.kt")
+
+        assertTrue(search.contains("Modifier.fillMaxWidth().heightIn(min = 56.dp)"))
+        assertFalse(search.contains("Modifier.fillMaxWidth().height(49.dp)"))
+    }
+
+    @Test
     fun `one native action host manages every explorer content family`() {
         val navigation = source("ui/navigation/VaultNavHost.kt")
         val actions = source("ui/components/VaultExplorerActionHost.kt")
