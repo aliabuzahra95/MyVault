@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
@@ -161,10 +162,7 @@ fun FrozenMemoriseScreen(
                 onOpenNavigation = onOpenNavigation,
                 onOpenSession = { onOpenSession(it, false) },
                 onOpenAttempts = { destinationName = MemoriseDestination.Attempts.name },
-                onWholeSurah = {
-                    val surah = uiState.inProgressSurahs.firstOrNull()?.surah ?: uiState.selectedSurah
-                    onOpenWholeSurah(surah.num)
-                },
+                onWholeSurah = onOpenWholeSurah,
                 onSetStatus = onSetStatus,
             )
         }
@@ -177,7 +175,7 @@ private fun MemoriseOverviewScreen(
     onOpenNavigation: () -> Unit,
     onOpenSession: (String) -> Unit,
     onOpenAttempts: () -> Unit,
-    onWholeSurah: () -> Unit,
+    onWholeSurah: (Int) -> Unit,
     onSetStatus: (String, MemoriseStatusChoice) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -252,6 +250,7 @@ private fun MemoriseOverviewScreen(
                         },
                         progress = progress.memorizedCount.toFloat() / progress.totalAyahs.coerceAtLeast(1),
                         onClick = { onOpenSession("${progress.surah.num}:${progress.nextAyahNumber}") },
+                        onWholeSurah = { onWholeSurah(progress.surah.num) },
                     )
                 }
                 items(uiState.memorizedSurahs, key = { "complete-${it.surah.num}" }) { progress ->
@@ -261,6 +260,7 @@ private fun MemoriseOverviewScreen(
                         status = "Memorised",
                         progress = 1f,
                         onClick = { onOpenSession("${progress.surah.num}:1") },
+                        onWholeSurah = { onWholeSurah(progress.surah.num) },
                     )
                 }
             }
@@ -268,7 +268,8 @@ private fun MemoriseOverviewScreen(
                 Column {
                     MemoriseSecondaryRow(Icons.Outlined.History, "Attempts", "Stored recitation results", onOpenAttempts)
                     HorizontalDivider(color = colors.border.copy(alpha = 0.7f))
-                    MemoriseSecondaryRow(Icons.Outlined.MenuBook, "Test whole Surah", uiState.inProgressSurahs.firstOrNull()?.surah?.name ?: uiState.selectedSurah.name, onWholeSurah)
+                    val surah = uiState.inProgressSurahs.firstOrNull()?.surah ?: uiState.selectedSurah
+                    MemoriseSecondaryRow(Icons.Outlined.MenuBook, "Recite Surah", surah.name) { onWholeSurah(surah.num) }
                 }
             }
         }
@@ -357,7 +358,14 @@ private fun MemoriseTargetRow(title: String, subtitle: String, onClick: () -> Un
 }
 
 @Composable
-private fun MemoriseSurahProgressRowFrozen(title: String, meta: String, status: String, progress: Float, onClick: () -> Unit) {
+private fun MemoriseSurahProgressRowFrozen(
+    title: String,
+    meta: String,
+    status: String,
+    progress: Float,
+    onClick: () -> Unit,
+    onWholeSurah: () -> Unit,
+) {
     val colors = VaultThemeTokens.colors
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp),
@@ -372,7 +380,12 @@ private fun MemoriseSurahProgressRowFrozen(title: String, meta: String, status: 
                 Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(2.dp).background(colors.accent, RoundedCornerShape(2.dp)))
             }
         }
-        Text(status, color = colors.textSecondary, fontSize = 9.5.sp)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(status, color = colors.textSecondary, fontSize = 9.5.sp)
+            IconButton(onClick = onWholeSurah, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Outlined.Mic, "Recite $title continuously", tint = colors.accent, modifier = Modifier.size(17.dp))
+            }
+        }
     }
 }
 

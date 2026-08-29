@@ -78,6 +78,34 @@ class QuranSurahMemorizationTestEngineTest {
     }
 
     @Test
+    fun continuousAttemptPersistsScopedResultsWithoutChangingSurahMetadata() {
+        val ayahs = listOf(
+            ayah(112, 1, "قل", "هو", "الله", "احد"),
+            ayah(112, 2, "الله", "الصمد"),
+            ayah(112, 3, "لم", "يلد"),
+        )
+        val speech = speechResult("قل هو الله احد الله الصمد")
+        val analysis = QuranSurahMemorizationTestEngine.analyze(
+            surah = surah(112, "Al-Ikhlas", ayahs.size),
+            ayahs = ayahs,
+            speechResult = speech,
+            testMode = QuranSurahMemorizationTestMode.CONTINUE_REVISION,
+        )
+        val attempt = QuranSurahMemorizationAttemptFactory.from(
+            surah = surah(112, "Al-Ikhlas", ayahs.size),
+            ayahs = ayahs,
+            durationMs = 8_000L,
+            speechResult = speech,
+            analysis = analysis,
+            testMode = QuranSurahMemorizationTestMode.CONTINUE_REVISION,
+        )
+
+        assertEquals(3, attempt.totalAyahs)
+        assertEquals(listOf("112:1", "112:2"), attempt.ayahResults.map { it.verseKey })
+        assertEquals(QuranSurahMemorizationTestMode.CONTINUE_REVISION, attempt.testMode)
+    }
+
+    @Test
     fun acceptsAdDuhaGoogleTranscriptStyleWithoutFalseMissingWords() {
         val ayahs = adDuhaAyahs()
         val analysis = QuranSurahMemorizationTestEngine.analyze(

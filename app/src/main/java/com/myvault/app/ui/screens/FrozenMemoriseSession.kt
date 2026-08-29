@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -250,7 +252,7 @@ internal fun FrozenMemoriseSession(
                         sessionState.surah,
                         sessionState.ayahs,
                         result,
-                        QuranSurahMemorizationTestMode.FULL_SURAH_TEST,
+                        QuranSurahMemorizationTestMode.CONTINUE_REVISION,
                     )
                     val attempt = QuranSurahMemorizationAttemptFactory.from(
                         sessionState.surah,
@@ -258,7 +260,7 @@ internal fun FrozenMemoriseSession(
                         captured.durationMs,
                         result,
                         analysis,
-                        QuranSurahMemorizationTestMode.FULL_SURAH_TEST,
+                        QuranSurahMemorizationTestMode.CONTINUE_REVISION,
                     )
                     surahAnalysis = analysis
                     surahAttempt = attempt
@@ -314,6 +316,13 @@ internal fun FrozenMemoriseSession(
                 sessionState.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(26.dp), color = colors.accent, strokeWidth = 2.dp)
                 sessionState.errorMessage != null -> Text(sessionState.errorMessage, Modifier.align(Alignment.Center).padding(28.dp), color = colors.textSecondary, textAlign = TextAlign.Center)
                 stage == MemoriseListenStage.SurahComplete -> MemoriseSurahComplete(Modifier.align(Alignment.Center))
+                sessionState.wholeSurah -> MemoriseWholeSurahCanvas(
+                    sessionState = sessionState,
+                    hideMode = hideMode,
+                    analysis = surahAnalysis,
+                    resultVisible = stage == MemoriseListenStage.Results,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 else -> MemoriseAyahCanvas(
                     sessionState = sessionState,
                     hideMode = hideMode,
@@ -333,6 +342,7 @@ internal fun FrozenMemoriseSession(
                 playingRecording = playingRecording,
                 ayahAttempt = ayahAttempt,
                 surahAttempt = surahAttempt,
+                wholeSurah = sessionState.wholeSurah,
                 errorMessage = errorMessage,
                 onHide = { hideModeName = it.name },
                 onStart = ::requestRecording,
@@ -353,8 +363,17 @@ internal fun FrozenMemoriseSession(
                 onRetry = ::analyzeRecording,
                 onTryAgain = { stageName = MemoriseListenStage.Ready.name },
                 onNext = {
-                    if (sessionState.wholeSurah || !onNextAyah()) stageName = MemoriseListenStage.SurahComplete.name
-                    else stageName = MemoriseListenStage.Ready.name
+                    if (sessionState.wholeSurah) {
+                        if (surahAttempt?.ayahResults?.lastOrNull()?.ayahNumber == sessionState.surah.ayat) {
+                            stageName = MemoriseListenStage.SurahComplete.name
+                        } else {
+                            onBack()
+                        }
+                    } else if (!onNextAyah()) {
+                        stageName = MemoriseListenStage.SurahComplete.name
+                    } else {
+                        stageName = MemoriseListenStage.Ready.name
+                    }
                 },
                 onDone = onBack,
                 onDetails = { sheetName = MemoriseSessionSheet.Details.name },
@@ -388,6 +407,96 @@ internal fun FrozenMemoriseSession(
                 sheetName = null
             },
         )
+    }
+}
+
+@Composable
+private fun MemoriseWholeSurahCanvas(
+    sessionState: MemoriseSessionUiState,
+    hideMode: MemoriseHideMode,
+    analysis: QuranSurahMemorizationAnalysis?,
+    resultVisible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = VaultThemeTokens.colors
+    val resultsByAyah = analysis?.ayahResults?.associateBy { it.ayahNumber }.orEmpty()
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item(key = "surah-session-heading") {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Continuous recitation · ${sessionState.surah.ayat} ayahs", color = colors.textMuted, fontSize = 9.5.sp)
+                    Text(sessionState.surah.arabic, color = colors.textMuted, fontSize = 10.sp)
+                }
+                if (resultVisible) MemoriseSurahResultSummary(analysis, sessionState.surah.ayat)
+                else Text("Scroll naturally and recite across ayahs. Recording continues until you press Stop.", color = colors.textMuted, fontSize = 10.sp)
+            }
+        }
+        items(sessionState.ayahs, key = { it.verseKey }) { ayah ->
+            val ayahResult = resultsByAyah[ayah.ayahNumber]
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        val wordResults = ayahResult?.wordResults?.associateBy { it.wordId }.orEmpty()
+                        ayah.words.forEachIndexed { index, word ->
+                            val hidden = !resultVisible && when (hideMode) {
+                                MemoriseHideMode.Off -> false
+                                MemoriseHideMode.Half -> index % 2 == 1
+                                MemoriseHideMode.All -> true
+                            }
+                            MemoriseWord(word.arabicText, hidden, wordResults[word.wordId]?.state.takeIf { resultVisible })
+                            Spacer(Modifier.width(5.dp))
+                        }
+                        Text("﴿${ayah.ayahNumber}﴾", color = colors.accent, fontFamily = MemoriseQuranFont, fontSize = 16.sp)
+                    }
+                }
+                if (ayah.translation.isNotBlank()) {
+                    Text(ayah.translation, color = colors.textSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+                }
+                HorizontalDivider(color = colors.border.copy(alpha = 0.65f))
+            }
+        }
+        if (resultVisible && analysis?.extraTranscriptWords?.isNotEmpty() == true) {
+            item(key = "surah-extra-words") {
+                Surface(shape = RoundedCornerShape(6.dp), color = colors.surface, border = BorderStroke(1.dp, colors.border)) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Extra", color = colors.warning, fontSize = 9.sp, fontWeight = FontWeight.W800)
+                        Text(analysis.extraTranscriptWords.joinToString(" "), color = colors.text, fontFamily = MemoriseQuranFont, fontSize = 18.sp, textAlign = TextAlign.Right, modifier = Modifier.fillMaxWidth())
+                        Text("Spoken additions · shown separately from the canonical Surah", color = colors.textMuted, fontSize = 9.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoriseSurahResultSummary(analysis: QuranSurahMemorizationAnalysis?, surahAyahCount: Int) {
+    val colors = VaultThemeTokens.colors
+    Surface(shape = RoundedCornerShape(7.dp), color = colors.surface, border = BorderStroke(1.dp, colors.border)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+                analysis?.let { "${it.overallScore}% · ${it.grade.label}" } ?: "Recitation result",
+                color = colors.text,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.W800,
+            )
+            Text(
+                analysis?.let {
+                    if (it.totalAyahs >= surahAyahCount) "Full Surah covered · ${it.ayahsNeedingReview.size} need attention"
+                    else "${it.totalAyahs} of $surahAyahCount ayahs covered · ${it.ayahsNeedingReview.size} need attention"
+                } ?: "No analysis is available",
+                color = colors.textMuted,
+                fontSize = 9.sp,
+            )
+        }
     }
 }
 
@@ -525,6 +634,7 @@ private fun MemoriseSessionControls(
     playingRecording: Boolean,
     ayahAttempt: QuranMemorizationAttempt?,
     surahAttempt: QuranSurahMemorizationAttempt?,
+    wholeSurah: Boolean,
     errorMessage: String?,
     onHide: (MemoriseHideMode) -> Unit,
     onStart: () -> Unit,
@@ -581,7 +691,7 @@ private fun MemoriseSessionControls(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { MemoriseActionButton("Details", false, onDetails) }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MemoriseActionButton("Try again", false, onTryAgain, Modifier.weight(1f))
-                        MemoriseActionButton("Next ayah", true, onNext, Modifier.weight(1f))
+                        MemoriseActionButton(if (wholeSurah) "Done" else "Next ayah", true, onNext, Modifier.weight(1f))
                     }
                 }
                 MemoriseListenStage.RecordingError -> MemoriseErrorControls("Recording failed", errorMessage ?: "The selected target is preserved", "Retry", onStart, null, null)

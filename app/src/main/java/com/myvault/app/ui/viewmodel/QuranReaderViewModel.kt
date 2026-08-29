@@ -750,9 +750,13 @@ class QuranReaderViewModel @Inject constructor(
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val surah = quranCatalogRepository.surah(surahNumber) ?: quranCatalogRepository.surahs().first()
+            val safeRestoredAyah = restoredAyah.coerceIn(1, surah.ayat)
+            val safePendingScrollVerseKey = pendingScrollVerseKey?.let {
+                normalizedQuranVerseKey(surah.num, safeRestoredAyah, surah.ayat)
+            }
             _uiState.value = _uiState.value.copy(
                 selectedSurah = surah,
-                restoredAyah = restoredAyah.coerceIn(1, surah.ayat),
+                restoredAyah = safeRestoredAyah,
                 arabicFontPercent = fontPercent.coerceIn(70, 140),
                 translationFontPercent = translationFontPercent.coerceIn(80, 130),
                 translationEnabled = translationEnabled,
@@ -761,7 +765,7 @@ class QuranReaderViewModel @Inject constructor(
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 recentLocations = recentLocations,
-                pendingScrollVerseKey = pendingScrollVerseKey,
+                pendingScrollVerseKey = safePendingScrollVerseKey,
                 expandedTafsirVerseKey = null,
                 loading = true,
             )
@@ -802,7 +806,13 @@ class QuranReaderViewModel @Inject constructor(
                 tajweedEnabled = tajweedEnabled,
                 bookmarkedVerseKeys = bookmarkedVerseKeys,
                 recentLocations = recentLocations,
-                pendingScrollVerseKey = pendingScrollVerseKey,
+                pendingScrollVerseKey = pendingScrollVerseKey?.let {
+                    normalizedQuranVerseKey(
+                        surah.num,
+                        restoredAyah,
+                        ayahs.lastOrNull()?.ayahNumber ?: surah.ayat,
+                    )
+                },
                 expandedTafsirVerseKey = null,
                 loading = false,
             )
@@ -844,6 +854,9 @@ class QuranReaderViewModel @Inject constructor(
         super.onCleared()
     }
 }
+
+internal fun normalizedQuranVerseKey(surahNumber: Int, requestedAyah: Int, lastAyah: Int): String =
+    "$surahNumber:${requestedAyah.coerceIn(1, lastAyah.coerceAtLeast(1))}"
 
 private fun QuranReaderUiState.buildMiniPlayer(
     playback: QuranAudioPlayer.PlaybackState,

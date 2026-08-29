@@ -11,6 +11,7 @@ import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -91,6 +92,10 @@ fun QuranShellScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var typeFilter by rememberSaveable { mutableStateOf("All") }
     var selectorOpen by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.pendingScrollVerseKey) {
+        if (uiState.pendingScrollVerseKey != null) selectorOpen = false
+    }
 
     BackHandler(enabled = selectorOpen) {
         selectorOpen = false
