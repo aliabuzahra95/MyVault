@@ -340,6 +340,10 @@ internal fun FrozenPdfReaderScreen(
                         transientMessage = if (saved) "Highlight saved" else "Highlight not saved"
                     }
                 },
+                onDrawHighlightFinished = {
+                    drawHighlightMode = false
+                    drawColourPickerOpen = false
+                },
                 onTextSelectionChanged = { selection = it },
                 onUnclaimedSingleTap = {
                     if (
@@ -499,20 +503,6 @@ internal fun FrozenPdfReaderScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = annotationPillBottom)
                     .zIndex(6f),
-            )
-        }
-
-        if (drawHighlightMode && !activityOpen && sheet == PdfReaderSheet.None) {
-            FrozenDrawHighlightBar(
-                color = drawColour,
-                onClose = {
-                    drawHighlightMode = false
-                    drawColourPickerOpen = false
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = annotationPillBottom + 55.dp)
-                    .zIndex(7f),
             )
         }
 
@@ -1384,49 +1374,6 @@ private fun FrozenPdfAnnotationPill(
                             color = colors.textSecondary,
                         )
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FrozenDrawHighlightBar(
-    color: String,
-    onClose: () -> Unit,
-    modifier: Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        modifier = modifier.width(250.dp).height(43.dp),
-        shape = VaultShapes.lg,
-        color = colors.surface,
-        border = BorderStroke(1.dp, colors.border),
-        shadowElevation = 6.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.BorderColor, null, Modifier.size(16.dp), tint = colors.textSecondary)
-                Column {
-                    Text("Draw Highlight", fontSize = 10.5.sp, fontWeight = FontWeight.W700, color = colors.text)
-                    Text("Drag a rectangle · $color", fontSize = 8.5.sp, color = colors.textSecondary)
-                }
-            }
-            Surface(
-                onClick = onClose,
-                modifier = Modifier.height(31.dp),
-                shape = VaultShapes.md,
-                color = colors.accent,
-            ) {
-                Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
-                    Text("Exit", fontSize = 10.5.sp, fontWeight = FontWeight.W700, color = Color.White)
                 }
             }
         }

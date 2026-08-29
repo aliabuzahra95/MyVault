@@ -47,6 +47,18 @@ class PdfAnnotationPreservationContractTest {
         assertTrue(viewer.contains("onCreateTextBox = {}"))
     }
 
+    @Test
+    fun `draw highlight is one shot and has no persistent exit control`() {
+        val reader = source("ui/screens/FrozenPdfReaderScreen.kt")
+        val viewer = source("ui/screens/AttachmentViewerScreen.kt")
+
+        assertTrue(reader.contains("onDrawHighlightFinished = {"))
+        assertTrue(reader.contains("drawHighlightMode = false"))
+        assertFalse(reader.contains("FrozenDrawHighlightBar"))
+        assertFalse(reader.contains("Text(\"Exit\""))
+        assertTrue(viewer.contains("onDrawHighlightFinished()"))
+    }
+
     private fun source(relativePath: String): String =
         String(Files.readAllBytes(projectRoot.resolve("app/src/main/java/com/myvault/app/$relativePath")))
 }

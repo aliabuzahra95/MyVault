@@ -4,8 +4,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
@@ -64,6 +66,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -173,6 +176,7 @@ internal fun FrozenQuranAyah(
     tajweedEnabled: Boolean,
     translation: String,
     translationFootnotes: List<QuranTranslationFootnote>,
+    translationSourceKey: String,
     translationTextSize: androidx.compose.ui.unit.TextUnit,
     translationEnabled: Boolean,
     reflections: List<QuranReflectionItem>,
@@ -191,7 +195,11 @@ internal fun FrozenQuranAyah(
     onWordClick: (QuranWord) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    var expandedFootnoteId by rememberSaveable(ayah.verseKey, translation) { mutableStateOf<String?>(null) }
+    var expandedFootnoteId by rememberSaveable(
+        ayah.surahNumber,
+        ayah.ayahNumber,
+        translationSourceKey,
+    ) { mutableStateOf<String?>(null) }
     val shape = RoundedCornerShape(10.dp)
     val selectedBackground by animateColorAsState(
         targetValue = if (selected) colors.accentSoft.copy(alpha = 0.08f) else Color.Transparent,
@@ -337,7 +345,12 @@ private fun FrozenTranslation(
     onExpandedFootnoteChange: (String?) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val annotated = remember(translation, footnotes, colors.accent) {
+    val expandedFootnote = footnotes.firstOrNull { it.id == expandedFootnoteId }
+    var displayedFootnote by remember(footnotes) { mutableStateOf<QuranTranslationFootnote?>(null) }
+    LaunchedEffect(expandedFootnote) {
+        if (expandedFootnote != null) displayedFootnote = expandedFootnote
+    }
+    val annotated = remember(translation, footnotes, colors.accent, expandedFootnoteId) {
         buildAnnotatedString {
             append(translation)
             footnotes.forEach { footnote ->
@@ -348,7 +361,9 @@ private fun FrozenTranslation(
                         LinkAnnotation.Clickable(
                             tag = footnote.id,
                             styles = TextLinkStyles(SpanStyle(color = colors.accent, fontWeight = FontWeight.W800, baselineShift = BaselineShift.Superscript)),
-                            linkInteractionListener = { onExpandedFootnoteChange(footnote.id.takeUnless { it == expandedFootnoteId }) },
+                            linkInteractionListener = {
+                                onExpandedFootnoteChange(nextExpandedFootnoteId(expandedFootnoteId, footnote.id))
+                            },
                         ),
                         start,
                         end,
@@ -363,21 +378,30 @@ private fun FrozenTranslation(
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = textSize, lineHeight = (textSize.value * 1.55f).sp),
             color = colors.textSecondary,
         )
-        footnotes.firstOrNull { it.id == expandedFootnoteId }?.let { footnote ->
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(colors.elevated)
-                    .padding(horizontal = 11.dp, vertical = 9.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text("FOOTNOTE ${footnote.label}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.accent)
-                Text(footnote.text, style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp), color = colors.textSecondary)
+        AnimatedVisibility(
+            visible = expandedFootnote != null,
+            enter = fadeIn(tween(150)) + expandVertically(tween(190)),
+            exit = fadeOut(tween(110)) + shrinkVertically(tween(150)),
+        ) {
+            displayedFootnote?.let { footnote ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.elevated)
+                        .padding(horizontal = 11.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("FOOTNOTE ${footnote.label}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800), color = colors.accent)
+                    Text(footnote.text, style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp), color = colors.textSecondary)
+                }
             }
         }
     }
 }
+
+internal fun nextExpandedFootnoteId(currentId: String?, tappedId: String): String? =
+    tappedId.takeUnless { it == currentId }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

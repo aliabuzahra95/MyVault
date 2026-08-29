@@ -185,6 +185,7 @@ internal fun QuranReaderSurface(
                             tajweedEnabled = uiState.tajweedEnabled,
                             translation = ayah.translation,
                             translationFootnotes = ayah.translationFootnotes,
+                            translationSourceKey = uiState.translationSource.storedValue,
                             translationTextSize = uiState.translationTextSize,
                             translationEnabled = uiState.translationEnabled,
                             reflections = uiState.reflectionsByVerse[ayah.verseKey].orEmpty(),

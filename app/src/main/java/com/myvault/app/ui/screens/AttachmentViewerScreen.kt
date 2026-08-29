@@ -266,6 +266,7 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
     var onUpdateTextBoxBounds: (PdfAnnotationEntity, PdfRect) -> Unit = { _, _ -> }
     var onSelectAnnotation: (PdfAnnotationEntity) -> Unit = {}
     var onAddHighlight: (PdfRect, String) -> Unit = { _, _ -> }
+    var onDrawHighlightFinished: () -> Unit = {}
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -397,11 +398,13 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
                     if (rect != null) onAddHighlight(rect, highlightColor)
                 }
                 resetGestureState()
+                onDrawHighlightFinished()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
                 resetGestureState()
+                onDrawHighlightFinished()
                 return true
             }
         }
@@ -1563,6 +1566,7 @@ internal fun AndroidxPdfViewer(
     onUpdateTextBoxBounds: (PdfAnnotationEntity, PdfRect) -> Unit,
     onSelectAnnotation: (PdfAnnotationEntity) -> Unit,
     onAddHighlightRect: (PdfRect, String) -> Unit,
+    onDrawHighlightFinished: () -> Unit = {},
     onTextSelectionChanged: (PdfTextSelectionUi?) -> Unit = {},
     onUnclaimedSingleTap: () -> Unit = {},
     onPdfViewReady: (AndroidxPdfView) -> Unit,
@@ -1577,6 +1581,7 @@ internal fun AndroidxPdfViewer(
     val latestOnUpdateTextBoxBounds = rememberUpdatedState(onUpdateTextBoxBounds)
     val latestOnSelectAnnotation = rememberUpdatedState(onSelectAnnotation)
     val latestOnAddHighlightRect = rememberUpdatedState(onAddHighlightRect)
+    val latestOnDrawHighlightFinished = rememberUpdatedState(onDrawHighlightFinished)
     val latestOnTextSelectionChanged = rememberUpdatedState(onTextSelectionChanged)
     val latestOnUnclaimedSingleTap = rememberUpdatedState(onUnclaimedSingleTap)
     val fragmentTag = remember(file.absolutePath) {
@@ -1672,6 +1677,7 @@ internal fun AndroidxPdfViewer(
             overlay?.onUpdateTextBoxBounds = { annotation, rect -> latestOnUpdateTextBoxBounds.value(annotation, rect) }
             overlay?.onSelectAnnotation = { latestOnSelectAnnotation.value(it) }
             overlay?.onAddHighlight = { rect, color -> latestOnAddHighlightRect.value(rect, color) }
+            overlay?.onDrawHighlightFinished = { latestOnDrawHighlightFinished.value() }
         },
         onRelease = { releasedRoot ->
             releasedRoot.onUnclaimedSingleTap = {}
@@ -1693,6 +1699,7 @@ private fun FrameLayout.releaseNativePdfViewer(activity: FragmentActivity?, frag
         overlay.onUpdateTextBoxBounds = { _, _ -> }
         overlay.onSelectAnnotation = {}
         overlay.onAddHighlight = { _, _ -> }
+        overlay.onDrawHighlightFinished = {}
     }
 
     val fragment = activity
