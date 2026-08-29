@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.BorderColor
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -613,6 +616,8 @@ internal fun FrozenPdfReaderScreen(
         PdfReaderSheet.LocalActivity -> FrozenLocalPdfActivitySheet(
             annotations = visibleAnnotations,
             references = references,
+            highlightCount = highlightCount,
+            noteCount = noteCount,
             filter = localActivityFilter,
             onFilterChange = { localActivityFilter = it },
             onDismiss = { sheet = PdfReaderSheet.None },
@@ -1022,6 +1027,8 @@ private fun FrozenCurrentPageSheet(
 private fun FrozenLocalPdfActivitySheet(
     annotations: List<PdfAnnotationEntity>,
     references: List<LibraryReferencedNote>,
+    highlightCount: Int,
+    noteCount: Int,
     filter: PdfActivityFilter,
     onFilterChange: (PdfActivityFilter) -> Unit,
     onDismiss: () -> Unit,
@@ -1048,36 +1055,61 @@ private fun FrozenLocalPdfActivitySheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
-        Column(modifier = Modifier.fillMaxWidth().heightIn(min = 340.dp, max = 460.dp)) {
-            FrozenSheetHeader("PDF annotations", onDismiss)
+        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.52f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = VaultSpacing.screen, end = 8.dp, top = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "$highlightCount HIGHLIGHT${if (highlightCount == 1) "" else "S"} · $noteCount NOTE${if (noteCount == 1) "" else "S"}",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.W700,
+                        color = colors.textMuted,
+                    )
+                    Text("PDF annotations", fontSize = 16.sp, fontWeight = FontWeight.W800, color = colors.text)
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Rounded.Close, "Close PDF annotations", Modifier.size(18.dp), tint = colors.text)
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 3.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 PdfActivityFilter.entries.forEach { choice ->
-                    FilterChip(
-                        selected = filter == choice,
+                    val selected = filter == choice
+                    Surface(
                         onClick = { onFilterChange(choice) },
-                        label = { Text(choice.label, fontSize = 10.5.sp) },
-                        leadingIcon = if (filter == choice) {
-                            { Icon(Icons.Rounded.Check, null, Modifier.size(13.dp)) }
-                        } else null,
-                    )
+                        modifier = Modifier.height(29.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp),
+                        color = if (selected) colors.accentSoft else Color.Transparent,
+                        border = BorderStroke(1.dp, if (selected) colors.accent.copy(alpha = 0.35f) else colors.border),
+                    ) {
+                        Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                choice.label,
+                                fontSize = 9.4.sp,
+                                fontWeight = FontWeight.W700,
+                                color = if (selected) colors.accent else colors.textSecondary,
+                            )
+                        }
+                    }
                 }
             }
             Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 filteredAnnotations.forEach { annotation ->
-                    FrozenActivityAnnotationRow(
+                    FrozenLocalAnnotationRow(
                         annotation = annotation,
                         onClick = { onAnnotationClick(annotation) },
                         onActions = { onAnnotationActions(annotation) },
                     )
                 }
                 filteredReferences.forEach { reference ->
-                    FrozenActivityReferenceRow(reference, onClick = { onReferenceClick(reference) })
+                    FrozenLocalReferenceRow(reference, onClick = { onReferenceClick(reference) })
                 }
                 if (filteredAnnotations.isEmpty() && filteredReferences.isEmpty()) {
                     Text(
@@ -1088,13 +1120,105 @@ private fun FrozenLocalPdfActivitySheet(
                     )
                 }
             }
-            TextButton(
+            Surface(
                 onClick = onViewAllActivity,
-                modifier = Modifier.align(Alignment.End).padding(horizontal = VaultSpacing.md, vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth().height(44.dp).padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
+                shape = VaultShapes.md,
+                color = colors.accentSoft,
             ) {
-                Text("View all activity", fontSize = 12.5.sp, fontWeight = FontWeight.W700)
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = VaultSpacing.md),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("View all activity", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.accent)
+                    Icon(Icons.Rounded.ChevronRight, null, Modifier.size(15.dp), tint = colors.accent)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun FrozenLocalAnnotationRow(
+    annotation: PdfAnnotationEntity,
+    onClick: () -> Unit,
+    onActions: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val isNote = annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 57.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.size(31.dp),
+            shape = VaultShapes.md,
+            color = colors.elevated,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    if (isNote) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.BorderColor,
+                    if (isNote) "Note" else "Highlight",
+                    Modifier.size(17.dp),
+                    tint = if (isNote) colors.textSecondary else pdfColour(annotation.color),
+                )
             }
         }
+        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Text(
+                annotationActivityTitle(annotation),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.W700,
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${if (isNote) "Note" else "Highlight"} · Page ${annotation.pageIndex + 1}",
+                fontSize = 9.sp,
+                color = colors.textMuted,
+            )
+        }
+        IconButton(onClick = onActions, modifier = Modifier.size(34.dp)) {
+            Icon(Icons.Rounded.ChevronRight, "Annotation actions", Modifier.size(15.dp), tint = colors.textMuted)
+        }
+    }
+}
+
+@Composable
+private fun FrozenLocalReferenceRow(reference: LibraryReferencedNote, onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 57.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(modifier = Modifier.size(31.dp), shape = VaultShapes.md, color = colors.elevated) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Link, "Study link", Modifier.size(17.dp), tint = colors.textSecondary)
+            }
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Text(
+                reference.noteTitle,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.W700,
+                color = colors.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text("Study link · Page ${reference.pageIndex + 1}", fontSize = 9.sp, color = colors.textMuted)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, Modifier.size(15.dp), tint = colors.textMuted)
     }
 }
 
@@ -1266,48 +1390,55 @@ private fun FrozenPdfAnnotationPill(
 ) {
     val colors = VaultThemeTokens.colors
     Box(modifier = modifier) {
-        if (colorPickerOpen) {
+        if (colorPickerOpen || drawMode) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 55.dp)
+                    .padding(bottom = 58.dp)
                     .zIndex(2f),
-                shape = VaultShapes.lg,
+                shape = if (colorPickerOpen) VaultShapes.lg else VaultShapes.md,
                 color = colors.surface,
                 border = BorderStroke(1.dp, colors.border),
                 shadowElevation = 6.dp,
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                ) {
-                    listOf("yellow", "blue", "green", "pink").forEach { option ->
-                        Surface(
-                            onClick = { onColorChange(option) },
-                            modifier = Modifier.size(28.dp),
-                            shape = CircleShape,
-                            color = Color.Transparent,
-                            border = BorderStroke(
-                                if (color == option) 2.dp else 1.dp,
-                                if (color == option) colors.text else colors.border,
-                            ),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Box(
-                                    Modifier
-                                        .size(18.dp)
-                                        .background(pdfColour(option), CircleShape),
-                                )
+                if (colorPickerOpen) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        listOf("yellow", "blue", "green", "red").forEach { option ->
+                            Surface(
+                                onClick = { onColorChange(option) },
+                                modifier = Modifier.size(28.dp),
+                                shape = CircleShape,
+                                color = Color.Transparent,
+                                border = BorderStroke(
+                                    if (color == option) 2.dp else 1.dp,
+                                    if (color == option) colors.text else colors.border,
+                                ),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Box(Modifier.size(19.dp).background(pdfColour(option), CircleShape))
+                                }
                             }
                         }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.height(31.dp).padding(horizontal = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.BorderColor, null, Modifier.size(14.dp), tint = colors.textSecondary)
+                        Text("Drag one rectangle", fontSize = 9.5.sp, fontWeight = FontWeight.W700, color = colors.text)
                     }
                 }
             }
         }
 
         Surface(
-            modifier = Modifier.width(252.dp).height(47.dp).zIndex(1f),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            modifier = Modifier.width(276.dp).height(48.dp).zIndex(1f),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(17.dp),
             color = colors.surface.copy(alpha = 0.96f),
             border = BorderStroke(1.dp, colors.border),
             shadowElevation = 7.dp,
@@ -1334,8 +1465,8 @@ private fun FrozenPdfAnnotationPill(
                             tint = if (drawMode) colors.accent else colors.text,
                         )
                         Text(
-                            "Highlight",
-                            fontSize = 10.5.sp,
+                            if (drawMode) "Drag once" else "Highlight",
+                            fontSize = 10.6.sp,
                             fontWeight = FontWeight.W700,
                             color = if (drawMode) colors.accent else colors.text,
                         )
@@ -1343,40 +1474,45 @@ private fun FrozenPdfAnnotationPill(
                 }
                 Surface(
                     onClick = onToggleColorPicker,
-                    modifier = Modifier.size(width = 35.dp, height = 35.dp),
+                    modifier = Modifier.size(width = 38.dp, height = 36.dp),
                     shape = VaultShapes.md,
                     color = Color.Transparent,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(18.dp).background(pdfColour(color), CircleShape))
+                        Box(Modifier.size(19.dp).background(pdfColour(color), CircleShape))
                     }
                 }
                 Surface(
                     onClick = onOpenActivity,
-                    modifier = Modifier.weight(1f).height(35.dp),
+                    modifier = Modifier.weight(1f).height(36.dp),
                     shape = VaultShapes.md,
                     color = Color.Transparent,
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 7.dp),
-                        verticalArrangement = Arrangement.Center,
+                    Row(
+                        modifier = Modifier.padding(horizontal = 5.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "$highlightCount highlight${if (highlightCount == 1) "" else "s"}",
-                            fontSize = 9.sp,
-                            lineHeight = 11.sp,
-                            color = colors.textSecondary,
-                        )
-                        Text(
-                            "$noteCount note${if (noteCount == 1) "" else "s"}",
-                            fontSize = 9.sp,
-                            lineHeight = 11.sp,
-                            color = colors.textSecondary,
-                        )
+                        FrozenPdfPillCount(Icons.Rounded.BorderColor, highlightCount, "H")
+                        Box(Modifier.width(1.dp).height(18.dp).background(colors.border))
+                        FrozenPdfPillCount(Icons.Rounded.ChatBubbleOutline, noteCount, "N")
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FrozenPdfPillCount(icon: ImageVector, count: Int, suffix: String) {
+    val colors = VaultThemeTokens.colors
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, Modifier.size(12.dp), tint = colors.textSecondary)
+        Text(count.toString(), fontSize = 9.7.sp, fontWeight = FontWeight.W700, color = colors.text)
+        Text(suffix, fontSize = 7.8.sp, fontWeight = FontWeight.W800, color = colors.textMuted)
     }
 }
 

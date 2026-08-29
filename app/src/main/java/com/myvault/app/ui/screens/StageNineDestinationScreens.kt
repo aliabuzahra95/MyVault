@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,6 +41,8 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.LibraryFileItem
+import com.myvault.app.ui.viewmodel.HomeQuranContinue
+import com.myvault.app.data.quran.QuranReflectionItem
 
 @Composable
 internal fun FrozenDestinationHeader(
@@ -79,13 +82,18 @@ internal fun FrozenDashboardScreen(
     recentFiles: List<LibraryFileItem>,
     pinnedNotes: List<VaultNoteCardData>,
     pinnedFiles: List<LibraryFileItem>,
+    quranContinue: HomeQuranContinue?,
+    reflections: List<QuranReflectionItem>,
     onMenuClick: () -> Unit,
     onOpenNote: (String) -> Unit,
     onOpenFile: (String) -> Unit,
+    onOpenQuran: (String) -> Unit,
+    onOpenReflection: (QuranReflectionItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
-    val hasContent = continueFile != null || recentFiles.isNotEmpty() || pinnedNotes.isNotEmpty() || pinnedFiles.isNotEmpty()
+    val hasContent = continueFile != null || quranContinue != null || recentFiles.isNotEmpty() ||
+        reflections.isNotEmpty() || pinnedNotes.isNotEmpty() || pinnedFiles.isNotEmpty()
     Column(modifier.fillMaxSize()) {
         FrozenDestinationHeader("Dashboard", "Continue where you left off", onMenuClick)
         LazyColumn(
@@ -106,6 +114,19 @@ internal fun FrozenDashboardScreen(
                     }
                 }
             }
+            quranContinue?.let { quran ->
+                item {
+                    DashboardSection("Qur'an") {
+                        DashboardRow(
+                            title = "${quran.surahName} · ${quran.surahNumber}:${quran.ayahNumber}",
+                            meta = "Continue from your last reading position",
+                            icon = Icons.AutoMirrored.Rounded.MenuBook,
+                            outlined = true,
+                            onClick = { onOpenQuran(quran.verseKey) },
+                        )
+                    }
+                }
+            }
             if (recentFiles.isNotEmpty()) {
                 item {
                     DashboardSection("Recent", "Recently opened") {
@@ -114,6 +135,22 @@ internal fun FrozenDashboardScreen(
                                 DashboardRow(file.name, "Library · ${file.kind}", Icons.Rounded.Description) {
                                     onOpenFile(file.id)
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+            if (reflections.isNotEmpty()) {
+                item {
+                    DashboardSection("Reflections", "Recent") {
+                        Column {
+                            reflections.take(3).forEach { reflection ->
+                                DashboardRow(
+                                    title = "${reflection.surahName} · ${reflection.surahNumber}:${reflection.ayahNumber}",
+                                    meta = reflection.reflectionPreview,
+                                    icon = Icons.Outlined.ChatBubbleOutline,
+                                    onClick = { onOpenReflection(reflection) },
+                                )
                             }
                         }
                     }

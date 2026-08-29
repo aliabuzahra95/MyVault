@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.PushPin
@@ -104,6 +105,7 @@ import com.myvault.app.ui.components.CorpusEmptyState
 import com.myvault.app.ui.components.CorpusExpandedChildren
 import com.myvault.app.ui.components.CorpusFab
 import com.myvault.app.ui.components.CorpusFolderRow
+import com.myvault.app.ui.components.CorpusFolderColorSheet
 import com.myvault.app.ui.components.CorpusHeader
 import com.myvault.app.ui.components.CorpusLeafRow
 import com.myvault.app.ui.components.CorpusPinnedItem
@@ -151,6 +153,7 @@ fun LibraryScreen(
     onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
+    onUpdateFolderColor: (folderId: String, colorKey: String?) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onMoveFolderInOrder: (folderId: String, direction: Int) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
@@ -202,6 +205,7 @@ fun LibraryScreen(
         onPrepareStudyNoteLinks = onPrepareStudyNoteLinks,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
+        onUpdateFolderColor = onUpdateFolderColor,
         onMoveFolder = onMoveFolder,
         onMoveFolderInOrder = onMoveFolderInOrder,
         onDeleteFolder = onDeleteFolder,
@@ -250,6 +254,7 @@ fun LibraryFolderScreen(
     onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
+    onUpdateFolderColor: (folderId: String, colorKey: String?) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onMoveFolderInOrder: (folderId: String, direction: Int) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
@@ -293,6 +298,7 @@ fun LibraryFolderScreen(
         onPrepareStudyNoteLinks = onPrepareStudyNoteLinks,
         onCreateFolder = onCreateFolder,
         onRenameFolder = onRenameFolder,
+        onUpdateFolderColor = onUpdateFolderColor,
         onMoveFolder = onMoveFolder,
         onMoveFolderInOrder = onMoveFolderInOrder,
         onDeleteFolder = onDeleteFolder,
@@ -342,6 +348,7 @@ private fun LibraryArchiveScreen(
     onPrepareStudyNoteLinks: () -> Unit,
     onCreateFolder: (parentId: String?, name: String) -> Unit,
     onRenameFolder: (folderId: String, name: String) -> Unit,
+    onUpdateFolderColor: (folderId: String, colorKey: String?) -> Unit,
     onMoveFolder: (folderId: String, parentId: String?) -> Unit,
     onMoveFolderInOrder: (folderId: String, direction: Int) -> Unit,
     onDeleteFolder: (folderId: String) -> Unit,
@@ -380,6 +387,7 @@ private fun LibraryArchiveScreen(
     var selectedAnnotation by remember { mutableStateOf<LibraryAnnotationItem?>(null) }
     var actionDialogOpen by remember { mutableStateOf(false) }
     var folderMoreActionsOpen by remember { mutableStateOf(false) }
+    var folderColorSheetOpen by remember { mutableStateOf(false) }
     var fileActionDialogOpen by remember { mutableStateOf(false) }
     var fileMoreActionsOpen by remember { mutableStateOf(false) }
     var annotationActionDialogOpen by remember { mutableStateOf(false) }
@@ -502,6 +510,7 @@ private fun LibraryArchiveScreen(
                             matchingFolders.forEach { folderItem ->
                                 CorpusFolderRow(
                                     title = folderItem.name,
+                                    colorKey = folderItem.colorKey,
                                     count = folderItem.count,
                                     expanded = false,
                                     onToggle = { onFolderClick(folderItem.id) },
@@ -759,6 +768,10 @@ private fun LibraryArchiveScreen(
                     folderName = selectedFolder?.name.orEmpty()
                     folderDialog = selectedFolder?.let { LibraryFolderDialog.Rename(it.id) }
                 },
+                LibraryAction("Change colour", Icons.Rounded.Palette) {
+                    folderMoreActionsOpen = false
+                    folderColorSheetOpen = true
+                },
                 LibraryAction("Move up", Icons.Rounded.KeyboardArrowUp) {
                     selectedFolder?.let { onMoveFolderInOrder(it.id, -1) }
                     folderMoreActionsOpen = false
@@ -769,6 +782,23 @@ private fun LibraryArchiveScreen(
                 },
             ),
             onDismiss = { folderMoreActionsOpen = false },
+        )
+    }
+
+    if (folderColorSheetOpen && selectedFolder != null) {
+        val folder = selectedFolder
+        CorpusFolderColorSheet(
+            folderName = folder?.name.orEmpty(),
+            selectedColorKey = folder?.colorKey,
+            onBack = {
+                folderColorSheetOpen = false
+                folderMoreActionsOpen = true
+            },
+            onDismiss = { folderColorSheetOpen = false },
+            onSelect = { colorKey ->
+                folder?.let { onUpdateFolderColor(it.id, colorKey) }
+                folderColorSheetOpen = false
+            },
         )
     }
 
@@ -2403,6 +2433,7 @@ private fun LibraryCorpusFolderItem(
     val expanded = folder.id in expandedFolderIds
     CorpusFolderRow(
         title = folder.name,
+        colorKey = folder.colorKey,
         count = folder.count,
         expanded = expanded,
         onToggle = { onFolderExpandedChange(folder.id, !expanded) },

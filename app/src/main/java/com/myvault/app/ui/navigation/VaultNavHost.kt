@@ -540,6 +540,7 @@ fun VaultNavHost(
                         onRenameFolderClick = { folderId, name, description ->
                             homeViewModel.updateFolderDetails(folderId, name, description)
                         },
+                        onUpdateFolderColorClick = homeViewModel::updateFolderColor,
                         onMoveFolderClick = { folderId, parentId ->
                             homeViewModel.moveFolder(folderId, parentId)
                         },
@@ -753,6 +754,7 @@ fun VaultNavHost(
                             libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
                         onRenameFolder = libraryViewModel::renameFolder,
+                        onUpdateFolderColor = libraryViewModel::updateFolderColor,
                         onMoveFolder = libraryViewModel::moveFolder,
                         onMoveFolderInOrder = libraryViewModel::moveFolderInOrder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
@@ -820,6 +822,7 @@ fun VaultNavHost(
                         onRenameFolderClick = { folderId, name, description ->
                             homeViewModel.updateFolderDetails(folderId, name, description)
                         },
+                        onUpdateFolderColorClick = homeViewModel::updateFolderColor,
                         onMoveFolderClick = { folderId, parentId ->
                             homeViewModel.moveFolder(folderId, parentId)
                         },
@@ -924,6 +927,7 @@ fun VaultNavHost(
                             libraryViewModel.createFolder(parentId = parentId, name = name)
                         },
                         onRenameFolder = libraryViewModel::renameFolder,
+                        onUpdateFolderColor = libraryViewModel::updateFolderColor,
                         onMoveFolder = libraryViewModel::moveFolder,
                         onMoveFolderInOrder = libraryViewModel::moveFolderInOrder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
@@ -977,9 +981,23 @@ fun VaultNavHost(
                 recentFiles = libraryState.recentFiles,
                 pinnedNotes = if (preferences.workspace == WORKSPACE_PERSONAL) personalState.pinnedNotes else studyState.pinnedNotes,
                 pinnedFiles = libraryState.pinnedFiles,
+                quranContinue = if (preferences.workspace == WORKSPACE_PERSONAL) null else studyState.quranContinue,
+                reflections = if (preferences.workspace == WORKSPACE_PERSONAL) emptyList() else studyState.quranReflectionItems,
                 onMenuClick = onOpenNavigation,
                 onOpenNote = ::openNote,
                 onOpenFile = { navController.navigate(VaultDestination.AttachmentViewer.route(it)) },
+                onOpenQuran = { verseKey ->
+                    pendingQuranVerseKey = verseKey
+                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+                    navController.popBackStack(VaultDestination.Home.route, false)
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
+                },
+                onOpenReflection = { reflection ->
+                    pendingQuranVerseKey = reflection.verseKey
+                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+                    navController.popBackStack(VaultDestination.Home.route, false)
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
+                },
             )
         }
         composable(
@@ -1026,6 +1044,7 @@ fun VaultNavHost(
                     viewModel.createFolder(parentId = parentId, name = name)
                 },
                 onRenameFolder = viewModel::renameFolder,
+                onUpdateFolderColor = viewModel::updateFolderColor,
                 onMoveFolder = viewModel::moveFolder,
                 onMoveFolderInOrder = viewModel::moveFolderInOrder,
                 onDeleteFolder = viewModel::deleteFolder,
@@ -1932,6 +1951,7 @@ private fun VaultTreeItem.toExplorerNode(): VaultMobileWebExplorerNode =
         canAdd = type == VaultTreeItemType.Folder,
         pinned = pinned,
         description = description,
+        colorKey = colorKey,
     )
 
 private fun LibraryFolderItem.toExplorerNode(): VaultMobileWebExplorerNode =
@@ -1949,6 +1969,7 @@ private fun LibraryFolderItem.toExplorerNode(): VaultMobileWebExplorerNode =
             )
         },
         canAdd = true,
+        colorKey = colorKey,
     )
 
 private const val COURSE_EXPLORER_PREFIX = "course:"

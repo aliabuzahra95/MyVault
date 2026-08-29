@@ -7,8 +7,10 @@ import com.myvault.app.data.quran.QuranReflectionSummary
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
+import com.myvault.app.data.local.entity.normalizeFolderColorKey
 import com.myvault.app.ui.screens.AttachmentSample
 import com.myvault.app.ui.viewmodel.HomeUiState
+import com.myvault.app.ui.viewmodel.HomeQuranContinue
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -69,6 +71,9 @@ private fun HomeUiState.toJson(): JSONObject = JSONObject()
     .put("showFullNoteTitles", showFullNoteTitles)
     .put("quranReflectionCount", quranReflectionSummary.count)
     .put("quranReflectionLatestReference", quranReflectionSummary.latestReference)
+    .put("quranContinueSurahName", quranContinue?.surahName)
+    .put("quranContinueSurahNumber", quranContinue?.surahNumber)
+    .put("quranContinueAyahNumber", quranContinue?.ayahNumber)
 
 private fun JSONObject.toHomeUiState(): HomeUiState = HomeUiState(
     pinnedNotes = optJSONArray("pinnedNotes").orEmptyJsonArray().mapObjects { it.toVaultNoteCardData() },
@@ -81,6 +86,18 @@ private fun JSONObject.toHomeUiState(): HomeUiState = HomeUiState(
         count = optInt("quranReflectionCount", 0),
         latestReference = optString("quranReflectionLatestReference", ""),
     ),
+    quranContinue = if (
+        optInt("quranContinueSurahNumber", 0) > 0 &&
+        optInt("quranContinueAyahNumber", 0) > 0
+    ) {
+        HomeQuranContinue(
+            surahName = optString("quranContinueSurahName").ifBlank { "Surah ${optInt("quranContinueSurahNumber")}" },
+            surahNumber = optInt("quranContinueSurahNumber"),
+            ayahNumber = optInt("quranContinueAyahNumber"),
+        )
+    } else {
+        null
+    },
 )
 
 private fun VaultNoteCardData.toJson(): JSONObject = JSONObject()
@@ -135,6 +152,7 @@ private fun VaultTreeItem.toJson(): JSONObject = JSONObject()
     .put("pinned", pinned)
     .put("folderPinned", folderPinned)
     .put("favourite", favourite)
+    .put("colorKey", colorKey)
     .put("preview", preview)
     .put("children", children.toJsonArray { it.toJson() })
 
@@ -152,6 +170,7 @@ private fun JSONObject.toVaultTreeItem(): VaultTreeItem = VaultTreeItem(
     pinned = optBoolean("pinned", false),
     folderPinned = optBoolean("folderPinned", false),
     favourite = optBoolean("favourite", false),
+    colorKey = normalizeFolderColorKey(optString("colorKey").ifBlank { null }),
     preview = optString("preview"),
     children = optJSONArray("children").orEmptyJsonArray().mapObjects { it.toVaultTreeItem() },
 )

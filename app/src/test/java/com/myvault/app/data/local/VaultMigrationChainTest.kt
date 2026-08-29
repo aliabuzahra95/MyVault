@@ -14,7 +14,7 @@ class VaultMigrationChainTest {
         migrations.zipWithNext().forEach { (current, next) ->
             assertEquals(current.endVersion, next.startVersion)
         }
-        assertEquals(28, migrations.last().endVersion)
+        assertEquals(29, migrations.last().endVersion)
     }
 
     @Test
@@ -74,5 +74,26 @@ class VaultMigrationChainTest {
         assert(executedSql.any { it.contains("FOREIGN KEY(annotationId) REFERENCES pdf_annotations(id)") })
         assert(executedSql.none { it.contains("DELETE FROM pdf_annotations", ignoreCase = true) })
         assert(executedSql.none { it.contains("DROP TABLE", ignoreCase = true) })
+    }
+
+    @Test
+    fun migration28To29AddsOptionalFolderColorWithoutRewritingRows() {
+        val executedSql = mutableListOf<String>()
+        val database = Proxy.newProxyInstance(
+            SupportSQLiteDatabase::class.java.classLoader,
+            arrayOf(SupportSQLiteDatabase::class.java),
+        ) { _, method, args ->
+            if (method.name == "execSQL" && !args.isNullOrEmpty()) executedSql += args.first() as String
+            when (method.returnType) {
+                java.lang.Boolean.TYPE -> false
+                java.lang.Integer.TYPE -> 0
+                java.lang.Long.TYPE -> 0L
+                else -> null
+            }
+        } as SupportSQLiteDatabase
+
+        VaultDatabase.MIGRATION_28_29.migrate(database)
+
+        assertEquals(listOf("ALTER TABLE folders ADD COLUMN colorKey TEXT"), executedSql)
     }
 }

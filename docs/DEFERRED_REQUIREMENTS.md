@@ -89,8 +89,18 @@ previously explicit rows in this register:
 | PDF current-page annotation typography | Excerpts/metadata increased one restrained step without changing sheet architecture | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | PDF annotation type distinction | Highlight, Note and Study Link now use distinct semantic icons; highlights retain their saved colour cue | Authorized Stage 9 Batch B | **RESOLVED IN STAGE 9** |
 | Google Drive debug OAuth | Debug SHA is separate and remains unconfigured; release candidate uses the established production certificate | Debug setup is optional; live release-account round trip remains required | **DEBUG DEFERRED; RELEASE DEVICE TEST BLOCKED** |
-| Optional folder/subfolder colours | `FolderEntity` and the explicit folder backup payload have no colour field; correct persistence requires Room and backup/Web compatibility design | Separate schema and compatibility approval | **DEFERRED - NOT SAFE IN CORRECTION PASS** |
+| Optional folder/subfolder colours | Additive nullable `FolderEntity.colorKey`, migration 28->29, backup tolerance, and shared Study/Library/Explorer rendering are implemented and automated compatibility checks pass | Release-signed physical-device Drive restore | **IMPLEMENTED; RELEASE DEVICE ACCEPTANCE BLOCKED** |
 | Post-Stage-10 corrected RC physical acceptance | PDF touch drawing/pinch alignment and release-signed Drive round trip require a connected physical device | Physical-device installation and real account test | **RELEASE DEVICE TEST BLOCKED** |
+
+## Physical Device Refinement Implementation
+
+| Requirement | Production result | Status |
+|---|---|---|
+| PDF one-shot Draw Highlight | One rectangle auto-commits on release, immediately exits armed mode, and retains the preferred colour | **IMPLEMENTED; EMULATOR VERIFIED** |
+| PDF annotation pill and local sheet | Real document-wide H/N counts, palette above the pill, local filters, compact rows, and View all activity route | **IMPLEMENTED; EMULATOR VERIFIED** |
+| Dashboard Qur'an and Reflections | Real saved Qur'an position and newest real reflections use existing exact-verse navigation | **IMPLEMENTED; QUR'AN ROUTE VERIFIED** |
+| Maududi marker toggle | Same marker closes; another marker replaces the open inline footnote | **IMPLEMENTED; EMULATOR VERIFIED** |
+| Physical-device release acceptance | Real touch/pinch, release-signed installation, and Drive round trip | **BLOCKED - NO PHYSICAL DEVICE CONNECTED** |
 
 ## Resolved Stage 6 Course Decisions
 

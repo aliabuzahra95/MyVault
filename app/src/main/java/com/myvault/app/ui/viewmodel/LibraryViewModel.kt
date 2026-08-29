@@ -59,6 +59,7 @@ data class LibraryFolderItem(
     val files: List<LibraryFileItem> = emptyList(),
     val annotations: List<LibraryAnnotationItem> = emptyList(),
     val children: List<LibraryFolderItem> = emptyList(),
+    val colorKey: String? = null,
 )
 
 data class LibraryFileItem(
@@ -381,6 +382,10 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { folderRepository.renameFolder(folderId, name) }
     }
 
+    fun updateFolderColor(folderId: String, colorKey: String?) {
+        viewModelScope.launch { folderRepository.updateFolderColor(folderId, colorKey) }
+    }
+
     fun moveFolder(folderId: String, parentId: String?) {
         viewModelScope.launch { folderRepository.moveFolder(folderId, parentId ?: personalRootFolderIdIfNeeded()) }
     }
@@ -607,6 +612,7 @@ private fun FolderEntity.toLibraryFolderItem(
         files = filesByFolder[id].orEmpty(),
         annotations = annotationsByFolder[id].orEmpty(),
         children = children,
+        colorKey = colorKey,
     )
 }
 

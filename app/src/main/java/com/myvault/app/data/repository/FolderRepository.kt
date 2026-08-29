@@ -18,6 +18,7 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.normalizeFolderColorKey
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import kotlinx.coroutines.flow.Flow
@@ -142,6 +143,14 @@ class FolderRepository @Inject constructor(
             id = folderId,
             name = name.ifBlank { "Untitled folder" },
             description = description?.trim()?.takeIf { it.isNotEmpty() },
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    suspend fun updateFolderColor(folderId: String, colorKey: String?) {
+        folderDao.updateColorKey(
+            id = folderId,
+            colorKey = normalizeFolderColorKey(colorKey),
             updatedAt = System.currentTimeMillis(),
         )
     }

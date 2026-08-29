@@ -12,6 +12,7 @@ import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SearchRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.quran.QuranReflectionRepository
+import com.myvault.app.data.quran.QuranCatalogRepository
 import com.myvault.app.data.quran.QuranReflectionItem
 import com.myvault.app.data.quran.QuranReflectionSummary
 import com.myvault.app.data.quran.QURAN_REFLECTION_FOLDER_NAME
@@ -56,7 +57,16 @@ data class HomeUiState(
     val pinnedExpanded: Boolean = false,
     val quranReflectionSummary: QuranReflectionSummary = QuranReflectionSummary(),
     val quranReflectionItems: List<QuranReflectionItem> = emptyList(),
+    val quranContinue: HomeQuranContinue? = null,
 )
+
+data class HomeQuranContinue(
+    val surahName: String,
+    val surahNumber: Int,
+    val ayahNumber: Int,
+) {
+    val verseKey: String get() = "$surahNumber:$ayahNumber"
+}
 
 private val EmptySearchResults = Triple(
     emptyList<SearchResultData>(),
@@ -75,6 +85,7 @@ class HomeViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
     private val vaultPreferences: VaultPreferences,
     private val quranReflectionRepository: QuranReflectionRepository,
+    private val quranCatalogRepository: QuranCatalogRepository,
     private val homeSnapshotRepository: HomeSnapshotRepository,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
@@ -121,6 +132,12 @@ class HomeViewModel @Inject constructor(
         quranReflectionHomeState,
     ) { content, query, results, preferences, quranReflectionHomeState ->
         val (quranReflectionSummary, quranReflectionItems) = quranReflectionHomeState
+        val surahNumber = preferences.quranLastReadSurah.coerceIn(1, 114)
+        val quranContinue = HomeQuranContinue(
+            surahName = quranCatalogRepository.surah(surahNumber)?.name ?: "Surah $surahNumber",
+            surahNumber = surahNumber,
+            ayahNumber = preferences.quranLastReadAyah.coerceAtLeast(1),
+        )
         content.toUiState(
             query = query,
             results = results,
@@ -130,6 +147,7 @@ class HomeViewModel @Inject constructor(
             pinnedExpanded = preferences.pinnedExpandedByMode[FOLDER_MODE_STUDY] ?: false,
             quranReflectionSummary = quranReflectionSummary,
             quranReflectionItems = quranReflectionItems,
+            quranContinue = quranContinue,
         )
     }
         .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_STUDY, state) }
@@ -154,6 +172,7 @@ class HomeViewModel @Inject constructor(
             pinnedExpanded = preferences.pinnedExpandedByMode[FOLDER_MODE_PERSONAL] ?: false,
             quranReflectionSummary = QuranReflectionSummary(),
             quranReflectionItems = emptyList(),
+            quranContinue = null,
         )
     }
         .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_PERSONAL, state) }
@@ -238,6 +257,10 @@ class HomeViewModel @Inject constructor(
 
     fun updateFolderDetails(folderId: String, name: String, description: String?) {
         viewModelScope.launch { folderRepository.updateFolderDetails(folderId, name, description) }
+    }
+
+    fun updateFolderColor(folderId: String, colorKey: String?) {
+        viewModelScope.launch { folderRepository.updateFolderColor(folderId, colorKey) }
     }
 
     fun moveFolder(folderId: String, parentId: String?) {
@@ -348,6 +371,7 @@ private fun HomeContent.toUiState(
     pinnedExpanded: Boolean,
     quranReflectionSummary: QuranReflectionSummary,
     quranReflectionItems: List<QuranReflectionItem>,
+    quranContinue: HomeQuranContinue?,
 ): HomeUiState {
     val visibleIds = tree.visibleTreeIds()
     return HomeUiState(
@@ -368,6 +392,7 @@ private fun HomeContent.toUiState(
         pinnedExpanded = pinnedExpanded,
         quranReflectionSummary = quranReflectionSummary,
         quranReflectionItems = quranReflectionItems.take(8),
+        quranContinue = quranContinue,
     )
 }
 

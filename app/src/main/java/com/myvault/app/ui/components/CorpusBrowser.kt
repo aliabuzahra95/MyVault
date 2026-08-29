@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
@@ -61,6 +63,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.data.local.entity.FOLDER_COLOR_BLUE
+import com.myvault.app.data.local.entity.FOLDER_COLOR_GREEN
+import com.myvault.app.data.local.entity.FOLDER_COLOR_PURPLE
+import com.myvault.app.data.local.entity.FOLDER_COLOR_RED
+import com.myvault.app.data.local.entity.FOLDER_COLOR_YELLOW
+import com.myvault.app.data.local.entity.normalizeFolderColorKey
+
+fun folderSemanticColor(colorKey: String?, fallback: Color): Color = when (normalizeFolderColorKey(colorKey)) {
+    FOLDER_COLOR_RED -> Color(0xFFD85353)
+    FOLDER_COLOR_BLUE -> Color(0xFF4D86D9)
+    FOLDER_COLOR_GREEN -> Color(0xFF3B9B71)
+    FOLDER_COLOR_PURPLE -> Color(0xFF8A62CB)
+    FOLDER_COLOR_YELLOW -> Color(0xFFBA8627)
+    else -> fallback
+}
 
 @Composable
 fun CorpusHeader(
@@ -312,9 +329,11 @@ fun CorpusFolderRow(
     onLongPress: () -> Unit,
     onAdd: (() -> Unit)? = null,
     depth: Int = 0,
+    colorKey: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
+    val folderColor = folderSemanticColor(colorKey, if (depth > 0) colors.textMuted else colors.textSecondary)
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
         animationSpec = tween(170),
@@ -342,14 +361,14 @@ fun CorpusFolderRow(
             if (depth > 0) Icons.Outlined.FolderOpen else Icons.Outlined.Folder,
             null,
             modifier = Modifier.size(if (depth > 0) 19.dp else 21.dp),
-            tint = if (depth > 0) colors.textMuted else colors.textSecondary,
+            tint = folderColor,
         )
         Text(
             text = title,
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 7.dp, end = 8.dp),
-            color = colors.text,
+            color = folderSemanticColor(colorKey, colors.text),
             fontSize = if (depth > 0) 14.sp else 14.5.sp,
             fontWeight = if (depth > 0) FontWeight.W600 else FontWeight(670),
             maxLines = 1,
@@ -374,6 +393,119 @@ fun CorpusFolderRow(
                     modifier = Modifier.size(16.dp),
                     tint = colors.textMuted,
                 )
+            }
+        }
+    }
+}
+
+private data class FolderColorOption(
+    val label: String,
+    val key: String?,
+)
+
+private val FolderColorOptions = listOf(
+    FolderColorOption("Default", null),
+    FolderColorOption("Red", FOLDER_COLOR_RED),
+    FolderColorOption("Blue", FOLDER_COLOR_BLUE),
+    FolderColorOption("Green", FOLDER_COLOR_GREEN),
+    FolderColorOption("Purple", FOLDER_COLOR_PURPLE),
+    FolderColorOption("Yellow", FOLDER_COLOR_YELLOW),
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CorpusFolderColorSheet(
+    folderName: String,
+    selectedColorKey: String?,
+    onBack: () -> Unit,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val normalizedSelection = normalizeFolderColorKey(selectedColorKey)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = colors.elevated,
+        contentColor = colors.text,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 8.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .background(colors.borderStrong, VaultShapes.pill),
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 14.dp, bottom = 24.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(40.dp).clickable(role = Role.Button, onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to more actions", modifier = Modifier.size(19.dp))
+                }
+                Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Text("FOLDER COLOUR", color = colors.textMuted, fontSize = 9.5.sp, fontWeight = FontWeight.W700)
+                    Text(
+                        folderName,
+                        color = colors.text,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.W700,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Box(
+                    modifier = Modifier.size(40.dp).clickable(role = Role.Button, onClick = onDismiss),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Close, "Close", modifier = Modifier.size(19.dp), tint = colors.textSecondary)
+                }
+            }
+            FolderColorOptions.chunked(2).forEach { rowOptions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowOptions.forEach { option ->
+                        val selected = normalizedSelection == option.key
+                        val optionColor = folderSemanticColor(option.key, colors.textSecondary)
+                        Surface(
+                            onClick = { onSelect(option.key) },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            color = if (selected) colors.accentSoft else colors.surface,
+                            contentColor = colors.text,
+                            shape = VaultShapes.md,
+                            border = BorderStroke(1.dp, if (selected) colors.accent else colors.border),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.Folder, null, modifier = Modifier.size(20.dp), tint = optionColor)
+                                Text(
+                                    option.label,
+                                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                                    color = optionColor.takeIf { option.key != null } ?: colors.text,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.W600,
+                                )
+                                if (selected) {
+                                    Icon(Icons.Rounded.CheckCircle, "Selected", modifier = Modifier.size(17.dp), tint = colors.accent)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

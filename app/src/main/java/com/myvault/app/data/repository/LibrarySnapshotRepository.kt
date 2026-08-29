@@ -4,6 +4,7 @@ import android.content.Context
 import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.normalizeFolderColorKey
 import com.myvault.app.ui.viewmodel.LibraryAnnotationItem
 import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.LibraryFolderItem
@@ -107,6 +108,7 @@ private fun FolderEntity.toJson(): JSONObject = JSONObject()
     .put("createdAt", createdAt)
     .put("updatedAt", updatedAt)
     .put("deletedAt", deletedAt)
+    .put("colorKey", colorKey)
 
 private fun JSONObject.toFolderEntity(): FolderEntity = FolderEntity(
     id = optString("id"),
@@ -119,6 +121,7 @@ private fun JSONObject.toFolderEntity(): FolderEntity = FolderEntity(
     createdAt = optLong("createdAt", 0L),
     updatedAt = optLong("updatedAt", 0L),
     deletedAt = if (has("deletedAt") && !isNull("deletedAt")) optLong("deletedAt") else null,
+    colorKey = normalizeFolderColorKey(nullableString("colorKey")),
 )
 
 private fun LibraryFolderItem.toJson(): JSONObject = JSONObject()
@@ -129,6 +132,7 @@ private fun LibraryFolderItem.toJson(): JSONObject = JSONObject()
     .put("files", files.take(40).toJsonArray { it.toSnapshotJson() })
     .put("annotations", annotations.take(40).toJsonArray { it.toJson() })
     .put("children", children.toJsonArray { it.toJson() })
+    .put("colorKey", colorKey)
 
 private fun JSONObject.toLibraryFolderItem(): LibraryFolderItem = LibraryFolderItem(
     id = optString("id"),
@@ -138,6 +142,7 @@ private fun JSONObject.toLibraryFolderItem(): LibraryFolderItem = LibraryFolderI
     files = optJSONArray("files").orEmptyJsonArray().mapObjects { it.toLibraryFileItem() },
     annotations = optJSONArray("annotations").orEmptyJsonArray().mapObjects { it.toLibraryAnnotationItem() },
     children = optJSONArray("children").orEmptyJsonArray().mapObjects { it.toLibraryFolderItem() },
+    colorKey = normalizeFolderColorKey(nullableString("colorKey")),
 )
 
 private fun LibraryFileItem.toSnapshotJson(): JSONObject = JSONObject()

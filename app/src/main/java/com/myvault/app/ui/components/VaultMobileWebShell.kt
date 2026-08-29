@@ -105,6 +105,7 @@ data class VaultMobileWebExplorerNode(
     val canManage: Boolean = true,
     val pinned: Boolean = false,
     val description: String? = null,
+    val colorKey: String? = null,
 )
 
 data class VaultMobileWebExplorerSection(
@@ -539,6 +540,7 @@ private fun DrawerExplorerNode(
     val expandable = node.type == VaultMobileWebExplorerNodeType.Folder && node.children.isNotEmpty()
     val expanded = nodeKey in expandedKeys
     val selected = node.id == selectedNodeId
+    val folderColor = folderSemanticColor(node.colorKey, colors.textSecondary)
     val indent = (8 + depth.coerceAtMost(3) * 8).dp
     Row(
         modifier = Modifier
@@ -585,12 +587,24 @@ private fun DrawerExplorerNode(
                 },
                 contentDescription = null,
                 modifier = Modifier.size(if (node.type == VaultMobileWebExplorerNodeType.Folder) 18.dp else 16.dp),
-                tint = if (selected) colors.accent else colors.textSecondary,
+                tint = if (node.type == VaultMobileWebExplorerNodeType.Folder && node.colorKey != null) {
+                    folderColor
+                } else if (selected) {
+                    colors.accent
+                } else {
+                    colors.textSecondary
+                },
             )
             Text(
                 text = node.label,
                 modifier = Modifier.weight(1f),
-                color = if (selected) colors.text else colors.textSecondary,
+                color = if (node.type == VaultMobileWebExplorerNodeType.Folder && node.colorKey != null) {
+                    folderColor
+                } else if (selected) {
+                    colors.text
+                } else {
+                    colors.textSecondary
+                },
                 fontSize = 14.sp,
                 fontWeight = if (node.type == VaultMobileWebExplorerNodeType.Folder || selected) FontWeight.W700 else FontWeight.W500,
                 maxLines = 1,

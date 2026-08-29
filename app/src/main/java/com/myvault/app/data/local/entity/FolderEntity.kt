@@ -9,6 +9,23 @@ const val FOLDER_MODE_PERSONAL = "personal"
 const val FOLDER_MODE_LIBRARY = "library"
 const val FOLDER_MODE_PERSONAL_LIBRARY = "personal_library"
 
+const val FOLDER_COLOR_RED = "red"
+const val FOLDER_COLOR_BLUE = "blue"
+const val FOLDER_COLOR_GREEN = "green"
+const val FOLDER_COLOR_PURPLE = "purple"
+const val FOLDER_COLOR_YELLOW = "yellow"
+
+val SUPPORTED_FOLDER_COLOR_KEYS = setOf(
+    FOLDER_COLOR_RED,
+    FOLDER_COLOR_BLUE,
+    FOLDER_COLOR_GREEN,
+    FOLDER_COLOR_PURPLE,
+    FOLDER_COLOR_YELLOW,
+)
+
+internal fun normalizeFolderColorKey(value: String?): String? =
+    value?.trim()?.lowercase()?.takeIf(SUPPORTED_FOLDER_COLOR_KEYS::contains)
+
 @Entity(
     tableName = "folders",
     indices = [
@@ -28,4 +45,5 @@ data class FolderEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long? = null,
+    val colorKey: String? = null,
 )

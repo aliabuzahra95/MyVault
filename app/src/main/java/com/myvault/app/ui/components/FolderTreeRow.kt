@@ -254,6 +254,7 @@ private fun FolderTreeSingleRow(
     onMoveDown: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    val folderColor = folderSemanticColor(item.colorKey, colors.text)
     val topLevel = depth == 0
     val isFolder = item.type == VaultTreeItemType.Folder
     val effectiveDepth = depth.coerceAtMost(3)
@@ -396,6 +397,7 @@ private fun FolderTreeSingleRow(
                     contentDescription = null,
                     modifier = Modifier.size(if (topLevel) 16.dp else 14.dp),
                     tint = when {
+                        item.colorKey != null -> folderColor
                         flatHierarchy && topLevel -> colors.text
                         flatHierarchy -> colors.textSecondary
                         topLevel -> colors.accent
@@ -422,7 +424,7 @@ private fun FolderTreeSingleRow(
                         topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
                         else -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },
-                    color = colors.text,
+                    color = if (isFolder) folderColor else colors.text,
                     maxLines = if (!isFolder && showFullNoteTitles) Int.MAX_VALUE else 1,
                     overflow = if (!isFolder && showFullNoteTitles) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )

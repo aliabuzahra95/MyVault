@@ -65,7 +65,7 @@ import com.myvault.app.data.local.entity.TagEntity
         CourseStickyNoteEntity::class,
         CourseConceptCardEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -571,6 +571,12 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE folders ADD COLUMN colorKey TEXT")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -599,6 +605,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_25_26,
             MIGRATION_26_27,
             MIGRATION_27_28,
+            MIGRATION_28_29,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

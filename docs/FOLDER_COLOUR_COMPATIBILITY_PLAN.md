@@ -1,8 +1,8 @@
 # Folder Colour Compatibility Plan
 
-Status: **AUDIT ONLY - IMPLEMENTATION BLOCKED**
+Status: **IMPLEMENTED - AUTOMATED COMPATIBILITY VERIFIED; RELEASE DEVICE ACCEPTANCE PENDING**
 
-The folder-colour UI is not frozen yet. This document defines the minimum compatible data path only. No Room, backup, repository, ViewModel, Explorer, Study, or Library implementation is authorised by this plan.
+The Physical Device Refinement amendment froze the folder-colour UI and authorised this additive compatibility model. Production implementation now uses the single semantic `FolderEntity.colorKey` value described below across Study, Library, and Explorer.
 
 ## Recommended Model
 
@@ -14,7 +14,7 @@ The folder-colour UI is not frozen yet. This document defines the minimum compat
 
 ## Room Migration
 
-When separately authorised, increment `VaultDatabase` from version 28 to 29 and add only:
+Implemented by incrementing `VaultDatabase` from version 28 to 29 and adding only:
 
 ```sql
 ALTER TABLE folders ADD COLUMN colorKey TEXT
@@ -33,7 +33,7 @@ Migration tests must cover:
 
 ## Backup And Restore
 
-Add optional `colorKey` to each `folders.json` row only after implementation approval.
+`folders.json` now includes the optional `colorKey` field.
 
 - New Android backup: writes `colorKey` as a semantic string or JSON null.
 - New Android restore: accepts a missing field as Default and accepts only the supported values.
@@ -62,18 +62,30 @@ The current Web backup/sync implementation lives under `MyVault-Web/artifacts/my
 - Web-created folders currently omit `colorKey`; that correctly means Default.
 - Generated Web Folder API/Zod types do not expose `colorKey`, so Web cannot display or intentionally edit folder colour until separately updated.
 
-Before Android schema implementation is released, add explicit Web contract assertions that `colorKey` survives validation, no-op export, safe sync merge, rename, reorder, and Android-to-Web-to-Android round trip. Do not rely only on the existing representative fixture's unrelated `customColour` field.
+The current Web parser was verified to accept a representative Android folder row containing `colorKey: "red"`; `pnpm verify:sync` also passes unchanged. No Web code or Web UI change was required. A release-signed Google Drive round trip remains required on a connected physical device before release promotion.
 
 ## Shared Rendering Path
 
-Future approved implementation must carry the same `FolderEntity.colorKey` through:
+The implementation carries the same `FolderEntity.colorKey` through:
 
 - Study/Personal: `FolderRepository` -> `UiMappers.kt` -> `VaultTreeItem` -> shared Corpus Browser folder row.
 - Library/Personal Library: `LibraryViewModel.toLibraryFolderItem()` -> `LibraryFolderItem` -> shared Corpus Browser folder row.
 - Explorer: `VaultTreeItem.toExplorerNode()` and `LibraryFolderItem.toExplorerNode()` -> `VaultMobileWebExplorerNode` -> the single Explorer row implementation.
 - Startup caches: `HomeSnapshotRepository` and `LibrarySnapshotRepository` must encode/decode the optional semantic value to avoid a temporary neutral-colour flash before Room emits.
 
-The renderer should map semantic values to approved theme-aware visual tokens only after the Folder Colour Frozen amendment is available. No screen may own an independent colour preference.
+The renderer maps semantic values to the exact frozen colours and applies them only to the folder icon and title. No screen owns an independent colour preference.
+
+## Verification Record
+
+- Room migration chain includes `MIGRATION_28_29`; schema 29 is exported.
+- Existing/missing/unknown values resolve safely to Default.
+- New backup round-trip preserves a supported colour.
+- Old backup without `colorKey` restores as Default.
+- Study parent Red and nested child Purple remain independent.
+- Study, Library, and Explorer render the same authoritative value.
+- Default can be reselected, and Red/Purple survive an app relaunch.
+- Web validation accepts the additive field without parser changes.
+- Google Drive upload/discovery/controlled restore is pending because no release-authorised physical device/account is connected in this environment.
 
 ## Stop Conditions
 

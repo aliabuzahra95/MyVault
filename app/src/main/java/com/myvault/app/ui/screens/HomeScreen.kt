@@ -58,6 +58,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -116,6 +117,7 @@ import com.myvault.app.ui.components.CorpusActionGroup
 import com.myvault.app.ui.components.CorpusActionSheet
 import com.myvault.app.ui.components.CorpusFab
 import com.myvault.app.ui.components.CorpusFolderRow
+import com.myvault.app.ui.components.CorpusFolderColorSheet
 import com.myvault.app.ui.components.CorpusHeader
 import com.myvault.app.ui.components.CorpusLeafRow
 import com.myvault.app.ui.components.CorpusPinnedItem
@@ -164,6 +166,7 @@ fun HomeScreen(
     onNewNoteClick: (folderId: String?) -> Unit = {},
     onNewFolderClick: (parentId: String?, name: String, description: String?) -> Unit = { _, _, _ -> },
     onRenameFolderClick: (folderId: String, name: String, description: String?) -> Unit = { _, _, _ -> },
+    onUpdateFolderColorClick: (folderId: String, colorKey: String?) -> Unit = { _, _ -> },
     onMoveFolderClick: (folderId: String, parentId: String?) -> Unit = { _, _ -> },
     onMoveFolderInOrderClick: (folderId: String, direction: Int) -> Unit = { _, _ -> },
     onMoveFolderToModeClick: (folderId: String, mode: String) -> Unit = { _, _ -> },
@@ -212,6 +215,7 @@ fun HomeScreen(
     var noteActionsOpen by remember { mutableStateOf(false) }
     var noteMoreActionsOpen by remember { mutableStateOf(false) }
     var folderMoreActionsOpen by remember { mutableStateOf(false) }
+    var folderColorSheetOpen by remember { mutableStateOf(false) }
     var renameNoteDialogOpen by remember { mutableStateOf(false) }
     var moveNoteDialogOpen by remember { mutableStateOf(false) }
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
@@ -453,6 +457,10 @@ fun HomeScreen(
                     folderDescriptionInput = folder?.description.orEmpty()
                     folderDialogMode = FolderDialogMode.Rename
                 },
+                PremiumAction("Change colour", Icons.Rounded.Palette) {
+                    folderMoreActionsOpen = false
+                    folderColorSheetOpen = true
+                },
                 PremiumAction("Organise", Icons.Rounded.SwapVert) {
                     folderMoreActionsOpen = false
                     selectedItemIds.clear()
@@ -465,6 +473,23 @@ fun HomeScreen(
                     folder?.let { onMoveFolderToModeClick(it.id, oppositeMode) }
                 },
             ),
+        )
+    }
+
+    if (folderColorSheetOpen && selectedFolder != null) {
+        val folder = selectedFolder
+        CorpusFolderColorSheet(
+            folderName = folder?.name.orEmpty(),
+            selectedColorKey = folder?.colorKey,
+            onBack = {
+                folderColorSheetOpen = false
+                folderMoreActionsOpen = true
+            },
+            onDismiss = { folderColorSheetOpen = false },
+            onSelect = { colorKey ->
+                folder?.let { onUpdateFolderColorClick(it.id, colorKey) }
+                folderColorSheetOpen = false
+            },
         )
     }
 
@@ -1018,6 +1043,7 @@ private fun StudyMobileWebContent(
                     matchingFolders.forEach { folder ->
                         CorpusFolderRow(
                             title = folder.name,
+                            colorKey = folder.colorKey,
                             count = folder.count.takeIf { it > 0 } ?: folder.children.size,
                             expanded = false,
                             onToggle = { onToggleFolder(folder) },
@@ -1083,6 +1109,7 @@ private fun StudyCorpusItem(
         val expanded = searching || isFolderExpanded(item.id)
         CorpusFolderRow(
             title = item.name,
+            colorKey = item.colorKey,
             count = item.count.takeIf { it > 0 } ?: item.children.size,
             expanded = expanded,
             onToggle = { onToggleFolder(item) },

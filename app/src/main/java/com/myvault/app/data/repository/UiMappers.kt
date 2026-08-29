@@ -61,6 +61,7 @@ fun buildTree(
             count = countNotes(folder, foldersByParent, notesByFolder, notesByParent, countCache),
             updatedAt = folder.updatedAt,
             favourite = folder.isFavourite,
+            colorKey = folder.colorKey,
             children = children,
         )
     }

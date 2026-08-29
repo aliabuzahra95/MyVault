@@ -1,8 +1,8 @@
 # Dashboard Qur'an Data Hooks
 
-Status: **DATA AUDIT ONLY - NO DASHBOARD UI CHANGES**
+Status: **IMPLEMENTED FROM FROZEN PHYSICAL-DEVICE REFINEMENT**
 
-The Dashboard Qur'an and Reflections visuals remain pending in the separate UI Mockup work. The production sources and exact existing navigation hooks are recorded here so the approved design can be wired without inventing data.
+The frozen Physical Device Refinement approved the Dashboard Qur'an and Reflections sections. They are now wired to the production sources below without introducing new persistence or sample data.
 
 ## Qur'an Continue
 
@@ -13,7 +13,7 @@ Authoritative persisted source:
 - `VaultUserPreferences.quranLastReadAyah`
 - writes occur through `VaultPreferences.setQuranReadingPosition()` from `QuranReaderViewModel.updateLastReadPosition()`.
 
-Recommended Dashboard state owner:
+Implemented Dashboard state owner:
 
 - Extend `HomeViewModel`/`HomeUiState` with a small immutable Qur'an Continue state derived from the already-combined `VaultPreferences.userPreferences` flow.
 - Keep the stored Surah and ayah numbers authoritative. Resolve a display name through the existing Qur'an catalog only when the frozen Dashboard contract requires it.
@@ -36,7 +36,7 @@ Authoritative source:
 - Each `QuranReflectionItem` already contains `surahName`, `surahNumber`, `ayahNumber`, `verseKey`, `reflectionPreview`, Arabic/translation previews, note ID, and timestamp.
 - `HomeViewModel` already combines this flow and exposes the newest eight items as `HomeUiState.quranReflectionItems` plus `quranReflectionSummary`.
 
-Recommended Dashboard wiring:
+Implemented Dashboard wiring:
 
 - Reuse `HomeUiState.quranReflectionItems`; do not query notes again from the Dashboard.
 - The approved card can use the existing verse reference and `reflectionPreview` without sample content.
@@ -52,6 +52,11 @@ Available persisted source if later approved:
 - Display metadata can be resolved through the existing `QuranCatalogRepository` and `QuranTextRepository` only when required.
 - Navigation reuses `pendingQuranVerseKey` and `QuranReaderViewModel.openBookmarkedAyah()`.
 
-## Implementation Boundary
+## Implementation Result
 
-No Dashboard composable, navigation control, repository contract, preference, snapshot format, or visual styling was changed during this audit. The future implementation should wire these existing sources into the frozen Dashboard amendment and add snapshot fields only if the approved startup experience requires them.
+- The compact section order is Continue, Qur'an, Recent, Reflections, Pinned.
+- Sections render only when backed by real production state.
+- Qur'an uses the saved Surah/ayah and the existing exact-verse navigation handoff.
+- Reflections uses the newest one to three repository items and the existing exact-verse handoff.
+- The startup snapshot contains only the derived display state needed to avoid a transient empty Dashboard.
+- No Qur'an preference, reflection entity, repository contract, or canonical data changed.

@@ -24,6 +24,7 @@ data class VaultTreeItem(
     val pinned: Boolean = false,
     val folderPinned: Boolean = false,
     val favourite: Boolean = false,
+    val colorKey: String? = null,
     val preview: String = "",
     val children: List<VaultTreeItem> = emptyList(),
 )

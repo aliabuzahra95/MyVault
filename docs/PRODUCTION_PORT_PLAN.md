@@ -705,3 +705,28 @@ Optional folder colours remain deferred because correct persistence requires a
 Room migration and an explicit additive backup/Web compatibility decision. The
 corrected release candidate still requires physical PDF gesture/alignment and
 release-signed Google Drive acceptance before release promotion.
+
+## 18. Frozen Physical Device Refinement
+
+The Physical Device Refinement implementation starts from
+`9d80524638476f907a4dde3316ff00e5001e8677`, protected by the pushed
+`pre-physical-device-refinement` tag.
+
+Implemented scope:
+
+- PDF one-shot rectangle highlighting, frozen pill/palette, real document-wide
+  highlight/note counts, and the current-PDF annotations sheet.
+- Optional semantic Study/Library folder colours with additive Room migration
+  28->29, additive backup field, startup snapshots, sync tolerance, and one
+  shared Study/Library/Explorer rendering path.
+- Dashboard Qur'an continuation and newest real reflections using existing
+  Stage 7 state and exact-verse navigation.
+- Existing Maududi marker toggle retained and runtime-verified for open, same
+  marker close, and marker replacement.
+
+Automated and emulator acceptance evidence is stored under
+`artifacts/physical-device-refinement/`. The current environment exposes only
+`emulator-5554`; no physical device is connected, and the emulator reports
+Drive not connected. Physical touch/pinch acceptance and the release-signed
+Google Drive colour-backup round trip therefore remain release gates. Outgoing
+Study/Library Share remains deferred new functionality.

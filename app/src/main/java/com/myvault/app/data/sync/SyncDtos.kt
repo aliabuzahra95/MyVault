@@ -54,6 +54,7 @@ private fun FolderEntity.toJson() = JSONObject()
     .put("created_at", createdAt)
     .put("updated_at", updatedAt)
     .put("deleted_at", deletedAt)
+    .put("color_key", colorKey)
 
 private fun NoteEntity.toJson() = JSONObject()
     .put("id", id)

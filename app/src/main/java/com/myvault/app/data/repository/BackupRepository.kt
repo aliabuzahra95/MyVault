@@ -27,6 +27,7 @@ import com.myvault.app.data.local.entity.CourseFolderEntity
 import com.myvault.app.data.local.entity.CourseNoteEntity
 import com.myvault.app.data.local.entity.CourseStickyNoteEntity
 import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.normalizeFolderColorKey
 import com.myvault.app.data.local.entity.FolderStickyNoteEntity
 import com.myvault.app.data.local.entity.KnowledgeTagEntity
 import com.myvault.app.data.local.entity.KnowledgeTagLinkEntity
@@ -557,7 +558,7 @@ class BackupRepository @Inject constructor(
 
             validateManifest(entries["manifest.json"])
 
-            val folders = entries.requireJsonArray("folders.json").mapJson { it.toFolderEntity() }
+            val folders = entries.requireJsonArray("folders.json").mapJson { it.toBackupFolderEntity() }
             val restoredFolderIds = folders.map { it.id }.toSet()
             val folderStickyNotes = entries.optionalJsonArray("folder_sticky_notes.json")
                 .mapJson { it.toFolderStickyNoteEntity() }
@@ -998,7 +999,7 @@ private data class BackupSnapshot(
         destinationDir.writeJsonFile("course_folders.json", legacyCourseFolders.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("course_notes.json", legacyCourseNotes.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("course_sticky_notes.json", legacyCourseStickyNotes.toJsonArray { it.toJson() })
-        destinationDir.writeJsonFile("folders.json", folders.toJsonArray { it.toJson() })
+        destinationDir.writeJsonFile("folders.json", folders.toJsonArray { it.toBackupJsonObject() })
         destinationDir.writeJsonFile("folder_sticky_notes.json", folderStickyNotes.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("notes.json", notes.toJsonArray { it.toJson() })
         destinationDir.writeJsonFile("blocks.json", blocks.toJsonArray { it.toJson() })
@@ -1023,7 +1024,7 @@ private data class BackupSnapshot(
         zip.writeJson("course_folders.json", legacyCourseFolders.toJsonArray { it.toJson() })
         zip.writeJson("course_notes.json", legacyCourseNotes.toJsonArray { it.toJson() })
         zip.writeJson("course_sticky_notes.json", legacyCourseStickyNotes.toJsonArray { it.toJson() })
-        zip.writeJson("folders.json", folders.toJsonArray { it.toJson() })
+        zip.writeJson("folders.json", folders.toJsonArray { it.toBackupJsonObject() })
         zip.writeJson("folder_sticky_notes.json", folderStickyNotes.toJsonArray { it.toJson() })
         zip.writeJson("notes.json", notes.toJsonArray { it.toJson() })
         zip.writeJson("blocks.json", blocks.toJsonArray { it.toJson() })
@@ -1277,7 +1278,7 @@ internal fun backupFileEntryIfAvailable(id: String, localPath: String): String {
     return if (file.exists() && file.isFile) "files/$id" else ""
 }
 
-private fun FolderEntity.toJson(): JSONObject =
+internal fun FolderEntity.toBackupJsonObject(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("parentId", parentId)
@@ -1289,6 +1290,7 @@ private fun FolderEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
         .put("deletedAt", deletedAt)
+        .put("colorKey", colorKey)
 
 private fun CourseEntity.toJson(): JSONObject =
     JSONObject()
@@ -1483,7 +1485,7 @@ private fun AttachmentEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("deletedAt", deletedAt)
 
-private fun JSONObject.toFolderEntity(): FolderEntity =
+internal fun JSONObject.toBackupFolderEntity(): FolderEntity =
     FolderEntity(
         id = getString("id"),
         parentId = optNullableString("parentId"),
@@ -1495,6 +1497,7 @@ private fun JSONObject.toFolderEntity(): FolderEntity =
         createdAt = getLong("createdAt"),
         updatedAt = getLong("updatedAt"),
         deletedAt = optNullableLong("deletedAt"),
+        colorKey = normalizeFolderColorKey(optNullableString("colorKey")),
     )
 
 private fun JSONObject.toCourseEntity(): CourseEntity =
