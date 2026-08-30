@@ -1,7 +1,9 @@
 package com.myvault.app.data.sync
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GoogleDriveManifestRepairTest {
@@ -11,7 +13,6 @@ class GoogleDriveManifestRepairTest {
             reusableDriveEntryId(
                 isAttachmentFile = true,
                 contentMatches = true,
-                manifestFileId = "deleted-drive-id",
                 currentFileIdByName = null,
             ),
         )
@@ -24,22 +25,29 @@ class GoogleDriveManifestRepairTest {
             reusableDriveEntryId(
                 isAttachmentFile = true,
                 contentMatches = true,
-                manifestFileId = "deleted-drive-id",
                 currentFileIdByName = "current-drive-id",
             ),
         )
     }
 
     @Test
-    fun unchangedMetadataMayStillReuseItsManifestId() {
-        assertEquals(
-            "metadata-drive-id",
+    fun metadataIsReuploadedEvenWhenTheOldManifestClaimsItIsUnchanged() {
+        assertNull(
             reusableDriveEntryId(
                 isAttachmentFile = false,
                 contentMatches = true,
-                manifestFileId = "metadata-drive-id",
                 currentFileIdByName = null,
             ),
         )
+    }
+
+    @Test
+    fun uploadedMetadataMustMatchBothManifestSizeAndChecksum() {
+        val bytes = "[{\"id\":\"attachment-id\"}]".toByteArray()
+        val checksum = "ef54ae1f5a65c59c51827df8bfef4b8ff28e48b409f04a2d6a7443da9603c107"
+
+        assertTrue(uploadedBytesMatchManifest(bytes, bytes.size.toLong(), checksum))
+        assertFalse(uploadedBytesMatchManifest(bytes + '!'.code.toByte(), bytes.size.toLong(), checksum))
+        assertFalse(uploadedBytesMatchManifest(bytes, bytes.size.toLong(), "0".repeat(64)))
     }
 }

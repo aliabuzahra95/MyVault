@@ -46,6 +46,9 @@ internal fun shouldRefreshDriveToken(responseCode: Int, attempt: Int): Boolean =
 internal fun hasNewerRemoteDriveVersion(remoteVersion: Long, accountManifestVersion: Long): Boolean =
     remoteVersion > 0L && remoteVersion > accountManifestVersion
 
+internal fun uploadedBytesMatchManifest(bytes: ByteArray, expectedSize: Long, expectedSha256: String): Boolean =
+    bytes.size.toLong() == expectedSize && bytes.sha256() == expectedSha256
+
 private class DriveAuthenticationException : IllegalStateException(DriveReconnectMessage)
 
 private fun Throwable.isInterruptedDriveConnection(): Boolean {
@@ -172,7 +175,6 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     val reusableId = reusableDriveEntryId(
                         isAttachmentFile = entry.kind == EntryKindFile,
                         contentMatches = true,
-                        manifestFileId = remote.cloudFileId,
                         currentFileIdByName = currentDriveFile?.id,
                     )
                     if (!reusableId.isNullOrBlank()) {
@@ -203,7 +205,14 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     source = entry.file,
                 )
                 entry.cloudFileId = uploaded.id
-                if (entry.kind == EntryKindFile) uploadedFiles += 1 else uploadedMetadata += 1
+                if (entry.kind == EntryKindFile) {
+                    uploadedFiles += 1
+                } else {
+                    check(drive.uploadedFileMatches(uploaded.id, entry.size, entry.sha256)) {
+                        "Google Drive metadata verification failed for ${entry.fileName}. The backup manifest was not published."
+                    }
+                    uploadedMetadata += 1
+                }
                 onProgress(
                     DriveRestoreProgress(
                         stage = DriveRestoreStage.Uploading,
@@ -658,6 +667,13 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         fun downloadJsonObject(fileId: String): JSONObject =
             JSONObject(requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null).toString(Charsets.UTF_8))
 
+        fun uploadedFileMatches(fileId: String, expectedSize: Long, expectedSha256: String): Boolean =
+            uploadedBytesMatchManifest(
+                bytes = requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null),
+                expectedSize = expectedSize,
+                expectedSha256 = expectedSha256,
+            )
+
         suspend fun copyFileToWithRetry(fileId: String, output: OutputStream) {
             val temp = File.createTempFile("myvault-drive-download-", ".tmp", context.cacheDir)
             try {
@@ -902,16 +918,16 @@ private fun OutputStream.writeUtf8(value: String) {
 internal fun reusableDriveEntryId(
     isAttachmentFile: Boolean,
     contentMatches: Boolean,
-    manifestFileId: String,
     currentFileIdByName: String?,
 ): String? {
-    if (!contentMatches) return null
-    return if (isAttachmentFile) {
-        currentFileIdByName?.takeIf { it.isNotBlank() }
-    } else {
-        manifestFileId.takeIf { it.isNotBlank() }
-    }
+    if (!isAttachmentFile || !contentMatches) return null
+    return currentFileIdByName?.takeIf { it.isNotBlank() }
 }
+
+private fun ByteArray.sha256(): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(this)
+        .joinToString("") { "%02x".format(it) }
 
 sealed interface DriveSyncResult {
     data class Success(val message: String) : DriveSyncResult
