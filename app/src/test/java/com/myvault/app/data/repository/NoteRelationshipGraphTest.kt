@@ -63,7 +63,46 @@ class NoteRelationshipGraphTest {
         assertEquals(listOf(null, null), sanitized.map { it.parentNoteId })
     }
 
-    private fun note(id: String, parentId: String? = null, folderId: String = "folder") = NoteEntity(
+    @Test
+    fun sanitizedForAvailableFolders_preservesRootAndValidFolderNotes() {
+        val notes = listOf(
+            note("root", folderId = null),
+            note("filed", folderId = "available"),
+        )
+
+        val sanitized = NoteRelationshipGraph.sanitizedForAvailableFolders(notes, setOf("available"))
+
+        assertEquals(listOf(null, "available"), sanitized.map { it.folderId })
+    }
+
+    @Test
+    fun sanitizedForAvailableFolders_recoversOrphansWithoutDroppingHierarchy() {
+        val notes = listOf(
+            note("orphan-parent", folderId = "missing"),
+            note("orphan-child", parentId = "orphan-parent", folderId = "missing"),
+        )
+
+        val sanitized = NoteRelationshipGraph.sanitizedForAvailableFolders(notes, emptySet())
+
+        assertEquals(listOf(null, null), sanitized.map { it.folderId })
+        assertEquals("orphan-parent", sanitized.last().parentNoteId)
+    }
+
+    @Test
+    fun withMissingFolders_distinguishesOrphansFromValidRootNotes() {
+        val notes = listOf(
+            note("root", folderId = null),
+            note("filed", folderId = "available"),
+            note("orphan", folderId = "missing"),
+        )
+
+        assertEquals(
+            listOf("orphan"),
+            NoteRelationshipGraph.withMissingFolders(notes, setOf("available")).map { it.id },
+        )
+    }
+
+    private fun note(id: String, parentId: String? = null, folderId: String? = "folder") = NoteEntity(
         id = id,
         folderId = folderId,
         parentNoteId = parentId,

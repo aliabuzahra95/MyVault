@@ -187,7 +187,10 @@ class BackupRepository @Inject constructor(
         val folders = folderDao.getAllIncludingDeleted()
         val folderIds = folders.map { it.id }.toSet()
         val folderStickyNotes = folderStickyNoteDao.getAll().filter { it.folderId in folderIds }
-        val notes = NoteRelationshipGraph.sanitizedForPersistence(noteDao.getAllIncludingDeleted())
+        val notes = NoteRelationshipGraph.sanitizedForAvailableFolders(
+            notes = noteDao.getAllIncludingDeleted(),
+            availableFolderIds = folderIds,
+        )
         val backupNoteIds = notes.map { it.id }.toSet()
         val blocks = blockDao.getAll().filter { it.noteId in backupNoteIds }
         val tags = tagDao.getAll()
@@ -563,9 +566,13 @@ class BackupRepository @Inject constructor(
             val folderStickyNotes = entries.optionalJsonArray("folder_sticky_notes.json")
                 .mapJson { it.toFolderStickyNoteEntity() }
                 .filter { it.folderId in restoredFolderIds && it.text.isNotBlank() }
-            val notes = NoteRelationshipGraph.sanitizedForPersistence(
-                entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() },
-            )
+            val restoredNotes = entries.requireJsonArray("notes.json").mapJson { it.toNoteEntity() }
+            val missingFolderNotes = NoteRelationshipGraph.withMissingFolders(restoredNotes, restoredFolderIds)
+            check(missingFolderNotes.isEmpty()) {
+                val note = missingFolderNotes.first()
+                "Restore contains note \"${note.title}\" (${note.id}) without matching folder ${note.folderId}."
+            }
+            val notes = NoteRelationshipGraph.sanitizedForPersistence(restoredNotes)
             val restoredNoteIds = notes.map { it.id }.toSet()
             val courses = entries.optionalJsonArray("courses.json")
                 .mapJson { it.toCourseEntity() }
@@ -699,6 +706,7 @@ class BackupRepository @Inject constructor(
                 if (sourceBacklinks.isNotEmpty()) sourceBacklinkDao.upsertAll(sourceBacklinks)
                 if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
                 if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
+                noteDao.clearMissingFolderReferences()
             }
             backedUpPreferences?.let { vaultPreferences.restoreBackedUpPreferences(it) }
 

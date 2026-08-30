@@ -51,6 +51,9 @@ interface NoteDao {
     @Query("UPDATE notes SET folderId = :folderId, updatedAt = :updatedAt WHERE id IN (:ids)")
     suspend fun updateFolderForIds(ids: List<String>, folderId: String?, updatedAt: Long)
 
+    @Query("UPDATE notes SET folderId = NULL WHERE folderId IS NOT NULL AND folderId NOT IN (SELECT id FROM folders)")
+    suspend fun clearMissingFolderReferences(): Int
+
     @Query("UPDATE notes SET folderId = :folderId, parentNoteId = :parentNoteId, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateFolderAndParent(id: String, folderId: String?, parentNoteId: String?, updatedAt: Long)
 

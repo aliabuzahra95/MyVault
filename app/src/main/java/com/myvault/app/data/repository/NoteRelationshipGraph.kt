@@ -30,6 +30,27 @@ internal object NoteRelationshipGraph {
         }
     }
 
+    fun sanitizedForAvailableFolders(
+        notes: List<NoteEntity>,
+        availableFolderIds: Set<String>,
+    ): List<NoteEntity> {
+        val recovered = notes.map { note ->
+            if (note.folderId != null && note.folderId !in availableFolderIds) {
+                note.copy(folderId = null)
+            } else {
+                note
+            }
+        }
+        return sanitizedForPersistence(recovered)
+    }
+
+    fun withMissingFolders(
+        notes: List<NoteEntity>,
+        availableFolderIds: Set<String>,
+    ): List<NoteEntity> = notes.filter { note ->
+        note.folderId != null && note.folderId !in availableFolderIds
+    }
+
     fun isValid(notes: List<NoteEntity>): Boolean =
         sanitizedForPersistence(notes) == notes
 
