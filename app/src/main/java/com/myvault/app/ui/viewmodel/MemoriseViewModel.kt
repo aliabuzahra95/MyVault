@@ -1,5 +1,6 @@
 package com.myvault.app.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.preferences.VaultPreferences
@@ -15,6 +16,7 @@ import com.myvault.app.data.quran.memorization.QuranMemorizationAttempt
 import com.myvault.app.data.quran.memorization.QuranSurahMemorizationAttempt
 import com.myvault.app.data.quran.memorization.toSavedAttempt
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +27,9 @@ import kotlinx.coroutines.launch
 class MemoriseViewModel @Inject constructor(
     private val vaultPreferences: VaultPreferences,
     private val quranTextRepository: QuranTextRepository,
+    @ApplicationContext context: Context,
 ) : ViewModel() {
+    private val sessionPositions = context.getSharedPreferences("memorise_surah_positions", Context.MODE_PRIVATE)
     private val _uiState = MutableStateFlow(MemorizationUiState())
     val uiState: StateFlow<MemorizationUiState> = _uiState.asStateFlow()
     private val _sessionState = MutableStateFlow(MemoriseSessionUiState())
@@ -94,15 +98,31 @@ class MemoriseViewModel @Inject constructor(
         }
     }
 
+    fun openSurah(surahNumber: Int, preferredAyah: Int? = null) {
+        openWholeSurahInternal(surahNumber, preferredAyah, autoRecord = false)
+    }
+
     fun openWholeSurah(surahNumber: Int = _uiState.value.selectedSurah.num) {
+        openWholeSurahInternal(surahNumber, preferredAyah = null, autoRecord = true)
+    }
+
+    private fun openWholeSurahInternal(surahNumber: Int, preferredAyah: Int?, autoRecord: Boolean) {
         val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: return
-        _uiState.value = _uiState.value.copy(selectedSurah = surah, selectedAyah = 1)
+        val persistedAyah = sessionPositions.getInt("surah_$surahNumber", 0).takeIf { it in 1..surah.ayat }
+        val targetAyah = memoriseResumeAyah(
+            surah = surah,
+            records = _uiState.value.records,
+            explicitAyah = preferredAyah?.takeIf { it in 1..surah.ayat } ?: persistedAyah,
+        )
+        _uiState.value = _uiState.value.copy(selectedSurah = surah, selectedAyah = targetAyah)
         _sessionState.value = MemoriseSessionUiState(
             active = true,
             loading = true,
             wholeSurah = true,
             surah = surah,
-            targetAyahNumber = 1,
+            targetAyahNumber = targetAyah,
+            statusLabels = _uiState.value.records.forSurahStatusLabels(surahNumber),
+            autoRecordRequestId = if (autoRecord) System.nanoTime() else 0L,
         )
         viewModelScope.launch {
             runCatching { quranTextRepository.getSurahAyahs(surah.num, QuranTranslationSource.SahihInternational) }
@@ -110,7 +130,7 @@ class MemoriseViewModel @Inject constructor(
                     _sessionState.value = _sessionState.value.copy(
                         loading = false,
                         ayahs = ayahs,
-                        ayah = ayahs.firstOrNull(),
+                        ayah = ayahs.firstOrNull { it.ayahNumber == targetAyah } ?: ayahs.firstOrNull(),
                         errorMessage = if (ayahs.isEmpty()) "This Surah could not be loaded." else null,
                     )
                 }
@@ -121,6 +141,18 @@ class MemoriseViewModel @Inject constructor(
                     )
                 }
         }
+    }
+
+    fun updateSurahPosition(surahNumber: Int, ayahNumber: Int) {
+        val state = _sessionState.value
+        if (!state.active || !state.wholeSurah || state.surah.num != surahNumber || ayahNumber !in 1..state.surah.ayat) return
+        if (state.targetAyahNumber != ayahNumber) {
+            _sessionState.value = state.copy(
+                targetAyahNumber = ayahNumber,
+                ayah = state.ayahs.firstOrNull { it.ayahNumber == ayahNumber } ?: state.ayah,
+            )
+        }
+        sessionPositions.edit().putInt("surah_$surahNumber", ayahNumber).apply()
     }
 
     fun openNextAyah(): Boolean {
@@ -199,6 +231,11 @@ class MemoriseViewModel @Inject constructor(
                     updatedAt = now,
                 )
             }
+        }
+        if (_sessionState.value.wholeSurah && _sessionState.value.surah.num == surah) {
+            _sessionState.value = _sessionState.value.copy(
+                statusLabels = _sessionState.value.statusLabels + (ayah to status.label),
+            )
         }
     }
 
@@ -380,9 +417,41 @@ data class MemoriseSessionUiState(
     val targetAyahNumber: Int = 1,
     val ayah: QuranAyah? = null,
     val ayahs: List<QuranAyah> = emptyList(),
+    val statusLabels: Map<Int, String> = emptyMap(),
     val autoRecordRequestId: Long = 0L,
     val errorMessage: String? = null,
 )
+
+internal fun memoriseResumeAyah(
+    surah: SurahInfo,
+    records: List<MemorizationRecord>,
+    explicitAyah: Int?,
+): Int {
+    explicitAyah?.takeIf { it in 1..surah.ayat }?.let { return it }
+    val recordsByAyah = records.filter { it.surahNumber == surah.num }.associateBy { it.ayahNumber }
+    var highestContiguousMemorised = 0
+    for (ayah in 1..surah.ayat) {
+        if (recordsByAyah[ayah]?.isMemorized == true) highestContiguousMemorised = ayah else break
+    }
+    if (highestContiguousMemorised in 1 until surah.ayat) return highestContiguousMemorised + 1
+    recordsByAyah.values
+        .filter { it.isMemorising || it.isRevision || it.isNeedsRevision || it.isIncorrect || it.isWeak }
+        .minByOrNull { it.ayahNumber }
+        ?.ayahNumber
+        ?.let { return it }
+    return 1
+}
+
+private fun List<MemorizationRecord>.forSurahStatusLabels(surahNumber: Int): Map<Int, String> =
+    filter { it.surahNumber == surahNumber }.associate { record ->
+        record.ayahNumber to when {
+            record.isMemorized -> MemoriseStatusChoice.Memorised.label
+            record.isIncorrect -> MemoriseStatusChoice.Incorrect.label
+            record.isWeak -> MemoriseStatusChoice.Difficult.label
+            record.isRevision || record.isNeedsRevision -> MemoriseStatusChoice.Revision.label
+            else -> MemoriseStatusChoice.InProgress.label
+        }
+    }
 
 private fun parseVerseKey(verseKey: String): Pair<Int, Int>? {
     val surah = verseKey.substringBefore(':').toIntOrNull() ?: return null

@@ -1,9 +1,9 @@
 package com.myvault.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,9 @@ import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.HomeQuranContinue
 import com.myvault.app.data.quran.QuranReflectionItem
+import com.myvault.app.data.repository.DashboardActivityItem
+import com.myvault.app.data.repository.DashboardActivityKind
+import com.myvault.app.data.repository.DashboardActivityState
 
 @Composable
 internal fun FrozenDestinationHeader(
@@ -82,7 +86,7 @@ internal fun FrozenDestinationHeader(
 @Composable
 internal fun FrozenDashboardScreen(
     continueFile: LibraryFileItem?,
-    recentFiles: List<LibraryFileItem>,
+    activityState: DashboardActivityState,
     pinnedNotes: List<VaultNoteCardData>,
     pinnedFiles: List<LibraryFileItem>,
     quranContinue: HomeQuranContinue?,
@@ -91,13 +95,11 @@ internal fun FrozenDashboardScreen(
     onOpenNote: (String) -> Unit,
     onOpenFile: (String) -> Unit,
     onOpenQuran: (String) -> Unit,
+    onOpenActivity: (DashboardActivityItem) -> Unit,
     onOpenReflection: (QuranReflectionItem) -> Unit,
     onViewAllReflections: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = VaultThemeTokens.colors
-    val hasContent = continueFile != null || quranContinue != null || recentFiles.isNotEmpty() ||
-        reflections.isNotEmpty() || pinnedNotes.isNotEmpty() || pinnedFiles.isNotEmpty()
     Column(modifier.fillMaxSize()) {
         FrozenDestinationHeader("Dashboard", "Continue where you left off", onMenuClick)
         LazyColumn(
@@ -105,25 +107,30 @@ internal fun FrozenDashboardScreen(
             contentPadding = PaddingValues(horizontal = VaultSpacing.screen, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            if (continueFile != null || quranContinue != null) {
-                item {
-                    DashboardSection("Continue") {
-                        DashboardContinueGrid(
-                            continueFile = continueFile,
-                            quranContinue = quranContinue,
-                            onOpenFile = onOpenFile,
-                            onOpenQuran = onOpenQuran,
-                        )
-                    }
+            item {
+                DashboardSection("Continue") {
+                    DashboardContinueGrid(
+                        continueFile = continueFile,
+                        activityState = activityState,
+                        quranContinue = quranContinue,
+                        onOpenFile = onOpenFile,
+                        onOpenQuran = onOpenQuran,
+                        onOpenActivity = onOpenActivity,
+                    )
                 }
             }
-            if (recentFiles.isNotEmpty()) {
+            if (activityState.recents.isNotEmpty()) {
                 item {
                     DashboardSection("Recent", "Recently opened") {
                         Column {
-                            recentFiles.take(4).forEach { file ->
-                                DashboardRow(file.name, "Library · ${file.kind}", Icons.Rounded.Description) {
-                                    onOpenFile(file.id)
+                            activityState.recents.take(4).forEach { recent ->
+                                val icon = when (recent.kind) {
+                                    DashboardActivityKind.Note -> Icons.Rounded.Description
+                                    DashboardActivityKind.Library -> Icons.Rounded.PictureAsPdf
+                                    DashboardActivityKind.Course -> Icons.Rounded.School
+                                }
+                                DashboardRow(recent.title, recent.context, icon) {
+                                    onOpenActivity(recent)
                                 }
                             }
                         }
@@ -158,20 +165,6 @@ internal fun FrozenDashboardScreen(
                     }
                 }
             }
-            if (!hasContent) {
-                item {
-                    Column(
-                        modifier = Modifier.fillParentMaxHeight(0.72f).fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.MenuBook, null, Modifier.size(23.dp), tint = colors.textMuted)
-                        Spacer(Modifier.height(7.dp))
-                        Text("Nothing to continue yet", fontSize = 13.sp, fontWeight = FontWeight.W700, color = colors.text)
-                        Text("Recently opened and pinned items will appear here.", fontSize = 10.5.sp, color = colors.textMuted)
-                    }
-                }
-            }
         }
     }
 }
@@ -179,67 +172,109 @@ internal fun FrozenDashboardScreen(
 @Composable
 private fun DashboardContinueGrid(
     continueFile: LibraryFileItem?,
+    activityState: DashboardActivityState,
     quranContinue: HomeQuranContinue?,
     onOpenFile: (String) -> Unit,
     onOpenQuran: (String) -> Unit,
+    onOpenActivity: (DashboardActivityItem) -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val stackCards = maxWidth < 320.dp
-        if (continueFile != null && quranContinue != null) {
-            if (stackCards) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DashboardPdfContinueCard(continueFile, onOpenFile, Modifier.fillMaxWidth().height(180.dp))
-                    DashboardQuranContinueCard(quranContinue, onOpenQuran, Modifier.fillMaxWidth().height(180.dp))
-                }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DashboardQuranContinueCard(quranContinue, onOpenQuran, Modifier.weight(1f).height(132.dp))
+            DashboardActivityContinueCard(
+                type = "Notes",
+                item = activityState.lastNote,
+                emptyLabel = "No recent note",
+                icon = Icons.Rounded.Description,
+                onOpen = onOpenActivity,
+                modifier = Modifier.weight(1f).height(132.dp),
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val libraryActivity = activityState.lastLibrary
+            if (libraryActivity != null) {
+                DashboardActivityContinueCard(
+                    type = "Library",
+                    item = libraryActivity,
+                    emptyLabel = "No recent file",
+                    icon = Icons.Rounded.PictureAsPdf,
+                    onOpen = onOpenActivity,
+                    modifier = Modifier.weight(1f).height(132.dp),
+                )
             } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DashboardPdfContinueCard(continueFile, onOpenFile, Modifier.weight(1f).height(196.dp))
-                    DashboardQuranContinueCard(quranContinue, onOpenQuran, Modifier.weight(1f).height(196.dp))
-                }
+                DashboardPdfContinueCard(continueFile, onOpenFile, Modifier.weight(1f).height(132.dp))
             }
-        } else {
-            continueFile?.let {
-                DashboardPdfContinueCard(it, onOpenFile, Modifier.fillMaxWidth().height(180.dp))
-            }
-            quranContinue?.let {
-                DashboardQuranContinueCard(it, onOpenQuran, Modifier.fillMaxWidth().height(180.dp))
-            }
+            DashboardActivityContinueCard(
+                type = "Courses",
+                item = activityState.lastCourse,
+                emptyLabel = "No recent course note",
+                icon = Icons.Rounded.School,
+                onOpen = onOpenActivity,
+                modifier = Modifier.weight(1f).height(132.dp),
+            )
         }
     }
 }
 
 @Composable
 private fun DashboardPdfContinueCard(
-    file: LibraryFileItem,
+    file: LibraryFileItem?,
     onOpenFile: (String) -> Unit,
     modifier: Modifier,
 ) {
     DashboardContinueCard(
         type = "PDF",
-        title = file.name.withoutPdfExtension(),
+        title = file?.name?.withoutPdfExtension() ?: "No recent file",
         metadata = when {
-            file.pageIndex != null && file.pageCount != null -> "Page ${file.pageIndex + 1} of ${file.pageCount}"
-            file.pageIndex != null -> "Page ${file.pageIndex + 1}"
-            else -> "Document"
+            file?.pageIndex != null && file.pageCount != null -> "Page ${file.pageIndex + 1} of ${file.pageCount}"
+            file?.pageIndex != null -> "Page ${file.pageIndex + 1}"
+            file != null -> "Document"
+            else -> "Library"
         },
         icon = Icons.Rounded.PictureAsPdf,
-        onClick = { onOpenFile(file.id) },
+        onClick = file?.let { { onOpenFile(it.id) } },
         modifier = modifier,
     )
 }
 
 @Composable
 private fun DashboardQuranContinueCard(
-    quran: HomeQuranContinue,
+    quran: HomeQuranContinue?,
     onOpenQuran: (String) -> Unit,
     modifier: Modifier,
 ) {
     DashboardContinueCard(
         type = "Qur'an",
-        title = quran.surahName,
-        metadata = "${quran.surahNumber}:${quran.ayahNumber}",
+        title = quran?.surahName ?: "No recent location",
+        metadata = quran?.let { "${it.surahNumber}:${it.ayahNumber}" } ?: "Qur'an",
         icon = Icons.AutoMirrored.Rounded.MenuBook,
-        onClick = { onOpenQuran(quran.verseKey) },
+        onClick = quran?.let { { onOpenQuran(it.verseKey) } },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun DashboardActivityContinueCard(
+    type: String,
+    item: DashboardActivityItem?,
+    emptyLabel: String,
+    icon: ImageVector,
+    onOpen: (DashboardActivityItem) -> Unit,
+    modifier: Modifier,
+) {
+    val metadata = when {
+        item == null -> type
+        item.kind == DashboardActivityKind.Library && item.pageIndex != null && item.pageCount != null ->
+            "Page ${item.pageIndex + 1} of ${item.pageCount}"
+        item.kind == DashboardActivityKind.Library && item.pageIndex != null -> "Page ${item.pageIndex + 1}"
+        else -> item.context
+    }
+    DashboardContinueCard(
+        type = type,
+        title = item?.title ?: emptyLabel,
+        metadata = metadata,
+        icon = icon,
+        onClick = item?.let { { onOpen(it) } },
         modifier = modifier,
     )
 }
@@ -250,13 +285,12 @@ private fun DashboardContinueCard(
     title: String,
     metadata: String,
     icon: ImageVector,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
-        onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         shape = VaultShapes.lg,
         color = colors.surface,
         border = BorderStroke(1.dp, colors.border),
@@ -265,22 +299,18 @@ private fun DashboardContinueCard(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(icon, null, Modifier.size(20.dp), tint = colors.textSecondary)
-            Text(
-                type.uppercase(),
-                modifier = Modifier.padding(top = 5.dp),
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.W700,
-                color = colors.textMuted,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Icon(icon, null, Modifier.size(16.dp), tint = colors.textSecondary)
+                Text(type.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.W700, color = colors.textMuted)
+            }
             Box(
-                modifier = Modifier.fillMaxWidth().height(60.dp).padding(top = 6.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp).padding(top = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     title,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 12.5.sp,
+                    lineHeight = 15.5.sp,
                     fontWeight = FontWeight.W700,
                     color = colors.text,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -289,14 +319,14 @@ private fun DashboardContinueCard(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(metadata, fontSize = 11.5.sp, color = colors.textMuted, maxLines = 1)
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
+            Text(metadata, fontSize = 9.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (onClick != null) Row(
+                modifier = Modifier.padding(top = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text("Continue", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.textSecondary)
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, Modifier.size(14.dp), tint = colors.textMuted)
+                Text("Continue", fontSize = 9.5.sp, fontWeight = FontWeight.W700, color = colors.textSecondary)
+                Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, Modifier.size(12.dp), tint = colors.textMuted)
             }
         }
     }

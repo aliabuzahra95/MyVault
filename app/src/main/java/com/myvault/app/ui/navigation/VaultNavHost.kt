@@ -70,6 +70,7 @@ import androidx.navigation.navArgument
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
+import com.myvault.app.data.repository.DashboardActivityKind
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
@@ -107,6 +108,7 @@ import com.myvault.app.ui.viewmodel.AttachmentsViewModel
 import com.myvault.app.ui.viewmodel.AttachmentViewerViewModel
 import com.myvault.app.ui.viewmodel.CoursesViewModel
 import com.myvault.app.ui.viewmodel.CoursesUiState
+import com.myvault.app.ui.viewmodel.DashboardActivityViewModel
 import com.myvault.app.ui.viewmodel.FolderViewModel
 import com.myvault.app.ui.viewmodel.HomeViewModel
 import com.myvault.app.ui.viewmodel.HomeUiState
@@ -179,6 +181,8 @@ fun VaultNavHost(
     val coursesState by coursesViewModel.uiState.collectAsStateWithLifecycle()
     val libraryViewModel: LibraryViewModel = hiltViewModel()
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
+    val dashboardActivityViewModel: DashboardActivityViewModel = hiltViewModel()
+    val dashboardActivityState by dashboardActivityViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
     val routeMotionDisabled = remember(context) {
@@ -767,6 +771,7 @@ fun VaultNavHost(
                         sessionState = memoriseSessionState,
                         onOpenNavigation = onOpenNavigation,
                         onOpenSession = memoriseViewModel::openSession,
+                        onOpenSurah = memoriseViewModel::openSurah,
                         onOpenWholeSurah = memoriseViewModel::openWholeSurah,
                         onCloseSession = memoriseViewModel::closeSession,
                         onNextAyah = memoriseViewModel::openNextAyah,
@@ -774,6 +779,7 @@ fun VaultNavHost(
                         onSetStatus = memoriseViewModel::setStatus,
                         onRecordAttempt = memoriseViewModel::recordAttempt,
                         onRecordSurahAttempt = memoriseViewModel::recordSurahAttempt,
+                        onSurahPositionChanged = memoriseViewModel::updateSurahPosition,
                     )
                 },
                 libraryContent = {
@@ -1034,7 +1040,7 @@ fun VaultNavHost(
         composable(VaultDestination.Dashboard.route) {
             FrozenDashboardScreen(
                 continueFile = libraryState.continueReading,
-                recentFiles = libraryState.recentFiles,
+                activityState = dashboardActivityState,
                 pinnedNotes = if (preferences.workspace == WORKSPACE_PERSONAL) personalState.pinnedNotes else studyState.pinnedNotes,
                 pinnedFiles = libraryState.pinnedFiles,
                 quranContinue = if (preferences.workspace == WORKSPACE_PERSONAL) null else studyState.quranContinue,
@@ -1047,6 +1053,18 @@ fun VaultNavHost(
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
                     selectedIslamicRootMode = VaultRootMode.Quran.name
                     navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
+                },
+                onOpenActivity = { activity ->
+                    when (activity.kind) {
+                        DashboardActivityKind.Note -> openNote(activity.destinationId)
+                        DashboardActivityKind.Library -> navController.navigate(
+                            VaultDestination.AttachmentViewer.route(activity.destinationId, activity.pageIndex ?: -1),
+                        )
+                        DashboardActivityKind.Course -> {
+                            activity.courseId?.let { revealCourseLocation(it, activity.folderId) }
+                            openNote(activity.destinationId)
+                        }
+                    }
                 },
                 onOpenReflection = { reflection ->
                     pendingQuranVerseKey = reflection.verseKey
@@ -1217,6 +1235,9 @@ fun VaultNavHost(
             val viewModel: NoteViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val formattingState by viewModel.formattingState.collectAsStateWithLifecycle()
+            LaunchedEffect(uiState.note?.id) {
+                uiState.note?.id?.let(dashboardActivityViewModel::recordNoteOpened)
+            }
             EditorScreen(
                 uiState = uiState,
                 formattingState = formattingState,
@@ -1267,6 +1288,9 @@ fun VaultNavHost(
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val narrationState by viewModel.narrationState.collectAsStateWithLifecycle()
             val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
+            LaunchedEffect(uiState.note?.id) {
+                uiState.note?.id?.let(dashboardActivityViewModel::recordNoteOpened)
+            }
             ReadingScreen(
                 uiState = uiState,
                 narrationState = narrationState,
@@ -1358,6 +1382,12 @@ fun VaultNavHost(
                     selectedIslamicRootMode = VaultRootMode.Courses.name
                     navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
+                onQuranClick = { verseKey ->
+                    pendingQuranVerseKey = verseKey
+                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
+                    navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
+                },
             )
         }
         composable(VaultDestination.Favourites.route) {
@@ -1406,6 +1436,9 @@ fun VaultNavHost(
             val pdfAnnotationTags by viewModel.annotationTags.collectAsStateWithLifecycle()
             val documentText by viewModel.documentText.collectAsStateWithLifecycle()
             val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
+            LaunchedEffect(attachment?.id) {
+                attachment?.id?.let(dashboardActivityViewModel::recordLibraryOpened)
+            }
             AttachmentViewerScreen(
                 attachment = attachment,
                 pdfProgress = pdfProgress,
@@ -1425,7 +1458,10 @@ fun VaultNavHost(
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = onOpenNavigation,
                 onOwnHeaderChanged = { attachmentViewerOwnsHeader = it },
-                onPdfProgressChanged = viewModel::updatePdfProgress,
+                onPdfProgressChanged = { pageIndex, pageCount ->
+                    viewModel.updatePdfProgress(pageIndex, pageCount)
+                    attachment?.id?.let { dashboardActivityViewModel.updateLibraryProgress(it, pageIndex, pageCount) }
+                },
                 onPdfFirstLoaded = viewModel::loadPdfSecondaryData,
                 onAddPdfHighlight = viewModel::addPdfHighlight,
                 onAddPdfSelectedTextAnnotation = viewModel::addPdfSelectedTextAnnotation,

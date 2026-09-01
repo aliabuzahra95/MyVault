@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -58,13 +59,15 @@ fun SearchScreen(
     onFolderClick: (FolderEntity) -> Unit,
     onFileClick: (String) -> Unit,
     onCourseClick: (String) -> Unit,
+    onQuranClick: (String) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val query = uiState.query
     val normalized = query.trim()
     val matchingFiles = if (normalized.isBlank()) emptyList() else files.filter { it.name.contains(normalized, true) }
     val matchingCourses = if (normalized.isBlank()) emptyList() else courses.filter { it.title.contains(normalized, true) }
-    val hasResults = uiState.notes.isNotEmpty() || uiState.folders.isNotEmpty() || matchingFiles.isNotEmpty() || matchingCourses.isNotEmpty()
+    val hasResults = uiState.notes.isNotEmpty() || uiState.folders.isNotEmpty() || matchingFiles.isNotEmpty() ||
+        matchingCourses.isNotEmpty() || uiState.quran.isNotEmpty()
     BackHandler(enabled = query.isNotBlank()) { onQueryChange("") }
 
     Column(modifier.fillMaxSize()) {
@@ -110,7 +113,7 @@ fun SearchScreen(
                 }
             }
             if (normalized.isBlank()) {
-                item { SearchEmptyState("Search across MyVault", "Find notes, folders, files and courses.") }
+                item { SearchEmptyState("Search across MyVault", "Find notes, folders, files, courses and Qur'an.") }
             } else if (!hasResults) {
                 item { SearchEmptyState("No results", "Try a different title or folder name.") }
             } else {
@@ -136,6 +139,16 @@ fun SearchScreen(
                     item { SearchSectionLabel("Courses") }
                     items(matchingCourses, key = { "course:${it.id}" }) { course ->
                         SearchRow(course.title, "Course", Icons.Rounded.School) { onCourseClick(course.id) }
+                    }
+                }
+                if (uiState.quran.isNotEmpty()) {
+                    item { SearchSectionLabel("Qur'an") }
+                    items(uiState.quran, key = { "quran:${it.verseKey}" }) { result ->
+                        SearchRow(
+                            result.surahName,
+                            "${result.reference} · ${result.snippet}",
+                            Icons.AutoMirrored.Rounded.MenuBook,
+                        ) { onQuranClick(result.verseKey) }
                     }
                 }
                 item { Spacer(Modifier.height(VaultSpacing.huge)) }

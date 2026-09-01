@@ -8,10 +8,13 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.ui.components.SearchResultData
+import com.myvault.app.data.quran.QuranSearchResult
+import com.myvault.app.data.quran.QuranTextRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
 import kotlin.math.max
 import kotlin.math.min
 import javax.inject.Inject
@@ -22,6 +25,7 @@ class SearchRepository @Inject constructor(
     private val folderDao: FolderDao,
     private val searchDao: SearchDao,
     private val tagDao: TagDao,
+    private val quranTextRepository: QuranTextRepository,
 ) {
     fun searchNotes(query: String): Flow<List<SearchResultData>> {
         if (query.isBlank()) return flowOf(emptyList())
@@ -64,6 +68,10 @@ class SearchRepository @Inject constructor(
                 .take(40)
                 .toList()
         }
+    }
+
+    fun searchQuran(query: String): Flow<List<QuranSearchResult>> = flow {
+        emit(if (query.isBlank()) emptyList() else quranTextRepository.searchLocalCorpus(query))
     }
 }
 

@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,11 +76,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.Font
@@ -115,6 +116,7 @@ import com.myvault.app.ui.viewmodel.MemoriseSessionUiState
 import com.myvault.app.ui.viewmodel.MemoriseStatusChoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 private enum class MemoriseListenStage {
@@ -135,6 +137,7 @@ internal fun FrozenMemoriseSession(
     onSetStatus: (String, MemoriseStatusChoice) -> Unit,
     onAttemptCompleted: (QuranMemorizationAttempt) -> Unit,
     onSurahAttemptCompleted: (QuranSurahMemorizationAttempt) -> Unit,
+    onSurahPositionChanged: (Int, Int) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
@@ -304,8 +307,7 @@ internal fun FrozenMemoriseSession(
         onDispose { recorder.release() }
     }
 
-    val canvas = if (colors.bg.luminance() > 0.7f) Color(0xFFFBFAF5) else colors.bg
-    Column(Modifier.fillMaxSize().background(canvas)) {
+    Column(Modifier.fillMaxSize().background(colors.bg)) {
         MemoriseSessionHeader(
             sessionState = sessionState,
             onBack = onBack,
@@ -321,6 +323,7 @@ internal fun FrozenMemoriseSession(
                     hideMode = hideMode,
                     analysis = surahAnalysis,
                     resultVisible = stage == MemoriseListenStage.Results,
+                    onPositionChanged = { onSurahPositionChanged(sessionState.surah.num, it) },
                     modifier = Modifier.fillMaxSize(),
                 )
                 else -> MemoriseAyahCanvas(
@@ -416,11 +419,24 @@ private fun MemoriseWholeSurahCanvas(
     hideMode: MemoriseHideMode,
     analysis: QuranSurahMemorizationAnalysis?,
     resultVisible: Boolean,
+    onPositionChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     val resultsByAyah = analysis?.ayahResults?.associateBy { it.ayahNumber }.orEmpty()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (sessionState.targetAyahNumber - 1).coerceAtLeast(0),
+    )
+    LaunchedEffect(sessionState.surah.num, listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { index ->
+                val ayah = if (index == 0) 1 else index.coerceIn(1, sessionState.surah.ayat)
+                onPositionChanged(ayah)
+            }
+    }
     LazyColumn(
+        state = listState,
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -428,16 +444,22 @@ private fun MemoriseWholeSurahCanvas(
         item(key = "surah-session-heading") {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Continuous recitation · ${sessionState.surah.ayat} ayahs", color = colors.textMuted, fontSize = 9.5.sp)
-                    Text(sessionState.surah.arabic, color = colors.textMuted, fontSize = 10.sp)
+                    Text("Continuous recitation · ${sessionState.surah.ayat} ayahs", color = colors.textMuted, fontSize = 10.5.sp)
+                    Text(sessionState.surah.arabic, color = colors.textMuted, fontSize = 11.sp)
                 }
                 if (resultVisible) MemoriseSurahResultSummary(analysis, sessionState.surah.ayat)
-                else Text("Scroll naturally and recite across ayahs. Recording continues until you press Stop.", color = colors.textMuted, fontSize = 10.sp)
+                else Text("Scroll naturally and recite across ayahs. Recording continues until you press Stop.", color = colors.textMuted, fontSize = 11.sp)
             }
         }
         items(sessionState.ayahs, key = { it.verseKey }) { ayah ->
             val ayahResult = resultsByAyah[ayah.ayahNumber]
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${sessionState.surah.num}:${ayah.ayahNumber}", color = colors.textMuted, fontSize = 10.5.sp)
+                    sessionState.statusLabels[ayah.ayahNumber]?.let { status ->
+                        Text(status, color = colors.textSecondary, fontSize = 10.5.sp, fontWeight = FontWeight.W700)
+                    }
+                }
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -458,7 +480,7 @@ private fun MemoriseWholeSurahCanvas(
                     }
                 }
                 if (ayah.translation.isNotBlank()) {
-                    Text(ayah.translation, color = colors.textSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+                    Text(ayah.translation, color = colors.textSecondary, fontSize = 13.sp, lineHeight = 19.sp)
                 }
                 HorizontalDivider(color = colors.border.copy(alpha = 0.65f))
             }
@@ -587,8 +609,8 @@ private fun MemoriseWord(text: String, hidden: Boolean, state: QuranMemorization
             .then(if (state != null && state != QuranMemorizationWordState.CORRECT) Modifier.border(1.dp, borderColor, RoundedCornerShape(3.dp)).padding(horizontal = 2.dp) else Modifier),
         color = colors.text,
         fontFamily = MemoriseQuranFont,
-        fontSize = 27.sp,
-        lineHeight = 44.sp,
+        fontSize = 28.sp,
+        lineHeight = 45.sp,
         textDecoration = if (state == QuranMemorizationWordState.CORRECT) TextDecoration.Underline else TextDecoration.None,
     )
 }

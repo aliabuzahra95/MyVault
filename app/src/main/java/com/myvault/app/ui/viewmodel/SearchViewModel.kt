@@ -6,6 +6,7 @@ import com.myvault.app.data.local.DatabaseSeeder
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.repository.SearchRepository
 import com.myvault.app.ui.components.SearchResultData
+import com.myvault.app.data.quran.QuranSearchResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +24,7 @@ data class SearchUiState(
     val notes: List<SearchResultData> = emptyList(),
     val folders: List<FolderEntity> = emptyList(),
     val tags: List<String> = emptyList(),
+    val quran: List<QuranSearchResult> = emptyList(),
 )
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
@@ -41,17 +43,19 @@ class SearchViewModel @Inject constructor(
                 searchRepository.searchNotes(currentQuery),
                 searchRepository.searchFolders(currentQuery),
                 searchRepository.searchTags(currentQuery),
-            ) { notes, folders, tags ->
-                Triple(notes, folders, tags)
+                searchRepository.searchQuran(currentQuery),
+            ) { notes, folders, tags, quran ->
+                SearchResults(notes, folders, tags, quran)
             }
         }
 
     val uiState: StateFlow<SearchUiState> = combine(query, searchResults) { currentQuery, results ->
         SearchUiState(
             query = currentQuery,
-            notes = results.first,
-            folders = results.second,
-            tags = results.third,
+            notes = results.notes,
+            folders = results.folders,
+            tags = results.tags,
+            quran = results.quran,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState())
 
@@ -63,3 +67,10 @@ class SearchViewModel @Inject constructor(
         query.value = value
     }
 }
+
+private data class SearchResults(
+    val notes: List<SearchResultData>,
+    val folders: List<FolderEntity>,
+    val tags: List<String>,
+    val quran: List<QuranSearchResult>,
+)

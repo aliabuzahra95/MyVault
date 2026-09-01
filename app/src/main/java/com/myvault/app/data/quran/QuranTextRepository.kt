@@ -22,6 +22,7 @@ class QuranTextRepository @Inject constructor(
     private val maududiSurahCachedAt = mutableMapOf<String, Long>()
     private val jsonMutex = Mutex()
     private val surahMutex = Mutex()
+    private val searchMutex = Mutex()
     private var arabicSource: JSONObject? = null
     private var sahihTranslationByVerse: Map<String, QuranTranslationContent>? = null
     private var maududiTranslationByVerse: Map<String, QuranTranslationContent>? = null
@@ -29,7 +30,48 @@ class QuranTextRepository @Inject constructor(
     private var wordMetadataSource: QuranWordMetadataSource? = null
     private var tafsirByVerse: Map<String, String>? = null
     private var tafsirSources: List<TafsirSourceUiModel>? = null
+    private var localSearchIndex: List<Pair<SurahInfo, QuranAyah>>? = null
     private val remoteTafsirCache = LruCache<String, String>(48)
+
+    suspend fun searchLocalCorpus(query: String, limit: Int = 20): List<QuranSearchResult> = withContext(Dispatchers.IO) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return@withContext emptyList()
+
+        parseQuranSearchReference(trimmed)?.let { (surahNumber, ayahNumber) ->
+            val surah = quranCatalog.firstOrNull { it.num == surahNumber }
+            if (surah != null && ayahNumber in 1..surah.ayat) {
+                return@withContext getSurahAyahs(surahNumber)
+                    .firstOrNull { it.ayahNumber == ayahNumber }
+                    ?.let { listOf(it.toSearchResult(surah)) }
+                    .orEmpty()
+            }
+        }
+
+        val normalizedQuery = trimmed.normalizedQuranSearchText()
+        if (normalizedQuery.length < 2) return@withContext emptyList()
+        val hits = mutableListOf<QuranSearchResult>()
+        quranCatalog.forEach { surah ->
+            if (surah.matchesSearchName(normalizedQuery)) {
+                getSurahAyahs(surah.num).firstOrNull()?.let { hits += it.toSearchResult(surah) }
+            }
+        }
+        if (hits.size >= limit) return@withContext hits.take(limit)
+
+        val corpus = localSearchIndex ?: searchMutex.withLock {
+            localSearchIndex ?: quranCatalog.flatMap { surah ->
+                getSurahAyahs(surah.num).map { surah to it }
+            }.also { localSearchIndex = it }
+        }
+        for ((surah, ayah) in corpus) {
+                if (ayah.arabicText.normalizedQuranSearchText().contains(normalizedQuery) ||
+                    ayah.translation.normalizedQuranSearchText().contains(normalizedQuery)
+                ) {
+                    if (hits.none { it.verseKey == ayah.verseKey }) hits += ayah.toSearchResult(surah)
+                    if (hits.size >= limit) return@withContext hits
+                }
+        }
+        hits
+    }
 
     suspend fun getSurahAyahs(
         surahNumber: Int,
@@ -482,6 +524,52 @@ class QuranTextRepository @Inject constructor(
             .trim()
     }
 }
+
+data class QuranSearchResult(
+    val verseKey: String,
+    val surahName: String,
+    val reference: String,
+    val snippet: String,
+)
+
+internal fun parseQuranSearchReference(query: String): Pair<Int, Int>? {
+    val normalized = query.trim().lowercase()
+    Regex("^(\\d{1,3})\\s*[: ]\\s*(\\d{1,3})$").matchEntire(normalized)?.let {
+        return it.groupValues[1].toInt() to it.groupValues[2].toInt()
+    }
+    Regex("^surah\\s+(\\d{1,3})\\s+(?:verse|ayah)\\s+(\\d{1,3})$").matchEntire(normalized)?.let {
+        return it.groupValues[1].toInt() to it.groupValues[2].toInt()
+    }
+    val named = Regex("^(.+?)\\s+(\\d{1,3})$").matchEntire(query.trim()) ?: return null
+    val requestedName = named.groupValues[1].normalizedQuranSearchText()
+    val surah = quranCatalog.firstOrNull { it.matchesSearchName(requestedName) } ?: return null
+    return surah.num to named.groupValues[2].toInt()
+}
+
+private fun SurahInfo.matchesSearchName(normalizedQuery: String): Boolean {
+    val names = listOf(name, arabic).map(String::normalizedQuranSearchText)
+    return names.any { candidate ->
+        candidate == normalizedQuery ||
+            candidate.removeSuffix("h") == normalizedQuery.removeSuffix("h") ||
+            candidate.contains(normalizedQuery)
+    }
+}
+
+private fun String.normalizedQuranSearchText(): String =
+    java.text.Normalizer.normalize(lowercase(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "")
+        .replace('ٱ', 'ا')
+        .replace('آ', 'ا')
+        .replace('أ', 'ا')
+        .replace('إ', 'ا')
+        .replace(Regex("[^\\p{L}\\p{N}]+"), "")
+
+private fun QuranAyah.toSearchResult(surah: SurahInfo): QuranSearchResult = QuranSearchResult(
+    verseKey = verseKey,
+    surahName = surah.name,
+    reference = "$surahNumber:$ayahNumber",
+    snippet = arabicText.take(96).ifBlank { translation.take(140) },
+)
 
 private data class QuranTranslationContent(
     val text: String,

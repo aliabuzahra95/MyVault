@@ -291,8 +291,8 @@ internal fun FrozenQuranAyah(
 
         AnimatedVisibility(
             visible = selected,
-            enter = fadeIn(tween(130)) + slideInVertically(tween(155, easing = FastOutSlowInEasing)) { it / 5 },
-            exit = fadeOut(tween(100)) + slideOutVertically(tween(125, easing = FastOutSlowInEasing)) { it / 5 },
+            enter = fadeIn(tween(105)) + slideInVertically(tween(125, easing = FastOutSlowInEasing)) { it / 8 },
+            exit = fadeOut(tween(75)) + slideOutVertically(tween(90, easing = FastOutSlowInEasing)) { it / 8 },
         ) {
             LazyRow(
                 modifier = Modifier

@@ -109,6 +109,7 @@ fun FrozenMemoriseScreen(
     sessionState: MemoriseSessionUiState,
     onOpenNavigation: () -> Unit,
     onOpenSession: (String, Boolean) -> Unit,
+    onOpenSurah: (Int, Int?) -> Unit,
     onOpenWholeSurah: (Int) -> Unit,
     onCloseSession: () -> Unit,
     onNextAyah: () -> Boolean,
@@ -116,6 +117,7 @@ fun FrozenMemoriseScreen(
     onSetStatus: (String, MemoriseStatusChoice) -> Unit,
     onRecordAttempt: (com.myvault.app.data.quran.memorization.QuranMemorizationAttempt) -> Unit,
     onRecordSurahAttempt: (com.myvault.app.data.quran.memorization.QuranSurahMemorizationAttempt) -> Unit,
+    onSurahPositionChanged: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var destinationName by rememberSaveable { mutableStateOf(MemoriseDestination.Overview.name) }
@@ -144,6 +146,7 @@ fun FrozenMemoriseScreen(
                 onSetStatus = onSetStatus,
                 onAttemptCompleted = onRecordAttempt,
                 onSurahAttemptCompleted = onRecordSurahAttempt,
+                onSurahPositionChanged = onSurahPositionChanged,
             )
             destination == MemoriseDestination.Attempts -> MemoriseAttemptHistoryScreen(
                 attempts = attempts,
@@ -161,6 +164,7 @@ fun FrozenMemoriseScreen(
                 uiState = uiState,
                 onOpenNavigation = onOpenNavigation,
                 onOpenSession = { onOpenSession(it, false) },
+                onOpenSurah = onOpenSurah,
                 onOpenAttempts = { destinationName = MemoriseDestination.Attempts.name },
                 onWholeSurah = onOpenWholeSurah,
                 onSetStatus = onSetStatus,
@@ -174,6 +178,7 @@ private fun MemoriseOverviewScreen(
     uiState: MemorizationUiState,
     onOpenNavigation: () -> Unit,
     onOpenSession: (String) -> Unit,
+    onOpenSurah: (Int, Int?) -> Unit,
     onOpenAttempts: () -> Unit,
     onWholeSurah: (Int) -> Unit,
     onSetStatus: (String, MemoriseStatusChoice) -> Unit,
@@ -206,7 +211,7 @@ private fun MemoriseOverviewScreen(
                     MemoriseContinueCard(
                         title = item.surah.name,
                         subtitle = "${item.record.verseKey} · ${statusLabel(item.record)}",
-                        onClick = { onOpenSession(item.record.verseKey) },
+                        onClick = { onOpenSurah(item.surah.num, item.record.ayahNumber) },
                     )
                 }
             }
@@ -249,7 +254,7 @@ private fun MemoriseOverviewScreen(
                             else -> "In progress"
                         },
                         progress = progress.memorizedCount.toFloat() / progress.totalAyahs.coerceAtLeast(1),
-                        onClick = { onOpenSession("${progress.surah.num}:${progress.nextAyahNumber}") },
+                        onClick = { onOpenSurah(progress.surah.num, null) },
                         onWholeSurah = { onWholeSurah(progress.surah.num) },
                     )
                 }
@@ -259,7 +264,7 @@ private fun MemoriseOverviewScreen(
                         meta = "${progress.memorizedCount} of ${progress.surah.ayat} ayat",
                         status = "Memorised",
                         progress = 1f,
-                        onClick = { onOpenSession("${progress.surah.num}:1") },
+                        onClick = { onOpenSurah(progress.surah.num, null) },
                         onWholeSurah = { onWholeSurah(progress.surah.num) },
                     )
                 }
