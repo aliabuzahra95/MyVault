@@ -1072,14 +1072,14 @@ private const val FollowAudioPaddingPx = 48f
 private const val ReadingBodyChunkTargetChars = 2_800
 private const val ReadingBodyChunkMaxChars = 4_200
 
-private data class ReadingBodyChunk(
+internal data class ReadingBodyChunk(
     val start: Int,
     val end: Int,
     val text: String,
     val document: VaultRichTextDocument,
 )
 
-private fun String.toReadingBodyChunks(
+internal fun String.toReadingBodyChunks(
     marks: List<VaultStyleMark>,
     noteLinks: List<VaultNoteLink>,
 ): List<ReadingBodyChunk> {
@@ -1107,15 +1107,14 @@ private fun String.toReadingBodyChunks(
         val end = if (hardEnd == length) {
             length
         } else {
-            val paragraphBreak = lastIndexOf("\n\n", startIndex = hardEnd - 1).takeIf { it > start + 600 }
-            val lineBreak = lastIndexOf('\n', startIndex = hardEnd - 1).takeIf { it > start + 600 }
-            val sentenceBreak = lastIndexOf('.', startIndex = hardEnd - 1).takeIf { it > start + 600 }
-            val spaceBreak = lastIndexOf(' ', startIndex = hardEnd - 1).takeIf { it > start + 600 }
+            val paragraphBreak = lastIndexOf("\n\n", startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(2)
+            val lineBreak = lastIndexOf('\n', startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(1)
+            val sentenceBreak = lastIndexOf('.', startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(1)
+            val spaceBreak = lastIndexOf(' ', startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(1)
             (paragraphBreak ?: lineBreak ?: sentenceBreak ?: spaceBreak ?: targetEnd).coerceIn(start + 1, hardEnd)
         }
-        val text = substring(start, end).trimStart()
-        val trimOffset = substring(start, end).length - text.length
-        val adjustedStart = start + trimOffset
+        val text = substring(start, end)
+        val adjustedStart = start
         chunks += ReadingBodyChunk(
             start = adjustedStart,
             end = end,
@@ -1127,7 +1126,6 @@ private fun String.toReadingBodyChunks(
             ),
         )
         start = end
-        while (start < length && this[start].isWhitespace()) start += 1
     }
     return chunks
 }
