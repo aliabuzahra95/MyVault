@@ -582,8 +582,8 @@ fun CorpusExpandedChildren(
 ) {
     AnimatedVisibility(
         visible = expanded,
-        enter = expandVertically(animationSpec = tween(190)),
-        exit = shrinkVertically(animationSpec = tween(165)),
+        enter = expandVertically(animationSpec = tween(160)),
+        exit = shrinkVertically(animationSpec = tween(145)),
     ) {
         Column(content = { content() })
     }

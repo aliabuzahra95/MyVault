@@ -74,6 +74,8 @@ import com.myvault.app.data.repository.DashboardActivityKind
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
+import com.myvault.app.data.sync.DriveRestoreStage
+import com.myvault.app.data.sync.DriveSyncOperation
 import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.VaultExplorerActionHost
 import com.myvault.app.ui.components.VaultExplorerMoveTarget
@@ -174,6 +176,8 @@ fun VaultNavHost(
     }
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
+    val driveRestoreState by shellViewModel.driveRestoreState.collectAsStateWithLifecycle()
+    var previousBackupActive by remember { mutableStateOf(false) }
     val homeViewModel: HomeViewModel = hiltViewModel()
     val studyState by homeViewModel.uiState.collectAsStateWithLifecycle()
     val personalState by homeViewModel.personalUiState.collectAsStateWithLifecycle()
@@ -201,6 +205,23 @@ fun VaultNavHost(
     val lifecycleOwner = LocalLifecycleOwner.current
     var explorerActionTarget by remember { mutableStateOf<ExplorerActionTarget?>(null) }
     var corpusSearchActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(driveRestoreState.active, driveRestoreState.progress.stage, driveRestoreState.operation) {
+        val backupActive = driveRestoreState.active && driveRestoreState.operation == DriveSyncOperation.Backup
+        if (
+            previousBackupActive &&
+            !driveRestoreState.active &&
+            driveRestoreState.operation == DriveSyncOperation.Backup
+        ) {
+            val message = if (driveRestoreState.progress.stage == DriveRestoreStage.Complete) {
+                "Backup complete"
+            } else {
+                driveRestoreState.message ?: driveRestoreState.progress.message.ifBlank { "Backup failed" }
+            }
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+        previousBackupActive = backupActive
+    }
 
     LaunchedEffect(preferences.workspace, libraryViewModel) {
         libraryViewModel.setLibraryMode(
@@ -301,6 +322,22 @@ fun VaultNavHost(
         navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
     }
 
+    fun revealLibraryFolder(
+        folderId: String,
+        libraryMode: String = if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
+    ) {
+        val personalLibrary = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
+        shellViewModel.setWorkspace(if (personalLibrary) WORKSPACE_PERSONAL else WORKSPACE_ISLAMIC_CORPUS)
+        libraryViewModel.setLibraryMode(libraryMode)
+        libraryViewModel.revealFolder(folderId)
+        if (personalLibrary) {
+            selectedPersonalRootMode = VaultRootMode.Library.name
+        } else {
+            selectedIslamicRootMode = VaultRootMode.Library.name
+        }
+        navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
+    }
+
     fun openExplorerNode(mode: VaultRootMode, node: VaultMobileWebExplorerNode) {
         when (mode) {
             VaultRootMode.Study, VaultRootMode.Personal -> when (node.type) {
@@ -314,11 +351,9 @@ fun VaultNavHost(
             VaultRootMode.Library -> {
                 selectRootMode(mode)
                 when (node.type) {
-                    VaultMobileWebExplorerNodeType.Folder -> navController.navigate(
-                        VaultDestination.LibraryFolder.route(
-                            node.id,
-                            if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
-                        ),
+                    VaultMobileWebExplorerNodeType.Folder -> revealLibraryFolder(
+                        node.id,
+                        if (preferences.workspace == WORKSPACE_PERSONAL) FOLDER_MODE_PERSONAL_LIBRARY else "library",
                     )
                     VaultMobileWebExplorerNodeType.Document -> navController.navigate(VaultDestination.AttachmentViewer.route(node.id))
                     VaultMobileWebExplorerNodeType.Note -> openNote(node.id)
@@ -407,11 +442,17 @@ fun VaultNavHost(
             },
             onFavouritesSelected = { navController.navigate(VaultDestination.Favourites.route) },
             onSettingsSelected = { navController.navigateToVaultRoot(VaultDestination.Settings.route) },
+            onBackupSelected = {
+                shellViewModel.pushGoogleDriveSync {
+                    Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+                }
+            },
             onThemeSelected = {
                 shellViewModel.setTheme(
                     preferences.theme.quickToggle(),
                 )
             },
+            backupRunning = driveRestoreState.active,
             selectedApplicationDestination = when (currentRoute) {
                 VaultDestination.Dashboard.route -> VaultMobileWebApplicationDestination.Dashboard
                 VaultDestination.Search.route -> VaultMobileWebApplicationDestination.Search
@@ -789,9 +830,7 @@ fun VaultNavHost(
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = ::switchWorkspace,
-                        onFolderClick = { folderId ->
-                            navController.navigate(VaultDestination.LibraryFolder.route(folderId))
-                        },
+                        onFolderClick = { folderId -> revealLibraryFolder(folderId) },
                         onAttachmentClick = { attachmentId ->
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                         },
@@ -962,9 +1001,7 @@ fun VaultNavHost(
                         workspaceTitle = preferences.workspace.workspaceLabel(),
                         workspaceOptions = WorkspaceLabels,
                         onWorkspaceSelected = ::switchWorkspace,
-                        onFolderClick = { folderId ->
-                            navController.navigate(VaultDestination.LibraryFolder.route(folderId, FOLDER_MODE_PERSONAL_LIBRARY))
-                        },
+                        onFolderClick = { folderId -> revealLibraryFolder(folderId) },
                         onAttachmentClick = { attachmentId ->
                             navController.navigate(VaultDestination.AttachmentViewer.route(attachmentId))
                         },
@@ -1365,7 +1402,7 @@ fun VaultNavHost(
                 },
                 onFolderClick = { folder ->
                     if (folder.mode.contains("library", ignoreCase = true)) {
-                        navController.navigate(VaultDestination.LibraryFolder.route(folder.id, folder.mode))
+                        revealLibraryFolder(folder.id, folder.mode)
                     } else if (folder.mode.startsWith("course:")) {
                         revealCourseLocation(folder.mode.removePrefix("course:"), folder.id)
                     } else {

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -233,6 +232,17 @@ fun FolderViewScreen(
                     }
                     item { Spacer(Modifier.size(14.dp)) }
                 }
+                if (coursePresentation && uiState.stickyNotes.isNotEmpty()) {
+                    item { CourseCountSectionLabel(label = "STICKY NOTES", count = uiState.stickyNotes.size) }
+                    items(uiState.stickyNotes, key = { "course-sticky-${it.id}" }) { stickyNote ->
+                        CourseStickyNoteCard(stickyNote = stickyNote) {
+                            selectedStickyNote = stickyNote
+                            stickyDraft = stickyNote.text
+                            stickyDialogOpen = true
+                        }
+                    }
+                    item { Spacer(Modifier.height(8.dp)) }
+                }
                 if (coursePresentation) {
                     item {
                         CourseCountSectionLabel(label = "COURSE NOTES", count = uiState.contents.sumOf { it.noteCount() })
@@ -277,24 +287,6 @@ fun FolderViewScreen(
                             )
                         }
                     }
-                }
-                if (coursePresentation && uiState.stickyNotes.isNotEmpty()) {
-                    item { CourseCountSectionLabel(label = "STICKY NOTES", count = uiState.stickyNotes.size) }
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = VaultSpacing.screen),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(uiState.stickyNotes, key = { "course-sticky-${it.id}" }) { stickyNote ->
-                                CourseStickyNoteCard(stickyNote = stickyNote) {
-                                    selectedStickyNote = stickyNote
-                                    stickyDraft = stickyNote.text
-                                    stickyDialogOpen = true
-                                }
-                            }
-                        }
-                    }
-                    item { Spacer(Modifier.height(12.dp)) }
                 }
                 bottomContent?.let { content -> item { content() } }
             }
@@ -733,25 +725,25 @@ private fun CourseStickyNoteCard(
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(width = 142.dp, height = 64.dp),
-        color = colors.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = VaultSpacing.screen, vertical = 3.dp),
+        color = colors.warningSoft,
         shape = VaultShapes.sm,
-        border = BorderStroke(1.dp, colors.border),
+        border = BorderStroke(1.dp, colors.warning.copy(alpha = 0.22f)),
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Icon(Icons.Rounded.StickyNote2, null, modifier = Modifier.size(15.dp), tint = colors.textMuted)
+            Icon(Icons.Rounded.StickyNote2, null, modifier = Modifier.size(16.dp), tint = colors.warning)
             Text(
                 text = stickyNote.text,
                 modifier = Modifier.weight(1f),
                 color = colors.text,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
             )
         }
     }

@@ -490,8 +490,8 @@ private fun CourseMobileWebCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onOpen, onLongClick = onManage)
-                .heightIn(min = 72.dp)
-                .padding(start = 16.dp, top = 10.dp, end = 6.dp, bottom = 10.dp),
+                .heightIn(min = 56.dp)
+                .padding(start = 16.dp, top = 7.dp, end = 6.dp, bottom = 7.dp),
         ) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -581,7 +581,7 @@ private fun CourseHeader(
             }
         }
         continueTitle?.let {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen)) {
                 ContinueLessonCard(continueTitle = it, onContinue = onContinue)
             }
@@ -613,9 +613,9 @@ private fun ContinueLessonCard(
 ) {
     val colors = VaultThemeTokens.colors
     val content: @Composable () -> Unit = {
-        Row(modifier = Modifier.padding(horizontal = VaultSpacing.md, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.padding(horizontal = VaultSpacing.md, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(32.dp),
                 shape = VaultShapes.sm,
                 color = colors.accent,
                 contentColor = Color.White,

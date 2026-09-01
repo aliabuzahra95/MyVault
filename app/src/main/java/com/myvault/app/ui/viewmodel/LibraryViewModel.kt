@@ -406,6 +406,17 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun revealFolder(folderId: String) {
+        viewModelScope.launch {
+            val path = libraryFolderPathIds(
+                folderId = folderId,
+                parentIdByFolderId = folderRepository.observeLibraryFolders().first().associate { it.id to it.parentId },
+            )
+            val folderIds = vaultPreferences.userPreferences.first().expandedFolderIds
+            vaultPreferences.setExpandedFolderIds(folderIds + path.ifEmpty { listOf(folderId) })
+        }
+    }
+
     fun setViewMode(mode: LibraryViewMode) {
         viewModelScope.launch { vaultPreferences.setLibraryViewMode(viewModeLocationKey, mode.storedValue) }
     }
@@ -591,6 +602,20 @@ class LibraryViewModel @Inject constructor(
 
     private fun snapshotFor(mode: String): LibraryUiState? =
         librarySnapshotRepository.load(mode, folderId)
+}
+
+internal fun libraryFolderPathIds(
+    folderId: String,
+    parentIdByFolderId: Map<String, String?>,
+): List<String> {
+    val reversedPath = mutableListOf<String>()
+    val visited = mutableSetOf<String>()
+    var currentId: String? = folderId
+    while (currentId != null && currentId in parentIdByFolderId && visited.add(currentId)) {
+        reversedPath += currentId
+        currentId = parentIdByFolderId[currentId]
+    }
+    return reversedPath.asReversed()
 }
 
 private fun FolderEntity.toLibraryFolderItem(

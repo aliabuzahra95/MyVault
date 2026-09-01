@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -47,9 +46,11 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -132,7 +133,9 @@ fun VaultMobileWebShell(
     onAttachmentsSelected: () -> Unit,
     onFavouritesSelected: () -> Unit,
     onSettingsSelected: () -> Unit,
+    onBackupSelected: () -> Unit,
     onThemeSelected: () -> Unit,
+    backupRunning: Boolean = false,
     selectedApplicationDestination: VaultMobileWebApplicationDestination? = null,
     attachmentsSelected: Boolean = false,
     favouritesSelected: Boolean = false,
@@ -309,8 +312,8 @@ fun VaultMobileWebShell(
                                     )
                                     AnimatedVisibility(
                                         visible = expanded,
-                                        enter = expandVertically(animationSpec = tween(190)) + fadeIn(animationSpec = tween(150)),
-                                        exit = shrinkVertically(animationSpec = tween(170)) + fadeOut(animationSpec = tween(130)),
+                                        enter = expandVertically(animationSpec = tween(160)) + fadeIn(animationSpec = tween(120)),
+                                        exit = shrinkVertically(animationSpec = tween(145)) + fadeOut(animationSpec = tween(100)),
                                     ) {
                                         Column {
                                             explorerSection.nodes.forEach { node ->
@@ -360,7 +363,8 @@ fun VaultMobileWebShell(
                         }
                         DrawerUtilityRow(
                             accountEmail = accountEmail,
-                            onDriveSelected = { closeDrawerThen(onSettingsSelected) },
+                            backupRunning = backupRunning,
+                            onBackupSelected = { closeDrawerThen(onBackupSelected) },
                             onThemeSelected = { closeDrawerThen(onThemeSelected) },
                             onSettingsSelected = { closeDrawerThen(onSettingsSelected) },
                         )
@@ -552,7 +556,7 @@ private fun DrawerExplorerNode(
 ) {
     val colors = VaultThemeTokens.colors
     val nodeKey = "node:$sectionIndex:${node.type}:${node.id}"
-    val expandable = node.type == VaultMobileWebExplorerNodeType.Folder && node.children.isNotEmpty()
+    val isFolder = node.type == VaultMobileWebExplorerNodeType.Folder
     val expanded = nodeKey in expandedKeys
     val selected = node.id == selectedNodeId
     val folderColor = folderSemanticColor(node.colorKey, colors.textSecondary)
@@ -564,15 +568,15 @@ private fun DrawerExplorerNode(
             .padding(start = indent),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (node.type == VaultMobileWebExplorerNodeType.Folder) {
+        if (isFolder) {
             Surface(
-                onClick = { if (expandable) onToggle(nodeKey) else onOpen(node) },
+                onClick = { onToggle(nodeKey) },
                 modifier = Modifier.size(24.dp),
                 color = Color.Transparent,
                 contentColor = colors.textMuted,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    if (expandable) {
+                    if (node.children.isNotEmpty()) {
                         Icon(
                             if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight,
                             contentDescription = if (expanded) "Collapse ${node.label}" else "Expand ${node.label}",
@@ -588,7 +592,7 @@ private fun DrawerExplorerNode(
             modifier = Modifier
                 .weight(1f)
                 .combinedClickable(
-                    onClick = { onOpen(node) },
+                    onClick = { if (isFolder) onToggle(nodeKey) else onOpen(node) },
                     onLongClick = if (node.canManage) ({ onMore(node) }) else null,
                 ),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -641,9 +645,9 @@ private fun DrawerExplorerNode(
         }
     }
     AnimatedVisibility(
-        visible = expanded,
-        enter = expandVertically(animationSpec = tween(190)) + fadeIn(animationSpec = tween(150)),
-        exit = shrinkVertically(animationSpec = tween(170)) + fadeOut(animationSpec = tween(130)),
+        visible = expanded && node.children.isNotEmpty(),
+        enter = expandVertically(animationSpec = tween(160)) + fadeIn(animationSpec = tween(120)),
+        exit = shrinkVertically(animationSpec = tween(145)) + fadeOut(animationSpec = tween(100)),
     ) {
         Column {
             node.children.forEach { child ->
@@ -791,7 +795,8 @@ private fun DrawerNavigationRow(
 @Composable
 private fun DrawerUtilityRow(
     accountEmail: String,
-    onDriveSelected: () -> Unit,
+    backupRunning: Boolean,
+    onBackupSelected: () -> Unit,
     onThemeSelected: () -> Unit,
     onSettingsSelected: () -> Unit,
 ) {
@@ -810,13 +815,13 @@ private fun DrawerUtilityRow(
             modifier = Modifier
                 .weight(1f)
                 .height(40.dp)
-                .clickable(onClick = onDriveSelected)
+                .clickable(onClick = onSettingsSelected)
                 .padding(horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.CloudQueue, null, modifier = Modifier.size(17.dp), tint = colors.textSecondary)
+            Icon(Icons.Outlined.Settings, null, modifier = Modifier.size(17.dp), tint = colors.textSecondary)
             Text(
-                text = if (connected) "Drive connected" else "Drive not connected",
+                text = "Settings",
                 modifier = Modifier.padding(start = 9.dp, end = 7.dp),
                 color = colors.textSecondary,
                 fontSize = 10.5.sp,
@@ -829,6 +834,25 @@ private fun DrawerUtilityRow(
             )
         }
         Surface(
+            onClick = onBackupSelected,
+            modifier = Modifier.size(40.dp),
+            shape = VaultShapes.sm,
+            color = Color.Transparent,
+            contentColor = colors.textSecondary,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (backupRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = colors.accent,
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(Icons.Rounded.Backup, contentDescription = "Back up to Google Drive", modifier = Modifier.size(19.dp))
+                }
+            }
+        }
+        Surface(
             onClick = onThemeSelected,
             modifier = Modifier.size(40.dp),
             shape = VaultShapes.sm,
@@ -837,17 +861,6 @@ private fun DrawerUtilityRow(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.LightMode, contentDescription = "Change theme", modifier = Modifier.size(19.dp))
-            }
-        }
-        Surface(
-            onClick = onSettingsSelected,
-            modifier = Modifier.size(40.dp),
-            shape = VaultShapes.sm,
-            color = Color.Transparent,
-            contentColor = colors.textSecondary,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.PersonOutline, contentDescription = "Account and settings", modifier = Modifier.size(19.dp))
             }
         }
     }

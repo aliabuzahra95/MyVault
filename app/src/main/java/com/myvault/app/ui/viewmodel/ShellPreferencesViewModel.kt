@@ -20,6 +20,8 @@ class ShellPreferencesViewModel @Inject constructor(
     private val preferences: VaultPreferences,
     private val googleDriveRestoreController: Provider<GoogleDriveRestoreController>,
 ) : ViewModel() {
+    val driveRestoreState = googleDriveRestoreController.get().state
+
     val userPreferences: StateFlow<VaultUserPreferences> =
         preferences.userPreferences.stateIn(
             viewModelScope,
