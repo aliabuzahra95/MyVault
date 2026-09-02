@@ -47,12 +47,67 @@ class ShamelaResearchProvider @Inject constructor(
         )
     }
 
+    suspend fun sourceContext(source: ResearchSource): ResearchSourceContext {
+        require(source.bookId > 0 && source.pageId > 0) { "Source location is unavailable." }
+        val currentResult = getPage(source.bookId, source.pageId, bodyPart = 1)
+        val current = currentResult.structuredContent()
+        val bodyParts = mutableListOf(current.optString("body"))
+        val totalParts = current.numberOrNull("body_total_parts")?.toInt()?.coerceIn(1, MaxCurrentPageParts) ?: 1
+        for (part in 2..totalParts) {
+            bodyParts += getPage(source.bookId, source.pageId, bodyPart = part)
+                .structuredContent()
+                .optString("body")
+        }
+        val pages = buildList {
+            current.positiveInt("prev_page_id")?.let { previousId ->
+                add(parseContextPage(getPage(source.bookId, previousId).structuredContent(), isCurrent = false))
+            }
+            add(
+                parseContextPage(current, isCurrent = true).copy(
+                    body = bodyParts.joinToString("\n").cleanShamelaText().take(MaxSourceContextCharacters),
+                ),
+            )
+            current.positiveInt("next_page_id")?.let { nextId ->
+                add(parseContextPage(getPage(source.bookId, nextId).structuredContent(), isCurrent = false))
+            }
+        }
+        return ResearchSourceContext(
+            source = source,
+            pages = pages,
+            citationText = current.firstText("citation") ?: source.citationText,
+        )
+    }
+
+    private suspend fun getPage(bookId: Int, pageId: Int, bodyPart: Int = 1): JSONObject =
+        mcpClient.callTool(
+            name = SourcePageTool,
+            arguments = JSONObject()
+                .put("book_id", bookId)
+                .put("page_id", pageId)
+                .put("body_part", bodyPart)
+                .put("keep_html", false)
+                .put("response_format", "json"),
+        )
+
     private companion object {
         const val SearchTool = "shamela_search_pages"
+        const val SourcePageTool = "shamela_get_page"
         const val MaxQueryCharacters = 500
         const val MaxSearchResults = 8
+        const val MaxCurrentPageParts = 3
+        const val MaxSourceContextCharacters = 12_000
     }
 }
+
+internal fun parseContextPage(value: JSONObject, isCurrent: Boolean): ResearchContextPage = ResearchContextPage(
+    pageId = value.positiveInt("page_id") ?: throw ResearchProviderException("Shamela page identity is missing."),
+    printedPage = value.firstText("printed_page"),
+    part = value.firstText("part"),
+    body = value.optString("body").cleanShamelaText().take(MaxContextPageSectionCharacters),
+    footnote = value.optString("foot").cleanShamelaText().take(MaxContextPageSectionCharacters),
+    comment = value.optString("comment").cleanShamelaText().take(MaxContextPageSectionCharacters),
+    isCurrent = isCurrent,
+)
 
 internal fun parseShamelaSearchResult(result: JSONObject, retrievedAt: Long): List<ResearchSource> {
     val bookId = result.positiveInt("book_id") ?: return emptyList()
@@ -107,6 +162,7 @@ private fun JSONObject.provenanceFallback(): ResearchProvenance {
 }
 
 private const val MaxResearchPassageCharacters = 1_500
+private const val MaxContextPageSectionCharacters = 4_500
 
 internal fun JSONObject.structuredContent(): JSONObject {
     optJSONObject("structuredContent")?.let { return it }

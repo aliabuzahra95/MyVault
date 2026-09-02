@@ -25,14 +25,19 @@ import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,12 +62,14 @@ import com.myvault.app.data.ai.AiResearchProvider
 import com.myvault.app.data.ai.ShamelaConnectionState
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import com.myvault.app.data.ai.ResearchSource
+import com.myvault.app.data.ai.ResearchContextPage
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.AiResearchMessage
 import com.myvault.app.ui.viewmodel.AiResearchMessageRole
 import com.myvault.app.ui.viewmodel.AiResearchViewModel
+import com.myvault.app.ui.viewmodel.SourceDetailState
 
 @Composable
 fun AiResearchScreen(
@@ -140,7 +147,7 @@ fun AiResearchScreen(
                 }
             } else {
                 items(state.messages, key = AiResearchMessage::id) { message ->
-                    AiResearchMessageItem(message)
+                    AiResearchMessageItem(message, viewModel::openSource)
                 }
             }
         }
@@ -149,6 +156,13 @@ fun AiResearchScreen(
             onValueChange = viewModel::updateComposer,
             onSend = viewModel::submitQuestion,
             enabled = !state.isBusy,
+        )
+    }
+    state.sourceDetail?.let { detail ->
+        SourceDetailSheet(
+            state = detail,
+            onDismiss = viewModel::closeSource,
+            onRetry = { viewModel.openSource(detail.source) },
         )
     }
 }
@@ -318,7 +332,7 @@ private fun AiResearchEmptyState(
 }
 
 @Composable
-private fun AiResearchMessageItem(message: AiResearchMessage) {
+private fun AiResearchMessageItem(message: AiResearchMessage, onOpenSource: (ResearchSource) -> Unit) {
     val colors = VaultThemeTokens.colors
     if (message.role == AiResearchMessageRole.User) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -350,14 +364,14 @@ private fun AiResearchMessageItem(message: AiResearchMessage) {
                 )
             }
             message.sources.forEach { source ->
-                ShamelaSourceCard(source)
+                ShamelaSourceCard(source, onOpenSource)
             }
         }
     }
 }
 
 @Composable
-private fun ShamelaSourceCard(source: ResearchSource) {
+private fun ShamelaSourceCard(source: ResearchSource, onOpenSource: (ResearchSource) -> Unit) {
     val colors = VaultThemeTokens.colors
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -404,6 +418,148 @@ private fun ShamelaSourceCard(source: ResearchSource) {
                 fontSize = 10.5.sp,
                 lineHeight = 14.sp,
                 color = colors.textMuted,
+            )
+            TextButton(
+                onClick = { onOpenSource(source) },
+                modifier = Modifier.align(Alignment.End).heightIn(min = 40.dp),
+            ) {
+                Text("Open source")
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SourceDetailSheet(
+    state: SourceDetailState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxSize(),
+        sheetState = sheetState,
+        containerColor = colors.bg,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Shamela source", fontSize = 17.sp, fontWeight = FontWeight.W800, color = colors.text)
+                    Text(
+                        state.source.bookTitle,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = colors.textSecondary,
+                        maxLines = 2,
+                    )
+                }
+                Surface(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(40.dp),
+                    color = Color.Transparent,
+                    shape = VaultShapes.sm,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Close, "Close source", Modifier.size(20.dp), tint = colors.textSecondary)
+                    }
+                }
+            }
+            HorizontalDivider(color = colors.border)
+            when (state) {
+                is SourceDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+                is SourceDetailState.Error -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(VaultSpacing.screen),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(state.message, color = colors.warning, textAlign = TextAlign.Center)
+                    TextButton(onClick = onRetry) { Text("Retry") }
+                }
+                is SourceDetailState.Ready -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = VaultSpacing.screen,
+                        end = VaultSpacing.screen,
+                        top = 16.dp,
+                        bottom = 32.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            state.source.authorName?.let {
+                                Text(it, fontSize = 13.sp, fontWeight = FontWeight.W700, color = colors.text)
+                            }
+                            Text(
+                                state.source.provenanceType.label,
+                                fontSize = 11.sp,
+                                color = colors.textMuted,
+                            )
+                            state.context.citationText?.let {
+                                Text(it, fontSize = 12.sp, lineHeight = 18.sp, color = colors.textSecondary)
+                            }
+                        }
+                    }
+                    items(state.context.pages, key = ResearchContextPage::pageId) { page ->
+                        SourceContextPage(page)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceContextPage(page: ResearchContextPage) {
+    val colors = VaultThemeTokens.colors
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        val location = listOfNotNull(
+            page.part?.let { "Part $it" },
+            page.printedPage?.let { "Page $it" },
+        ).joinToString(" · ")
+        Text(
+            if (page.isCurrent) listOf("Selected passage", location).filter(String::isNotBlank).joinToString(" · ")
+            else listOf("Surrounding context", location).filter(String::isNotBlank).joinToString(" · "),
+            fontSize = 11.sp,
+            fontWeight = if (page.isCurrent) FontWeight.W700 else FontWeight.W600,
+            color = if (page.isCurrent) colors.accent else colors.textMuted,
+        )
+        if (page.body.isNotBlank()) {
+            Text(
+                page.body,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 17.sp,
+                    lineHeight = 29.sp,
+                    textDirection = TextDirection.Rtl,
+                ),
+                color = colors.text,
+                textAlign = TextAlign.End,
+            )
+        }
+        if (page.footnote.isNotBlank()) {
+            Text("Footnotes", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.textSecondary)
+            Text(
+                page.footnote,
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 23.sp, textDirection = TextDirection.Rtl),
+                color = colors.textSecondary,
+                textAlign = TextAlign.End,
+            )
+        }
+        if (page.comment.isNotBlank()) {
+            Text("Commentary", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.textSecondary)
+            Text(
+                page.comment,
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 23.sp, textDirection = TextDirection.Rtl),
+                color = colors.textSecondary,
+                textAlign = TextAlign.End,
             )
         }
     }

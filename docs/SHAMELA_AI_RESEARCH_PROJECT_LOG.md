@@ -180,3 +180,24 @@
   production rendering passed.
 - Visual evidence: `artifacts/shamela-ai/stage-8/` (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 9 - Open Source
+
+- Status: COMPLETE
+- Implementation: every evidence card exposes `Open source`, which opens a
+  fully expanded, dismissible source presentation with the selected book,
+  author, provenance, citation, and readable RTL Arabic page content.
+- Context retrieval: MyVault invokes only the fixed read-only
+  `shamela_get_page` tool. Retrieval is bounded to previous/current/next pages;
+  the current page may read at most three server-split body parts. No book-wide
+  download or automatic pagination is performed.
+- Live result: a real grounded source from `شعب الإيمان - ط الرشد` opened with
+  the server-provided author, footnote provenance, citation, preceding context,
+  selected page, and following context. The first visual run exposed a
+  partially expanded sheet; it was corrected to open fully expanded and the
+  installed app was recaptured.
+- Tests: source-page parsing and metadata absence, JBR 21 unit tests, debug
+  assembly, live authenticated context retrieval, and installed UI passed.
+- Visual evidence: `artifacts/shamela-ai/stage-9/source-context-light.png`
+  (not tracked in Git).
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.

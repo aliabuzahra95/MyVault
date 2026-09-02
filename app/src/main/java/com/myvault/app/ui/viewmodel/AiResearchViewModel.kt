@@ -9,6 +9,7 @@ import com.myvault.app.data.ai.ShamelaMcpClient
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import com.myvault.app.data.ai.ShamelaResearchProvider
 import com.myvault.app.data.ai.ResearchSource
+import com.myvault.app.data.ai.ResearchSourceContext
 import com.myvault.app.data.ai.GroundedResearchOrchestrator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
@@ -91,6 +92,30 @@ class AiResearchViewModel @Inject constructor(
 
     fun updateComposer(value: String) {
         _uiState.update { it.copy(composer = value.take(MaxComposerCharacters)) }
+    }
+
+    fun openSource(source: ResearchSource) {
+        _uiState.update { it.copy(sourceDetail = SourceDetailState.Loading(source)) }
+        viewModelScope.launch {
+            runCatching { shamelaResearchProvider.sourceContext(source) }
+                .onSuccess { context ->
+                    _uiState.update { it.copy(sourceDetail = SourceDetailState.Ready(context)) }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            sourceDetail = SourceDetailState.Error(
+                                source = source,
+                                message = error.message ?: "Could not open this Shamela source.",
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun closeSource() {
+        _uiState.update { it.copy(sourceDetail = null) }
     }
 
     fun submitQuestion() {
@@ -266,7 +291,18 @@ data class AiResearchUiState(
     val composer: String = "",
     val messages: List<AiResearchMessage> = emptyList(),
     val isBusy: Boolean = false,
+    val sourceDetail: SourceDetailState? = null,
 )
+
+sealed interface SourceDetailState {
+    val source: ResearchSource
+
+    data class Loading(override val source: ResearchSource) : SourceDetailState
+    data class Ready(val context: ResearchSourceContext) : SourceDetailState {
+        override val source: ResearchSource = context.source
+    }
+    data class Error(override val source: ResearchSource, val message: String) : SourceDetailState
+}
 
 data class AiResearchMessage(
     val id: String,

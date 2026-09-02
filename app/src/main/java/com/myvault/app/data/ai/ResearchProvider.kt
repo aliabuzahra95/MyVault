@@ -36,6 +36,22 @@ data class ResearchSource(
     val retrievedAtEpochMillis: Long,
 )
 
+data class ResearchSourceContext(
+    val source: ResearchSource,
+    val pages: List<ResearchContextPage>,
+    val citationText: String?,
+)
+
+data class ResearchContextPage(
+    val pageId: Int,
+    val printedPage: String?,
+    val part: String?,
+    val body: String,
+    val footnote: String,
+    val comment: String,
+    val isCurrent: Boolean,
+)
+
 enum class ResearchProvenance(val label: String) {
     AuthorBody("Author text"),
     Footnote("Footnote / editor text"),

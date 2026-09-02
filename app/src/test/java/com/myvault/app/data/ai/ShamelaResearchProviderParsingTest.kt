@@ -8,6 +8,24 @@ import org.junit.Test
 
 class ShamelaResearchProviderParsingTest {
     @Test
+    fun parsesBoundedSourceContextPageWithoutInventingMetadata() {
+        val page = JSONObject()
+            .put("page_id", 42)
+            .put("printed_page", "١٢")
+            .put("body", "<span>نص المؤلف</span>")
+            .put("foot", "حاشية المحقق")
+
+        val parsed = parseContextPage(page, isCurrent = true)
+
+        assertEquals(42, parsed.pageId)
+        assertEquals("١٢", parsed.printedPage)
+        assertEquals("نص المؤلف", parsed.body)
+        assertEquals("حاشية المحقق", parsed.footnote)
+        assertTrue(parsed.comment.isEmpty())
+        assertTrue(parsed.isCurrent)
+    }
+
+    @Test
     fun readsStructuredContentDirectly() {
         val structured = JSONObject().put("results", org.json.JSONArray())
         val result = JSONObject().put("structuredContent", structured)
