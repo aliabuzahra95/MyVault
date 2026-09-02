@@ -47,6 +47,7 @@ class ShamelaMcpClient @Inject constructor(
 
     suspend fun callTool(name: String, arguments: JSONObject): JSONObject {
         ShamelaMcpToolPolicy.validate(name, arguments)
+        ResearchTraceRecorder.toolCall(name, arguments)
         val session = activeSession ?: discoveryMutex.withLock {
             activeSession ?: initialize().also { activeSession = it }
         }
@@ -271,11 +272,19 @@ internal object ShamelaMcpToolPolicy {
         ),
         "shamela_search_phrase" to Contract(
             required = setOf("query"),
-            allowed = setOf("query", "mode", "search_in", "limit", "offset", "response_format"),
+            allowed = setOf("query", "mode", "distance", "search_in", "scope", "limit", "offset", "response_format"),
         ),
         "shamela_resolve" to Contract(
             required = setOf("query", "type"),
             allowed = setOf("query", "type", "limit", "response_format"),
+        ),
+        "shamela_verify_quote" to Contract(
+            required = setOf("quote"),
+            allowed = setOf("quote", "book_id", "page_id", "scope", "limit", "response_format"),
+        ),
+        "shamela_scan_consensus" to Contract(
+            required = setOf("question"),
+            allowed = setOf("question", "families", "formulas", "distance", "search_in", "witnesses", "scope", "response_format"),
         ),
     )
 

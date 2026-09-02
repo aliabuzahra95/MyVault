@@ -4,9 +4,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,9 +24,11 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
@@ -32,6 +37,8 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.NoteAdd
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -60,8 +67,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -72,6 +85,7 @@ import com.myvault.app.data.ai.ShamelaConnectionState
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import com.myvault.app.data.ai.ResearchSource
 import com.myvault.app.data.ai.ResearchContextPage
+import com.myvault.app.data.ai.ResearchEvidenceClass
 import com.myvault.app.data.ai.toShamelaSourceNote
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -93,6 +107,7 @@ fun AiResearchScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     var followLatest by remember { mutableStateOf(true) }
+    var sourceList by remember { mutableStateOf<List<ResearchSource>?>(null) }
     val authorizationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -167,7 +182,12 @@ fun AiResearchScreen(
                 }
             } else {
                 items(state.messages, key = AiResearchMessage::id) { message ->
-                    AiResearchMessageItem(message, viewModel::openSource, viewModel::beginSaveSource)
+                    AiResearchMessageItem(
+                        message = message,
+                        onOpenSource = viewModel::openSource,
+                        onSaveSource = viewModel::beginSaveSource,
+                        onShowSources = { sourceList = it },
+                    )
                 }
             }
         }
@@ -191,6 +211,20 @@ fun AiResearchScreen(
                 copyToClipboard(context, "Citation", detail.source.toShamelaSourceNote().citation)
             },
             onSave = { viewModel.beginSaveSource(detail.source) },
+        )
+    }
+    sourceList?.let { sources ->
+        ResearchSourcesSheet(
+            sources = sources,
+            onDismiss = { sourceList = null },
+            onOpenSource = { source ->
+                sourceList = null
+                viewModel.openSource(source)
+            },
+            onSaveSource = { source ->
+                sourceList = null
+                viewModel.beginSaveSource(source)
+            },
         )
     }
     state.sourceSave?.let { saveState ->
@@ -373,6 +407,7 @@ private fun AiResearchMessageItem(
     message: AiResearchMessage,
     onOpenSource: (ResearchSource) -> Unit,
     onSaveSource: (ResearchSource) -> Unit,
+    onShowSources: (List<ResearchSource>) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     if (message.role == AiResearchMessageRole.User) {
@@ -393,53 +428,232 @@ private fun AiResearchMessageItem(
         }
     } else {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (message.sourcesInline) {
                 if (message.isWorking) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
+                        Text(
+                            if (message.sources.isEmpty()) "Researching…" else "Answering…",
+                            fontSize = 12.5.sp,
+                            color = colors.textSecondary,
+                        )
+                    }
                 }
-                Text(
-                    text = message.text,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                    color = if (message.isError) colors.warning else colors.text,
-                )
-            }
-            message.sources.forEach { source ->
-                ShamelaSourceCard(source, onOpenSource, onSaveSource)
+                if (!message.text.isResearchProgressLabel()) {
+                    ResearchAnswerBody(
+                        text = message.text,
+                        sources = message.sources,
+                        onOpenSource = onOpenSource,
+                    )
+                }
+                if (message.sources.isNotEmpty()) {
+                    CompactSourcesButton(
+                        count = message.sources.size,
+                        isWorking = message.isWorking,
+                        onClick = { onShowSources(message.sources) },
+                    )
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (message.isWorking) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    }
+                    Text(
+                        text = message.text,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                        color = if (message.isError) colors.warning else colors.text,
+                    )
+                }
+                if (message.sources.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Sources", Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.W800, color = colors.text)
+                        Text("${message.sources.size} verified", fontSize = 11.5.sp, color = colors.textMuted)
+                    }
+                }
+                message.sources.forEachIndexed { index, source ->
+                    ShamelaSourceCard(index + 1, source, onOpenSource, onSaveSource)
+                }
             }
         }
     }
 }
 
 @Composable
+private fun ResearchAnswerBody(
+    text: String,
+    sources: List<ResearchSource>,
+    onOpenSource: (ResearchSource) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val blocks = remember(text, sources.size) { parseResearchAnswerBlocks(text, sources.size) }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        blocks.forEach { block ->
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(
+                    text = simpleResearchMarkdown(block.text),
+                    modifier = Modifier.fillMaxWidth(),
+                    fontSize = if (block.isHeading) 16.sp else 14.5.sp,
+                    lineHeight = if (block.isHeading) 21.sp else 23.sp,
+                    fontWeight = if (block.isHeading) FontWeight.W800 else FontWeight.W400,
+                    color = colors.text,
+                )
+                if (block.sourceNumbers.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        block.sourceNumbers.forEach { number ->
+                            val source = sources.getOrNull(number - 1) ?: return@forEach
+                            ResearchCitationChip(number, source, onOpenSource)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResearchCitationChip(
+    number: Int,
+    source: ResearchSource,
+    onOpenSource: (ResearchSource) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = { onOpenSource(source) },
+        modifier = Modifier.widthIn(max = 250.dp),
+        color = colors.surface,
+        shape = VaultShapes.sm,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(number.toString(), fontSize = 10.5.sp, fontWeight = FontWeight.W800, color = colors.accent)
+            Text(
+                source.bookTitle,
+                fontSize = 10.5.sp,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactSourcesButton(count: Int, isWorking: Boolean, onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = VaultShapes.sm,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Rounded.Book, null, Modifier.size(16.dp), tint = colors.textSecondary)
+            Text(
+                if (isWorking) "$count sources being consulted" else "$count verified sources",
+                modifier = Modifier.weight(1f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.W700,
+                color = colors.textSecondary,
+            )
+            Icon(Icons.Rounded.ExpandMore, "Show sources", Modifier.size(18.dp), tint = colors.textMuted)
+        }
+    }
+}
+
+@Composable
 private fun ShamelaSourceCard(
+    sourceNumber: Int,
     source: ResearchSource,
     onOpenSource: (ResearchSource) -> Unit,
     onSaveSource: (ResearchSource) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    var expanded by remember(source.sourceId) { mutableStateOf(false) }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = tween(durationMillis = 150)),
         color = colors.surface,
-        shape = VaultShapes.md,
+        shape = VaultShapes.sm,
         border = BorderStroke(1.dp, colors.border),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Icon(Icons.Rounded.Book, null, Modifier.size(18.dp), tint = colors.textSecondary)
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    modifier = Modifier.size(26.dp),
+                    color = colors.accentSoft,
+                    shape = VaultShapes.sm,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            sourceNumber.toString(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.W800,
+                            color = colors.accent,
+                        )
+                    }
+                }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         source.bookTitle,
-                        fontSize = 14.sp,
-                        lineHeight = 19.sp,
+                        fontSize = 13.sp,
+                        lineHeight = 17.sp,
                         fontWeight = FontWeight.W700,
                         color = colors.text,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    source.authorName?.let {
-                        Text(it, fontSize = 11.5.sp, lineHeight = 16.sp, color = colors.textSecondary)
+                    val location = listOfNotNull(
+                        source.authorName,
+                        source.part?.let { "Part $it" },
+                        source.printedPage?.let { "Page $it" },
+                    ).joinToString(" · ")
+                    if (location.isNotBlank()) {
+                        Text(
+                            location,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Surface(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(36.dp),
+                    color = Color.Transparent,
+                    shape = VaultShapes.sm,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            if (expanded) "Collapse source excerpt" else "Expand source excerpt",
+                            Modifier.size(19.dp),
+                            tint = colors.textSecondary,
+                        )
                     }
                 }
             }
@@ -447,35 +661,161 @@ private fun ShamelaSourceCard(
                 source.arabicPassage,
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 17.sp,
-                    lineHeight = 28.sp,
+                    fontSize = 15.5.sp,
+                    lineHeight = 24.sp,
                     textDirection = TextDirection.Rtl,
                 ),
                 color = colors.text,
                 textAlign = TextAlign.End,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis,
             )
-            val location = listOfNotNull(
-                source.part?.let { "Part $it" },
-                source.printedPage?.let { "Page $it" },
-            ).joinToString(" · ")
-            Text(
-                listOf(source.provenanceType.label, location).filter(String::isNotBlank).joinToString(" · "),
-                fontSize = 11.5.sp,
-                lineHeight = 16.sp,
-                color = colors.textMuted,
-            )
-            Row(modifier = Modifier.align(Alignment.End)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(
+                        source.evidenceClass.label,
+                        fontSize = 10.5.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.W700,
+                        color = if (source.evidenceClass == ResearchEvidenceClass.Unclassified) {
+                            colors.textMuted
+                        } else {
+                            colors.accent
+                        },
+                    )
+                    Text(
+                        listOf(source.passageRole.label, source.provenanceType.label).distinct().joinToString(" · "),
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        color = colors.textMuted,
+                    )
+                }
                 TextButton(
                     onClick = { onSaveSource(source) },
-                    modifier = Modifier.heightIn(min = 40.dp),
+                    modifier = Modifier.heightIn(min = 36.dp),
                 ) {
-                    Text("Save to Note")
+                    Text("Save", fontSize = 11.5.sp)
                 }
                 TextButton(
                     onClick = { onOpenSource(source) },
-                    modifier = Modifier.heightIn(min = 40.dp),
+                    modifier = Modifier.heightIn(min = 36.dp),
                 ) {
-                    Text("Open source")
+                    Text("Open", fontSize = 11.5.sp)
+                }
+            }
+        }
+    }
+}
+
+internal data class ResearchAnswerBlock(
+    val text: String,
+    val sourceNumbers: List<Int>,
+    val isHeading: Boolean,
+)
+
+internal fun parseResearchAnswerBlocks(text: String, sourceCount: Int): List<ResearchAnswerBlock> {
+    val sourcePattern = Regex("\\[S(\\d{1,2})]", RegexOption.IGNORE_CASE)
+    return text
+        .replace("\r\n", "\n")
+        .split(Regex("\\n\\s*\\n"))
+        .mapNotNull { rawBlock ->
+            val sourceNumbers = sourcePattern.findAll(rawBlock)
+                .mapNotNull { it.groupValues[1].toIntOrNull() }
+                .filter { it in 1..sourceCount }
+                .distinct()
+                .toList()
+            val withoutSources = sourcePattern.replace(rawBlock, "")
+                .trim()
+            val isHeading = withoutSources.startsWith("#")
+            val cleanText = withoutSources
+                .replace(Regex("^#{1,4}\\s*"), "")
+                .trim()
+            cleanText.takeIf(String::isNotBlank)?.let {
+                ResearchAnswerBlock(it, sourceNumbers, isHeading)
+            }
+        }
+        .ifEmpty {
+            text.trim().takeIf(String::isNotBlank)?.let {
+                listOf(ResearchAnswerBlock(it, emptyList(), false))
+            }.orEmpty()
+        }
+}
+
+internal fun simpleResearchMarkdown(value: String): AnnotatedString = buildAnnotatedString {
+    val pattern = Regex("(\\*\\*([^*]+)\\*\\*)|(\\*([^*]+)\\*)")
+    var cursor = 0
+    pattern.findAll(value).forEach { match ->
+        append(value.substring(cursor, match.range.first))
+        val bold = match.groupValues[2]
+        if (bold.isNotEmpty()) {
+            withStyle(SpanStyle(fontWeight = FontWeight.W700)) { append(bold) }
+        } else {
+            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(match.groupValues[4]) }
+        }
+        cursor = match.range.last + 1
+    }
+    append(value.substring(cursor))
+}
+
+private fun String.isResearchProgressLabel(): Boolean =
+    this == "Searching Shamela…" ||
+        this == "Reading sources…" ||
+        this == "Verifying exact passages…" ||
+        this == "Generating answer…" ||
+        this == "Checking every claim…" ||
+        this == "Identifying scholars…" ||
+        startsWith("Answering with ")
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ResearchSourcesSheet(
+    sources: List<ResearchSource>,
+    onDismiss: () -> Unit,
+    onOpenSource: (ResearchSource) -> Unit,
+    onSaveSource: (ResearchSource) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = colors.bg,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Research sources", fontSize = 17.sp, fontWeight = FontWeight.W800, color = colors.text)
+                    Text("${sources.size} verified Shamela passages", fontSize = 11.5.sp, color = colors.textSecondary)
+                }
+                Surface(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(40.dp),
+                    color = Color.Transparent,
+                    shape = VaultShapes.sm,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Close, "Close sources", Modifier.size(20.dp), tint = colors.textSecondary)
+                    }
+                }
+            }
+            HorizontalDivider(color = colors.border)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = VaultSpacing.screen,
+                    end = VaultSpacing.screen,
+                    top = 14.dp,
+                    bottom = 28.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                items(sources.size, key = { sources[it].sourceId }) { index ->
+                    ShamelaSourceCard(index + 1, sources[index], onOpenSource, onSaveSource)
                 }
             }
         }
@@ -572,7 +912,11 @@ private fun SourceDetailSheet(
                                 Text(it, fontSize = 13.sp, fontWeight = FontWeight.W700, color = colors.text)
                             }
                             Text(
-                                state.source.provenanceType.label,
+                                listOf(
+                                    state.source.evidenceClass.label,
+                                    state.source.passageRole.label,
+                                    state.source.provenanceType.label,
+                                ).distinct().joinToString(" · "),
                                 fontSize = 11.sp,
                                 color = colors.textMuted,
                             )

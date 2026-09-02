@@ -359,6 +359,17 @@ class AiResearchViewModel @Inject constructor(
                         }
                     }
                 },
+                onSources = { sources ->
+                    _uiState.update { state ->
+                        state.copy(
+                            messages = state.messages.updateWorkingSources(
+                                workingId,
+                                sources,
+                                "Answering with ${sources.size} verified sources…",
+                            ),
+                        )
+                    }
+                },
                 onDelta = { delta ->
                     streamedAnswer.append(delta)
                     val now = SystemClock.elapsedRealtime()
@@ -369,7 +380,10 @@ class AiResearchViewModel @Inject constructor(
                             state.copy(
                                 messages = state.messages.replaceMessage(
                                     workingId,
-                                    AiResearchMessage(workingId, AiResearchMessageRole.Assistant, currentText),
+                                    state.messages.first { it.id == workingId }.copy(
+                                        text = currentText,
+                                        sourcesInline = true,
+                                    ),
                                 ),
                             )
                         }
@@ -388,6 +402,7 @@ class AiResearchViewModel @Inject constructor(
                             text = result.answer,
                             sources = result.sources,
                             providerModel = result.model,
+                            sourcesInline = true,
                         ),
                     ),
                 )
@@ -421,10 +436,16 @@ class AiResearchViewModel @Inject constructor(
                 val detail = when (result.classification) {
                     QuoteVerificationClassification.Exact -> result.totalHits?.let { " in $it Shamela pages." }
                         ?: "."
+                    QuoteVerificationClassification.NearExact ->
+                        ". The complete wording is present, with spelling, diacritic, hamza, or digit differences identified by Shamela."
+                    QuoteVerificationClassification.Partial ->
+                        ". The remainder is worded differently, so it must not be presented as an exact quotation."
                     QuoteVerificationClassification.Similar ->
                         ", but the exact consecutive wording was not found."
                     QuoteVerificationClassification.NotLocated ->
                         " in the searchable Shamela library."
+                    QuoteVerificationClassification.Unverifiable ->
+                        ". The credited book is not available in the downloaded Shamela corpus."
                 }
                 _uiState.update { state ->
                     state.copy(
@@ -478,6 +499,17 @@ class AiResearchViewModel @Inject constructor(
                         }
                     }
                 },
+                onSources = { sources ->
+                    _uiState.update { state ->
+                        state.copy(
+                            messages = state.messages.updateWorkingSources(
+                                workingId,
+                                sources,
+                                "Answering with ${sources.size} verified sources…",
+                            ),
+                        )
+                    }
+                },
                 onDelta = { delta ->
                     streamedAnswer.append(delta)
                     val now = SystemClock.elapsedRealtime()
@@ -488,10 +520,9 @@ class AiResearchViewModel @Inject constructor(
                             state.copy(
                                 messages = state.messages.replaceMessage(
                                     workingId,
-                                    AiResearchMessage(
-                                        id = workingId,
-                                        role = AiResearchMessageRole.Assistant,
+                                    state.messages.first { it.id == workingId }.copy(
                                         text = currentText,
+                                        sourcesInline = true,
                                     ),
                                 ),
                             )
@@ -511,6 +542,7 @@ class AiResearchViewModel @Inject constructor(
                             text = result.answer,
                             sources = result.sources,
                             providerModel = result.model,
+                            sourcesInline = true,
                         ),
                     ),
                 )
@@ -612,6 +644,7 @@ data class AiResearchMessage(
     val text: String,
     val sources: List<ResearchSource> = emptyList(),
     val providerModel: String? = null,
+    val sourcesInline: Boolean = false,
     val isWorking: Boolean = false,
     val isError: Boolean = false,
 )
@@ -650,4 +683,16 @@ private fun List<AiResearchMessage>.updateWorkingText(
     text: String,
 ): List<AiResearchMessage> = map { message ->
     if (message.id == id && message.isWorking) message.copy(text = text) else message
+}
+
+private fun List<AiResearchMessage>.updateWorkingSources(
+    id: String,
+    sources: List<ResearchSource>,
+    text: String,
+): List<AiResearchMessage> = map { message ->
+    if (message.id == id) {
+        message.copy(text = text, sources = sources, sourcesInline = true, isWorking = true)
+    } else {
+        message
+    }
 }

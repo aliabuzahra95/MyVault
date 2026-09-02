@@ -380,3 +380,46 @@
 - Tests: targeted prompt-injection delimiting, MCP allow-list, result/passage
   bounds, provider payload, streaming parsing, and error-sanitization tests pass.
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Comprehensive Evidence-Hierarchy Amendment
+
+- Status: IMPLEMENTED IN WORKTREE; LIVE BENCHMARK AND PHYSICAL SAMSUNG
+  ACCEPTANCE REMAIN OPEN.
+- Starting production checkpoint: `abdb103f8bb4f499f8e59f6de62632d3cb550150`
+  on `frozen-design-master-port`.
+- The previous search-first grounded answer path has been replaced by a bounded
+  plan, multi-pass retrieval, full-context expansion, provenance/role
+  classification, exact-quote verification, evidence ranking, synthesis, and
+  post-answer source audit.
+- Named-scholar research now prioritizes resolved author-scoped primary books
+  while retaining secondary quotations, explicit attributions, position
+  reports, and disagreement material. Secondary wording is searched back into
+  the target scholar's corpus before it can be promoted to primary evidence.
+- Deliberate alternate-term and contradiction passes are performed before final
+  selection. Fiqh questions also use `shamela_scan_consensus` as a disagreement
+  discovery primitive, never as an automatic consensus verdict.
+- The MCP allow-list now contains six read-only research operations:
+  `shamela_resolve`, `shamela_search_pages`, `shamela_search_phrase`,
+  `shamela_get_page`, `shamela_verify_quote`, and `shamela_scan_consensus`.
+- Every selected quotation must already occur on the retrieved author-body page
+  and pass exact/orthographic verification. Long-page extraction windows are
+  centered on the real search match.
+- Ordinary and scholar-comparison evidence packets are cached transiently by
+  normalized question. Provider switches reuse the same verified packet and
+  rerun only synthesis and final audit.
+- Synthesis is structured and claim-linked. Unknown source IDs, declared/rendered
+  ID mismatches, substantive uncited paragraphs, unsupported consensus language,
+  and unsafe final audits are blocked.
+- Source cards remain application-generated and open the stored Shamela book and
+  page identity. Evidence class, role, and provenance are visible.
+- Developer traces now record actual MCP tool calls and bounded arguments,
+  candidates, classifications, selected/rejected evidence, packet reuse, model
+  evidence IDs, and final verdict without credentials.
+- Architecture and the eight-case live benchmark gate are documented in
+  `docs/SHAMELA_RESEARCH_ENGINE_ARCHITECTURE.md`.
+- Focused research/provider/UI parsing tests and debug Kotlin compilation pass
+  with JBR 21 after this amendment. Full unit, lint, debug assembly, live
+  provider benchmarks, and physical Samsung acceptance are still pending at
+  this checkpoint.
+- Backup/restore, Google Drive backup architecture, Room, Web, canonical Qur'an,
+  Memorise, and PDF architecture were not changed.

@@ -2,6 +2,7 @@ package com.myvault.app.data.ai
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -105,5 +106,90 @@ class ShamelaResearchProviderParsingTest {
 
         assertEquals(1_500, source.arabicPassage.length)
         assertEquals(null, source.citationText)
+    }
+
+    @Test
+    fun findsNestedDisagreementWitnessesWithoutTreatingCountsAsEvidence() {
+        val witness = JSONObject()
+            .put("book_id", 8)
+            .put("page_id", 41)
+            .put("book_name", "كتاب الفقه")
+            .put("author_name", "المؤلف")
+            .put("snippet_body", "واختلفوا في مس الذكر")
+        val response = JSONObject()
+            .put("subject_pages", 99)
+            .put("formulas", org.json.JSONArray().put(JSONObject().put("witnesses", org.json.JSONArray().put(witness))))
+
+        val sources = parseNestedResearchSources(response, retrievedAt = 1L)
+
+        assertEquals(1, sources.size)
+        assertEquals("واختلفوا في مس الذكر", sources.single().arabicPassage)
+    }
+
+    @Test
+    fun preservesDedicatedQuoteVerificationVerdicts() {
+        assertEquals(QuoteVerificationClassification.Exact, parseQuoteVerificationClassification("verbatim"))
+        assertEquals(QuoteVerificationClassification.NearExact, parseQuoteVerificationClassification("differs"))
+        assertEquals(QuoteVerificationClassification.Partial, parseQuoteVerificationClassification("partial"))
+        assertEquals(QuoteVerificationClassification.Unverifiable, parseQuoteVerificationClassification("unverifiable"))
+        assertEquals(QuoteVerificationClassification.NotLocated, parseQuoteVerificationClassification("not_found"))
+    }
+
+    @Test
+    fun authorResolutionPrefersExactNormalizedNameOverFirstLooseMatch() {
+        val selected = selectResolvedAuthor(
+            listOf(
+                JSONObject().put("author_id", 1).put("author_name", "تقي الدين ابن تيمية الحفيد"),
+                JSONObject().put("author_id", 2).put("author_name", "ابن تيمية"),
+            ),
+            requestedName = "ابن تيميّة",
+        )
+
+        assertEquals(2, selected?.getInt("author_id"))
+    }
+
+    @Test
+    fun quoteVerificationRequiresExactStoredPageAndAuthorBodyLocation() {
+        val source = ResearchSource(
+            sourceId = "shamela:8:41:authorbody",
+            bookId = 8,
+            pageId = 41,
+            bookTitle = "Book",
+            authorId = 2,
+            authorName = "Author",
+            arabicPassage = "الوضوء مستحب",
+            provenanceType = ResearchProvenance.AuthorBody,
+            part = null,
+            printedPage = null,
+            citationText = null,
+            retrievedAtEpochMillis = 0,
+        )
+        val exactBody = JSONObject()
+            .put("status", "verbatim")
+            .put(
+                "locations",
+                org.json.JSONArray().put(
+                    JSONObject()
+                        .put("book_id", 8)
+                        .put("page_id", 41)
+                        .put("matched_in", "body"),
+                ),
+            )
+        val wrongPage = JSONObject(exactBody.toString()).put(
+            "locations",
+            org.json.JSONArray().put(
+                JSONObject().put("book_id", 8).put("page_id", 42).put("matched_in", "body"),
+            ),
+        )
+        val footnote = JSONObject(exactBody.toString()).put(
+            "locations",
+            org.json.JSONArray().put(
+                JSONObject().put("book_id", 8).put("page_id", 41).put("matched_in", "foot"),
+            ),
+        )
+
+        assertTrue(parseQuoteCheckAtSource(exactBody, source).verified)
+        assertFalse(parseQuoteCheckAtSource(wrongPage, source).verified)
+        assertFalse(parseQuoteCheckAtSource(footnote, source).verified)
     }
 }
