@@ -9,6 +9,7 @@ import com.myvault.app.data.ai.ShamelaMcpClient
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import com.myvault.app.data.ai.ShamelaResearchProvider
 import com.myvault.app.data.ai.ResearchSource
+import com.myvault.app.data.ai.GroundedResearchOrchestrator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
 import java.util.UUID
@@ -26,6 +27,7 @@ class AiResearchViewModel @Inject constructor(
     private val shamelaAuthRepository: ShamelaAuthRepository,
     private val shamelaMcpClient: ShamelaMcpClient,
     private val shamelaResearchProvider: ShamelaResearchProvider,
+    private val groundedResearch: GroundedResearchOrchestrator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         AiResearchUiState(selectedProvider = localPreferences.selectedProvider()),
@@ -129,6 +131,10 @@ class AiResearchViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
+            if (!question.isRawShamelaSearch()) {
+                submitGroundedQuestion(question, workingId)
+                return@launch
+            }
             runCatching {
                 shamelaResearchProvider.search(
                     com.myvault.app.data.ai.ResearchSearchRequest(
@@ -174,6 +180,54 @@ class AiResearchViewModel @Inject constructor(
         }
     }
 
+    private suspend fun submitGroundedQuestion(question: String, workingId: String) {
+        val provider = _uiState.value.selectedProvider
+        runCatching {
+            groundedResearch.answer(
+                question = question,
+                provider = provider,
+                onStage = { stage ->
+                    _uiState.update { state ->
+                        state.copy(
+                            messages = state.messages.updateWorkingText(workingId, stage.label),
+                        )
+                    }
+                },
+            )
+        }.onSuccess { result ->
+            _uiState.update { state ->
+                state.copy(
+                    isBusy = false,
+                    messages = state.messages.replaceMessage(
+                        workingId,
+                        AiResearchMessage(
+                            id = workingId,
+                            role = AiResearchMessageRole.Assistant,
+                            text = result.answer,
+                            sources = result.sources,
+                            providerModel = result.model,
+                        ),
+                    ),
+                )
+            }
+        }.onFailure { error ->
+            _uiState.update { state ->
+                state.copy(
+                    isBusy = false,
+                    messages = state.messages.replaceMessage(
+                        workingId,
+                        AiResearchMessage(
+                            id = workingId,
+                            role = AiResearchMessageRole.Assistant,
+                            text = error.message ?: "Could not generate a grounded answer.",
+                            isError = true,
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
     private companion object {
         const val MaxComposerCharacters = 12_000
     }
@@ -193,6 +247,7 @@ data class AiResearchMessage(
     val role: AiResearchMessageRole,
     val text: String,
     val sources: List<ResearchSource> = emptyList(),
+    val providerModel: String? = null,
     val isWorking: Boolean = false,
     val isError: Boolean = false,
 )
@@ -214,7 +269,21 @@ private fun String.toShamelaQuery(): String {
     }.orEmpty().ifBlank { trim() }
 }
 
+internal fun String.isRawShamelaSearch(): Boolean = listOf(
+    "Search Shamela for ",
+    "Search Shamela: ",
+    "Search for ",
+    "ابحث في الشاملة عن ",
+).any { startsWith(it, ignoreCase = true) }
+
 private fun List<AiResearchMessage>.replaceMessage(
     id: String,
     replacement: AiResearchMessage,
 ): List<AiResearchMessage> = map { if (it.id == id) replacement else it }
+
+private fun List<AiResearchMessage>.updateWorkingText(
+    id: String,
+    text: String,
+): List<AiResearchMessage> = map { message ->
+    if (message.id == id && message.isWorking) message.copy(text = text) else message
+}

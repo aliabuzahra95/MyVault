@@ -122,5 +122,33 @@
   temperature `0.6` for `kimi-k2.6` is enforced.
 - Tests: request construction, response parsing, empty/malformed boundaries,
   live calls for all three providers, JBR 21 unit tests, lint, and debug build.
-- Implementation commit: pending Stage 6 checkpoint commit.
+- Implementation commit: `a600f4e70da48a0cd1fba645c4e6ad212bb4b093`
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 7 - Shamela-grounded AI Answers
+
+- Status: COMPLETE
+- Flow: the selected provider converts a natural-language question into one
+  bounded Shamela search phrase; MyVault validates and executes the fixed
+  read-only search; only the question and at most six retrieved passages are
+  then supplied to the selected provider for explanation.
+- Tool safety: the model cannot call MCP directly. The only Stage 7 operation is
+  the hard-coded `shamela_search_pages` path through `ShamelaResearchProvider`,
+  with its existing query, result-count, response-size, timeout, and
+  cancellation bounds.
+- Grounding: source text is explicitly marked untrusted data. The provider is
+  instructed not to follow passage instructions, fill evidence gaps from
+  memory, rewrite Arabic as a direct quotation, or invent metadata/citations.
+- Raw search: an explicit `Search Shamela...` composer command still returns
+  source cards directly without generating an AI explanation.
+- Live result: an Arabic question completed query planning, retrieved six real
+  Shamela passages, and generated an Arabic ChatGPT answer. The installed
+  production UI showed the outlined question, plain answer text, and verified
+  sources as separate cards. When retrieved passages did not establish the
+  requested phrase precisely, the answer stated that limitation.
+- Tests: grounded prompt boundaries, six-source cap, missing-metadata handling,
+  verbose query-plan normalization, live authenticated retrieval/generation,
+  and installed production rendering passed.
+- Implementation commit: pending Stage 7 checkpoint commit.
+- Visual evidence: `artifacts/shamela-ai/stage-7/` (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.

@@ -122,6 +122,7 @@ internal fun buildOpenAiRequest(request: AiGenerationRequest, model: String): JS
     .put("instructions", request.systemInstruction.safeSystemInstruction())
     .put("input", request.prompt.safePrompt())
     .put("max_output_tokens", request.maxOutputTokens.safeMaxOutputTokens())
+    .put("reasoning", JSONObject().put("effort", "minimal"))
     .put("store", false)
 
 internal fun buildGeminiRequest(request: AiGenerationRequest): JSONObject = JSONObject()

@@ -22,6 +22,7 @@ class AiProviderClientsTest {
         assertEquals("gpt-5-mini", body.getString("model"))
         assertFalse(body.getBoolean("store"))
         assertEquals("Explain the passage.", body.getString("input"))
+        assertEquals("minimal", body.getJSONObject("reasoning").getString("effort"))
     }
 
     @Test
