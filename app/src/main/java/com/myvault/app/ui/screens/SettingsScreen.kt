@@ -486,7 +486,7 @@ private fun LegacySettingsScreen(
             title = { Text("Restore from Drive?") },
             text = {
                 Text(
-                    "This will pull the latest MyVault backup from Google Drive and apply it to this device. A local emergency backup is created before restore, but you should only continue when this device is ready to receive the Drive version.",
+                    "This will pull the latest MyVault backup from Google Drive and apply it to this device. Only continue when this device is ready to receive the Drive version.",
                 )
             },
             confirmButton = {

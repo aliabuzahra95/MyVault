@@ -139,13 +139,6 @@ class BackupRepository @Inject constructor(
         source.inputStream().use { input -> restoreBackup(input) }
     }
 
-    suspend fun createSafetyBackup(reason: String): BackupResult = withContext(Dispatchers.IO) {
-        val safeReason = reason.replace(Regex("[^A-Za-z0-9_-]"), "-").ifBlank { "safety" }
-        val backupDir = File(context.filesDir, "emergency_backups").apply { mkdirs() }
-        val file = File(backupDir, "$safeReason-${System.currentTimeMillis()}.vaultbackup")
-        exportBackupToFile(file)
-    }
-
     suspend fun verifyCurrentBackupIntegrity(): BackupVerificationResult = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "vault-backup-verification.vaultbackup")
         runCatching {
@@ -660,8 +653,6 @@ class BackupRepository @Inject constructor(
                 }
             val backedUpPreferences = entries["settings.json"]?.let { JSONObject(it).toValidatedBackupPreferences() }
 
-            createEmergencyBackupBeforeRestore()
-
             database.withTransaction {
                 if (folders.isNotEmpty()) folderDao.upsertAll(folders)
                 if (courses.isNotEmpty()) courseDao.upsertCourses(courses)
@@ -751,15 +742,6 @@ class BackupRepository @Inject constructor(
         )
     }
 
-    private suspend fun createEmergencyBackupBeforeRestore() {
-        runCatching {
-            createSafetyBackup("before-restore")
-        }.getOrElse { error ->
-            throw IllegalStateException(
-                "Restore was stopped because My Vault could not create an emergency backup first: ${error.message ?: "Unknown error"}",
-            )
-        }
-    }
 }
 
 private fun validateManifest(manifestText: String?) {

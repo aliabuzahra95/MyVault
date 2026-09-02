@@ -353,13 +353,12 @@ class SettingsViewModel @Inject constructor(
     fun permanentlyDeleteNote(noteId: String, onComplete: (String) -> Unit = {}) {
         viewModelScope.launch {
             runCatching {
-                backupRepository.createSafetyBackup("before-permanent-delete-note")
                 noteRepository.permanentlyDeleteNote(noteId)
             }.onSuccess {
                 refreshStorage()
-                onComplete("Item permanently deleted. A safety backup was saved first.")
+                onComplete("Item permanently deleted.")
             }.onFailure {
-                onComplete("Permanent delete stopped: ${it.message ?: "Unable to create safety backup first."}")
+                onComplete("Permanent delete failed: ${it.message ?: "Unknown error"}")
             }
         }
     }
@@ -371,13 +370,12 @@ class SettingsViewModel @Inject constructor(
     fun permanentlyDeleteFolder(folderId: String, onComplete: (String) -> Unit = {}) {
         viewModelScope.launch {
             runCatching {
-                backupRepository.createSafetyBackup("before-permanent-delete-folder")
                 folderRepository.permanentlyDeleteFolderTree(folderId)
             }.onSuccess {
                 refreshStorage()
-                onComplete("Folder permanently deleted. A safety backup was saved first.")
+                onComplete("Folder permanently deleted.")
             }.onFailure {
-                onComplete("Permanent delete stopped: ${it.message ?: "Unable to create safety backup first."}")
+                onComplete("Permanent delete failed: ${it.message ?: "Unknown error"}")
             }
         }
     }
@@ -385,16 +383,15 @@ class SettingsViewModel @Inject constructor(
     fun permanentlyDeleteAllRecentlyDeleted(onComplete: (String) -> Unit = {}) {
         viewModelScope.launch {
             runCatching {
-                backupRepository.createSafetyBackup("before-empty-recently-deleted")
                 observeRecentlyDeleted()
                 val current = recentlyDeleted.value
                 current.folders.forEach { folderRepository.permanentlyDeleteFolderTree(it.id) }
                 current.notes.forEach { noteRepository.permanentlyDeleteNote(it.id) }
             }.onSuccess {
                 refreshStorage()
-                onComplete("Recently Deleted was emptied. A safety backup was saved first.")
+                onComplete("Recently Deleted was emptied.")
             }.onFailure {
-                onComplete("Delete all stopped: ${it.message ?: "Unable to create safety backup first."}")
+                onComplete("Delete all failed: ${it.message ?: "Unknown error"}")
             }
         }
     }
