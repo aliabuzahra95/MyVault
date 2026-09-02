@@ -51,6 +51,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.myvault.app.data.ai.AiResearchProvider
 import com.myvault.app.data.ai.ShamelaConnectionState
+import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -78,6 +79,14 @@ fun AiResearchScreen(
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.lastIndex)
     }
+    LaunchedEffect(state.shamelaConnection, state.shamelaMcpConnection) {
+        if (
+            state.shamelaConnection == ShamelaConnectionState.Connected &&
+            state.shamelaMcpConnection == ShamelaMcpConnectionState.Idle
+        ) {
+            viewModel.discoverShamelaMcp()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -88,10 +97,12 @@ fun AiResearchScreen(
         AiResearchHeader(
             provider = state.selectedProvider,
             shamelaConnection = state.shamelaConnection,
+            shamelaMcpConnection = state.shamelaMcpConnection,
             onMenuClick = onMenuClick,
             onProviderSelected = viewModel::selectProvider,
             onConnectShamela = connectShamela,
             onDisconnectShamela = viewModel::disconnectShamela,
+            onRetryShamela = viewModel::discoverShamelaMcp,
         )
         LazyColumn(
             state = listState,
@@ -108,7 +119,9 @@ fun AiResearchScreen(
                 item {
                     AiResearchEmptyState(
                         shamelaConnection = state.shamelaConnection,
+                        shamelaMcpConnection = state.shamelaMcpConnection,
                         onConnectShamela = connectShamela,
+                        onRetryShamela = viewModel::discoverShamelaMcp,
                     )
                 }
             } else {
@@ -129,10 +142,12 @@ fun AiResearchScreen(
 private fun AiResearchHeader(
     provider: AiResearchProvider,
     shamelaConnection: ShamelaConnectionState,
+    shamelaMcpConnection: ShamelaMcpConnectionState,
     onMenuClick: () -> Unit,
     onProviderSelected: (AiResearchProvider) -> Unit,
     onConnectShamela: () -> Unit,
     onDisconnectShamela: () -> Unit,
+    onRetryShamela: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     var providerMenuOpen by remember { mutableStateOf(false) }
@@ -140,7 +155,12 @@ private fun AiResearchHeader(
     val shamelaStatus = when (shamelaConnection) {
         ShamelaConnectionState.Disconnected -> "Sign in"
         ShamelaConnectionState.Connecting -> "Connecting"
-        ShamelaConnectionState.Connected -> "Connected"
+        ShamelaConnectionState.Connected -> when (shamelaMcpConnection) {
+            ShamelaMcpConnectionState.Connecting -> "Connecting"
+            is ShamelaMcpConnectionState.Error -> "Retry"
+            ShamelaMcpConnectionState.Idle -> "Connecting"
+            is ShamelaMcpConnectionState.Ready -> "Connected"
+        }
         is ShamelaConnectionState.Error -> "Reconnect"
     }
     Row(
@@ -167,13 +187,16 @@ private fun AiResearchHeader(
                     "Shamela · $shamelaStatus",
                     modifier = Modifier.clickable {
                         when (shamelaConnection) {
-                            ShamelaConnectionState.Connected -> shamelaMenuOpen = true
+                            ShamelaConnectionState.Connected -> {
+                                if (shamelaMcpConnection is ShamelaMcpConnectionState.Error) onRetryShamela()
+                                else shamelaMenuOpen = true
+                            }
                             ShamelaConnectionState.Connecting -> Unit
                             else -> onConnectShamela()
                         }
                     },
                     fontSize = 11.sp,
-                    color = if (shamelaConnection == ShamelaConnectionState.Connected) colors.success else colors.textMuted,
+                    color = if (shamelaMcpConnection is ShamelaMcpConnectionState.Ready) colors.success else colors.textMuted,
                 )
                 DropdownMenu(expanded = shamelaMenuOpen, onDismissRequest = { shamelaMenuOpen = false }) {
                     DropdownMenuItem(
@@ -219,7 +242,9 @@ private fun AiResearchHeader(
 @Composable
 private fun AiResearchEmptyState(
     shamelaConnection: ShamelaConnectionState,
+    shamelaMcpConnection: ShamelaMcpConnectionState,
     onConnectShamela: () -> Unit,
+    onRetryShamela: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     Column(
@@ -243,7 +268,26 @@ private fun AiResearchEmptyState(
             ShamelaConnectionState.Connecting -> {
                 CircularProgressIndicator(modifier = Modifier.padding(top = 6.dp).size(20.dp), strokeWidth = 2.dp)
             }
-            ShamelaConnectionState.Connected -> Unit
+            ShamelaConnectionState.Connected -> when (shamelaMcpConnection) {
+                ShamelaMcpConnectionState.Connecting -> {
+                    CircularProgressIndicator(modifier = Modifier.padding(top = 6.dp).size(20.dp), strokeWidth = 2.dp)
+                }
+                is ShamelaMcpConnectionState.Error -> {
+                    TextButton(onClick = onRetryShamela) { Text("Retry Shamela") }
+                    Text(
+                        shamelaMcpConnection.message,
+                        modifier = Modifier.fillMaxWidth(0.82f),
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp,
+                        color = colors.warning,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+                ShamelaMcpConnectionState.Idle -> {
+                    CircularProgressIndicator(modifier = Modifier.padding(top = 6.dp).size(20.dp), strokeWidth = 2.dp)
+                }
+                is ShamelaMcpConnectionState.Ready -> Unit
+            }
         }
         if (shamelaConnection is ShamelaConnectionState.Error) {
             Text(

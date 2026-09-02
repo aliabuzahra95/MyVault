@@ -27,18 +27,44 @@
 
 ## Stage 2 - Shamela OAuth
 
-- Status: IMPLEMENTED; LIVE AUTHORIZATION AWAITING EMAIL ACTIVATION
+- Status: COMPLETE
 - OAuth client: public native client using authorization code, PKCE S256, and
   refresh tokens through AppAuth for Android.
 - Redirect: `com.myvault.app:/oauth2redirect/shamela`.
 - Token security: AppAuth state encrypted with Android Keystore AES-GCM in
   app-private preferences; excluded from platform and manual MyVault backups.
-- Account state: the live Shamela service accepted account creation and sent its
-  required activation link. No access token is available until the user opens
-  that link.
+- Account state: the live Shamela service accepted account activation and the
+  installed Android app completed browser authorization successfully. MyVault
+  returned directly to the AI workspace and restored the OAuth state after an
+  app restart.
 - Live contract: `docs/SHAMELA_MCP_LIVE_CONTRACT.md`.
-- Tests: OAuth contract test and debug assembly passed before the activation
-  gate. Full unit/lint verification is recorded with the Stage 2 commit.
+- Tests: OAuth contract test, full unit suite, lint, and debug assembly passed.
+- Live result: access-token acquisition and refresh-capable AppAuth state were
+  proven without logging or backing up credentials.
+- Implementation commit: `4ee15e0322e5d7e656020528cb154fea4c1a32d4`
 - Emulator note: the initial blank custom tab was an emulator Chrome native
   library startup failure. After a clean browser restart, the unchanged OAuth
   request rendered the real Shamela account flow.
+
+## Stage 3 - Real MCP Initialization
+
+- Status: COMPLETE
+- Implementation: minimal JSON-RPC client over the existing HTTPS stack with
+  bearer authentication, JSON/SSE parsing, protocol negotiation, initialized
+  notification, bounded pagination, timeout, cancellation, and structured
+  errors.
+- Live result: authenticated `initialize`, `notifications/initialized`, and
+  `tools/list` succeeded from the installed app. The negotiated protocol is
+  `2025-11-25`; the server is `shamela` version `1.3.0`; responses use SSE; the
+  endpoint behaved statelessly without an MCP session header.
+- Catalogue: 34 read-only, non-destructive tools with complete live schemas are
+  captured in `docs/SHAMELA_MCP_TOOL_CATALOG.json`.
+- Harmless invocation: `shamela_health` returned status `ok` and a readable
+  searchable corpus through the same authenticated Android client.
+- Runtime: the AI header reaches `Shamela · Connected` only after MCP discovery
+  succeeds; initialization errors expose an inline retry action.
+- Tests: JSON, SSE, and structured-error parser tests; full unit suite, lint,
+  debug assembly, live instrumentation discovery, and runtime restart check.
+- Implementation commit: pending Stage 3 checkpoint commit.
+- Physical Samsung: NOT TESTED; only the Android emulator is currently
+  connected.

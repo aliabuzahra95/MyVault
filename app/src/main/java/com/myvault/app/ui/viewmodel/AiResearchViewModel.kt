@@ -5,6 +5,8 @@ import com.myvault.app.data.ai.AiResearchLocalPreferences
 import com.myvault.app.data.ai.AiResearchProvider
 import com.myvault.app.data.ai.ShamelaAuthRepository
 import com.myvault.app.data.ai.ShamelaConnectionState
+import com.myvault.app.data.ai.ShamelaMcpClient
+import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
 import java.util.UUID
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 class AiResearchViewModel @Inject constructor(
     private val localPreferences: AiResearchLocalPreferences,
     private val shamelaAuthRepository: ShamelaAuthRepository,
+    private val shamelaMcpClient: ShamelaMcpClient,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         AiResearchUiState(selectedProvider = localPreferences.selectedProvider()),
@@ -30,6 +33,7 @@ class AiResearchViewModel @Inject constructor(
         viewModelScope.launch {
             shamelaAuthRepository.connection.collect { connection ->
                 _uiState.update { it.copy(shamelaConnection = connection) }
+                if (connection == ShamelaConnectionState.Connected) discoverShamelaMcp()
             }
         }
     }
@@ -47,7 +51,31 @@ class AiResearchViewModel @Inject constructor(
     }
 
     fun disconnectShamela() {
-        viewModelScope.launch { shamelaAuthRepository.disconnect() }
+        viewModelScope.launch {
+            shamelaMcpClient.clearSession()
+            _uiState.update { it.copy(shamelaMcpConnection = ShamelaMcpConnectionState.Idle) }
+            shamelaAuthRepository.disconnect()
+        }
+    }
+
+    fun discoverShamelaMcp() {
+        if (_uiState.value.shamelaMcpConnection == ShamelaMcpConnectionState.Connecting) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(shamelaMcpConnection = ShamelaMcpConnectionState.Connecting) }
+            runCatching { shamelaMcpClient.discover() }
+                .onSuccess { contract ->
+                    _uiState.update { it.copy(shamelaMcpConnection = ShamelaMcpConnectionState.Ready(contract)) }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            shamelaMcpConnection = ShamelaMcpConnectionState.Error(
+                                error.message ?: "Could not initialize Shamela research.",
+                            ),
+                        )
+                    }
+                }
+        }
     }
 
     fun selectProvider(provider: AiResearchProvider) {
@@ -89,6 +117,7 @@ class AiResearchViewModel @Inject constructor(
 data class AiResearchUiState(
     val selectedProvider: AiResearchProvider = AiResearchProvider.ChatGpt,
     val shamelaConnection: ShamelaConnectionState = ShamelaConnectionState.Disconnected,
+    val shamelaMcpConnection: ShamelaMcpConnectionState = ShamelaMcpConnectionState.Idle,
     val composer: String = "",
     val messages: List<AiResearchMessage> = emptyList(),
 )
