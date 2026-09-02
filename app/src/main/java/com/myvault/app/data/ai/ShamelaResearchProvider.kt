@@ -114,6 +114,46 @@ class ShamelaResearchProvider @Inject constructor(
         )
     }
 
+    suspend fun searchScholar(
+        query: String,
+        scholarName: String,
+        limit: Int = MaxScholarResults,
+    ): ScholarResearchEvidence {
+        val cleanQuery = query.trim().take(MaxQueryCharacters)
+        val cleanScholar = scholarName.trim().take(MaxScholarNameCharacters)
+        require(cleanQuery.isNotBlank()) { "A comparison topic is required." }
+        require(cleanScholar.isNotBlank()) { "A scholar name is required." }
+        val resolved = mcpClient.callTool(
+            name = ResolveTool,
+            arguments = JSONObject()
+                .put("query", cleanScholar)
+                .put("type", "author")
+                .put("limit", MaxResolvedAuthorCandidates)
+                .put("response_format", "json"),
+        ).structuredContent()
+        val author = resolved.optJSONArray("authors").orEmptyObjects().firstOrNull()
+            ?: return ScholarResearchEvidence(cleanScholar, null, null, emptyList())
+        val authorId = author.positiveInt("author_id")
+            ?: return ScholarResearchEvidence(cleanScholar, author.firstText("author_name", "name"), null, emptyList())
+        val resolvedName = author.firstText("author_name", "name") ?: cleanScholar
+        val result = mcpClient.callTool(
+            name = SearchTool,
+            arguments = JSONObject()
+                .put("query", cleanQuery)
+                .put("limit", limit.coerceIn(1, MaxScholarResults))
+                .put("offset", 0)
+                .put("scope", JSONObject().put("author_ids", JSONArray().put(authorId)))
+                .put("options", JSONObject().put("search_in", JSONArray().put("body").put("foot")))
+                .put("response_format", "json"),
+        ).structuredContent()
+        return ScholarResearchEvidence(
+            requestedScholar = cleanScholar,
+            resolvedScholar = resolvedName,
+            authorId = authorId,
+            sources = parseSearchSources(result, limit.coerceIn(1, MaxScholarResults)),
+        )
+    }
+
     private suspend fun getPage(bookId: Int, pageId: Int, bodyPart: Int = 1): JSONObject =
         mcpClient.callTool(
             name = SourcePageTool,
@@ -129,10 +169,14 @@ class ShamelaResearchProvider @Inject constructor(
         const val SearchTool = "shamela_search_pages"
         const val SourcePageTool = "shamela_get_page"
         const val ExactPhraseTool = "shamela_search_phrase"
+        const val ResolveTool = "shamela_resolve"
         const val MaxQueryCharacters = 500
         const val MaxSearchResults = 8
         const val MaxVerificationResults = 6
         const val MinQuoteCharacters = 2
+        const val MaxScholarResults = 3
+        const val MaxScholarNameCharacters = 100
+        const val MaxResolvedAuthorCandidates = 3
         const val MaxCurrentPageParts = 3
         const val MaxSourceContextCharacters = 12_000
     }

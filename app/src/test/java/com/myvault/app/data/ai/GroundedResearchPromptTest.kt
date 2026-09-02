@@ -1,10 +1,37 @@
 package com.myvault.app.data.ai
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GroundedResearchPromptTest {
+    @Test
+    fun parsesBoundedScholarComparisonPlan() {
+        val plan = parseScholarComparisonPlan(
+            """{"topic":"الإيمان قول وعمل","scholars":["ابن تيمية","النووي","ابن حجر"]}""",
+        )
+
+        assertEquals("الإيمان قول وعمل", plan.topic)
+        assertEquals(listOf("ابن تيمية", "النووي", "ابن حجر"), plan.scholars)
+    }
+
+    @Test
+    fun comparisonPromptKeepsMissingScholarGapExplicit() {
+        val prompt = buildScholarComparisonPrompt(
+            question = "Compare two scholars",
+            plan = ScholarComparisonPlan("الإيمان", listOf("ابن تيمية", "النووي")),
+            evidence = listOf(
+                ScholarResearchEvidence("ابن تيمية", "ابن تيمية", 1, emptyList()),
+                ScholarResearchEvidence("النووي", "النووي", 2, emptyList()),
+            ),
+        )
+
+        assertTrue(prompt.contains("NO SHAMELA EVIDENCE LOCATED FOR THIS SCHOLAR"))
+        assertTrue(prompt.contains("SCHOLAR GROUP: ابن تيمية"))
+        assertTrue(prompt.contains("SCHOLAR GROUP: النووي"))
+    }
+
     @Test
     fun keepsSourcesSeparateAndLabelsProvenance() {
         val prompt = buildGroundedResearchPrompt(

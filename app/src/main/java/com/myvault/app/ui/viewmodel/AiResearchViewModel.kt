@@ -162,6 +162,10 @@ class AiResearchViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
+            if (_uiState.value.selectedMode == AiResearchMode.CompareScholars) {
+                submitScholarComparison(question, workingId)
+                return@launch
+            }
             if (_uiState.value.selectedMode == AiResearchMode.VerifyQuote) {
                 submitQuoteVerification(question, workingId)
                 return@launch
@@ -211,6 +215,72 @@ class AiResearchViewModel @Inject constructor(
                         ),
                     )
                 }
+            }
+        }
+    }
+
+    private suspend fun submitScholarComparison(question: String, workingId: String) {
+        val provider = _uiState.value.selectedProvider
+        val streamedAnswer = StringBuilder()
+        var lastStreamUpdateMillis = 0L
+        runCatching {
+            groundedResearch.compareScholars(
+                question = question,
+                provider = provider,
+                onStage = { stage ->
+                    if (streamedAnswer.isEmpty()) {
+                        _uiState.update { state ->
+                            state.copy(messages = state.messages.updateWorkingText(workingId, stage.label))
+                        }
+                    }
+                },
+                onDelta = { delta ->
+                    streamedAnswer.append(delta)
+                    val now = SystemClock.elapsedRealtime()
+                    if (lastStreamUpdateMillis == 0L || now - lastStreamUpdateMillis >= StreamUiUpdateMillis) {
+                        lastStreamUpdateMillis = now
+                        val currentText = streamedAnswer.toString()
+                        _uiState.update { state ->
+                            state.copy(
+                                messages = state.messages.replaceMessage(
+                                    workingId,
+                                    AiResearchMessage(workingId, AiResearchMessageRole.Assistant, currentText),
+                                ),
+                            )
+                        }
+                    }
+                },
+            )
+        }.onSuccess { result ->
+            _uiState.update { state ->
+                state.copy(
+                    isBusy = false,
+                    messages = state.messages.replaceMessage(
+                        workingId,
+                        AiResearchMessage(
+                            id = workingId,
+                            role = AiResearchMessageRole.Assistant,
+                            text = result.answer,
+                            sources = result.sources,
+                            providerModel = result.model,
+                        ),
+                    ),
+                )
+            }
+        }.onFailure { error ->
+            _uiState.update { state ->
+                state.copy(
+                    isBusy = false,
+                    messages = state.messages.replaceMessage(
+                        workingId,
+                        AiResearchMessage(
+                            id = workingId,
+                            role = AiResearchMessageRole.Assistant,
+                            text = error.message ?: "Could not compare these scholars.",
+                            isError = true,
+                        ),
+                    ),
+                )
             }
         }
     }
@@ -354,6 +424,7 @@ data class AiResearchUiState(
 enum class AiResearchMode(val label: String, val composerHint: String) {
     Ask("Ask", "Ask AI or search Shamela"),
     VerifyQuote("Verify quote", "Paste an Arabic quotation"),
+    CompareScholars("Compare", "Name scholars and a topic"),
 }
 
 sealed interface SourceDetailState {

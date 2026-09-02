@@ -225,3 +225,32 @@
 - Visual evidence: `artifacts/shamela-ai/stage-10-quote-mode-selected.png`
   (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 11 - Compare Scholars
+
+- Status: COMPLETE
+- Flow: the selected AI produces only a bounded JSON research plan containing
+  the topic and two-to-four named scholars. MyVault resolves each scholar with
+  `shamela_resolve`, then executes a separate `shamela_search_pages` call scoped
+  to that resolved author ID. Only those isolated evidence groups are sent back
+  for the streamed comparison.
+- Identity safety: passages never move between scholar groups. Missing or
+  unresolved evidence is represented explicitly and the model is instructed
+  not to fill it from memory. A zero-evidence live attempt correctly returned
+  no comparison.
+- Planner hardening: live testing caught ChatGPT copying a schema placeholder
+  as the search topic. The planner now uses a concrete example and the parser
+  rejects placeholder text instead of issuing an empty/misleading search.
+- Live result: the final Arabic topic `الله` resolved Ibn Taymiyyah to author ID
+  54 and al-Nawawi to author ID 44. Each independent scope returned three
+  sources; ChatGPT streamed a 2,298-character comparison tied to `[S1]`-`[S6]`
+  and stated the limitations of the retrieved excerpts.
+- UI: `Compare` is a compact third composer mode. The installed app rendered
+  normal flowing comparison text with scholar headings and retained separate
+  source-card identity below the answer.
+- Tests: bounded plan parsing, explicit missing-evidence prompts, direct scoped
+  retrieval, no-evidence refusal, live end-to-end comparison, targeted unit
+  tests, debug assembly, and installed UI passed.
+- Visual evidence: `artifacts/shamela-ai/stage-11/comparison-light.png` (not
+  tracked in Git).
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.

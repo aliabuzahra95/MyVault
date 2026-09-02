@@ -65,6 +65,13 @@ enum class QuoteVerificationClassification(val label: String) {
     NotLocated("Not located"),
 }
 
+data class ScholarResearchEvidence(
+    val requestedScholar: String,
+    val resolvedScholar: String?,
+    val authorId: Int?,
+    val sources: List<ResearchSource>,
+)
+
 enum class ResearchProvenance(val label: String) {
     AuthorBody("Author text"),
     Footnote("Footnote / editor text"),
