@@ -3,6 +3,8 @@ package com.myvault.app.data.ai
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -10,7 +12,7 @@ import org.json.JSONObject
 class ShamelaResearchProvider @Inject constructor(
     private val mcpClient: ShamelaMcpClient,
 ) : ResearchProvider {
-    override suspend fun search(request: ResearchSearchRequest): ResearchSearchResult {
+    override suspend fun search(request: ResearchSearchRequest): ResearchSearchResult = withContext(Dispatchers.Default) {
         val query = request.query.trim()
         require(query.isNotEmpty()) { "Enter a Shamela search query." }
         require(query.length <= MaxQueryCharacters) { "Shamela search is limited to $MaxQueryCharacters characters." }
@@ -36,7 +38,7 @@ class ShamelaResearchProvider @Inject constructor(
             .flatMap { result -> parseShamelaSearchResult(result, retrievedAt) }
             .take(limit)
         val elapsedMillis = ((System.nanoTime() - startedAt) / 1_000_000.0).roundToInt().toLong()
-        return ResearchSearchResult(
+        ResearchSearchResult(
             query = structured.optString("query").ifBlank { query },
             totalHits = structured.numberOrNull("total_hits")?.toInt(),
             sources = sources,
@@ -47,7 +49,7 @@ class ShamelaResearchProvider @Inject constructor(
         )
     }
 
-    suspend fun sourceContext(source: ResearchSource): ResearchSourceContext {
+    suspend fun sourceContext(source: ResearchSource): ResearchSourceContext = withContext(Dispatchers.Default) {
         require(source.bookId > 0 && source.pageId > 0) { "Source location is unavailable." }
         val currentResult = getPage(source.bookId, source.pageId, bodyPart = 1)
         val current = currentResult.structuredContent()
@@ -71,14 +73,14 @@ class ShamelaResearchProvider @Inject constructor(
                 add(parseContextPage(getPage(source.bookId, nextId).structuredContent(), isCurrent = false))
             }
         }
-        return ResearchSourceContext(
+        ResearchSourceContext(
             source = source,
             pages = pages,
             citationText = current.firstText("citation") ?: source.citationText,
         )
     }
 
-    suspend fun verifyQuote(rawQuote: String): QuoteVerificationResult {
+    suspend fun verifyQuote(rawQuote: String): QuoteVerificationResult = withContext(Dispatchers.Default) {
         val quote = rawQuote.trim().trim('"', '\'', '«', '»').trim()
         require(quote.length >= MinQuoteCharacters) { "Enter an Arabic quotation to verify." }
         require(quote.length <= MaxQueryCharacters) { "Quotations are limited to $MaxQueryCharacters characters." }
@@ -94,7 +96,7 @@ class ShamelaResearchProvider @Inject constructor(
         ).structuredContent()
         val exactSources = parseSearchSources(exact, MaxVerificationResults)
         if (exactSources.isNotEmpty()) {
-            return QuoteVerificationResult(
+            return@withContext QuoteVerificationResult(
                 quote = quote,
                 classification = QuoteVerificationClassification.Exact,
                 sources = exactSources,
@@ -102,7 +104,7 @@ class ShamelaResearchProvider @Inject constructor(
             )
         }
         val similar = search(ResearchSearchRequest(query = quote, limit = MaxVerificationResults))
-        return QuoteVerificationResult(
+        QuoteVerificationResult(
             quote = quote,
             classification = if (similar.sources.isEmpty()) {
                 QuoteVerificationClassification.NotLocated
@@ -118,7 +120,7 @@ class ShamelaResearchProvider @Inject constructor(
         query: String,
         scholarName: String,
         limit: Int = MaxScholarResults,
-    ): ScholarResearchEvidence {
+    ): ScholarResearchEvidence = withContext(Dispatchers.Default) {
         val cleanQuery = query.trim().take(MaxQueryCharacters)
         val cleanScholar = scholarName.trim().take(MaxScholarNameCharacters)
         require(cleanQuery.isNotBlank()) { "A comparison topic is required." }
@@ -132,9 +134,9 @@ class ShamelaResearchProvider @Inject constructor(
                 .put("response_format", "json"),
         ).structuredContent()
         val author = resolved.optJSONArray("authors").orEmptyObjects().firstOrNull()
-            ?: return ScholarResearchEvidence(cleanScholar, null, null, emptyList())
+            ?: return@withContext ScholarResearchEvidence(cleanScholar, null, null, emptyList())
         val authorId = author.positiveInt("author_id")
-            ?: return ScholarResearchEvidence(cleanScholar, author.firstText("author_name", "name"), null, emptyList())
+            ?: return@withContext ScholarResearchEvidence(cleanScholar, author.firstText("author_name", "name"), null, emptyList())
         val resolvedName = author.firstText("author_name", "name") ?: cleanScholar
         val result = mcpClient.callTool(
             name = SearchTool,
@@ -146,7 +148,7 @@ class ShamelaResearchProvider @Inject constructor(
                 .put("options", JSONObject().put("search_in", JSONArray().put("body").put("foot")))
                 .put("response_format", "json"),
         ).structuredContent()
-        return ScholarResearchEvidence(
+        ScholarResearchEvidence(
             requestedScholar = cleanScholar,
             resolvedScholar = resolvedName,
             authorId = authorId,

@@ -13,6 +13,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Singleton
 class AiProviderCredentialStore @Inject constructor(
@@ -20,9 +22,11 @@ class AiProviderCredentialStore @Inject constructor(
 ) {
     private val preferences = context.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
 
-    @Synchronized
-    fun credential(provider: AiResearchProvider): String =
-        readOverride(provider).orEmpty().ifBlank { configuredFallback(provider) }
+    suspend fun credential(provider: AiResearchProvider): String = withContext(Dispatchers.IO) {
+        synchronized(this@AiProviderCredentialStore) {
+            readOverride(provider).orEmpty().ifBlank { configuredFallback(provider) }
+        }
+    }
 
     @Synchronized
     fun writeOverride(provider: AiResearchProvider, credential: String) {
@@ -97,4 +101,3 @@ class AiProviderCredentialStore @Inject constructor(
         const val IvLengthBytes = 12
     }
 }
-

@@ -337,3 +337,46 @@
   assembly are run at the stage checkpoint.
 - Visual evidence: `artifacts/shamela-ai/stage-14/` (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
+- Implementation commit: `298b7b1a7c15e09023223064338c30b3c4c4b491`
+
+## Stage 15 - Performance, Privacy, and Security
+
+- Status: COMPLETE IN CODE/AUTOMATED REVIEW; PHYSICAL PERFORMANCE ACCEPTANCE
+  REMAINS STAGE 16.
+- Main-thread work: provider credential decryption and fallback lookup now run
+  on `Dispatchers.IO`; Shamela response parsing, page assembly, source cleaning,
+  and result shaping run on `Dispatchers.Default`; network I/O remains on
+  `Dispatchers.IO`.
+- Lifecycle/duplication: the ViewModel owns one active request, blocks duplicate
+  submission, cancels its actual connection, survives configuration change, and
+  caps the in-memory conversation at 200 messages. Streaming UI publication is
+  coalesced to at most one update per 50 ms.
+- OAuth: access/refresh state is AES-GCM encrypted with an Android Keystore key,
+  excluded from Android backup, and refresh is serialized by a Mutex to prevent
+  concurrent refresh-token races. No token or authorization header is logged.
+- Provider credentials: device overrides are AES-GCM encrypted with a separate
+  Android Keystore key and excluded from Android backup. The approved direct
+  Android architecture may also use build-configured fallback provider keys;
+  such embedded fallback keys are inherently extractable from a distributed
+  APK and must be treated as restricted/rotatable provider credentials. A
+  backend would be required to fully conceal them, but this project explicitly
+  does not introduce one.
+- MCP boundary: only `shamela_search_pages`, `shamela_get_page`,
+  `shamela_search_phrase`, and `shamela_resolve` are allowed. Their argument
+  names and required fields are validated locally. Tool discovery, responses,
+  pages, passages, counts, context parts, and payload bytes are bounded.
+- Prompt injection: Shamela text is preserved as quoted source data inside
+  explicit source delimiters and paired with system instructions that prohibit
+  treating retrieved text as system/tool instructions. The Android client does
+  not let model output invoke MCP tools.
+- Privacy/logging: Android cleartext traffic is disabled; AI requests use TLS;
+  OpenAI requests set `store=false`; no AI Research source contains debug logs,
+  token prints, credential prints, or stack-trace prints. Error details shown to
+  users are bounded and authentication/rate-limit failures are sanitized.
+- Bounds: 8 search results, 6 grounding sources, 12 comparison sources, 3 page
+  parts, previous/current/next page context, 48,000-character prompts,
+  100,000-character streamed answers, 4 MiB network responses, and finite MCP
+  discovery pagination. No autonomous/repeated tool loop exists.
+- Tests: targeted prompt-injection delimiting, MCP allow-list, result/passage
+  bounds, provider payload, streaming parsing, and error-sanitization tests pass.
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.

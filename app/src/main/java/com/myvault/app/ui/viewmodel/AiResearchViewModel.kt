@@ -230,12 +230,12 @@ class AiResearchViewModel @Inject constructor(
             _uiState.update { state ->
                 state.copy(
                     composer = "",
-                    messages = state.messages + userMessage + AiResearchMessage(
+                    messages = (state.messages + userMessage + AiResearchMessage(
                         id = UUID.randomUUID().toString(),
                         role = AiResearchMessageRole.Assistant,
                         text = "Connect Shamela before searching verified sources.",
                         isError = true,
-                    ),
+                    )).takeLast(MaxConversationMessages),
                 )
             }
             return
@@ -245,7 +245,7 @@ class AiResearchViewModel @Inject constructor(
             state.copy(
                 composer = "",
                 isBusy = true,
-                messages = state.messages + listOf(
+                messages = (state.messages + listOf(
                     userMessage,
                     AiResearchMessage(
                         id = workingId,
@@ -253,7 +253,7 @@ class AiResearchViewModel @Inject constructor(
                         text = "Searching Shamela…",
                         isWorking = true,
                     ),
-                ),
+                )).takeLast(MaxConversationMessages),
             )
         }
         val job = viewModelScope.launch {
@@ -546,6 +546,7 @@ class AiResearchViewModel @Inject constructor(
 
     private companion object {
         const val MaxComposerCharacters = 12_000
+        const val MaxConversationMessages = 200
         const val StreamUiUpdateMillis = 50L
     }
 }

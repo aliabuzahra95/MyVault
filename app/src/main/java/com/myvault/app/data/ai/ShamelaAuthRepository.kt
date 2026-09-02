@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
@@ -30,6 +32,7 @@ class ShamelaAuthRepository @Inject constructor(
     private val secureStore: ShamelaSecureAuthStore,
 ) {
     private val service = AuthorizationService(context)
+    private val refreshMutex = Mutex()
     private var authState = secureStore.read() ?: AuthState(ServiceConfiguration)
     private val _connection = MutableStateFlow(authState.toConnectionState())
     val connection: StateFlow<ShamelaConnectionState> = _connection.asStateFlow()
@@ -78,16 +81,18 @@ class ShamelaAuthRepository @Inject constructor(
         }
     }
 
-    suspend fun freshAccessToken(): String = suspendCancellableCoroutine { continuation ->
-        authState.performActionWithFreshTokens(service) { accessToken, _, error ->
-            if (error != null || accessToken.isNullOrBlank()) {
-                val message = error?.errorDescription ?: "Shamela sign-in has expired."
-                _connection.value = ShamelaConnectionState.Error(message)
-                continuation.resumeWith(Result.failure(IllegalStateException(message)))
-            } else {
-                secureStore.write(authState)
-                _connection.value = ShamelaConnectionState.Connected
-                continuation.resume(accessToken)
+    suspend fun freshAccessToken(): String = refreshMutex.withLock {
+        suspendCancellableCoroutine { continuation ->
+            authState.performActionWithFreshTokens(service) { accessToken, _, error ->
+                if (error != null || accessToken.isNullOrBlank()) {
+                    val message = error?.errorDescription ?: "Shamela sign-in has expired."
+                    _connection.value = ShamelaConnectionState.Error(message)
+                    continuation.resumeWith(Result.failure(IllegalStateException(message)))
+                } else {
+                    secureStore.write(authState)
+                    _connection.value = ShamelaConnectionState.Connected
+                    continuation.resume(accessToken)
+                }
             }
         }
     }
