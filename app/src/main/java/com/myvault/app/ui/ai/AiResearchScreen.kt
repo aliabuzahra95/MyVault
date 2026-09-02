@@ -1,5 +1,9 @@
 package com.myvault.app.ui.ai
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -26,6 +31,8 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.NoteAdd
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +44,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +56,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +72,7 @@ import com.myvault.app.data.ai.ShamelaConnectionState
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
 import com.myvault.app.data.ai.ResearchSource
 import com.myvault.app.data.ai.ResearchContextPage
+import com.myvault.app.data.ai.toShamelaSourceNote
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -71,6 +81,8 @@ import com.myvault.app.ui.viewmodel.AiResearchMessageRole
 import com.myvault.app.ui.viewmodel.AiResearchViewModel
 import com.myvault.app.ui.viewmodel.AiResearchMode
 import com.myvault.app.ui.viewmodel.SourceDetailState
+import com.myvault.app.ui.viewmodel.SourceSaveState
+import com.myvault.app.ui.viewmodel.ResearchNoteOption
 
 @Composable
 fun AiResearchScreen(
@@ -78,6 +90,7 @@ fun AiResearchScreen(
     viewModel: AiResearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     var followLatest by remember { mutableStateOf(true) }
     val authorizationLauncher = rememberLauncherForActivityResult(
@@ -107,6 +120,12 @@ fun AiResearchScreen(
             state.shamelaMcpConnection == ShamelaMcpConnectionState.Idle
         ) {
             viewModel.discoverShamelaMcp()
+        }
+    }
+    LaunchedEffect(state.notice) {
+        state.notice?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.consumeNotice()
         }
     }
 
@@ -148,7 +167,7 @@ fun AiResearchScreen(
                 }
             } else {
                 items(state.messages, key = AiResearchMessage::id) { message ->
-                    AiResearchMessageItem(message, viewModel::openSource)
+                    AiResearchMessageItem(message, viewModel::openSource, viewModel::beginSaveSource)
                 }
             }
         }
@@ -166,6 +185,20 @@ fun AiResearchScreen(
             state = detail,
             onDismiss = viewModel::closeSource,
             onRetry = { viewModel.openSource(detail.source) },
+            onCopyArabic = { copyToClipboard(context, "Arabic passage", detail.source.arabicPassage) },
+            onCopyCitation = {
+                copyToClipboard(context, "Citation", detail.source.toShamelaSourceNote().citation)
+            },
+            onSave = { viewModel.beginSaveSource(detail.source) },
+        )
+    }
+    state.sourceSave?.let { saveState ->
+        SourceSaveSheet(
+            state = saveState,
+            notes = state.noteOptions,
+            onDismiss = viewModel::dismissSourceSave,
+            onCreateNote = viewModel::createSourceNote,
+            onAppend = viewModel::appendSourceToNote,
         )
     }
 }
@@ -335,7 +368,11 @@ private fun AiResearchEmptyState(
 }
 
 @Composable
-private fun AiResearchMessageItem(message: AiResearchMessage, onOpenSource: (ResearchSource) -> Unit) {
+private fun AiResearchMessageItem(
+    message: AiResearchMessage,
+    onOpenSource: (ResearchSource) -> Unit,
+    onSaveSource: (ResearchSource) -> Unit,
+) {
     val colors = VaultThemeTokens.colors
     if (message.role == AiResearchMessageRole.User) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -367,14 +404,18 @@ private fun AiResearchMessageItem(message: AiResearchMessage, onOpenSource: (Res
                 )
             }
             message.sources.forEach { source ->
-                ShamelaSourceCard(source, onOpenSource)
+                ShamelaSourceCard(source, onOpenSource, onSaveSource)
             }
         }
     }
 }
 
 @Composable
-private fun ShamelaSourceCard(source: ResearchSource, onOpenSource: (ResearchSource) -> Unit) {
+private fun ShamelaSourceCard(
+    source: ResearchSource,
+    onOpenSource: (ResearchSource) -> Unit,
+    onSaveSource: (ResearchSource) -> Unit,
+) {
     val colors = VaultThemeTokens.colors
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -422,11 +463,19 @@ private fun ShamelaSourceCard(source: ResearchSource, onOpenSource: (ResearchSou
                 lineHeight = 14.sp,
                 color = colors.textMuted,
             )
-            TextButton(
-                onClick = { onOpenSource(source) },
-                modifier = Modifier.align(Alignment.End).heightIn(min = 40.dp),
-            ) {
-                Text("Open source")
+            Row(modifier = Modifier.align(Alignment.End)) {
+                TextButton(
+                    onClick = { onSaveSource(source) },
+                    modifier = Modifier.heightIn(min = 40.dp),
+                ) {
+                    Text("Save to Note")
+                }
+                TextButton(
+                    onClick = { onOpenSource(source) },
+                    modifier = Modifier.heightIn(min = 40.dp),
+                ) {
+                    Text("Open source")
+                }
             }
         }
     }
@@ -438,6 +487,9 @@ private fun SourceDetailSheet(
     state: SourceDetailState,
     onDismiss: () -> Unit,
     onRetry: () -> Unit,
+    onCopyArabic: () -> Unit,
+    onCopyCitation: () -> Unit,
+    onSave: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -471,6 +523,22 @@ private fun SourceDetailSheet(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(Icons.Rounded.Close, "Close source", Modifier.size(20.dp), tint = colors.textSecondary)
                     }
+                }
+            }
+            HorizontalDivider(color = colors.border)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                TextButton(onClick = onCopyArabic) {
+                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(17.dp))
+                    Text("Copy Arabic", modifier = Modifier.padding(start = 5.dp))
+                }
+                TextButton(onClick = onCopyCitation) {
+                    Text("Copy citation")
+                }
+                TextButton(onClick = onSave) {
+                    Text("Save to Note")
                 }
             }
             HorizontalDivider(color = colors.border)
@@ -517,6 +585,149 @@ private fun SourceDetailSheet(
             }
         }
     }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SourceSaveSheet(
+    state: SourceSaveState,
+    notes: List<ResearchNoteOption>,
+    onDismiss: () -> Unit,
+    onCreateNote: () -> Unit,
+    onAppend: (String) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    var query by remember { mutableStateOf("") }
+    val filteredNotes = remember(notes, query) {
+        val normalized = query.trim()
+        if (normalized.isBlank()) notes else notes.filter { it.title.contains(normalized, ignoreCase = true) }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = colors.bg,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.88f),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Save Shamela source", fontSize = 17.sp, fontWeight = FontWeight.W800, color = colors.text)
+                    Text(
+                        state.source.bookTitle,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = colors.textSecondary,
+                        maxLines = 2,
+                    )
+                }
+                Surface(
+                    onClick = onDismiss,
+                    enabled = !state.isSaving,
+                    modifier = Modifier.size(40.dp),
+                    color = Color.Transparent,
+                    shape = VaultShapes.sm,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Close, "Close", Modifier.size(20.dp), tint = colors.textSecondary)
+                    }
+                }
+            }
+            HorizontalDivider(color = colors.border)
+            Surface(
+                onClick = onCreateNote,
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 12.dp),
+                color = colors.surface,
+                shape = VaultShapes.md,
+                border = BorderStroke(1.dp, colors.border),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (state.isSaving) {
+                        CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.NoteAdd, null, Modifier.size(19.dp), tint = colors.textSecondary)
+                    }
+                    Column {
+                        Text("Create new Note", fontSize = 13.5.sp, fontWeight = FontWeight.W700, color = colors.text)
+                        Text("Saves the passage and verified source details", fontSize = 11.5.sp, color = colors.textSecondary)
+                    }
+                }
+            }
+            Text(
+                "Add passage to Note",
+                modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = 4.dp),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.W800,
+                color = colors.textSecondary,
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 6.dp),
+                singleLine = true,
+                placeholder = { Text("Find a Note") },
+            )
+            state.error?.let {
+                Text(
+                    it,
+                    modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = 4.dp),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = colors.warning,
+                )
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(horizontal = VaultSpacing.screen, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(filteredNotes, key = ResearchNoteOption::id) { note ->
+                    Surface(
+                        onClick = { onAppend(note.id) },
+                        enabled = !state.isSaving,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.Transparent,
+                        shape = VaultShapes.sm,
+                    ) {
+                        Text(
+                            note.title,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.W600,
+                            color = colors.text,
+                            maxLines = 2,
+                        )
+                    }
+                }
+                if (filteredNotes.isEmpty()) {
+                    item {
+                        Text(
+                            if (notes.isEmpty()) "No existing Notes yet" else "No matching Notes",
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            textAlign = TextAlign.Center,
+                            color = colors.textMuted,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun copyToClipboard(context: Context, label: String, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+    Toast.makeText(context, "$label copied", Toast.LENGTH_SHORT).show()
 }
 
 @Composable

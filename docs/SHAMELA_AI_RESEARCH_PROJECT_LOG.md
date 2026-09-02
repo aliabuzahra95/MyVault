@@ -179,6 +179,7 @@
   Android lint, debug assembly, live provider instrumentation, and installed
   production rendering passed.
 - Visual evidence: `artifacts/shamela-ai/stage-8/` (not tracked in Git).
+- Implementation commit: `21e56fe913805c04509de6a0c240d4b006311f8b`
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
 
 ## Stage 9 - Open Source
@@ -200,6 +201,7 @@
   assembly, live authenticated context retrieval, and installed UI passed.
 - Visual evidence: `artifacts/shamela-ai/stage-9/source-context-light.png`
   (not tracked in Git).
+- Implementation commit: `d39e4cf8d285b8e73479a6675024b3d2a98dcaa4`
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
 
 ## Stage 10 - Verify Quote
@@ -224,6 +226,7 @@
   21 unit tests, debug assembly, and installed mode UI passed.
 - Visual evidence: `artifacts/shamela-ai/stage-10-quote-mode-selected.png`
   (not tracked in Git).
+- Implementation commit: `1025f9f76dd6655f733a27e171ea33e4ef1b5a96`
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
 
 ## Stage 11 - Compare Scholars
@@ -253,4 +256,30 @@
   tests, debug assembly, and installed UI passed.
 - Visual evidence: `artifacts/shamela-ai/stage-11/comparison-light.png` (not
   tracked in Git).
+- Implementation commit: `34d13f1f10b6ef27f31a0954b7a3786a619d2033`
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 12 - Save Source to MyVault
+
+- Status: COMPLETE
+- Source actions: evidence cards expose `Save to Note`; the fully expanded
+  source view exposes `Copy Arabic`, `Copy citation`, and `Save to Note`.
+- New Note: MyVault creates a normal root Study Note through `NoteRepository`
+  and saves the Arabic passage, book, author, volume/page location,
+  provenance, and verified/fallback citation through the existing rich-text
+  transaction.
+- Existing Note: `Add passage to Note` searches the real production Note list
+  and appends through the existing Note repository. Rich-text marks and Note
+  links retain their ranges, legacy HTML remains HTML, plain block Notes remain
+  block-based, tables are retained, and the normal version snapshot path runs
+  before mutation. Invalid legacy rich text fails safely instead of flattening
+  the Note.
+- Live result: a real Shamela footnote passage was saved as a new root Study
+  Note and opened in the Stage 4 Note Reader with all source metadata visible.
+  A second real author-body passage was then appended to that same Note; the
+  original passage and metadata remained intact above the appended source.
+- Tests: source payload/citation tests, focused AI unit suite, debug assembly,
+  installed production create/open/append/reopen flow, and `git diff --check`
+  passed.
+- Visual evidence: `artifacts/shamela-ai/stage-12/` (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.

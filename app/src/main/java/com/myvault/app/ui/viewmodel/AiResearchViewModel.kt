@@ -12,6 +12,8 @@ import com.myvault.app.data.ai.ResearchSource
 import com.myvault.app.data.ai.ResearchSourceContext
 import com.myvault.app.data.ai.GroundedResearchOrchestrator
 import com.myvault.app.data.ai.QuoteVerificationClassification
+import com.myvault.app.data.ai.toShamelaSourceNote
+import com.myvault.app.data.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
 import android.os.SystemClock
@@ -31,6 +33,7 @@ class AiResearchViewModel @Inject constructor(
     private val shamelaMcpClient: ShamelaMcpClient,
     private val shamelaResearchProvider: ShamelaResearchProvider,
     private val groundedResearch: GroundedResearchOrchestrator,
+    private val noteRepository: NoteRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         AiResearchUiState(selectedProvider = localPreferences.selectedProvider()),
@@ -42,6 +45,17 @@ class AiResearchViewModel @Inject constructor(
             shamelaAuthRepository.connection.collect { connection ->
                 _uiState.update { it.copy(shamelaConnection = connection) }
                 if (connection == ShamelaConnectionState.Connected) discoverShamelaMcp()
+            }
+        }
+        viewModelScope.launch {
+            noteRepository.observeAllNotes().collect { notes ->
+                _uiState.update { state ->
+                    state.copy(
+                        noteOptions = notes.map { note ->
+                            ResearchNoteOption(note.id, note.title, note.updatedAt)
+                        },
+                    )
+                }
             }
         }
     }
@@ -121,6 +135,67 @@ class AiResearchViewModel @Inject constructor(
 
     fun closeSource() {
         _uiState.update { it.copy(sourceDetail = null) }
+    }
+
+    fun beginSaveSource(source: ResearchSource) {
+        _uiState.update {
+            it.copy(
+                sourceDetail = null,
+                sourceSave = SourceSaveState(source = source),
+            )
+        }
+    }
+
+    fun dismissSourceSave() {
+        if (_uiState.value.sourceSave?.isSaving == true) return
+        _uiState.update { it.copy(sourceSave = null) }
+    }
+
+    fun createSourceNote() {
+        val source = _uiState.value.sourceSave?.source ?: return
+        saveSource(source) { sourceNote ->
+            val noteId = noteRepository.createNote(folderId = null, title = sourceNote.title)
+            noteRepository.saveRichText(noteId, sourceNote.body, "[]")
+        }
+    }
+
+    fun appendSourceToNote(noteId: String) {
+        val source = _uiState.value.sourceSave?.source ?: return
+        val noteTitle = _uiState.value.noteOptions.firstOrNull { it.id == noteId }?.title ?: "note"
+        saveSource(source, successMessage = "Passage added to $noteTitle") { sourceNote ->
+            noteRepository.appendPlainText(noteId, sourceNote.body)
+        }
+    }
+
+    fun consumeNotice() {
+        _uiState.update { it.copy(notice = null) }
+    }
+
+    private fun saveSource(
+        source: ResearchSource,
+        successMessage: String = "Shamela source saved to a new note",
+        save: suspend (com.myvault.app.data.ai.ShamelaSourceNote) -> Unit,
+    ) {
+        if (_uiState.value.sourceSave?.isSaving == true) return
+        _uiState.update { state ->
+            state.copy(sourceSave = state.sourceSave?.copy(isSaving = true, error = null))
+        }
+        viewModelScope.launch {
+            runCatching { save(source.toShamelaSourceNote()) }
+                .onSuccess {
+                    _uiState.update { it.copy(sourceSave = null, notice = successMessage) }
+                }
+                .onFailure { error ->
+                    _uiState.update { state ->
+                        state.copy(
+                            sourceSave = state.sourceSave?.copy(
+                                isSaving = false,
+                                error = error.message ?: "Could not save this source.",
+                            ),
+                        )
+                    }
+                }
+        }
     }
 
     fun submitQuestion() {
@@ -419,6 +494,21 @@ data class AiResearchUiState(
     val messages: List<AiResearchMessage> = emptyList(),
     val isBusy: Boolean = false,
     val sourceDetail: SourceDetailState? = null,
+    val sourceSave: SourceSaveState? = null,
+    val noteOptions: List<ResearchNoteOption> = emptyList(),
+    val notice: String? = null,
+)
+
+data class SourceSaveState(
+    val source: ResearchSource,
+    val isSaving: Boolean = false,
+    val error: String? = null,
+)
+
+data class ResearchNoteOption(
+    val id: String,
+    val title: String,
+    val updatedAt: Long,
 )
 
 enum class AiResearchMode(val label: String, val composerHint: String) {
