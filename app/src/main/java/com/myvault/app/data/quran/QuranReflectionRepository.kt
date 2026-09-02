@@ -125,21 +125,29 @@ class QuranReflectionRepository @Inject constructor(
 }
 
 private fun String.reflectionBodyPreview(arabic: String, translation: String): String {
-    var value = reflectionBody(arabic, translation)
-    if (value.isBlank()) {
-        value = lines().map { it.trim() }.filter { it.isNotBlank() }.takeLast(2).joinToString(" ")
-    }
-    return value.replace(Regex("\\s+"), " ").trim()
+    return reflectionBody(arabic, translation).replace(Regex("\\s+"), " ").trim()
 }
 
-private fun String.reflectionBody(arabic: String, translation: String): String =
-    this
+internal fun String.reflectionBody(arabic: String, translation: String): String {
+    ReflectionBodyRegex.find(this)?.groupValues?.getOrNull(1)?.let { return it.trim() }
+
+    return this
         .replace(Regex("""(?m)^Source:\s*.*$"""), "")
-        .replace(arabic, "")
-        .replace(translation, "")
+        .removeBlockIgnoringWhitespace(arabic)
+        .removeBlockIgnoringWhitespace(translation)
         .lines()
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .drop(1)
         .joinToString("\n\n")
         .trim()
+}
+
+private fun String.removeBlockIgnoringWhitespace(block: String): String {
+    val parts = block.trim().split(Regex("\\s+")).filter(String::isNotBlank)
+    if (parts.isEmpty()) return this
+    val flexibleBlock = parts.joinToString("\\s+") { Regex.escape(it) }
+    return replace(Regex(flexibleBlock), "")
+}
+
+private val ReflectionBodyRegex = Regex("""(?ms)^\s*Reflection:\s*(.*)$""")

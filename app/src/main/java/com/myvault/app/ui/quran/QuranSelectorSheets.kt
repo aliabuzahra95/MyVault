@@ -56,8 +56,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -81,6 +79,10 @@ import org.json.JSONObject
 
 private val QuranSelectorUthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
+)
+private val QuranSelectorEnglishFamily = FontFamily(
+    Font(R.font.plus_jakarta_sans_medium, weight = FontWeight.Medium),
+    Font(R.font.plus_jakarta_sans_semi_bold, weight = FontWeight.SemiBold),
 )
 private data class QuranAyahSelectorResult(
     val surah: SurahInfo,
@@ -249,7 +251,6 @@ internal fun QuranSurahSelectorOverlay(
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
     val listState: LazyListState = rememberLazyListState()
-    var searchVisible by remember(visible) { mutableStateOf(search.isNotBlank()) }
     var ayahSearchIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(visible) {
         if (visible && ayahSearchIndex.isEmpty()) {
@@ -319,15 +320,6 @@ internal fun QuranSurahSelectorOverlay(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = "Search Surahs",
-                            tint = colors.text,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clickable { searchVisible = !searchVisible }
-                                .padding(10.dp),
-                        )
-                        Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = "Close",
                             tint = colors.text,
@@ -346,12 +338,10 @@ internal fun QuranSurahSelectorOverlay(
                         .padding(bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (searchVisible) {
-                        QuranSearchBar(
-                            query = search,
-                            onQueryChange = onSearchChange,
-                        )
-                    }
+                    QuranSearchBar(
+                        query = search,
+                        onQueryChange = onSearchChange,
+                    )
                     QuranTypeFilters(selected = typeFilter, onSelected = onTypeFilterChange)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -419,7 +409,6 @@ internal fun QuranSurahSelectorOverlay(
 private fun QuranSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    focusRequester: FocusRequester? = null,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
@@ -444,9 +433,7 @@ private fun QuranSearchBar(
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
             cursorBrush = SolidColor(colors.accent),
             singleLine = true,
-            modifier = Modifier
-                .weight(1f)
-                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
+            modifier = Modifier.weight(1f),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
                     Text(
@@ -488,11 +475,6 @@ private fun QuranFilterPill(
 ) {
     val colors = VaultThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
-    val bg by animateColorAsState(
-        targetValue = if (selected) colors.accentSoft else Color.Transparent,
-        animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-        label = "quranFilterBg",
-    )
     val border by animateColorAsState(
         targetValue = if (selected) colors.accent else colors.border,
         animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
@@ -510,7 +492,7 @@ private fun QuranFilterPill(
         color = textColor,
         modifier = Modifier
             .clip(CircleShape)
-            .background(bg)
+            .background(Color.Transparent)
             .border(1.dp, border, CircleShape)
             .clickable(
                 interactionSource = interactionSource,
@@ -594,12 +576,22 @@ private fun SurahRow(
         ) {
             Text(
                 text = surah.name,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.W700),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = QuranSelectorEnglishFamily,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.W600,
+                    letterSpacing = 0.sp,
+                ),
                 color = titleColor,
             )
             Text(
                 text = "${surah.type} · ${surah.ayat} ayat",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.5.sp),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = QuranSelectorEnglishFamily,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.W500,
+                    letterSpacing = 0.sp,
+                ),
                 color = colors.textSecondary,
             )
         }
@@ -671,7 +663,11 @@ private fun QuranAyahSearchResultRow(
                 ) {
                     Text(
                         text = result.surah.name,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W900),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = QuranSelectorEnglishFamily,
+                            fontWeight = FontWeight.W600,
+                            letterSpacing = 0.sp,
+                        ),
                         color = colors.text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

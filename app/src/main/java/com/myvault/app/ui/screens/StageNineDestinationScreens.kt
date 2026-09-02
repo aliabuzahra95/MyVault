@@ -296,21 +296,22 @@ private fun DashboardContinueCard(
         border = BorderStroke(1.dp, colors.border),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Icon(icon, null, Modifier.size(16.dp), tint = colors.textSecondary)
                 Text(type.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.W700, color = colors.textMuted)
             }
             Box(
-                modifier = Modifier.fillMaxWidth().height(48.dp).padding(top = 5.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     title,
                     fontSize = 12.5.sp,
-                    lineHeight = 15.5.sp,
+                    lineHeight = 14.5.sp,
                     fontWeight = FontWeight.W700,
                     color = colors.text,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -318,10 +319,8 @@ private fun DashboardContinueCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.weight(1f))
             Text(metadata, fontSize = 9.5.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (onClick != null) Row(
-                modifier = Modifier.padding(top = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {

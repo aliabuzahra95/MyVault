@@ -919,6 +919,6 @@ private fun buildReflectionNoteBody(title: String, reference: String, ayah: Qura
         append("\n\n")
         append(ayah.translation)
     }
-    append("\n\n")
-    append(body.ifBlank { "Reflection:" })
+    append("\n\nReflection:\n\n")
+    append(body)
 }
