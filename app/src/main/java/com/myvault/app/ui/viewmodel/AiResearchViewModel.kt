@@ -12,6 +12,7 @@ import com.myvault.app.data.ai.ResearchSource
 import com.myvault.app.data.ai.GroundedResearchOrchestrator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
+import android.os.SystemClock
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -182,15 +183,39 @@ class AiResearchViewModel @Inject constructor(
 
     private suspend fun submitGroundedQuestion(question: String, workingId: String) {
         val provider = _uiState.value.selectedProvider
+        val streamedAnswer = StringBuilder()
+        var lastStreamUpdateMillis = 0L
         runCatching {
             groundedResearch.answer(
                 question = question,
                 provider = provider,
                 onStage = { stage ->
-                    _uiState.update { state ->
-                        state.copy(
-                            messages = state.messages.updateWorkingText(workingId, stage.label),
-                        )
+                    if (streamedAnswer.isEmpty()) {
+                        _uiState.update { state ->
+                            state.copy(
+                                messages = state.messages.updateWorkingText(workingId, stage.label),
+                            )
+                        }
+                    }
+                },
+                onDelta = { delta ->
+                    streamedAnswer.append(delta)
+                    val now = SystemClock.elapsedRealtime()
+                    if (lastStreamUpdateMillis == 0L || now - lastStreamUpdateMillis >= StreamUiUpdateMillis) {
+                        lastStreamUpdateMillis = now
+                        val currentText = streamedAnswer.toString()
+                        _uiState.update { state ->
+                            state.copy(
+                                messages = state.messages.replaceMessage(
+                                    workingId,
+                                    AiResearchMessage(
+                                        id = workingId,
+                                        role = AiResearchMessageRole.Assistant,
+                                        text = currentText,
+                                    ),
+                                ),
+                            )
+                        }
                     }
                 },
             )
@@ -230,6 +255,7 @@ class AiResearchViewModel @Inject constructor(
 
     private companion object {
         const val MaxComposerCharacters = 12_000
+        const val StreamUiUpdateMillis = 50L
     }
 }
 

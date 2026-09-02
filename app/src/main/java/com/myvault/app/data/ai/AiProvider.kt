@@ -16,6 +16,7 @@ data class AiGenerationRequest(
     val maxOutputTokens: Int = 2_048,
     val temperature: Double = 0.2,
     val model: String? = null,
+    val stream: Boolean = false,
 )
 
 data class AiGenerationResponse(
@@ -42,4 +43,3 @@ class AiProviderException(
     val httpStatus: Int? = null,
     cause: Throwable? = null,
 ) : Exception(message, cause)
-

@@ -44,6 +44,7 @@ class GroundedResearchOrchestrator @Inject constructor(
                 prompt = buildGroundedResearchPrompt(cleanQuestion, evidence),
                 maxOutputTokens = GroundedAnswerMaxTokens,
                 temperature = 0.2,
+                stream = true,
             ),
             onDelta = onDelta,
         )

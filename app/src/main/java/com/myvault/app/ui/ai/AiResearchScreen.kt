@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +71,7 @@ fun AiResearchScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    var followLatest by remember { mutableStateOf(true) }
     val authorizationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -80,8 +82,16 @@ fun AiResearchScreen(
         Unit
     }
 
-    LaunchedEffect(state.messages.size) {
-        if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.lastIndex)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress to listState.canScrollForward }
+            .collect { (isScrolling, canScrollForward) ->
+                if (isScrolling) followLatest = !canScrollForward
+            }
+    }
+    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length) {
+        if (followLatest && state.messages.isNotEmpty()) {
+            listState.scrollToItem(state.messages.lastIndex)
+        }
     }
     LaunchedEffect(state.shamelaConnection, state.shamelaMcpConnection) {
         if (

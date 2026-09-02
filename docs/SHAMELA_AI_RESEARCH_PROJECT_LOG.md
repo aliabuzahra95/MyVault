@@ -149,6 +149,34 @@
 - Tests: grounded prompt boundaries, six-source cap, missing-metadata handling,
   verbose query-plan normalization, live authenticated retrieval/generation,
   and installed production rendering passed.
-- Implementation commit: pending Stage 7 checkpoint commit.
+- Implementation commit: `d0c52f46c8e3584ef490e2a3746ac11817c19bda`
 - Visual evidence: `artifacts/shamela-ai/stage-7/` (not tracked in Git).
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 8 - Streaming Answers
+
+- Status: COMPLETE
+- Transport: real SSE streaming is implemented independently for OpenAI
+  Responses, Gemini `streamGenerateContent`, and Kimi Chat Completions. The
+  existing non-streaming path remains available for the compact Shamela query
+  planning request.
+- Safety: stream reads retain provider authentication, coroutine cancellation,
+  connection/read timeouts, a 4 MiB response limit, and a 100,000-character
+  generated-answer limit. Provider stream errors are normalized without
+  exposing credentials or response bodies.
+- UI: streamed deltas are coalesced into updates at most every 50 ms. The
+  conversation follows generation only while the reader remains at the bottom;
+  deliberately scrolling upward disables automatic following.
+- Live provider result: ChatGPT (`gpt-5-mini`) delivered 291 chunks / 1,711
+  characters, Gemini (`gemini-2.5-flash`) 7 / 1,841, and Kimi (`kimi-k2.6`)
+  301 / 1,878. For every provider, the concatenated chunks exactly equalled the
+  returned final answer.
+- Installed-app result: the production AI destination visibly rendered a
+  partial grounded ChatGPT answer before generation completed, then replaced it
+  with the exact final answer and attached the six retrieved Shamela source
+  cards.
+- Tests: provider request flags and delta parsers, full JBR 21 unit suite,
+  Android lint, debug assembly, live provider instrumentation, and installed
+  production rendering passed.
+- Visual evidence: `artifacts/shamela-ai/stage-8/` (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.

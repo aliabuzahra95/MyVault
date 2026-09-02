@@ -23,6 +23,24 @@ class AiProviderClientsTest {
         assertFalse(body.getBoolean("store"))
         assertEquals("Explain the passage.", body.getString("input"))
         assertEquals("minimal", body.getJSONObject("reasoning").getString("effort"))
+        assertFalse(body.getBoolean("stream"))
+    }
+
+    @Test
+    fun streamingRequestIsEnabledPerProvider() {
+        val streaming = request.copy(stream = true)
+
+        assertTrue(buildOpenAiRequest(streaming, "gpt-5-mini").getBoolean("stream"))
+        assertTrue(buildKimiRequest(streaming, "kimi-k2.6").getBoolean("stream"))
+    }
+
+    @Test
+    fun extractsOpenAiStreamingDelta() {
+        val event = JSONObject()
+            .put("type", "response.output_text.delta")
+            .put("delta", "Verified ")
+
+        assertEquals("Verified ", extractOpenAiDelta(event))
     }
 
     @Test
@@ -69,6 +87,7 @@ class AiProviderClientsTest {
         )
 
         assertEquals("First\nSecond", extractGeminiText(body))
+        assertEquals("FirstSecond", extractGeminiDelta(body))
     }
 
     @Test
@@ -91,5 +110,17 @@ class AiProviderClientsTest {
         )
 
         assertEquals("Kimi answer", extractKimiText(body))
+    }
+
+    @Test
+    fun extractsKimiStreamingDelta() {
+        val body = JSONObject().put(
+            "choices",
+            JSONArray().put(
+                JSONObject().put("delta", JSONObject().put("content", "Kimi ")),
+            ),
+        )
+
+        assertEquals("Kimi ", extractKimiDelta(body))
     }
 }
