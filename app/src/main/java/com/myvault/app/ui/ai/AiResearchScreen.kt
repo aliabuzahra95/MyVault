@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -44,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -52,6 +55,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.myvault.app.data.ai.AiResearchProvider
 import com.myvault.app.data.ai.ShamelaConnectionState
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
+import com.myvault.app.data.ai.ResearchSource
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -134,6 +138,7 @@ fun AiResearchScreen(
             value = state.composer,
             onValueChange = viewModel::updateComposer,
             onSend = viewModel::submitQuestion,
+            enabled = !state.isBusy,
         )
     }
 }
@@ -322,12 +327,75 @@ private fun AiResearchMessageItem(message: AiResearchMessage) {
             }
         }
     } else {
-        Text(
-            text = message.text,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-            color = colors.text,
-        )
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (message.isWorking) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+                Text(
+                    text = message.text,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                    color = if (message.isError) colors.warning else colors.text,
+                )
+            }
+            message.sources.forEach { source ->
+                ShamelaSourceCard(source)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShamelaSourceCard(source: ResearchSource) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = VaultShapes.md,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Icon(Icons.Rounded.Book, null, Modifier.size(18.dp), tint = colors.textSecondary)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        source.bookTitle,
+                        fontSize = 13.5.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.W700,
+                        color = colors.text,
+                    )
+                    source.authorName?.let {
+                        Text(it, fontSize = 11.5.sp, lineHeight = 16.sp, color = colors.textSecondary)
+                    }
+                }
+            }
+            Text(
+                source.arabicPassage,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 27.sp,
+                    textDirection = TextDirection.Rtl,
+                ),
+                color = colors.text,
+                textAlign = TextAlign.End,
+            )
+            val location = listOfNotNull(
+                source.part?.let { "Part $it" },
+                source.printedPage?.let { "Page $it" },
+            ).joinToString(" · ")
+            Text(
+                listOf(source.provenanceType.label, location).filter(String::isNotBlank).joinToString(" · "),
+                fontSize = 10.5.sp,
+                lineHeight = 14.sp,
+                color = colors.textMuted,
+            )
+        }
     }
 }
 
@@ -336,6 +404,7 @@ private fun AiResearchComposer(
     value: String,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    enabled: Boolean,
 ) {
     val colors = VaultThemeTokens.colors
     Surface(
@@ -356,6 +425,7 @@ private fun AiResearchComposer(
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
+                enabled = enabled,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 34.dp, max = 132.dp)
@@ -375,11 +445,11 @@ private fun AiResearchComposer(
             )
             Surface(
                 onClick = onSend,
-                enabled = value.isNotBlank(),
+                enabled = value.isNotBlank() && enabled,
                 modifier = Modifier.size(38.dp),
                 shape = VaultShapes.sm,
-                color = if (value.isNotBlank()) colors.accent else colors.inset,
-                contentColor = if (value.isNotBlank()) MaterialTheme.colorScheme.onPrimary else colors.textMuted,
+                color = if (value.isNotBlank() && enabled) colors.accent else colors.inset,
+                contentColor = if (value.isNotBlank() && enabled) MaterialTheme.colorScheme.onPrimary else colors.textMuted,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.ArrowUpward, "Send", Modifier.size(19.dp))

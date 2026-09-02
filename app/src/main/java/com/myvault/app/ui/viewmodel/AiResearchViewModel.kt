@@ -7,6 +7,8 @@ import com.myvault.app.data.ai.ShamelaAuthRepository
 import com.myvault.app.data.ai.ShamelaConnectionState
 import com.myvault.app.data.ai.ShamelaMcpClient
 import com.myvault.app.data.ai.ShamelaMcpConnectionState
+import com.myvault.app.data.ai.ShamelaResearchProvider
+import com.myvault.app.data.ai.ResearchSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
 import java.util.UUID
@@ -23,6 +25,7 @@ class AiResearchViewModel @Inject constructor(
     private val localPreferences: AiResearchLocalPreferences,
     private val shamelaAuthRepository: ShamelaAuthRepository,
     private val shamelaMcpClient: ShamelaMcpClient,
+    private val shamelaResearchProvider: ShamelaResearchProvider,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         AiResearchUiState(selectedProvider = localPreferences.selectedProvider()),
@@ -89,23 +92,85 @@ class AiResearchViewModel @Inject constructor(
 
     fun submitQuestion() {
         val question = _uiState.value.composer.trim()
-        if (question.isBlank()) return
+        if (question.isBlank() || _uiState.value.isBusy) return
+        val userMessage = AiResearchMessage(
+            id = UUID.randomUUID().toString(),
+            role = AiResearchMessageRole.User,
+            text = question,
+        )
+        if (_uiState.value.shamelaMcpConnection !is ShamelaMcpConnectionState.Ready) {
+            _uiState.update { state ->
+                state.copy(
+                    composer = "",
+                    messages = state.messages + userMessage + AiResearchMessage(
+                        id = UUID.randomUUID().toString(),
+                        role = AiResearchMessageRole.Assistant,
+                        text = "Connect Shamela before searching verified sources.",
+                        isError = true,
+                    ),
+                )
+            }
+            return
+        }
+        val workingId = UUID.randomUUID().toString()
         _uiState.update { state ->
             state.copy(
                 composer = "",
+                isBusy = true,
                 messages = state.messages + listOf(
+                    userMessage,
                     AiResearchMessage(
-                        id = UUID.randomUUID().toString(),
-                        role = AiResearchMessageRole.User,
-                        text = question,
-                    ),
-                    AiResearchMessage(
-                        id = UUID.randomUUID().toString(),
+                        id = workingId,
                         role = AiResearchMessageRole.Assistant,
-                        text = "Shamela research will appear here after you connect the service.",
+                        text = "Searching Shamela…",
+                        isWorking = true,
                     ),
                 ),
             )
+        }
+        viewModelScope.launch {
+            runCatching {
+                shamelaResearchProvider.search(
+                    com.myvault.app.data.ai.ResearchSearchRequest(
+                        query = question.toShamelaQuery(),
+                    ),
+                )
+            }.onSuccess { result ->
+                val summary = when {
+                    result.sources.isEmpty() -> "No verified Shamela sources were located for this search."
+                    result.totalHits != null -> "Found ${result.sources.size} of ${result.totalHits} matching Shamela sources in ${result.elapsedMillis} ms."
+                    else -> "Found ${result.sources.size} matching Shamela sources in ${result.elapsedMillis} ms."
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        isBusy = false,
+                        messages = state.messages.replaceMessage(
+                            workingId,
+                            AiResearchMessage(
+                                id = workingId,
+                                role = AiResearchMessageRole.Assistant,
+                                text = summary,
+                                sources = result.sources,
+                            ),
+                        ),
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isBusy = false,
+                        messages = state.messages.replaceMessage(
+                            workingId,
+                            AiResearchMessage(
+                                id = workingId,
+                                role = AiResearchMessageRole.Assistant,
+                                text = error.message ?: "Could not search Shamela.",
+                                isError = true,
+                            ),
+                        ),
+                    )
+                }
+            }
         }
     }
 
@@ -120,15 +185,36 @@ data class AiResearchUiState(
     val shamelaMcpConnection: ShamelaMcpConnectionState = ShamelaMcpConnectionState.Idle,
     val composer: String = "",
     val messages: List<AiResearchMessage> = emptyList(),
+    val isBusy: Boolean = false,
 )
 
 data class AiResearchMessage(
     val id: String,
     val role: AiResearchMessageRole,
     val text: String,
+    val sources: List<ResearchSource> = emptyList(),
+    val isWorking: Boolean = false,
+    val isError: Boolean = false,
 )
 
 enum class AiResearchMessageRole {
     User,
     Assistant,
 }
+
+private fun String.toShamelaQuery(): String {
+    val prefixes = listOf(
+        "Search Shamela for ",
+        "Search Shamela: ",
+        "Search for ",
+        "ابحث في الشاملة عن ",
+    )
+    return prefixes.firstNotNullOfOrNull { prefix ->
+        takeIf { startsWith(prefix, ignoreCase = true) }?.drop(prefix.length)?.trim()
+    }.orEmpty().ifBlank { trim() }
+}
+
+private fun List<AiResearchMessage>.replaceMessage(
+    id: String,
+    replacement: AiResearchMessage,
+): List<AiResearchMessage> = map { if (it.id == id) replacement else it }

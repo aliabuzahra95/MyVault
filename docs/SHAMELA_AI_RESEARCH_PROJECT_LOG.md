@@ -68,3 +68,35 @@
 - Implementation commit: `57fbf80d79bf3ca71766c67271458dd448de5a5f`
 - Physical Samsung: NOT TESTED; only the Android emulator is currently
   connected.
+
+## Stage 4 - Raw Shamela Search
+
+- Status: COMPLETE
+- Implementation: the full-screen AI composer now performs a bounded direct
+  Shamela search and renders real Arabic source cards in the conversation.
+- Provenance: author body, editor footnote, and comment snippets are normalized
+  separately. Missing provenance remains visibly unavailable rather than being
+  guessed.
+- Live result: keyword, exact phrase, book-constrained search, surrounding-page
+  context, and server-formatted citation calls all succeeded. The five calls
+  completed in approximately 316-365 ms each in the final acceptance run.
+- Runtime: installed production screen rendered six real sources for
+  `الاستواء معلوم`, including author text and separately labeled footnotes.
+- Rate limit: no 429 response observed during bounded sequential testing; no
+  load test was attempted.
+- Tests: structured MCP parsing, real result-shape normalization, HTML marker
+  cleanup, and live authenticated instrumentation acceptance passed.
+- Implementation commit: pending combined Stage 4/5 checkpoint commit.
+- Visual evidence: `artifacts/shamela-ai/stage-4/` (not tracked in Git).
+
+## Stage 5 - Research Provider Abstraction
+
+- Status: COMPLETE
+- Implementation: small `ResearchProvider` boundary, concrete
+  `ShamelaResearchProvider`, and transient `ResearchSource` model. Raw MCP logic
+  remains outside Compose and the ViewModel.
+- Persistence: retrieval is transient; no Room, backup, Drive, or Web changes.
+- Source fields: only live-supported book/page identity, title, author, passage,
+  provenance, part/printed page, citation, and retrieval time are normalized.
+- Tests: body and footnote separation and structured-result fallback passed.
+- Implementation commit: pending combined Stage 4/5 checkpoint commit.

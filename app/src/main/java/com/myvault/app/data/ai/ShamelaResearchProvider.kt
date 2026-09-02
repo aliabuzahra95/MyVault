@@ -1,0 +1,161 @@
+package com.myvault.app.data.ai
+
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.math.roundToInt
+import org.json.JSONArray
+import org.json.JSONObject
+
+@Singleton
+class ShamelaResearchProvider @Inject constructor(
+    private val mcpClient: ShamelaMcpClient,
+) : ResearchProvider {
+    override suspend fun search(request: ResearchSearchRequest): ResearchSearchResult {
+        val query = request.query.trim()
+        require(query.isNotEmpty()) { "Enter a Shamela search query." }
+        require(query.length <= MaxQueryCharacters) { "Shamela search is limited to $MaxQueryCharacters characters." }
+        val limit = request.limit.coerceIn(1, MaxSearchResults)
+        val offset = request.offset.coerceAtLeast(0)
+        val startedAt = System.nanoTime()
+        val toolResult = mcpClient.callTool(
+            name = SearchTool,
+            arguments = JSONObject()
+                .put("query", query)
+                .put("limit", limit)
+                .put("offset", offset)
+                .put(
+                    "options",
+                    JSONObject().put("search_in", JSONArray().put("body").put("foot")),
+                )
+                .put("response_format", "json"),
+        )
+        val structured = toolResult.structuredContent()
+        val retrievedAt = System.currentTimeMillis()
+        val sources = structured.optJSONArray("results")
+            .orEmptyObjects()
+            .flatMap { result -> parseShamelaSearchResult(result, retrievedAt) }
+            .take(MaxSearchResults)
+        val elapsedMillis = ((System.nanoTime() - startedAt) / 1_000_000.0).roundToInt().toLong()
+        return ResearchSearchResult(
+            query = structured.optString("query").ifBlank { query },
+            totalHits = structured.numberOrNull("total_hits")?.toInt(),
+            sources = sources,
+            hasMore = structured.optBoolean("has_more", false),
+            nextOffset = structured.numberOrNull("next_offset")?.toInt(),
+            caveats = structured.optJSONArray("caveats").orEmptyStrings(),
+            elapsedMillis = elapsedMillis,
+        )
+    }
+
+    private companion object {
+        const val SearchTool = "shamela_search_pages"
+        const val MaxQueryCharacters = 500
+        const val MaxSearchResults = 8
+    }
+}
+
+internal fun parseShamelaSearchResult(result: JSONObject, retrievedAt: Long): List<ResearchSource> {
+    val bookId = result.positiveInt("book_id") ?: return emptyList()
+    val pageId = result.positiveInt("page_id") ?: return emptyList()
+    val bookTitle = result.firstText("book_name", "book_title", "title") ?: return emptyList()
+    val sections = listOf(
+        "snippet_body" to ResearchProvenance.AuthorBody,
+        "snippet_foot" to ResearchProvenance.Footnote,
+        "snippet_comment" to ResearchProvenance.Comment,
+    ).mapNotNull { (field, provenance) ->
+        result.firstText(field)?.let { passage -> provenance to passage }
+    }.ifEmpty {
+        result.firstText("snippet", "excerpt", "text", "body", "foot")
+            ?.let { passage -> listOf(result.provenanceFallback() to passage) }
+            .orEmpty()
+    }
+    return sections.mapNotNull { (provenance, rawPassage) ->
+        val passage = rawPassage.cleanShamelaText().take(MaxResearchPassageCharacters)
+        if (passage.isBlank()) return@mapNotNull null
+        ResearchSource(
+            sourceId = "shamela:$bookId:$pageId:${provenance.name.lowercase()}",
+            bookId = bookId,
+            pageId = pageId,
+            bookTitle = bookTitle,
+            authorId = result.positiveInt("author_id"),
+            authorName = result.firstText("author_name", "author"),
+            arabicPassage = passage,
+            provenanceType = provenance,
+            part = result.firstText("part", "volume"),
+            printedPage = result.firstText("printed_page", "page"),
+            citationText = result.firstText("citation"),
+            retrievedAtEpochMillis = retrievedAt,
+        )
+    }
+}
+
+private fun JSONObject.provenanceFallback(): ResearchProvenance {
+    val values = buildList {
+        optJSONArray("matched_in")?.let { array ->
+            for (index in 0 until array.length()) add(array.optString(index).lowercase())
+        }
+        firstText("matched_in", "section", "source_type", "provenance")?.lowercase()?.let(::add)
+    }
+    return when {
+        values.any { it == "body" || it.contains("matn") } -> ResearchProvenance.AuthorBody
+        values.any { it == "foot" || it.contains("foot") } -> ResearchProvenance.Footnote
+        values.any { it == "comment" || it.contains("comment") } -> ResearchProvenance.Comment
+        values.any { it == "primary" } -> ResearchProvenance.Primary
+        values.any { it == "report" } -> ResearchProvenance.Report
+        else -> ResearchProvenance.Unknown
+    }
+}
+
+private const val MaxResearchPassageCharacters = 1_500
+
+internal fun JSONObject.structuredContent(): JSONObject {
+    optJSONObject("structuredContent")?.let { return it }
+    val content = optJSONArray("content")
+    for (index in 0 until (content?.length() ?: 0)) {
+        val text = content?.optJSONObject(index)?.optString("text").orEmpty().trim()
+        val candidate = text.removePrefix("```json").removeSuffix("```").trim()
+        runCatching { JSONObject(candidate) }.getOrNull()?.let { return it }
+    }
+    throw ResearchProviderException("Shamela returned no structured research result.")
+}
+
+private fun JSONObject.firstText(vararg names: String): String? = names.firstNotNullOfOrNull { name ->
+    if (!has(name) || isNull(name)) return@firstNotNullOfOrNull null
+    when (val value = opt(name)) {
+        is String -> value.trim().takeIf(String::isNotEmpty)
+        is Number -> value.toString()
+        else -> null
+    }
+}
+
+private fun JSONObject.positiveInt(name: String): Int? = numberOrNull(name)?.toInt()?.takeIf { it > 0 }
+
+private fun JSONObject.numberOrNull(name: String): Number? = when (val value = opt(name)) {
+    is Number -> value
+    is String -> value.toDoubleOrNull()
+    else -> null
+}
+
+private fun JSONArray?.orEmptyObjects(): List<JSONObject> = buildList {
+    for (index in 0 until (this@orEmptyObjects?.length() ?: 0)) {
+        this@orEmptyObjects?.optJSONObject(index)?.let(::add)
+    }
+}
+
+private fun JSONArray?.orEmptyStrings(): List<String> = buildList {
+    for (index in 0 until (this@orEmptyStrings?.length() ?: 0)) {
+        this@orEmptyStrings?.optString(index)?.takeIf(String::isNotBlank)?.let(::add)
+    }
+}
+
+private fun String.cleanShamelaText(): String = this
+    .replace(Regex("<mark[^>]*>"), "")
+    .replace("</mark>", "")
+    .replace(Regex("<[^>]+>"), "")
+    .replace("&nbsp;", " ")
+    .replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace(Regex("[ \\t]+"), " ")
+    .replace(Regex("\\n{3,}"), "\n\n")
+    .trim()

@@ -119,3 +119,27 @@ status `ok`, server version `1.3.0`, 8,598 downloaded books, 3,190 authors, 41
 categories, 7,605,947 indexed page documents, and a 5-of-5 readable-book spot
 check. The call took less than three seconds together with initialization and
 tool discovery in the live instrumentation run.
+
+## Live Research Calls
+
+The production `ShamelaResearchProvider` was exercised against the authenticated
+endpoint with bounded, read-only calls on the Android emulator:
+
+- Keyword `الاستواء`: 11,557 hits; first bounded page returned in 338 ms.
+- Exact phrase `الاستواء معلوم`: 1,006 hits; returned in 340 ms.
+- Book-scoped keyword in book `7798` (Tafsir al-Tabari): 10 hits; returned in
+  365 ms.
+- Surrounding context for book `7798`, page id `9129`: returned in 321 ms with
+  printed page `13/ 411` and an author-body passage.
+- Full server-formatted citation for the same page: returned in 316 ms as
+  `ابن جرير الطبري (ت ٣١٠هـ). تفسير الطبري. ج ١٣، ص ٤١١.`
+
+The server also explicitly reported unavailable edition, publisher, and city
+fields. MyVault does not fill those gaps. No HTTP 429 response was observed in
+this small sequential acceptance run; the test intentionally did not generate
+load to probe an unknown rate limit.
+
+Search results use separate `snippet_body`, `snippet_foot`, and
+`snippet_comment` fields, with `matched_in` as an array. The Android normalizer
+keeps each non-empty section as a distinct source so editor footnotes cannot be
+presented as the book author's own words.
