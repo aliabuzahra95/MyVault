@@ -34,7 +34,7 @@ class ShamelaResearchProvider @Inject constructor(
         val sources = structured.optJSONArray("results")
             .orEmptyObjects()
             .flatMap { result -> parseShamelaSearchResult(result, retrievedAt) }
-            .take(MaxSearchResults)
+            .take(limit)
         val elapsedMillis = ((System.nanoTime() - startedAt) / 1_000_000.0).roundToInt().toLong()
         return ResearchSearchResult(
             query = structured.optString("query").ifBlank { query },
@@ -78,6 +78,42 @@ class ShamelaResearchProvider @Inject constructor(
         )
     }
 
+    suspend fun verifyQuote(rawQuote: String): QuoteVerificationResult {
+        val quote = rawQuote.trim().trim('"', '\'', '«', '»').trim()
+        require(quote.length >= MinQuoteCharacters) { "Enter an Arabic quotation to verify." }
+        require(quote.length <= MaxQueryCharacters) { "Quotations are limited to $MaxQueryCharacters characters." }
+        val exact = mcpClient.callTool(
+            name = ExactPhraseTool,
+            arguments = JSONObject()
+                .put("query", quote)
+                .put("mode", "phrase")
+                .put("search_in", JSONArray().put("body").put("foot"))
+                .put("limit", MaxVerificationResults)
+                .put("offset", 0)
+                .put("response_format", "json"),
+        ).structuredContent()
+        val exactSources = parseSearchSources(exact, MaxVerificationResults)
+        if (exactSources.isNotEmpty()) {
+            return QuoteVerificationResult(
+                quote = quote,
+                classification = QuoteVerificationClassification.Exact,
+                sources = exactSources,
+                totalHits = exact.numberOrNull("total_hits")?.toInt(),
+            )
+        }
+        val similar = search(ResearchSearchRequest(query = quote, limit = MaxVerificationResults))
+        return QuoteVerificationResult(
+            quote = quote,
+            classification = if (similar.sources.isEmpty()) {
+                QuoteVerificationClassification.NotLocated
+            } else {
+                QuoteVerificationClassification.Similar
+            },
+            sources = similar.sources,
+            totalHits = similar.totalHits,
+        )
+    }
+
     private suspend fun getPage(bookId: Int, pageId: Int, bodyPart: Int = 1): JSONObject =
         mcpClient.callTool(
             name = SourcePageTool,
@@ -92,11 +128,22 @@ class ShamelaResearchProvider @Inject constructor(
     private companion object {
         const val SearchTool = "shamela_search_pages"
         const val SourcePageTool = "shamela_get_page"
+        const val ExactPhraseTool = "shamela_search_phrase"
         const val MaxQueryCharacters = 500
         const val MaxSearchResults = 8
+        const val MaxVerificationResults = 6
+        const val MinQuoteCharacters = 2
         const val MaxCurrentPageParts = 3
         const val MaxSourceContextCharacters = 12_000
     }
+}
+
+private fun parseSearchSources(value: JSONObject, limit: Int): List<ResearchSource> {
+    val retrievedAt = System.currentTimeMillis()
+    return value.optJSONArray("results")
+        .orEmptyObjects()
+        .flatMap { result -> parseShamelaSearchResult(result, retrievedAt) }
+        .take(limit)
 }
 
 internal fun parseContextPage(value: JSONObject, isCurrent: Boolean): ResearchContextPage = ResearchContextPage(

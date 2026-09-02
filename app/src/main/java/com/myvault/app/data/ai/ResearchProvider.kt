@@ -52,6 +52,19 @@ data class ResearchContextPage(
     val isCurrent: Boolean,
 )
 
+data class QuoteVerificationResult(
+    val quote: String,
+    val classification: QuoteVerificationClassification,
+    val sources: List<ResearchSource>,
+    val totalHits: Int?,
+)
+
+enum class QuoteVerificationClassification(val label: String) {
+    Exact("Exact quotation found"),
+    Similar("Similar wording found"),
+    NotLocated("Not located"),
+}
+
 enum class ResearchProvenance(val label: String) {
     AuthorBody("Author text"),
     Footnote("Footnote / editor text"),

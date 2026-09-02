@@ -201,3 +201,27 @@
 - Visual evidence: `artifacts/shamela-ai/stage-9/source-context-light.png`
   (not tracked in Git).
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 10 - Verify Quote
+
+- Status: COMPLETE
+- Implementation: a compact composer mode selector adds `Verify quote` inside
+  the existing AI conversation. The entered Arabic quotation is checked first
+  with the read-only `shamela_search_phrase` consecutive-phrase tool. Only when
+  that returns no evidence does MyVault run one bounded regular Shamela search
+  to distinguish similar wording from not located.
+- Verification boundary: ChatGPT, Gemini, and Kimi are not invoked and cannot
+  declare a quotation verified. Exact/similar/not-located classifications are
+  derived exclusively from live Shamela retrieval.
+- Live result: `الاستواء معلوم` returned exact evidence;
+  `الاستواء معلوم مجهول والكيف` returned similar evidence without an exact
+  consecutive match; `زطغث ضظقث` returned not located with zero sources.
+- UI: exact and similar results render their matched Arabic evidence as normal
+  source cards with `Open source`; not-located remains a restrained inline
+  response. The mode selector and Arabic placeholder fit the installed 412dp
+  equivalent screen without clipping.
+- Tests: source identity, exact/similar/not-located live instrumentation, JBR
+  21 unit tests, debug assembly, and installed mode UI passed.
+- Visual evidence: `artifacts/shamela-ai/stage-10-quote-mode-selected.png`
+  (not tracked in Git).
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.

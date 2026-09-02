@@ -26,6 +26,25 @@ class ShamelaResearchProviderParsingTest {
     }
 
     @Test
+    fun exactPhraseResultUsesNormalVerifiedSourceIdentity() {
+        val value = JSONObject().put("results", org.json.JSONArray().put(
+            JSONObject()
+                .put("book_id", 99)
+                .put("page_id", 7)
+                .put("book_name", "كتاب الإيمان")
+                .put("author_name", "ابن تيمية")
+                .put("snippet_body", "الإيمان قول وعمل"),
+        ))
+
+        val source = value.getJSONArray("results").getJSONObject(0)
+            .let { parseShamelaSearchResult(it, 1L) }
+            .single()
+
+        assertEquals("shamela:99:7:authorbody", source.sourceId)
+        assertEquals("الإيمان قول وعمل", source.arabicPassage)
+    }
+
+    @Test
     fun readsStructuredContentDirectly() {
         val structured = JSONObject().put("results", org.json.JSONArray())
         val result = JSONObject().put("structuredContent", structured)

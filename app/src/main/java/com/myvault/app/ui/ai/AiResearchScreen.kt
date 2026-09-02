@@ -69,6 +69,7 @@ import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.AiResearchMessage
 import com.myvault.app.ui.viewmodel.AiResearchMessageRole
 import com.myvault.app.ui.viewmodel.AiResearchViewModel
+import com.myvault.app.ui.viewmodel.AiResearchMode
 import com.myvault.app.ui.viewmodel.SourceDetailState
 
 @Composable
@@ -153,7 +154,9 @@ fun AiResearchScreen(
         }
         AiResearchComposer(
             value = state.composer,
+            mode = state.selectedMode,
             onValueChange = viewModel::updateComposer,
+            onModeSelected = viewModel::selectMode,
             onSend = viewModel::submitQuestion,
             enabled = !state.isBusy,
         )
@@ -568,11 +571,14 @@ private fun SourceContextPage(page: ResearchContextPage) {
 @Composable
 private fun AiResearchComposer(
     value: String,
+    mode: AiResearchMode,
     onValueChange: (String) -> Unit,
+    onModeSelected: (AiResearchMode) -> Unit,
     onSend: () -> Unit,
     enabled: Boolean,
 ) {
     val colors = VaultThemeTokens.colors
+    var modeMenuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -588,6 +594,28 @@ private fun AiResearchComposer(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Box {
+                TextButton(
+                    onClick = { modeMenuOpen = true },
+                    enabled = enabled,
+                    modifier = Modifier.heightIn(min = 40.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                ) {
+                    Text(mode.label, fontSize = 11.5.sp, fontWeight = FontWeight.W700)
+                    Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(16.dp))
+                }
+                DropdownMenu(expanded = modeMenuOpen, onDismissRequest = { modeMenuOpen = false }) {
+                    AiResearchMode.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                modeMenuOpen = false
+                                onModeSelected(option)
+                            },
+                        )
+                    }
+                }
+            }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -603,7 +631,7 @@ private fun AiResearchComposer(
                 decorationBox = { inner ->
                     Box {
                         if (value.isBlank()) {
-                            Text("Ask AI or search Shamela", fontSize = 13.sp, color = colors.textMuted)
+                            Text(mode.composerHint, fontSize = 13.sp, color = colors.textMuted)
                         }
                         inner()
                     }

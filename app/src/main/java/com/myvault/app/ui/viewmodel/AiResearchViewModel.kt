@@ -11,6 +11,7 @@ import com.myvault.app.data.ai.ShamelaResearchProvider
 import com.myvault.app.data.ai.ResearchSource
 import com.myvault.app.data.ai.ResearchSourceContext
 import com.myvault.app.data.ai.GroundedResearchOrchestrator
+import com.myvault.app.data.ai.QuoteVerificationClassification
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Intent
 import android.os.SystemClock
@@ -90,6 +91,10 @@ class AiResearchViewModel @Inject constructor(
         _uiState.update { it.copy(selectedProvider = provider) }
     }
 
+    fun selectMode(mode: AiResearchMode) {
+        _uiState.update { it.copy(selectedMode = mode) }
+    }
+
     fun updateComposer(value: String) {
         _uiState.update { it.copy(composer = value.take(MaxComposerCharacters)) }
     }
@@ -157,6 +162,10 @@ class AiResearchViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
+            if (_uiState.value.selectedMode == AiResearchMode.VerifyQuote) {
+                submitQuoteVerification(question, workingId)
+                return@launch
+            }
             if (!question.isRawShamelaSearch()) {
                 submitGroundedQuestion(question, workingId)
                 return@launch
@@ -204,6 +213,53 @@ class AiResearchViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun submitQuoteVerification(quote: String, workingId: String) {
+        _uiState.update { state ->
+            state.copy(messages = state.messages.updateWorkingText(workingId, "Verifying quotation…"))
+        }
+        runCatching { shamelaResearchProvider.verifyQuote(quote) }
+            .onSuccess { result ->
+                val detail = when (result.classification) {
+                    QuoteVerificationClassification.Exact -> result.totalHits?.let { " in $it Shamela pages." }
+                        ?: "."
+                    QuoteVerificationClassification.Similar ->
+                        ", but the exact consecutive wording was not found."
+                    QuoteVerificationClassification.NotLocated ->
+                        " in the searchable Shamela library."
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        isBusy = false,
+                        messages = state.messages.replaceMessage(
+                            workingId,
+                            AiResearchMessage(
+                                id = workingId,
+                                role = AiResearchMessageRole.Assistant,
+                                text = result.classification.label + detail,
+                                sources = result.sources,
+                            ),
+                        ),
+                    )
+                }
+            }
+            .onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isBusy = false,
+                        messages = state.messages.replaceMessage(
+                            workingId,
+                            AiResearchMessage(
+                                id = workingId,
+                                role = AiResearchMessageRole.Assistant,
+                                text = error.message ?: "Could not verify this quotation.",
+                                isError = true,
+                            ),
+                        ),
+                    )
+                }
+            }
     }
 
     private suspend fun submitGroundedQuestion(question: String, workingId: String) {
@@ -286,6 +342,7 @@ class AiResearchViewModel @Inject constructor(
 
 data class AiResearchUiState(
     val selectedProvider: AiResearchProvider = AiResearchProvider.ChatGpt,
+    val selectedMode: AiResearchMode = AiResearchMode.Ask,
     val shamelaConnection: ShamelaConnectionState = ShamelaConnectionState.Disconnected,
     val shamelaMcpConnection: ShamelaMcpConnectionState = ShamelaMcpConnectionState.Idle,
     val composer: String = "",
@@ -293,6 +350,11 @@ data class AiResearchUiState(
     val isBusy: Boolean = false,
     val sourceDetail: SourceDetailState? = null,
 )
+
+enum class AiResearchMode(val label: String, val composerHint: String) {
+    Ask("Ask", "Ask AI or search Shamela"),
+    VerifyQuote("Verify quote", "Paste an Arabic quotation"),
+}
 
 sealed interface SourceDetailState {
     val source: ResearchSource
