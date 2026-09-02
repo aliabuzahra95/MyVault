@@ -307,3 +307,33 @@
   borders, evidence surfaces, muted metadata, provider status, and composer
   contrast.
 - Visual evidence: `artifacts/shamela-ai/stage-13/` (not tracked in Git).
+- Implementation commit: `c8af802e737573320bb7d50fe6fef4e7dd3b832e`
+
+## Stage 14 - Failure and Edge-Case Hardening
+
+- Status: COMPLETE ON EMULATOR; PHYSICAL SAMSUNG ACCEPTANCE REMAINS STAGE 16.
+- Cancellation: the active research job is now owned explicitly by the
+  ViewModel. The composer exposes a real Cancel request action while work is in
+  progress, the underlying HTTP connection is disconnected, and cancellation
+  cannot be converted into a generic provider error or leave a spinner active.
+- Network/auth recovery: offline, timeout, 401, 429, and provider-unavailable
+  failures map to concise recovery text. A Shamela 401 clears only the invalid
+  local Shamela session and returns the header to Connect; OAuth cancellation
+  is reported without creating an authenticated state.
+- Protocol hardening: malformed JSON-RPC, unexpected SSE, unsupported tools,
+  missing required tool arguments, and unexpected arguments fail closed.
+  Only the four read-only operations used by MyVault research are callable.
+- Content edges: no-result and quote-not-found states remain truthful; partial
+  citations remain absent rather than being fabricated; passages, page context,
+  questions, prompts, streamed answers, result counts, and conversation UI are
+  bounded.
+- Runtime evidence: installed debug app passed user cancellation, offline
+  recovery, background/foreground, portrait/landscape recreation, and return to
+  portrait. The completed and failed messages remained, no request duplicated,
+  and no Cancel/spinner state remained after completion.
+- Automated evidence: malformed MCP JSON, unexpected SSE, tool allow-list,
+  argument mismatch, safe error mapping, very-long passage bounds, and partial
+  citation behavior have targeted unit coverage. Full unit, lint, and debug
+  assembly are run at the stage checkpoint.
+- Visual evidence: `artifacts/shamela-ai/stage-14/` (not tracked in Git).
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.

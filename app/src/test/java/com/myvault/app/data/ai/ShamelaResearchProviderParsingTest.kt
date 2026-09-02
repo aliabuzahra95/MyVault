@@ -92,4 +92,18 @@ class ShamelaResearchProviderParsingTest {
         assertTrue(sources[0].arabicPassage.contains("<mark>").not())
         assertEquals("52", sources[0].printedPage)
     }
+
+    @Test
+    fun boundsVeryLongPassageAndDoesNotInventPartialCitation() {
+        val result = JSONObject()
+            .put("book_id", 1)
+            .put("page_id", 2)
+            .put("book_name", "كتاب")
+            .put("snippet_body", "ن".repeat(5_000))
+
+        val source = parseShamelaSearchResult(result, retrievedAt = 1L).single()
+
+        assertEquals(1_500, source.arabicPassage.length)
+        assertEquals(null, source.citationText)
+    }
 }

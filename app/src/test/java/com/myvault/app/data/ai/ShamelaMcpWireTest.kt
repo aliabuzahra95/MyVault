@@ -39,4 +39,17 @@ class ShamelaMcpWireTest {
             ShamelaMcpWire.safeErrorMessage("""{"error":{"code":429,"message":"Too many requests"}}"""),
         )
     }
+
+    @Test(expected = ShamelaMcpException::class)
+    fun rejectsMalformedJsonRpcResponse() {
+        ShamelaMcpWire.parseResponse("not-json", "application/json")
+    }
+
+    @Test(expected = ShamelaMcpException::class)
+    fun rejectsUnexpectedSseWithoutJsonRpcResult() {
+        ShamelaMcpWire.parseResponse(
+            "event: message\ndata: {\"event\":\"unrelated\"}\n\n",
+            "text/event-stream",
+        )
+    }
 }

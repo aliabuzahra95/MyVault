@@ -4,6 +4,8 @@ import com.myvault.app.BuildConfig
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
@@ -44,6 +46,7 @@ class ShamelaMcpClient @Inject constructor(
     }
 
     suspend fun callTool(name: String, arguments: JSONObject): JSONObject {
+        ShamelaMcpToolPolicy.validate(name, arguments)
         val session = activeSession ?: discoveryMutex.withLock {
             activeSession ?: initialize().also { activeSession = it }
         }
@@ -184,6 +187,12 @@ class ShamelaMcpClient @Inject constructor(
             }
             if (!notification && body.isBlank()) throw ShamelaMcpException("Shamela MCP returned an empty response.")
             McpHttpResponse(status, contentType, body, responseSessionId)
+        } catch (error: ShamelaMcpException) {
+            throw error
+        } catch (error: SocketTimeoutException) {
+            throw ShamelaMcpException("Shamela timed out. Try again.", cause = error)
+        } catch (error: UnknownHostException) {
+            throw ShamelaMcpException("No network connection is available.", cause = error)
         } finally {
             cancellationHandle.dispose()
             connection.disconnect()
@@ -242,7 +251,47 @@ sealed interface ShamelaMcpConnectionState {
     data class Error(val message: String) : ShamelaMcpConnectionState
 }
 
-class ShamelaMcpException(message: String, val httpStatus: Int? = null) : Exception(message)
+class ShamelaMcpException(
+    message: String,
+    val httpStatus: Int? = null,
+    cause: Throwable? = null,
+) : Exception(message, cause)
+
+internal object ShamelaMcpToolPolicy {
+    private data class Contract(val required: Set<String>, val allowed: Set<String>)
+
+    private val contracts = mapOf(
+        "shamela_search_pages" to Contract(
+            required = setOf("query"),
+            allowed = setOf("query", "limit", "offset", "scope", "options", "response_format"),
+        ),
+        "shamela_get_page" to Contract(
+            required = setOf("book_id", "page_id"),
+            allowed = setOf("book_id", "page_id", "body_part", "keep_html", "response_format"),
+        ),
+        "shamela_search_phrase" to Contract(
+            required = setOf("query"),
+            allowed = setOf("query", "mode", "search_in", "limit", "offset", "response_format"),
+        ),
+        "shamela_resolve" to Contract(
+            required = setOf("query", "type"),
+            allowed = setOf("query", "type", "limit", "response_format"),
+        ),
+    )
+
+    fun validate(name: String, arguments: JSONObject) {
+        val contract = contracts[name]
+            ?: throw ShamelaMcpException("MyVault blocked an unsupported Shamela operation.")
+        val names = arguments.keys().asSequence().toSet()
+        val missing = contract.required - names
+        if (missing.isNotEmpty()) {
+            throw ShamelaMcpException("MyVault could not prepare this Shamela request.")
+        }
+        if ((names - contract.allowed).isNotEmpty()) {
+            throw ShamelaMcpException("MyVault blocked unexpected Shamela request data.")
+        }
+    }
+}
 
 internal object ShamelaMcpWire {
     fun parseResponse(body: String, contentType: String): JSONObject {

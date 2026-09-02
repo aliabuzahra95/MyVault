@@ -116,6 +116,12 @@ class ShamelaAuthRepository @Inject constructor(
         _connection.value = ShamelaConnectionState.Disconnected
     }
 
+    fun invalidateLocalSession(message: String) {
+        secureStore.clear()
+        authState = AuthState(ServiceConfiguration)
+        _connection.value = ShamelaConnectionState.Error(message)
+    }
+
     private fun AuthState.toConnectionState(): ShamelaConnectionState =
         if (isAuthorized) ShamelaConnectionState.Connected else ShamelaConnectionState.Disconnected
 

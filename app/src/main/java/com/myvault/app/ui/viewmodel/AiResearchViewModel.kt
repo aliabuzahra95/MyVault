@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -35,6 +37,8 @@ class AiResearchViewModel @Inject constructor(
     private val groundedResearch: GroundedResearchOrchestrator,
     private val noteRepository: NoteRepository,
 ) : ViewModel() {
+    private var requestJob: Job? = null
+    private var activeWorkingMessageId: String? = null
     private val _uiState = MutableStateFlow(
         AiResearchUiState(selectedProvider = localPreferences.selectedProvider()),
     )
@@ -69,7 +73,19 @@ class AiResearchViewModel @Inject constructor(
     }
 
     fun completeShamelaAuthorization(data: Intent?) {
-        viewModelScope.launch { shamelaAuthRepository.completeAuthorization(data) }
+        viewModelScope.launch {
+            shamelaAuthRepository.completeAuthorization(data).onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        notice = if (data == null) {
+                            "Shamela sign-in cancelled."
+                        } else {
+                            error.safeResearchMessage("Could not connect Shamela.")
+                        },
+                    )
+                }
+            }
+        }
     }
 
     fun disconnectShamela() {
@@ -89,10 +105,12 @@ class AiResearchViewModel @Inject constructor(
                     _uiState.update { it.copy(shamelaMcpConnection = ShamelaMcpConnectionState.Ready(contract)) }
                 }
                 .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    handleShamelaAuthorizationFailure(error)
                     _uiState.update {
                         it.copy(
                             shamelaMcpConnection = ShamelaMcpConnectionState.Error(
-                                error.message ?: "Could not initialize Shamela research.",
+                                error.safeResearchMessage("Could not initialize Shamela research."),
                             ),
                         )
                     }
@@ -121,11 +139,13 @@ class AiResearchViewModel @Inject constructor(
                     _uiState.update { it.copy(sourceDetail = SourceDetailState.Ready(context)) }
                 }
                 .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    handleShamelaAuthorizationFailure(error)
                     _uiState.update {
                         it.copy(
                             sourceDetail = SourceDetailState.Error(
                                 source = source,
-                                message = error.message ?: "Could not open this Shamela source.",
+                                message = error.safeResearchMessage("Could not open this Shamela source."),
                             ),
                         )
                     }
@@ -236,7 +256,7 @@ class AiResearchViewModel @Inject constructor(
                 ),
             )
         }
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             if (_uiState.value.selectedMode == AiResearchMode.CompareScholars) {
                 submitScholarComparison(question, workingId)
                 return@launch
@@ -276,6 +296,8 @@ class AiResearchViewModel @Inject constructor(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                handleShamelaAuthorizationFailure(error)
                 _uiState.update { state ->
                     state.copy(
                         isBusy = false,
@@ -284,13 +306,41 @@ class AiResearchViewModel @Inject constructor(
                             AiResearchMessage(
                                 id = workingId,
                                 role = AiResearchMessageRole.Assistant,
-                                text = error.message ?: "Could not search Shamela.",
+                                text = error.safeResearchMessage("Could not search Shamela."),
                                 isError = true,
                             ),
                         ),
                     )
                 }
             }
+        }
+        activeWorkingMessageId = workingId
+        requestJob = job
+        job.invokeOnCompletion {
+            if (requestJob === job) {
+                requestJob = null
+                activeWorkingMessageId = null
+            }
+        }
+    }
+
+    fun cancelRequest() {
+        val active = requestJob ?: return
+        val workingId = activeWorkingMessageId
+        active.cancel(CancellationException("Cancelled by user"))
+        requestJob = null
+        activeWorkingMessageId = null
+        _uiState.update { state ->
+            state.copy(
+                isBusy = false,
+                messages = state.messages.map { message ->
+                    if (message.id == workingId) {
+                        message.copy(text = "Request cancelled.", isWorking = false, isError = false)
+                    } else {
+                        message
+                    }
+                },
+            )
         }
     }
 
@@ -343,6 +393,8 @@ class AiResearchViewModel @Inject constructor(
                 )
             }
         }.onFailure { error ->
+            if (error is CancellationException) return@onFailure
+            handleShamelaAuthorizationFailure(error)
             _uiState.update { state ->
                 state.copy(
                     isBusy = false,
@@ -351,7 +403,7 @@ class AiResearchViewModel @Inject constructor(
                         AiResearchMessage(
                             id = workingId,
                             role = AiResearchMessageRole.Assistant,
-                            text = error.message ?: "Could not compare these scholars.",
+                            text = error.safeResearchMessage("Could not compare these scholars."),
                             isError = true,
                         ),
                     ),
@@ -390,6 +442,8 @@ class AiResearchViewModel @Inject constructor(
                 }
             }
             .onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                handleShamelaAuthorizationFailure(error)
                 _uiState.update { state ->
                     state.copy(
                         isBusy = false,
@@ -398,7 +452,7 @@ class AiResearchViewModel @Inject constructor(
                             AiResearchMessage(
                                 id = workingId,
                                 role = AiResearchMessageRole.Assistant,
-                                text = error.message ?: "Could not verify this quotation.",
+                                text = error.safeResearchMessage("Could not verify this quotation."),
                                 isError = true,
                             ),
                         ),
@@ -462,6 +516,8 @@ class AiResearchViewModel @Inject constructor(
                 )
             }
         }.onFailure { error ->
+            if (error is CancellationException) return@onFailure
+            handleShamelaAuthorizationFailure(error)
             _uiState.update { state ->
                 state.copy(
                     isBusy = false,
@@ -470,7 +526,7 @@ class AiResearchViewModel @Inject constructor(
                         AiResearchMessage(
                             id = workingId,
                             role = AiResearchMessageRole.Assistant,
-                            text = error.message ?: "Could not generate a grounded answer.",
+                            text = error.safeResearchMessage("Could not generate a grounded answer."),
                             isError = true,
                         ),
                     ),
@@ -479,10 +535,32 @@ class AiResearchViewModel @Inject constructor(
         }
     }
 
+    private fun handleShamelaAuthorizationFailure(error: Throwable) {
+        val mcpError = error as? com.myvault.app.data.ai.ShamelaMcpException ?: return
+        if (mcpError.httpStatus == 401) {
+            shamelaMcpClient.clearSession()
+            _uiState.update { it.copy(shamelaMcpConnection = ShamelaMcpConnectionState.Idle) }
+            shamelaAuthRepository.invalidateLocalSession("Shamela sign-in expired. Connect again.")
+        }
+    }
+
     private companion object {
         const val MaxComposerCharacters = 12_000
         const val StreamUiUpdateMillis = 50L
     }
+}
+
+internal fun Throwable.safeResearchMessage(fallback: String): String = when (this) {
+    is com.myvault.app.data.ai.AiProviderException -> message ?: fallback
+    is com.myvault.app.data.ai.ShamelaMcpException -> when (httpStatus) {
+        401 -> "Shamela sign-in expired. Connect again."
+        429 -> "Shamela is temporarily rate limited. Try again shortly."
+        in 500..599 -> "Shamela is temporarily unavailable. Try again."
+        else -> message ?: fallback
+    }
+    is java.net.SocketTimeoutException -> "The request timed out. Try again."
+    is java.net.UnknownHostException -> "No network connection is available."
+    else -> fallback
 }
 
 data class AiResearchUiState(

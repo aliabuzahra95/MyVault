@@ -177,7 +177,8 @@ fun AiResearchScreen(
             onValueChange = viewModel::updateComposer,
             onModeSelected = viewModel::selectMode,
             onSend = viewModel::submitQuestion,
-            enabled = !state.isBusy,
+            onCancel = viewModel::cancelRequest,
+            isBusy = state.isBusy,
         )
     }
     state.sourceDetail?.let { detail ->
@@ -788,7 +789,8 @@ private fun AiResearchComposer(
     onValueChange: (String) -> Unit,
     onModeSelected: (AiResearchMode) -> Unit,
     onSend: () -> Unit,
-    enabled: Boolean,
+    onCancel: () -> Unit,
+    isBusy: Boolean,
 ) {
     val colors = VaultThemeTokens.colors
     var modeMenuOpen by remember { mutableStateOf(false) }
@@ -810,7 +812,7 @@ private fun AiResearchComposer(
             Box {
                 TextButton(
                     onClick = { modeMenuOpen = true },
-                    enabled = enabled,
+                    enabled = !isBusy,
                     modifier = Modifier.heightIn(min = 40.dp),
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 ) {
@@ -832,7 +834,7 @@ private fun AiResearchComposer(
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                enabled = enabled,
+                enabled = !isBusy,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 34.dp, max = 132.dp)
@@ -851,15 +853,19 @@ private fun AiResearchComposer(
                 },
             )
             Surface(
-                onClick = onSend,
-                enabled = value.isNotBlank() && enabled,
+                onClick = if (isBusy) onCancel else onSend,
+                enabled = isBusy || value.isNotBlank(),
                 modifier = Modifier.size(38.dp),
                 shape = VaultShapes.sm,
-                color = if (value.isNotBlank() && enabled) colors.accent else colors.inset,
-                contentColor = if (value.isNotBlank() && enabled) MaterialTheme.colorScheme.onPrimary else colors.textMuted,
+                color = if (isBusy || value.isNotBlank()) colors.accent else colors.inset,
+                contentColor = if (isBusy || value.isNotBlank()) MaterialTheme.colorScheme.onPrimary else colors.textMuted,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.ArrowUpward, "Send", Modifier.size(19.dp))
+                    Icon(
+                        if (isBusy) Icons.Rounded.Close else Icons.Rounded.ArrowUpward,
+                        if (isBusy) "Cancel request" else "Send",
+                        Modifier.size(19.dp),
+                    )
                 }
             }
         }
