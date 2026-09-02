@@ -2,6 +2,7 @@ package com.myvault.app.ui.ai
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,7 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.myvault.app.data.ai.AiResearchProvider
+import com.myvault.app.data.ai.ShamelaConnectionState
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -59,6 +65,15 @@ fun AiResearchScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    val authorizationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        viewModel.completeShamelaAuthorization(result.data)
+    }
+    val connectShamela = {
+        viewModel.createShamelaAuthorizationIntent().onSuccess(authorizationLauncher::launch)
+        Unit
+    }
 
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.lastIndex)
@@ -72,9 +87,11 @@ fun AiResearchScreen(
     ) {
         AiResearchHeader(
             provider = state.selectedProvider,
-            shamelaStatus = state.shamelaStatus,
+            shamelaConnection = state.shamelaConnection,
             onMenuClick = onMenuClick,
             onProviderSelected = viewModel::selectProvider,
+            onConnectShamela = connectShamela,
+            onDisconnectShamela = viewModel::disconnectShamela,
         )
         LazyColumn(
             state = listState,
@@ -89,7 +106,10 @@ fun AiResearchScreen(
         ) {
             if (state.messages.isEmpty()) {
                 item {
-                    AiResearchEmptyState()
+                    AiResearchEmptyState(
+                        shamelaConnection = state.shamelaConnection,
+                        onConnectShamela = connectShamela,
+                    )
                 }
             } else {
                 items(state.messages, key = AiResearchMessage::id) { message ->
@@ -108,12 +128,21 @@ fun AiResearchScreen(
 @Composable
 private fun AiResearchHeader(
     provider: AiResearchProvider,
-    shamelaStatus: String,
+    shamelaConnection: ShamelaConnectionState,
     onMenuClick: () -> Unit,
     onProviderSelected: (AiResearchProvider) -> Unit,
+    onConnectShamela: () -> Unit,
+    onDisconnectShamela: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     var providerMenuOpen by remember { mutableStateOf(false) }
+    var shamelaMenuOpen by remember { mutableStateOf(false) }
+    val shamelaStatus = when (shamelaConnection) {
+        ShamelaConnectionState.Disconnected -> "Sign in"
+        ShamelaConnectionState.Connecting -> "Connecting"
+        ShamelaConnectionState.Connected -> "Connected"
+        is ShamelaConnectionState.Error -> "Reconnect"
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -133,7 +162,29 @@ private fun AiResearchHeader(
         }
         Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
             Text("AI", fontSize = 17.sp, fontWeight = FontWeight.W800, color = colors.text)
-            Text("Shamela · $shamelaStatus", fontSize = 11.sp, color = colors.textMuted)
+            Box {
+                Text(
+                    "Shamela · $shamelaStatus",
+                    modifier = Modifier.clickable {
+                        when (shamelaConnection) {
+                            ShamelaConnectionState.Connected -> shamelaMenuOpen = true
+                            ShamelaConnectionState.Connecting -> Unit
+                            else -> onConnectShamela()
+                        }
+                    },
+                    fontSize = 11.sp,
+                    color = if (shamelaConnection == ShamelaConnectionState.Connected) colors.success else colors.textMuted,
+                )
+                DropdownMenu(expanded = shamelaMenuOpen, onDismissRequest = { shamelaMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Disconnect Shamela") },
+                        onClick = {
+                            shamelaMenuOpen = false
+                            onDisconnectShamela()
+                        },
+                    )
+                }
+            }
         }
         Box {
             Surface(
@@ -166,7 +217,10 @@ private fun AiResearchHeader(
 }
 
 @Composable
-private fun AiResearchEmptyState() {
+private fun AiResearchEmptyState(
+    shamelaConnection: ShamelaConnectionState,
+    onConnectShamela: () -> Unit,
+) {
     val colors = VaultThemeTokens.colors
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 84.dp),
@@ -182,6 +236,25 @@ private fun AiResearchEmptyState() {
             color = colors.textSecondary,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
+        when (shamelaConnection) {
+            ShamelaConnectionState.Disconnected, is ShamelaConnectionState.Error -> {
+                TextButton(onClick = onConnectShamela) { Text("Connect Shamela") }
+            }
+            ShamelaConnectionState.Connecting -> {
+                CircularProgressIndicator(modifier = Modifier.padding(top = 6.dp).size(20.dp), strokeWidth = 2.dp)
+            }
+            ShamelaConnectionState.Connected -> Unit
+        }
+        if (shamelaConnection is ShamelaConnectionState.Error) {
+            Text(
+                shamelaConnection.message,
+                modifier = Modifier.fillMaxWidth(0.82f),
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = colors.warning,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
     }
 }
 

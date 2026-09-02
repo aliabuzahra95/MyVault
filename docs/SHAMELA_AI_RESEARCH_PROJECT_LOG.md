@@ -24,3 +24,21 @@
 - Implementation commit: `782d2ee477374734f22dd031849395d40a8a7c18`
 - Visual evidence: `artifacts/shamela-ai/stage-1/` (not tracked in Git).
 - Physical Samsung: NOT TESTED; no physical device was connected.
+
+## Stage 2 - Shamela OAuth
+
+- Status: IMPLEMENTED; LIVE AUTHORIZATION AWAITING EMAIL ACTIVATION
+- OAuth client: public native client using authorization code, PKCE S256, and
+  refresh tokens through AppAuth for Android.
+- Redirect: `com.myvault.app:/oauth2redirect/shamela`.
+- Token security: AppAuth state encrypted with Android Keystore AES-GCM in
+  app-private preferences; excluded from platform and manual MyVault backups.
+- Account state: the live Shamela service accepted account creation and sent its
+  required activation link. No access token is available until the user opens
+  that link.
+- Live contract: `docs/SHAMELA_MCP_LIVE_CONTRACT.md`.
+- Tests: OAuth contract test and debug assembly passed before the activation
+  gate. Full unit/lint verification is recorded with the Stage 2 commit.
+- Emulator note: the initial blank custom tab was an emulator Chrome native
+  library startup failure. After a clean browser restart, the unchanged OAuth
+  request rendered the real Shamela account flow.

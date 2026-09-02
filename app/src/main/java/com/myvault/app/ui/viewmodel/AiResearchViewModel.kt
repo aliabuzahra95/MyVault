@@ -3,22 +3,52 @@ package com.myvault.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import com.myvault.app.data.ai.AiResearchLocalPreferences
 import com.myvault.app.data.ai.AiResearchProvider
+import com.myvault.app.data.ai.ShamelaAuthRepository
+import com.myvault.app.data.ai.ShamelaConnectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.content.Intent
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class AiResearchViewModel @Inject constructor(
     private val localPreferences: AiResearchLocalPreferences,
+    private val shamelaAuthRepository: ShamelaAuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         AiResearchUiState(selectedProvider = localPreferences.selectedProvider()),
     )
     val uiState: StateFlow<AiResearchUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            shamelaAuthRepository.connection.collect { connection ->
+                _uiState.update { it.copy(shamelaConnection = connection) }
+            }
+        }
+    }
+
+    fun createShamelaAuthorizationIntent(): Result<Intent> = runCatching {
+        shamelaAuthRepository.createAuthorizationIntent()
+    }.onFailure { error ->
+        _uiState.update {
+            it.copy(shamelaConnection = ShamelaConnectionState.Error(error.message ?: "Unable to open Shamela sign-in."))
+        }
+    }
+
+    fun completeShamelaAuthorization(data: Intent?) {
+        viewModelScope.launch { shamelaAuthRepository.completeAuthorization(data) }
+    }
+
+    fun disconnectShamela() {
+        viewModelScope.launch { shamelaAuthRepository.disconnect() }
+    }
 
     fun selectProvider(provider: AiResearchProvider) {
         localPreferences.setSelectedProvider(provider)
@@ -58,7 +88,7 @@ class AiResearchViewModel @Inject constructor(
 
 data class AiResearchUiState(
     val selectedProvider: AiResearchProvider = AiResearchProvider.ChatGpt,
-    val shamelaStatus: String = "Sign in",
+    val shamelaConnection: ShamelaConnectionState = ShamelaConnectionState.Disconnected,
     val composer: String = "",
     val messages: List<AiResearchMessage> = emptyList(),
 )
