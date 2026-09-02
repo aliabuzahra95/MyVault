@@ -104,7 +104,6 @@ import com.myvault.app.ui.screens.QuranReflectionsHubScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
-import com.myvault.app.ui.ai.AiResearchScreen
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.viewmodel.AttachmentsViewModel
@@ -434,7 +433,6 @@ fun VaultNavHost(
                 navController.navigateToVaultRoot(VaultDestination.Dashboard.route)
             },
             onSearchSelected = { navController.navigateToVaultRoot(VaultDestination.Search.route) },
-            onAiResearchSelected = { navController.navigateToVaultRoot(VaultDestination.AiResearch.route) },
             onAttachmentsSelected = {
                 navController.navigate(
                     VaultDestination.Attachments.route(
@@ -458,7 +456,6 @@ fun VaultNavHost(
             selectedApplicationDestination = when (currentRoute) {
                 VaultDestination.Dashboard.route -> VaultMobileWebApplicationDestination.Dashboard
                 VaultDestination.Search.route -> VaultMobileWebApplicationDestination.Search
-                VaultDestination.AiResearch.route -> VaultMobileWebApplicationDestination.AiResearch
                 VaultDestination.Settings.route -> VaultMobileWebApplicationDestination.Settings
                 else -> null
             },
@@ -479,7 +476,6 @@ fun VaultNavHost(
             contentStartsInMenuBar = currentRoute in setOf(
                 VaultDestination.Dashboard.route,
                 VaultDestination.Search.route,
-                VaultDestination.AiResearch.route,
                 VaultDestination.Attachments.route,
                 VaultDestination.Favourites.route,
                 VaultDestination.Settings.route,
@@ -498,7 +494,6 @@ fun VaultNavHost(
             menuVisible = currentRoute !in setOf(
                 VaultDestination.Dashboard.route,
                 VaultDestination.Search.route,
-                VaultDestination.AiResearch.route,
                 VaultDestination.Attachments.route,
                 VaultDestination.Favourites.route,
                 VaultDestination.Settings.route,
@@ -1456,9 +1451,6 @@ fun VaultNavHost(
                     navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
             )
-        }
-        composable(VaultDestination.AiResearch.route) {
-            AiResearchScreen(onMenuClick = onOpenNavigation)
         }
         composable(
             route = VaultDestination.AttachmentViewer.route,

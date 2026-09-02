@@ -456,85 +456,6 @@ class NoteRepository @Inject constructor(
         }
     }
 
-    suspend fun appendPlainText(noteId: String, text: String) {
-        val addition = text.trim()
-        require(addition.isNotBlank()) { "There is no source text to add." }
-        database.withTransaction {
-            noteDao.getById(noteId) ?: error("The selected note no longer exists.")
-            captureVersionIfNeeded(noteId)
-            val blocks = blockDao.getForNote(noteId)
-            val richTextBlock = blocks.firstOrNull { it.type == "rich_text" }
-            val richHtmlBlock = blocks.firstOrNull { it.type == "rich_html" }
-            when {
-                richTextBlock != null -> {
-                    val document = runCatching { JSONObject(richTextBlock.content) }
-                        .getOrElse { error("This note could not be safely updated.") }
-                    val existingText = document.optString("text")
-                    val combinedText = existingText.appendParagraph(addition)
-                    val blockId = "$noteId-rich-text"
-                    blockDao.upsertAll(
-                        listOf(
-                            BlockEntity(
-                                id = blockId,
-                                noteId = noteId,
-                                type = "rich_text",
-                                content = JSONObject()
-                                    .put("text", combinedText)
-                                    .put(
-                                        "styleMarks",
-                                        sanitizeStyleMarksJson(
-                                            document.optJSONArray("styleMarks")?.toString() ?: "[]",
-                                            combinedText.length,
-                                        ),
-                                    )
-                                    .put(
-                                        "noteLinks",
-                                        sanitizeNoteLinksJson(
-                                            document.optJSONArray("noteLinks")?.toString() ?: "[]",
-                                            combinedText.length,
-                                        ),
-                                    )
-                                    .toString(),
-                                orderIndex = richTextBlock.orderIndex,
-                            ),
-                        ),
-                    )
-                    blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
-                }
-                richHtmlBlock != null -> {
-                    val blockId = "$noteId-rich-html"
-                    val appendedHtml = "<p dir=\"auto\">${addition.toEscapedHtmlWithBreaks()}</p>"
-                    blockDao.upsertAll(
-                        listOf(
-                            BlockEntity(
-                                id = blockId,
-                                noteId = noteId,
-                                type = "rich_html",
-                                content = richHtmlBlock.content + appendedHtml,
-                                orderIndex = richHtmlBlock.orderIndex,
-                            ),
-                        ),
-                    )
-                    blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
-                }
-                else -> {
-                    blockDao.upsertAll(
-                        listOf(
-                            BlockEntity(
-                                id = UUID.randomUUID().toString(),
-                                noteId = noteId,
-                                type = "paragraph",
-                                content = addition,
-                                orderIndex = (blocks.maxOfOrNull { it.orderIndex } ?: -1) + 1,
-                            ),
-                        ),
-                    )
-                }
-            }
-            noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId), System.currentTimeMillis())
-        }
-    }
-
     suspend fun restoreVersion(noteId: String, versionId: String) {
         database.withTransaction {
             val version = noteVersionDao.getById(versionId) ?: return@withTransaction
@@ -836,21 +757,6 @@ private fun String.stripHtml(): String =
 private val HtmlBreakRegex = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
 private val HtmlBlockCloseRegex = Regex("</p>|</h[1-6]>|</li>|</tr>", RegexOption.IGNORE_CASE)
 private val HtmlTagRegex = Regex("<[^>]+>")
-
-private fun String.appendParagraph(addition: String): String = when {
-    isBlank() -> addition
-    endsWith("\n\n") -> this + addition
-    endsWith("\n") -> this + "\n" + addition
-    else -> this + "\n\n" + addition
-}
-
-private fun String.toEscapedHtmlWithBreaks(): String =
-    replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;")
-        .replace("\n", "<br>")
 
 private fun String.toCellsArray(rows: Int, columns: Int): JSONArray {
     val parsed = runCatching { JSONArray(this) }.getOrNull()

@@ -106,7 +106,6 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.myvault.app"
         buildConfigField("String", "SYNC_PROXY_URL", "\"$syncProxyUrl\"")
         buildConfigField("String", "SYNC_PROXY_TOKEN", "\"$syncProxyToken\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -179,7 +178,6 @@ dependencies {
     implementation(libs.azure.speech)
     implementation(libs.pdfbox.android)
     implementation(libs.material)
-    implementation(libs.appauth)
 
     ksp(libs.androidx.room.compiler)
     ksp(libs.hilt.compiler)

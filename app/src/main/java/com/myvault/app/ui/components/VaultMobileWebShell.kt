@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -88,7 +87,6 @@ data class VaultMobileWebNavigationItem(
 enum class VaultMobileWebApplicationDestination {
     Dashboard,
     Search,
-    AiResearch,
     Settings,
 }
 
@@ -132,7 +130,6 @@ fun VaultMobileWebShell(
     onItemSelected: (Int) -> Unit,
     onDashboardSelected: () -> Unit,
     onSearchSelected: () -> Unit,
-    onAiResearchSelected: () -> Unit,
     onAttachmentsSelected: () -> Unit,
     onFavouritesSelected: () -> Unit,
     onSettingsSelected: () -> Unit,
@@ -268,12 +265,6 @@ fun VaultMobileWebShell(
                                 icon = Icons.Outlined.Search,
                                 selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Search,
                                 onClick = { closeDrawerThen(onSearchSelected) },
-                            )
-                            DrawerNavigationRow(
-                                label = "AI",
-                                icon = Icons.Outlined.AutoAwesome,
-                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.AiResearch,
-                                onClick = { closeDrawerThen(onAiResearchSelected) },
                             )
                             DrawerNavigationRow(
                                 label = "Settings",
