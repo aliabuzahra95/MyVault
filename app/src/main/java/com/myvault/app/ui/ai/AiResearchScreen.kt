@@ -432,8 +432,8 @@ private fun ShamelaSourceCard(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         source.bookTitle,
-                        fontSize = 13.5.sp,
-                        lineHeight = 18.sp,
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp,
                         fontWeight = FontWeight.W700,
                         color = colors.text,
                     )
@@ -446,8 +446,8 @@ private fun ShamelaSourceCard(
                 source.arabicPassage,
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 16.sp,
-                    lineHeight = 27.sp,
+                    fontSize = 17.sp,
+                    lineHeight = 28.sp,
                     textDirection = TextDirection.Rtl,
                 ),
                 color = colors.text,
@@ -459,8 +459,8 @@ private fun ShamelaSourceCard(
             ).joinToString(" · ")
             Text(
                 listOf(source.provenanceType.label, location).filter(String::isNotBlank).joinToString(" · "),
-                fontSize = 10.5.sp,
-                lineHeight = 14.sp,
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
                 color = colors.textMuted,
             )
             Row(modifier = Modifier.align(Alignment.End)) {
@@ -532,13 +532,15 @@ private fun SourceDetailSheet(
             ) {
                 TextButton(onClick = onCopyArabic) {
                     Icon(Icons.Rounded.ContentCopy, null, Modifier.size(17.dp))
-                    Text("Copy Arabic", modifier = Modifier.padding(start = 5.dp))
+                    Text("Arabic", modifier = Modifier.padding(start = 5.dp))
                 }
                 TextButton(onClick = onCopyCitation) {
-                    Text("Copy citation")
+                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(17.dp))
+                    Text("Citation", modifier = Modifier.padding(start = 5.dp))
                 }
                 TextButton(onClick = onSave) {
-                    Text("Save to Note")
+                    Icon(Icons.Rounded.NoteAdd, null, Modifier.size(17.dp))
+                    Text("Save", modifier = Modifier.padding(start = 5.dp))
                 }
             }
             HorizontalDivider(color = colors.border)

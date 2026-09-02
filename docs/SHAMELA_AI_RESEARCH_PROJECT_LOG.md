@@ -282,4 +282,28 @@
   installed production create/open/append/reopen flow, and `git diff --check`
   passed.
 - Visual evidence: `artifacts/shamela-ai/stage-12/` (not tracked in Git).
+- Implementation commit: `a419af1b6159b86eda347178676e753e43c2ff3a`
 - Physical Samsung: NOT TESTED; only the Android emulator is connected.
+
+## Stage 13 - Full UI Refinement
+
+- Status: COMPLETE ON EMULATOR; PHYSICAL SAMSUNG ACCEPTANCE REMAINS STAGE 16.
+- Structure: the installed production destination retains a compact MyVault
+  header, provider selector and Shamela state; outlined user questions; plain
+  flowing AI responses; verified evidence cards; and one persistent multiline
+  composer. No AI-answer card, full-screen progress modal, or stacked provider
+  cards were introduced.
+- Evidence readability: card titles and metadata were increased one restrained
+  step, Arabic passages now render at 17sp/28sp with explicit RTL direction,
+  and the source-detail actions were reduced to compact `Arabic`, `Citation`,
+  and `Save` controls so all three remain reachable at 360dp.
+- Composer: verified with a long multiline question, keyboard open/closed, and
+  a long conversation. It expands to six lines, remains above the native IME,
+  keeps the send control thumb-reachable, and does not cover source content.
+- Responsive inspection: actual installed UI passed at 360dp, 390dp, 412dp,
+  and 430dp equivalent widths. The header, provider selector, Arabic source
+  cards, source actions, and composer did not clip or overflow.
+- Theme inspection: actual Light and Dark states retained readable text,
+  borders, evidence surfaces, muted metadata, provider status, and composer
+  contrast.
+- Visual evidence: `artifacts/shamela-ai/stage-13/` (not tracked in Git).
