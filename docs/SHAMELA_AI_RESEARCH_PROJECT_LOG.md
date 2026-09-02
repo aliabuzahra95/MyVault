@@ -86,7 +86,7 @@
   load test was attempted.
 - Tests: structured MCP parsing, real result-shape normalization, HTML marker
   cleanup, and live authenticated instrumentation acceptance passed.
-- Implementation commit: pending combined Stage 4/5 checkpoint commit.
+- Implementation commit: `6d749ceaf4013df34add6b5f45612943997f6b30`
 - Visual evidence: `artifacts/shamela-ai/stage-4/` (not tracked in Git).
 
 ## Stage 5 - Research Provider Abstraction
@@ -99,4 +99,28 @@
 - Source fields: only live-supported book/page identity, title, author, passage,
   provenance, part/printed page, citation, and retrieval time are normalized.
 - Tests: body and footnote separation and structured-result fallback passed.
-- Implementation commit: pending combined Stage 4/5 checkpoint commit.
+- Implementation commit: `6d749ceaf4013df34add6b5f45612943997f6b30`
+
+## Stage 6 - Multi-provider AI
+
+- Status: COMPLETE
+- Provider boundary: normalized `AiProviderClient`, bounded request/response
+  models, common gateway, provider-specific errors, cancellation-aware HTTPS,
+  and a delta callback ready for the streaming stage.
+- Providers: OpenAI Responses API (`gpt-5-mini`), Gemini Generate Content
+  (`gemini-2.5-flash`), and Kimi Chat Completions (`kimi-k2.6`).
+- Credentials: optional provider overrides are encrypted with Android Keystore
+  AES-GCM in app-private device-local preferences. Platform backup is disabled
+  for all preferences and the manual MyVault backup does not include this
+  store. Credentials are never sent to Shamela or written to logs/tests.
+- Existing condition: provider keys already configured through generated
+  `BuildConfig` fields remain the fallback used by older MyVault AI features.
+  This project did not broaden that unrelated security refactor.
+- Live Android result: the common contract returned `MyVault provider
+  connected.` from ChatGPT in 2,792 ms, Gemini in 1,280 ms, and Kimi in 905 ms
+  on the API 36.1 emulator. Kimi's documented production constraint of
+  temperature `0.6` for `kimi-k2.6` is enforced.
+- Tests: request construction, response parsing, empty/malformed boundaries,
+  live calls for all three providers, JBR 21 unit tests, lint, and debug build.
+- Implementation commit: pending Stage 6 checkpoint commit.
+- Physical Samsung: NOT TESTED; only the Android emulator is connected.
