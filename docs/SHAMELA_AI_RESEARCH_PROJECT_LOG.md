@@ -65,6 +65,6 @@
   succeeds; initialization errors expose an inline retry action.
 - Tests: JSON, SSE, and structured-error parser tests; full unit suite, lint,
   debug assembly, live instrumentation discovery, and runtime restart check.
-- Implementation commit: pending Stage 3 checkpoint commit.
+- Implementation commit: `57fbf80d79bf3ca71766c67271458dd448de5a5f`
 - Physical Samsung: NOT TESTED; only the Android emulator is currently
   connected.
