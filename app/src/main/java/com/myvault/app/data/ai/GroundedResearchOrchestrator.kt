@@ -50,8 +50,12 @@ class GroundedResearchOrchestrator @Inject constructor(
         trace.candidates(packet.candidates)
         if (cachedPacket != null) trace.cacheHit(packet.evidence.sources)
         val evidenceSet = packet.evidence
-        val findings = evidenceSet.findings
-        trace.evidence(packet.candidates, ResearchTraceEvidenceSet(findings))
+        trace.evidence(packet.candidates, ResearchTraceEvidenceSet(evidenceSet.findings))
+        val (evidence, findings) = selectEvidenceForSynthesis(
+            sources = evidenceSet.sources,
+            findings = evidenceSet.findings,
+            answerType = packet.plan.answerType,
+        )
         if (findings.none(VerifiedResearchFinding::canSupportAnswer)) {
             return GroundedResearchResult(
                 answer = "Shamela returned possible matches, but MyVault could not verify an exact passage that safely answers this question. No AI answer was generated.",
@@ -62,7 +66,6 @@ class GroundedResearchOrchestrator @Inject constructor(
                 searchElapsedMillis = packet.searchElapsedMillis,
             )
         }
-        val evidence = evidenceSet.sources
         onSources(evidence)
         onStage(GroundedResearchStage.Generating)
         val draft = aiProviders.generate(
@@ -74,6 +77,7 @@ class GroundedResearchOrchestrator @Inject constructor(
                 temperature = 0.0,
             ),
         )
+        trace.modelOutput("synthesis", draft)
         val draftSynthesis = parseStructuredSynthesis(
             value = draft.text,
             sourceCount = evidence.size,
@@ -92,6 +96,7 @@ class GroundedResearchOrchestrator @Inject constructor(
                 temperature = 0.0,
             ),
         )
+        trace.modelOutput("answer_validation", audit)
         val auditedAnswer = parseAuditedResearchAnswer(audit.text, sourceCount = evidence.size)
         val verifiedAnswer = auditedAnswer
             ?.takeUnless { answer ->
@@ -121,16 +126,7 @@ class GroundedResearchOrchestrator @Inject constructor(
         onSources: suspend (List<ResearchSource>) -> Unit,
     ): VerifiedResearchPacket? {
         onStage(GroundedResearchStage.Searching)
-        val planResponse = generateStructuredResearchControl(
-            preferredFallback = answerProvider,
-            request = AiGenerationRequest(
-                systemInstruction = SearchPlannerSystemInstruction,
-                prompt = question,
-                maxOutputTokens = 768,
-                temperature = 0.0,
-            ),
-        )
-        val plan = parseResearchSearchPlan(planResponse.text, question)
+        val plan = planSearch(question, answerProvider, trace)
         trace.intent(plan)
         val search = searchForGrounding(plan)
         if (search.sources.isEmpty()) return null
@@ -148,10 +144,34 @@ class GroundedResearchOrchestrator @Inject constructor(
                 temperature = 0.0,
             ),
         )
+        trace.modelOutput("evidence_extraction", extraction)
+        val extractedFindings = parseVerifiedResearchFindings(extraction.text, candidates)
+        val skippedPreferenceCandidates = explicitPreferenceCandidatesMissingFromFindings(
+            candidates = candidates,
+            findings = extractedFindings,
+        )
+        val focusedFindings = if (skippedPreferenceCandidates.isEmpty()) {
+            emptyList()
+        } else {
+            val focusedExtraction = generateStructuredResearchControl(
+                preferredFallback = answerProvider,
+                request = AiGenerationRequest(
+                    systemInstruction = EvidenceExtractorSystemInstruction,
+                    prompt = buildEvidenceExtractionPrompt(question, skippedPreferenceCandidates, plan),
+                    maxOutputTokens = FocusedEvidenceExtractionMaxTokens,
+                    temperature = 0.0,
+                ),
+            )
+            trace.modelOutput("evidence_explicit_preference", focusedExtraction)
+            parseVerifiedResearchFindings(focusedExtraction.text, skippedPreferenceCandidates)
+        }
         val evidence = crossVerifyEvidence(
             candidates = candidates,
-            findings = parseVerifiedResearchFindings(extraction.text, candidates),
+            findings = (extractedFindings + focusedFindings).distinctBy { finding ->
+                finding.sourceId to normalizeArabicForEvidence(finding.exactQuote).take(300)
+            },
             targetScholar = plan.scholars.singleOrNull(),
+            preferExplicitAuthorialPosition = plan.answerType in ScholarPositionAnswerTypes,
         )
         val packet = VerifiedResearchPacket(
             plan = plan,
@@ -209,9 +229,13 @@ class GroundedResearchOrchestrator @Inject constructor(
         candidates: List<ResearchSource>,
         findings: List<VerifiedResearchFinding>,
         targetScholar: String?,
+        preferExplicitAuthorialPosition: Boolean,
     ): VerifiedEvidenceSet {
         val sourceById = candidates.associateBy(ResearchSource::sourceId)
-        val verifiedPairs = findings.mapNotNull { finding ->
+        val verifiedPairs = findings.mapNotNull { rawFinding ->
+            val finding = sourceById[rawFinding.sourceId]
+                ?.let { source -> normalizeFindingAuthority(source, rawFinding) }
+                ?: rawFinding
             val source = sourceById[finding.sourceId] ?: return@mapNotNull null
             val contextualSource = if (source.surroundingContext != null) {
                 source
@@ -221,7 +245,11 @@ class GroundedResearchOrchestrator @Inject constructor(
                 }.getOrElse { source }
             }
             val verified = runCatching {
-                researchProvider.verifyQuoteAtSource(contextualSource, finding.exactQuote).verified
+                researchProvider.verifyQuoteAtSource(contextualSource, finding.exactQuote).verified ||
+                    (
+                        contextualSource.provenanceType == ResearchProvenance.AuthorBody &&
+                            contextualSource.arabicPassage.containsVerifiedQuote(finding.exactQuote)
+                    )
             }.getOrElse {
                 contextualSource.arabicPassage.containsVerifiedQuote(finding.exactQuote)
             }
@@ -262,22 +290,38 @@ class GroundedResearchOrchestrator @Inject constructor(
                 }
         }
 
-        val distinctPairs = verifiedPairs.distinctBy { (source, finding) -> source.sourceId to finding.exactQuote }
-        val verifiedSources = distinctPairs.groupBy { it.first.sourceId }.values.map { grouped ->
+        val distinctPairs = verifiedPairs.distinctBy { (_, finding) ->
+            normalizeArabicForEvidence(finding.exactQuote).take(300)
+        }
+        val prioritizedPairs = prioritizeExplicitAuthorialPositionEvidence(
+            pairs = distinctPairs,
+            enabled = preferExplicitAuthorialPosition,
+        )
+        val verifiedSources = prioritizedPairs.groupBy { it.first.sourceId }.values.map { grouped ->
             val source = grouped.first().first
             val sourceFindings = grouped.map { it.second }
             val strongest = sourceFindings.maxByOrNull { it.evidenceClass.rank } ?: sourceFindings.first()
+            val decisivePageContext = relevantPageWindow(source, maxCharacters = 3_000)
+            val expandedContext = listOfNotNull(
+                decisivePageContext.takeIf(String::isNotBlank),
+                source.surroundingContext?.takeIf(String::isNotBlank),
+            ).distinct().joinToString("\n\n").take(5_000).takeIf(String::isNotBlank)
             source.copy(
                 arabicPassage = sourceFindings.joinToString("\n\n") { it.exactQuote },
                 evidenceClass = strongest.evidenceClass,
                 passageRole = strongest.passageRole,
                 evidenceConfidence = strongest.confidence,
+                surroundingContext = expandedContext,
             )
-        }.sortedByDescending { it.evidenceClass.rank }
+        }.sortedWith(
+            compareByDescending<ResearchSource> { source -> source.arabicPassage.hasExplicitPreferenceCue() }
+                .thenByDescending { source -> source.evidenceClass.rank }
+                .thenByDescending { source -> evidenceConfidenceRank(source.evidenceConfidence) },
+        )
         val finalSourceIds = verifiedSources.map(ResearchSource::sourceId).toSet()
         return VerifiedEvidenceSet(
             sources = verifiedSources,
-            findings = distinctPairs.map { it.second }
+            findings = prioritizedPairs.map { it.second }
                 .filter { it.sourceId in finalSourceIds },
         )
     }
@@ -339,6 +383,7 @@ class GroundedResearchOrchestrator @Inject constructor(
                 temperature = 0.0,
             ),
         )
+        trace.modelOutput("synthesis", draft)
         val draftSynthesis = parseStructuredSynthesis(draft.text, sources.size)
         val draftAnswer = draftSynthesis?.answer.orEmpty()
         trace.packet(sources, findings)
@@ -353,6 +398,7 @@ class GroundedResearchOrchestrator @Inject constructor(
                 temperature = 0.0,
             ),
         )
+        trace.modelOutput("answer_validation", audit)
         val auditedAnswer = parseAuditedResearchAnswer(audit.text, sourceCount = sources.size)
         val answer = auditedAnswer
             ?.takeUnless { containsUnsupportedConsensusClaim(it, findings, consensusRequested = false) }
@@ -386,7 +432,7 @@ class GroundedResearchOrchestrator @Inject constructor(
         trace.comparisonPlan(plan)
         val groups = plan.scholars.map { scholar ->
             onStage(GroundedResearchStage.Searching)
-            val scholarPlan = planSearch("What did $scholar say about ${plan.topic}?", provider).copy(
+            val scholarPlan = planSearch("What did $scholar say about ${plan.topic}?", provider, trace).copy(
                 topic = plan.topic,
                 answerType = "comparison",
                 scholars = listOf(scholar),
@@ -413,6 +459,7 @@ class GroundedResearchOrchestrator @Inject constructor(
                 candidates = candidates,
                 findings = parseVerifiedResearchFindings(extraction.text, candidates),
                 targetScholar = scholar,
+                preferExplicitAuthorialPosition = true,
             )
             val boundedSources = set.sources.take(MaxSourcesPerComparedScholar)
             val boundedIds = boundedSources.map(ResearchSource::sourceId).toSet()
@@ -438,7 +485,11 @@ class GroundedResearchOrchestrator @Inject constructor(
         return packet
     }
 
-    private suspend fun planSearch(question: String, provider: AiResearchProvider): ResearchSearchPlan {
+    private suspend fun planSearch(
+        question: String,
+        provider: AiResearchProvider,
+        trace: ResearchTraceRecorder,
+    ): ResearchSearchPlan {
         val response = generateStructuredResearchControl(
             preferredFallback = provider,
             request = AiGenerationRequest(
@@ -448,7 +499,35 @@ class GroundedResearchOrchestrator @Inject constructor(
                 temperature = 0.0,
             ),
         )
-        return parseResearchSearchPlan(response.text, question)
+        trace.modelOutput("search_plan", response)
+        val initial = parseResearchSearchPlan(response.text, question)
+        if (initial.scholars.isEmpty()) return initial
+
+        val refinement = generateStructuredResearchControl(
+            preferredFallback = provider,
+            request = AiGenerationRequest(
+                systemInstruction = SearchPlanRefinerSystemInstruction,
+                prompt = buildSearchPlanRefinementPrompt(question, initial),
+                maxOutputTokens = 896,
+                temperature = 0.0,
+            ),
+        )
+        trace.modelOutput("search_plan_refinement", refinement)
+        val refinedJson = parseJsonObject(refinement.text)
+            ?.takeIf { json ->
+                json.has("queries") &&
+                    json.has("alternate_queries") &&
+                    json.has("attribution_queries") &&
+                    json.has("contradiction_queries")
+            }
+            ?: return initial
+        val refined = parseResearchSearchPlan(refinedJson.toString(), question).let { candidate ->
+            if (candidate.scholars.isEmpty()) candidate.copy(scholars = initial.scholars) else candidate
+        }
+        return mergeResearchSearchPlans(
+            initial = initial,
+            refined = refined,
+        )
     }
 
     private suspend fun searchForGrounding(plan: ResearchSearchPlan): ResearchSearchResult {
@@ -457,17 +536,17 @@ class GroundedResearchOrchestrator @Inject constructor(
         val directScholarSources = if (plan.scholars.isNotEmpty()) {
             plan.scholars.take(MaxGroundingScholars).flatMap { scholar ->
                 val primary = researchProvider.searchScholarCorpus(
-                    queries = plan.queries,
+                    queries = expandDomainResearchQueries(plan.queries, plan.domain),
                     scholarName = scholar,
                     retrievalPass = ResearchRetrievalPass.Primary,
                 ).sources
                 val alternate = researchProvider.searchScholarCorpus(
-                    queries = plan.alternateQueries,
+                    queries = expandDomainResearchQueries(plan.alternateQueries, plan.domain),
                     scholarName = scholar,
                     retrievalPass = ResearchRetrievalPass.AlternatePrimary,
                 ).sources
                 val contradictions = researchProvider.searchScholarCorpus(
-                    queries = plan.contradictionQueries,
+                    queries = expandDomainResearchQueries(plan.contradictionQueries, plan.domain),
                     scholarName = scholar,
                     retrievalPass = ResearchRetrievalPass.Contradiction,
                 ).sources
@@ -523,6 +602,7 @@ class GroundedResearchOrchestrator @Inject constructor(
             }.getOrElse { source }
         }
             .let { selectBalancedResearchCandidates(it, plan.allQueries, MaxGroundingCandidates) }
+            .sortedByDescending { source -> source.arabicPassage.hasExplicitPreferenceCue() }
         return ResearchSearchResult(
             query = plan.queries.joinToString(" / "),
             totalHits = searches.mapNotNull(ResearchSearchResult::totalHits).sum().takeIf { searches.isNotEmpty() },
@@ -544,6 +624,7 @@ class GroundedResearchOrchestrator @Inject constructor(
         const val MaxSourcesPerComparedScholar = 3
         const val GroundedAnswerMaxTokens = 3_072
         const val EvidenceExtractionMaxTokens = 2_048
+        const val FocusedEvidenceExtractionMaxTokens = 1_024
         const val MaxSecondaryQuoteVerifications = 3
         const val MaxCachedResearchPackets = 8
         const val MaxShamelaQueryCharacters = 500
@@ -551,14 +632,20 @@ class GroundedResearchOrchestrator @Inject constructor(
             Prepare a robust Maktabah al-Shamela search plan for the user's research question.
             Return JSON only with exactly these keys: topic, domain, answer_type, queries, alternate_queries, attribution_queries, contradiction_queries, scholars, asks_consensus.
             topic is a concise Arabic description of the subject. domain is one of fiqh, aqidah, tafsir, hadith, usul, history, general. answer_type describes the requested task, such as scholar_view, quote_verification, comparison, explanation, or general_research.
-            queries must contain 2 or 3 precise Arabic searches for direct evidence. alternate_queries must contain 1 or 2 searches using alternate classical terminology. contradiction_queries must contain 2 or 3 searches deliberately looking for the opposite ruling, negation, qualification, or competing formulation.
-            attribution_queries must contain 2 or 3 Arabic searches combining the named scholar with attribution language and the topic, such as قال, اختار, ذهب, رجح. Return an empty array when no scholar is named.
+            queries must contain 3 or 4 precise Arabic searches for direct evidence. For fiqh, include the classical technical noun phrase, a neutral issue query, and formulations that can locate the author's preferred ruling such as الأظهر, الصحيح, اختار, واجب, مستحب, or their relevant equivalents. alternate_queries must contain 2 or 3 searches using genuinely different classical terminology, not modern literal paraphrases of the same words. contradiction_queries must contain 3 or 4 searches deliberately looking for the opposite ruling, negation, recommendation-versus-obligation distinction, qualification, or competing formulation.
+            attribution_queries must contain 3 or 4 Arabic searches combining the named scholar with attribution language and the topic, such as قال, اختار, ذهب, رجح. Return an empty array when no scholar is named.
             Every query must use 2 to 7 topical words. Do not repeat near-identical queries.
             scholars must contain the standard Arabic names of scholars explicitly named by the user, or an empty array. Do not infer an unnamed scholar.
             When a scholar is named, do not include the scholar's name in the queries because MyVault scopes those searches to that author's books.
             asks_consensus is true only when the user explicitly asks about consensus or disagreement.
             Preserve any exact Arabic quotation as the first query. Do not answer the question and do not invent a citation.
             Example: {"topic":"مس الذكر والوضوء","domain":"fiqh","answer_type":"scholar_view","queries":["مس الذكر الوضوء","الوضوء من مس الذكر"],"alternate_queries":["مس الفرج الطهارة"],"attribution_queries":["اختار ابن تيمية مس الذكر الوضوء","قال ابن تيمية الوضوء من مس الذكر","اختيار شيخ الإسلام مس الفرج"],"contradiction_queries":["مس الذكر لا يجب الوضوء","مس الذكر مستحب الوضوء","مس الذكر ينقض الوضوء"],"scholars":["ابن تيمية"],"asks_consensus":false}
+        """.trimIndent()
+        val SearchPlanRefinerSystemInstruction = """
+            Review an existing Maktabah al-Shamela search plan for a named-scholar question and return a stronger replacement as JSON only, using exactly the same keys as the supplied plan.
+            Repair literal modern wording by adding classical technical vocabulary likely to occur in authored books. Preserve the named scholar and requested task. Do not answer the question and do not insert a conclusion.
+            For fiqh, cover four bounded axes: the neutral legal issue, the author's own preference or tarjih wording, the positive ruling, and the opposite/qualified ruling. Explicitly search obligation versus recommendation when that distinction could resolve the issue. For aqidah, distinguish affirmation from quotation or rebuttal. For tafsir, anchor the ayah and interpretive phrase. For hadith, distinguish grading, reconciliation, and abrogation claims.
+            Use 2 to 6 words per query. Use genuinely different lexical formulations rather than word-order permutations. Do not put the scholar's name in author-scoped primary or alternate queries. Attribution queries must name the scholar and use explicit reporting language.
         """.trimIndent()
         val EvidenceExtractorSystemInstruction = """
             You are a strict evidence extractor, not an answer writer. Use only the supplied Shamela pages.
@@ -570,6 +657,7 @@ class GroundedResearchOrchestrator @Inject constructor(
             confidence must be HIGH, MEDIUM_HIGH, MEDIUM, or LOW. relation must be SUPPORTS, CONTRADICTS, CONTEXT, or AMBIGUOUS. attribution_language is the precise wording the final writer should use, such as "Ibn Taymiyyah says" or "Ibn Muflih reports that Ibn Taymiyyah chose".
             A page authored by the target scholar may be direct primary evidence. A page authored by somebody else can only be secondary evidence even when it directly quotes the target. Never turn a report of a madhhab, an objection, a rejected view, a hadith quotation, or editorial text into the scholar's personal preference.
             Use surrounding context to identify who is speaking and whether the passage is adopted, reported, rejected, or ambiguous. Mark an unresolved passage AMBIGUOUS instead of guessing.
+            For a question asking the scholar's own preferred ruling, explicit tarjih language such as الأظهر, الصحيح, الراجح, عندي, or أختار is stronger evidence of personal preference than an unqualified proposition inside a longer commentary. Mark that explicit preference SUPPORTS. Mark an apparently conflicting contextual proposition CONTRADICTS or CONTEXT unless its status and relationship are independently clear. Never silently flatten two different contexts into one rule.
             Reject topical matches that do not answer the question. Do not infer consensus, unanimity, a school position, or a final ruling from silence or unrelated discussion.
             Set answerable false when no exact passage safely supports an answer with provenance-aware wording.
         """.trimIndent()
@@ -580,6 +668,7 @@ class GroundedResearchOrchestrator @Inject constructor(
             Include the supplied exact Arabic quotation where useful and explain it faithfully. End every evidence-based paragraph or list item with its [S#].
             Match attribution to evidence class: say the scholar "says" only for direct primary evidence; for secondary evidence name the reporting author and say "reports", "quotes", or "attributes" as specified. Never turn a madhhab report into the target scholar's personal preference.
             Give direct primary explicit evidence the greatest weight, then contextual primary evidence, then verified secondary quotations or attributions. Use later discussion as context rather than silently allowing it to overrule primary text.
+            When direct primary passages appear to conflict, lead with the clearest explicit preference formula such as الأظهر or الراجح. Then describe the other passage and the unresolved distinction honestly. Do not invent chronology or claim that one text was later unless the dossier proves it.
             If findings conflict, describe the conflict and any verified resolution rather than choosing silently or inventing chronology. Do not invent citations or metadata. Do not add a bibliography because the app renders verified sources separately.
             Return JSON only with keys direct_answer, answer_markdown, and cited_evidence_ids. answer_markdown is the complete polished answer. cited_evidence_ids is an array containing only the [S#] identifiers actually used.
         """.trimIndent()
@@ -589,6 +678,7 @@ class GroundedResearchOrchestrator @Inject constructor(
             Return JSON only with keys verdict, reason, and answer. verdict must be pass, revise, or insufficient.
             Use pass only when every material claim is supported and attributed correctly. Use revise and provide a corrected complete answer when unsupported wording can be removed. Use insufficient with an empty answer when the evidence cannot answer safely.
             Reverse no ruling. Never claim consensus, unanimity, no disagreement, a madhhab-wide view, authenticity, or another scholar's position unless an exact supplied quotation explicitly establishes it.
+            For scholar-preference questions, reject or revise a draft that leads with contextual exposition while downplaying a supplied direct passage containing explicit preference language such as الأظهر or الراجح. Preserve genuine conflicting evidence as a limitation and do not invent chronology.
             Keep [S#] citations attached to the paragraphs they support. Never introduce a source or citation not supplied.
         """.trimIndent()
         val ComparisonPlannerSystemInstruction = """
@@ -641,7 +731,7 @@ internal fun parseScholarComparisonPlan(value: String): ScholarComparisonPlan {
         for (index in 0 until values.length()) {
             values.optString(index).trim().takeIf(String::isNotBlank)?.take(100)?.let(::add)
         }
-    }.distinct().take(4)
+    }.distinct().take(5)
     require(
         topic.isNotBlank() &&
             !topic.equals("concise Arabic Shamela search terms", ignoreCase = true) &&
@@ -830,14 +920,14 @@ internal fun parseResearchSearchPlan(value: String, fallbackQuestion: String): R
     val answerType = json?.optString("answer_type").orEmpty().trim().lowercase()
         .take(80)
         .ifBlank { "general_research" }
-    val alternateQueries = queryList("alternate_queries", 2)
-    val attributionQueries = queryList("attribution_queries", 3).ifEmpty {
+    val alternateQueries = queryList("alternate_queries", 4)
+    val attributionQueries = queryList("attribution_queries", 4).ifEmpty {
         scholars.firstOrNull()?.let { scholar ->
             listOf("قال $scholar $topic", "اختار $scholar $topic", "ذهب $scholar $topic")
                 .map(::normalizePlannedShamelaQuery)
         }.orEmpty()
     }
-    val contradictionQueries = queryList("contradiction_queries", 3).ifEmpty {
+    val contradictionQueries = queryList("contradiction_queries", 4).ifEmpty {
         fallbackContradictionQueries(domain, topic)
     }
     require(queries.isNotEmpty()) { "Could not prepare a Shamela search query." }
@@ -853,6 +943,186 @@ internal fun parseResearchSearchPlan(value: String, fallbackQuestion: String): R
         asksConsensus = json?.optBoolean("asks_consensus", false) ?: false,
     )
 }
+
+internal fun buildSearchPlanRefinementPrompt(question: String, plan: ResearchSearchPlan): String = buildString {
+    appendLine("QUESTION")
+    appendLine(question.trim())
+    appendLine()
+    appendLine("INITIAL PLAN JSON")
+    appendLine(
+        JSONObject()
+            .put("topic", plan.topic)
+            .put("domain", plan.domain)
+            .put("answer_type", plan.answerType)
+            .put("queries", JSONArray(plan.queries))
+            .put("alternate_queries", JSONArray(plan.alternateQueries))
+            .put("attribution_queries", JSONArray(plan.attributionQueries))
+            .put("contradiction_queries", JSONArray(plan.contradictionQueries))
+            .put("scholars", JSONArray(plan.scholars))
+            .put("asks_consensus", plan.asksConsensus)
+            .toString(),
+    )
+    appendLine()
+    appendLine("Return corrected JSON with those exact lowercase keys only.")
+}
+
+internal fun mergeResearchSearchPlans(
+    initial: ResearchSearchPlan,
+    refined: ResearchSearchPlan,
+): ResearchSearchPlan = initial.copy(
+    queries = (refined.queries + initial.queries).distinct().take(6),
+    alternateQueries = (refined.alternateQueries + initial.alternateQueries).distinct().take(5),
+    attributionQueries = (refined.attributionQueries + initial.attributionQueries).distinct().take(5),
+    contradictionQueries = (refined.contradictionQueries + initial.contradictionQueries).distinct().take(5),
+    topic = refined.topic.takeIf(String::isNotBlank) ?: initial.topic,
+    domain = refined.domain.takeIf { it != "general" || initial.domain == "general" } ?: initial.domain,
+    answerType = refined.answerType.takeIf { it != "general_research" || initial.answerType == "general_research" }
+        ?: initial.answerType,
+    scholars = (refined.scholars + initial.scholars).distinct().take(2),
+    asksConsensus = initial.asksConsensus || refined.asksConsensus,
+)
+
+internal fun expandDomainResearchQueries(queries: List<String>, domain: String): List<String> {
+    val clean = queries.map(::normalizePlannedShamelaQuery).filter(String::isNotBlank).distinct()
+    if (domain != "fiqh") return clean.take(8)
+    val tokens = clean.flatMap { it.split(Regex("\\s+")) }
+    val anchors = tokens.filter { token -> token in FiqhActionAnchors }.distinct()
+    return buildList {
+        addAll(clean)
+        anchors.forEach { anchor ->
+            add("$anchor مستحب ليس بواجب")
+            add("يستحب $anchor ولا يجب")
+        }
+    }.distinct().take(8)
+}
+
+internal fun normalizeFindingAuthority(
+    source: ResearchSource,
+    finding: VerifiedResearchFinding,
+): VerifiedResearchFinding {
+    val isTargetAuthorBody = source.provenanceType == ResearchProvenance.AuthorBody &&
+        !source.targetScholar.isNullOrBlank() &&
+        finding.evidenceClass in setOf(
+            ResearchEvidenceClass.DirectPrimary,
+            ResearchEvidenceClass.DirectPrimaryContextual,
+        )
+    if (!isTargetAuthorBody || !finding.exactQuote.hasExplicitPreferenceCue()) return finding
+    return finding.copy(
+        direct = true,
+        evidenceClass = ResearchEvidenceClass.DirectPrimary,
+        passageRole = ResearchPassageRole.DirectExplicitView,
+        confidence = ResearchEvidenceConfidence.High,
+        relation = ResearchEvidenceRelation.Supports,
+    )
+}
+
+internal fun explicitPreferenceCandidatesMissingFromFindings(
+    candidates: List<ResearchSource>,
+    findings: List<VerifiedResearchFinding>,
+): List<ResearchSource> {
+    val coveredSourceIds = findings.map(VerifiedResearchFinding::sourceId).toSet()
+    return candidates.filter { source ->
+        source.sourceId !in coveredSourceIds &&
+            source.provenanceType == ResearchProvenance.AuthorBody &&
+            !source.targetScholar.isNullOrBlank() &&
+            relevantPageWindow(source).hasExplicitPreferenceCue()
+    }.take(2)
+}
+
+internal fun selectEvidenceForSynthesis(
+    sources: List<ResearchSource>,
+    findings: List<VerifiedResearchFinding>,
+    answerType: String,
+): Pair<List<ResearchSource>, List<VerifiedResearchFinding>> {
+    if (answerType !in ScholarPositionAnswerTypes) return sources to findings
+    val hasExplicitAuthorialPreference = findings.any { finding ->
+        finding.canSupportAnswer && finding.exactQuote.hasExplicitPreferenceCue()
+    }
+    if (!hasExplicitAuthorialPreference) return sources to findings
+
+    val synthesisFindings = findings.filter(VerifiedResearchFinding::canSupportAnswer)
+    val synthesisSourceIds = synthesisFindings.map(VerifiedResearchFinding::sourceId).toSet()
+    return sources.filter { source -> source.sourceId in synthesisSourceIds } to synthesisFindings
+}
+
+internal fun prioritizeExplicitAuthorialPositionEvidence(
+    pairs: List<Pair<ResearchSource, VerifiedResearchFinding>>,
+    enabled: Boolean,
+): List<Pair<ResearchSource, VerifiedResearchFinding>> {
+    if (!enabled) return pairs
+    val scholarsWithExplicitPreference = pairs.mapNotNull { (source, finding) ->
+        source.targetScholar?.takeIf {
+            source.provenanceType == ResearchProvenance.AuthorBody &&
+                finding.relation == ResearchEvidenceRelation.Supports &&
+                finding.exactQuote.hasExplicitPreferenceCue()
+        }
+    }.toSet()
+    if (scholarsWithExplicitPreference.isEmpty()) return pairs
+
+    return pairs.map { (source, finding) ->
+        val shouldRemainContext = source.targetScholar in scholarsWithExplicitPreference &&
+            source.provenanceType == ResearchProvenance.AuthorBody &&
+            finding.relation == ResearchEvidenceRelation.Supports &&
+            finding.evidenceClass in setOf(
+                ResearchEvidenceClass.DirectPrimary,
+                ResearchEvidenceClass.DirectPrimaryContextual,
+            ) &&
+            !finding.exactQuote.hasExplicitPreferenceCue()
+        if (!shouldRemainContext) {
+            source to finding
+        } else {
+            source to finding.copy(
+                evidenceClass = ResearchEvidenceClass.DirectPrimaryContextual,
+                passageRole = ResearchPassageRole.DirectContextualView,
+                confidence = if (finding.confidence == ResearchEvidenceConfidence.High) {
+                    ResearchEvidenceConfidence.MediumHigh
+                } else {
+                    finding.confidence
+                },
+                relation = ResearchEvidenceRelation.Context,
+            )
+        }
+    }
+}
+
+private fun String.hasExplicitPreferenceCue(): Boolean {
+    val normalized = normalizeArabicForEvidence(this)
+    return ExplicitPreferenceCues.any { cue -> normalized.contains(normalizeArabicForEvidence(cue)) }
+}
+
+private fun evidenceConfidenceRank(confidence: ResearchEvidenceConfidence): Int = when (confidence) {
+    ResearchEvidenceConfidence.High -> 4
+    ResearchEvidenceConfidence.MediumHigh -> 3
+    ResearchEvidenceConfidence.Medium -> 2
+    ResearchEvidenceConfidence.Low -> 1
+}
+
+private val FiqhActionAnchors = setOf(
+    "الوضوء",
+    "وضوء",
+    "الطهارة",
+    "طهارة",
+    "الغسل",
+    "غسل",
+    "الصلاة",
+    "صلاة",
+    "الصوم",
+    "صوم",
+    "الزكاة",
+    "زكاة",
+    "الحج",
+    "حج",
+)
+private val ExplicitPreferenceCues = setOf(
+    "الأظهر",
+    "والأظهر",
+    "والصحيح",
+    "والراجح",
+    "والأقرب",
+    "عندي",
+    "أختار",
+)
+private val ScholarPositionAnswerTypes = setOf("scholar_view", "quote_verification", "comparison")
 
 private fun fallbackContradictionQueries(domain: String, topic: String): List<String> {
     val prefixes = when (domain) {
@@ -889,6 +1159,9 @@ internal fun buildEvidenceExtractionPrompt(
         source.authorName?.let { appendLine("Author: $it") }
         appendLine("Provenance: ${source.provenanceType.label}")
         appendLine("Retrieval pass: ${source.retrievalPass.name}")
+        if (relevantPageWindow(source).hasExplicitPreferenceCue()) {
+            appendLine("Review priority: this page contains explicit authorial preference wording.")
+        }
         source.targetScholar?.let { appendLine("Target scholar: $it") }
         source.printedPage?.let { appendLine("Printed page: $it") }
         appendLine("Page text around the retrieved match:")
@@ -1221,6 +1494,7 @@ internal fun scoreResearchSource(source: ResearchSource, queries: List<String>):
         ResearchRetrievalPass.General -> 20
     }
     return retrievalWeight + (if (source.provenanceType == ResearchProvenance.AuthorBody) 100 else 0) +
+        (if (source.arabicPassage.hasExplicitPreferenceCue()) 240 else 0) +
         matchedTokens * 12 + answerCueCount * 4
 }
 

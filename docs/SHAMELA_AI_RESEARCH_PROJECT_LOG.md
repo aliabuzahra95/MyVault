@@ -423,3 +423,34 @@
   this checkpoint.
 - Backup/restore, Google Drive backup architecture, Room, Web, canonical Qur'an,
   Memorise, and PDF architecture were not changed.
+
+## Final Bounded Research-Quality Attempt
+
+- Status: COMPLETE ON AUTHENTICATED EMULATOR; FINAL RECOMMENDATION IS `NO-GO`
+  FOR GENERAL SCHOLARLY SYNTHESIS.
+- Starting commit: `cc6a5b88ffc69cbbfe81f01e282a5f1cab2a9599`.
+- Recovery tags: `pre-final-shamela-research-attempt` and
+  `pre-shamela-ai-research-integration`.
+- Root cause confirmed: remote retrieval and AI extraction could locate useful
+  material but did not reliably distinguish a decisive explicit preference from
+  nearby contextual propositions, and extraction could omit a decisive page
+  from a long candidate packet.
+- Bounded correction: refined classical query planning, a generic fiqh
+  recommendation/obligation search axis, explicit-preference ranking, one
+  focused review when a decisive page is skipped, context downgrading, and a
+  supporting-evidence-only synthesis boundary for scholar-position answers.
+- Benchmark 1 passed through OpenAI, Gemini, and Kimi using the same cached
+  dossier. All three returned the recommended-not-obligatory ruling and the
+  primary citation opened exactly to *Jami al-Masa'il*, volume 9, page 312.
+- Additional benchmark outcomes: aqidah PASS; quote verification PASS; tafsir
+  FAIL SAFE; hadith commentary FAIL SAFE; secondary attribution FAIL.
+- Decision: the feature is useful experimentally for source discovery and some
+  tightly scoped questions, but the failed attribution case prevents a reliable
+  scholarly-answer claim. Further improvement would exceed this bounded attempt
+  and require dedicated retrieval infrastructure that was explicitly out of
+  scope.
+- Physical Samsung: NOT TESTED because no physical device was connected. The
+  user's fallback instruction authorized completion and signed-APK delivery
+  without the phone.
+- Full technical results and rollback guidance are recorded in
+  `docs/SHAMELA_FINAL_EXPERIMENT_ASSESSMENT.md`.

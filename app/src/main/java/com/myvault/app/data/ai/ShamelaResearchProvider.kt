@@ -475,12 +475,12 @@ class ShamelaResearchProvider @Inject constructor(
         const val MaxGroundingPageCharacters = 12_000
         const val MaxAdjacentPageCharacters = 2_000
         const val MaxResearchCandidates = 18
-        const val MaxResearchQueries = 4
+        const val MaxResearchQueries = 8
         const val MaxResultsPerResearchQuery = 5
         const val MaxProximityTerms = 5
         const val ResearchProximityDistance = 12
         const val MaxSecondaryCandidates = 12
-        const val MaxSecondaryQueries = 4
+        const val MaxSecondaryQueries = 5
         const val MaxSecondaryProximityTerms = 7
         const val SecondaryProximityDistance = 18
         const val MaxPrimaryQuoteMatches = 3

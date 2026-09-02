@@ -111,6 +111,212 @@ class GroundedResearchPromptTest {
     }
 
     @Test
+    fun refinedPlanAddsClassicalAndRulingQueriesWithoutDiscardingInitialCoverage() {
+        val initial = ResearchSearchPlan(
+            queries = listOf("لمس الفرج أثناء الوضوء"),
+            scholars = listOf("ابن تيمية"),
+            topic = "لمس الفرج والوضوء",
+            domain = "fiqh",
+            answerType = "scholar_view",
+            alternateQueries = listOf("مس الأعضاء التناسلية"),
+            attributionQueries = listOf("قال ابن تيمية لمس الفرج"),
+            contradictionQueries = listOf("لمس الفرج ينقض الوضوء"),
+        )
+        val refined = initial.copy(
+            queries = listOf("مس الذكر الوضوء", "الوضوء من مس الذكر"),
+            alternateQueries = listOf("مس القبل الطهارة"),
+            attributionQueries = listOf("اختار ابن تيمية مس الذكر"),
+            contradictionQueries = listOf("مس الذكر مستحب", "مس الذكر ليس بواجب"),
+        )
+
+        val merged = mergeResearchSearchPlans(initial, refined)
+
+        assertEquals("مس الذكر الوضوء", merged.queries.first())
+        assertTrue(merged.queries.contains("لمس الفرج أثناء الوضوء"))
+        assertTrue(merged.alternateQueries.contains("مس القبل الطهارة"))
+        assertTrue(merged.contradictionQueries.contains("مس الذكر ليس بواجب"))
+        assertEquals(listOf("ابن تيمية"), merged.scholars)
+    }
+
+    @Test
+    fun fiqhExpansionAlwaysAddsRecommendationVersusObligationAxisForKnownAction() {
+        val expanded = expandDomainResearchQueries(
+            queries = listOf("لمس الفرج الوضوء"),
+            domain = "fiqh",
+        )
+
+        assertTrue(expanded.contains("الوضوء مستحب ليس بواجب"))
+        assertTrue(expanded.contains("يستحب الوضوء ولا يجب"))
+        assertTrue(expanded.contains("لمس الفرج الوضوء"))
+    }
+
+    @Test
+    fun explicitTarjihInTargetAuthorsTextIsRankedAsDirectPreferredView() {
+        val direct = source(
+            "والأظهر أن الوضوء مستحب ليس بواجب",
+            ResearchProvenance.AuthorBody,
+            "Primary",
+        ).copy(targetScholar = "ابن تيمية")
+        val normalized = normalizeFindingAuthority(
+            direct,
+            VerifiedResearchFinding(
+                sourceId = direct.sourceId,
+                exactQuote = "والأظهر أن الوضوء مستحب ليس بواجب",
+                meaning = "The stronger view is recommendation rather than obligation.",
+                direct = true,
+                evidenceClass = ResearchEvidenceClass.DirectPrimary,
+                passageRole = ResearchPassageRole.DirectContextualView,
+                confidence = ResearchEvidenceConfidence.MediumHigh,
+                relation = ResearchEvidenceRelation.Context,
+            ),
+        )
+
+        assertEquals(ResearchPassageRole.DirectExplicitView, normalized.passageRole)
+        assertEquals(ResearchEvidenceRelation.Supports, normalized.relation)
+        assertEquals(ResearchEvidenceConfidence.High, normalized.confidence)
+    }
+
+    @Test
+    fun explicitPreferenceCandidateOutranksContextualCandidateInSamePass() {
+        val preference = source(
+            "والأظهر أن الوضوء مستحب ليس بواجب",
+            ResearchProvenance.AuthorBody,
+            "Preference",
+        ).copy(retrievalPass = ResearchRetrievalPass.Contradiction)
+        val contextual = source(
+            "مس الفرج ينقض مطلقا",
+            ResearchProvenance.AuthorBody,
+            "Context",
+        ).copy(retrievalPass = ResearchRetrievalPass.Contradiction)
+
+        val selected = selectBalancedResearchCandidates(
+            listOf(contextual, preference),
+            queries = listOf("الوضوء مس الفرج"),
+            limit = 1,
+        )
+
+        assertEquals(preference.sourceId, selected.single().sourceId)
+    }
+
+    @Test
+    fun explicitAuthorialPreferenceKeepsUnqualifiedPrimaryPassagesAsContext() {
+        val preferenceSource = source(
+            "والأظهر أن الوضوء مستحب ليس بواجب",
+            ResearchProvenance.AuthorBody,
+            "Preference",
+        ).copy(targetScholar = "ابن تيمية")
+        val contextualSource = source(
+            "مس الفرج ينقض مطلقا",
+            ResearchProvenance.AuthorBody,
+            "Context",
+        ).copy(targetScholar = "ابن تيمية")
+        val preference = VerifiedResearchFinding(
+            sourceId = preferenceSource.sourceId,
+            exactQuote = preferenceSource.arabicPassage,
+            meaning = "The preferred ruling is recommendation.",
+            direct = true,
+            evidenceClass = ResearchEvidenceClass.DirectPrimary,
+            passageRole = ResearchPassageRole.DirectExplicitView,
+            confidence = ResearchEvidenceConfidence.High,
+            relation = ResearchEvidenceRelation.Supports,
+        )
+        val contextual = preference.copy(
+            sourceId = contextualSource.sourceId,
+            exactQuote = contextualSource.arabicPassage,
+            meaning = "A contextual proposition about nullification.",
+        )
+
+        val prioritized = prioritizeExplicitAuthorialPositionEvidence(
+            pairs = listOf(contextualSource to contextual, preferenceSource to preference),
+            enabled = true,
+        ).associate { it.first.sourceId to it.second }
+
+        assertEquals(ResearchEvidenceRelation.Context, prioritized.getValue(contextualSource.sourceId).relation)
+        assertEquals(
+            ResearchEvidenceClass.DirectPrimaryContextual,
+            prioritized.getValue(contextualSource.sourceId).evidenceClass,
+        )
+        assertEquals(ResearchEvidenceRelation.Supports, prioritized.getValue(preferenceSource.sourceId).relation)
+        assertEquals(
+            ResearchPassageRole.DirectExplicitView,
+            prioritized.getValue(preferenceSource.sourceId).passageRole,
+        )
+    }
+
+    @Test
+    fun skippedExplicitPreferencePageReceivesFocusedEvidenceReview() {
+        val preference = source(
+            "والأظهر أن الوضوء مستحب ليس بواجب",
+            ResearchProvenance.AuthorBody,
+            "Preference",
+        ).copy(targetScholar = "ابن تيمية")
+        val ordinary = source(
+            "مس الفرج ينقض مطلقا",
+            ResearchProvenance.AuthorBody,
+            "Context",
+        ).copy(targetScholar = "ابن تيمية")
+        val ordinaryFinding = VerifiedResearchFinding(
+            sourceId = ordinary.sourceId,
+            exactQuote = ordinary.arabicPassage,
+            meaning = "Contextual statement.",
+            direct = true,
+            evidenceClass = ResearchEvidenceClass.DirectPrimary,
+            passageRole = ResearchPassageRole.DirectExplicitView,
+            confidence = ResearchEvidenceConfidence.High,
+            relation = ResearchEvidenceRelation.Supports,
+        )
+
+        val missing = explicitPreferenceCandidatesMissingFromFindings(
+            candidates = listOf(preference, ordinary),
+            findings = listOf(ordinaryFinding),
+        )
+
+        assertEquals(listOf(preference.sourceId), missing.map(ResearchSource::sourceId))
+    }
+
+    @Test
+    fun scholarPositionSynthesisExcludesContextOnceExplicitPreferenceIsVerified() {
+        val preferenceSource = source(
+            "والأظهر أن الوضوء مستحب ليس بواجب",
+            ResearchProvenance.AuthorBody,
+            "Preference",
+        )
+        val contextSource = source(
+            "مس الفرج ينقض مطلقا",
+            ResearchProvenance.AuthorBody,
+            "Context",
+        )
+        val preference = VerifiedResearchFinding(
+            sourceId = preferenceSource.sourceId,
+            exactQuote = preferenceSource.arabicPassage,
+            meaning = "The preferred ruling is recommendation.",
+            direct = true,
+            evidenceClass = ResearchEvidenceClass.DirectPrimary,
+            passageRole = ResearchPassageRole.DirectExplicitView,
+            confidence = ResearchEvidenceConfidence.High,
+            relation = ResearchEvidenceRelation.Supports,
+        )
+        val context = preference.copy(
+            sourceId = contextSource.sourceId,
+            exactQuote = contextSource.arabicPassage,
+            meaning = "Related context.",
+            evidenceClass = ResearchEvidenceClass.DirectPrimaryContextual,
+            passageRole = ResearchPassageRole.DirectContextualView,
+            confidence = ResearchEvidenceConfidence.MediumHigh,
+            relation = ResearchEvidenceRelation.Context,
+        )
+
+        val (sources, findings) = selectEvidenceForSynthesis(
+            sources = listOf(preferenceSource, contextSource),
+            findings = listOf(preference, context),
+            answerType = "scholar_view",
+        )
+
+        assertEquals(listOf(preferenceSource.sourceId), sources.map(ResearchSource::sourceId))
+        assertEquals(listOf(preference), findings)
+    }
+
+    @Test
     fun malformedStructuredPlanFallsBackSafely() {
         val plan = parseResearchSearchPlan("Query: \"مس الذكر الوضوء\"", "fallback")
 

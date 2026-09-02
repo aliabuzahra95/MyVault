@@ -147,13 +147,13 @@ answer. A benchmark is not passed by a unit test alone.
 
 | ID | Architecture case | Question | Required evidence gate | Current status |
 |---|---|---|---|---|
-| B1 | Named-scholar fiqh preference | What did Ibn Taymiyyah say about touching the private parts while in a state of wudu? | Direct author search, counter-search, secondary search, exact Arabic, exact source; must not infer invalidation from `ظاهر المذهب` or invent consensus | Not yet rerun on physical Samsung after the comprehensive amendment |
-| B2 | Quote verification | Verify whether Ibn Taymiyyah said: `الإيمان قول وعمل يزيد وينقص` | Dedicated quote verifier, exact/near/partial/not-found verdict, body provenance, exact source | Not yet rerun on physical Samsung |
-| B3 | Secondary preservation | What position does Ibn Muflih report Ibn Taymiyyah chose regarding wudu after touching the private parts? | Secondary attribution labeled honestly, primary-match attempt, no false direct citation | Not yet rerun on physical Samsung |
+| B1 | Named-scholar fiqh preference | What did Ibn Taymiyyah say about touching the private parts while in a state of wudu? | Direct author search, counter-search, secondary search, exact Arabic, exact source; must not infer invalidation from `ظاهر المذهب` or invent consensus | PASS on emulator for OpenAI, Gemini, and Kimi using one cached dossier; exact primary source opened at volume 9, page 312 |
+| B2 | Quote verification | Verify whether Ibn Taymiyyah said: `الإيمان قول وعمل يزيد وينقص` | Dedicated quote verifier, exact/near/partial/not-found verdict, body provenance, exact source | PASS on emulator; three source pages, including direct material from *al-Iman al-Awsat* |
+| B3 | Secondary preservation | What position does Ibn Muflih report Ibn Taymiyyah chose regarding wudu after touching the private parts? | Secondary attribution labeled honestly, primary-match attempt, no false direct citation | FAIL on emulator; the answer described Ibn Muflih's two-view discussion without establishing the requested report about Ibn Taymiyyah |
 | B4 | Madhhab report vs preference | When Ibn Taymiyyah reports the Hanbali narrations about touching and wudu, which position does he personally prefer? | Separate reported madhhab material from explicit/contextual personal choice | Not yet rerun on physical Samsung |
-| B5 | Aqidah terminology | What did Ibn Taymiyyah say about whether faith increases and decreases? | Scoped primary terminology, rebuttal/context classification, exact Arabic | Not yet rerun on physical Samsung |
-| B6 | Tafsir | How did al-Tabari explain `الرحمن على العرش استوى` in Taha 20:5? | Verse-aware terminology, direct tafsir passage, no unrelated lexical hit | Not yet rerun on physical Samsung |
-| B7 | Hadith commentary | How did al-Nawawi reconcile the hadiths about touching the private parts and wudu? | Commentary/reconciliation rather than raw hadith quotation; exact source | Not yet rerun on physical Samsung |
+| B5 | Aqidah terminology | What did Ibn Taymiyyah say about whether faith increases and decreases? | Scoped primary terminology, rebuttal/context classification, exact Arabic | PASS on emulator with six direct primary source pages; answer was useful but more verbose than necessary |
+| B6 | Tafsir | How did al-Tabari explain `الرحمن على العرش استوى` in Taha 20:5? | Verse-aware terminology, direct tafsir passage, no unrelated lexical hit | FAIL SAFE on emulator; five candidates were shown but no exact passage survived verification, so no answer was generated |
+| B7 | Hadith commentary | How did al-Nawawi reconcile the hadiths about touching the private parts and wudu? | Commentary/reconciliation rather than raw hadith quotation; exact source | FAIL SAFE on emulator; four pages were located but the generated explanation failed the final claim audit |
 | B8 | Scholar comparison | Compare Ibn Taymiyyah and al-Nawawi on whether touching the private parts nullifies wudu. | Separate packet per scholar, same combined packet across all AI providers, explicit evidence gaps | Not yet rerun on physical Samsung |
 
 For B1 the known direct passage that the live run must independently retrieve is
@@ -173,6 +173,11 @@ This text is a benchmark oracle, not a hard-coded production answer.
   may retrieve a changed remote corpus.
 - The architecture can reject unsafe synthesis but cannot guarantee that every
   relevant passage exists in or is searchable through the remote corpus.
-- Physical Samsung acceptance, all three-provider B1 comparison, and all eight
-  live benchmark results remain mandatory before claiming the research-quality
-  remediation complete.
+- The final bounded experiment was run on the authenticated API 36.1 emulator
+  because no physical Samsung was connected. Physical-device acceptance remains
+  unverified.
+- B1 is now materially correct and source-exact, but the broader suite still
+  fails tafsir, hadith reconciliation, and secondary-attribution cases. The
+  research feature therefore has a final `NO-GO` recommendation as a general
+  scholarly-answer engine. It may still be useful experimentally for source
+  discovery and tightly scoped questions.

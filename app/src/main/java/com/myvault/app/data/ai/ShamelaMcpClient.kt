@@ -51,11 +51,13 @@ class ShamelaMcpClient @Inject constructor(
         val session = activeSession ?: discoveryMutex.withLock {
             activeSession ?: initialize().also { activeSession = it }
         }
-        return request(
+        val result = request(
             method = "tools/call",
             params = JSONObject().put("name", name).put("arguments", arguments),
             session = session,
         ).getJSONObject("result")
+        ResearchTraceRecorder.toolResult(name, result)
+        return result
     }
 
     fun clearSession() {

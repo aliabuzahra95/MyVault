@@ -151,6 +151,15 @@ internal class ResearchTraceRecorder(private val question: String) {
             .put("answerPreview", answer.take(MaxLoggedText)),
     )
 
+    fun modelOutput(stage: String, response: AiGenerationResponse) = record(
+        "model_output",
+        JSONObject()
+            .put("stage", stage)
+            .put("provider", response.provider.name)
+            .put("model", response.model)
+            .put("text", response.text.take(MaxLoggedModelText)),
+    )
+
     fun final(verdict: String, sourceIds: List<String>) = record(
         "final",
         JSONObject().put("verdict", verdict).put("sourceIds", JSONArray(sourceIds)),
@@ -164,6 +173,7 @@ internal class ResearchTraceRecorder(private val question: String) {
     companion object {
         const val Tag = "MyVaultResearchTrace"
         const val MaxLoggedText = 800
+        const val MaxLoggedModelText = 2_400
 
         fun toolCall(name: String, arguments: JSONObject) {
             if (!BuildConfig.DEBUG) return
@@ -188,6 +198,70 @@ internal class ResearchTraceRecorder(private val question: String) {
                     .toString(),
             )
         }
+
+        fun toolResult(name: String, result: JSONObject) {
+            if (!BuildConfig.DEBUG) return
+            val structured = runCatching { result.structuredContent() }.getOrElse { return }
+            val payload = JSONObject().put("tool", name)
+            when (name) {
+                "shamela_search_pages", "shamela_search_phrase" -> {
+                    payload.put("totalHits", structured.opt("total_hits"))
+                    payload.put(
+                        "results",
+                        JSONArray().apply {
+                            val results = structured.optJSONArray("results")
+                            for (index in 0 until minOf(results?.length() ?: 0, MaxLoggedToolResults)) {
+                                val item = results?.optJSONObject(index) ?: continue
+                                put(
+                                    JSONObject()
+                                        .put("bookId", item.opt("book_id"))
+                                        .put("pageId", item.opt("page_id"))
+                                        .put("book", item.optString("book_name", item.optString("book_title")))
+                                        .put("author", item.optString("author_name"))
+                                        .put(
+                                            "snippet",
+                                            item.optString("snippet_body", item.optString("snippet"))
+                                                .take(MaxLoggedToolSnippet),
+                                        ),
+                                )
+                            }
+                        },
+                    )
+                }
+
+                "shamela_get_page" -> payload
+                    .put("bookId", structured.opt("book_id"))
+                    .put("pageId", structured.opt("page_id"))
+                    .put("citation", structured.optString("citation").take(MaxLoggedText))
+                    .put("bodyPreview", structured.optString("body").take(MaxLoggedToolSnippet))
+
+                "shamela_verify_quote" -> payload
+                    .put("status", structured.optString("status"))
+                    .put("locationCount", structured.optJSONArray("locations")?.length() ?: 0)
+                    .put(
+                        "locations",
+                        JSONArray().apply {
+                            val locations = structured.optJSONArray("locations")
+                            for (index in 0 until minOf(locations?.length() ?: 0, MaxLoggedToolResults)) {
+                                val item = locations?.optJSONObject(index) ?: continue
+                                put(
+                                    JSONObject()
+                                        .put("bookId", item.opt("book_id"))
+                                        .put("pageId", item.opt("page_id"))
+                                        .put("matchedIn", item.opt("matched_in"))
+                                        .put("section", item.opt("section")),
+                                )
+                            }
+                        },
+                    )
+
+                else -> payload.put("summary", structured.toString().take(MaxLoggedToolSnippet))
+            }
+            Log.d(Tag, JSONObject().put("event", "mcp_tool_result").put("payload", payload).toString())
+        }
+
+        private const val MaxLoggedToolResults = 6
+        private const val MaxLoggedToolSnippet = 1_200
     }
 }
 
