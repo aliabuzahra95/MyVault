@@ -23,7 +23,9 @@ class QuranTextRepository @Inject constructor(
     private val jsonMutex = Mutex()
     private val surahMutex = Mutex()
     private val searchMutex = Mutex()
+    private val ayahSearchIndexMutex = Mutex()
     private var arabicSource: JSONObject? = null
+    private var ayahSearchIndex: Map<String, String>? = null
     private var sahihTranslationByVerse: Map<String, QuranTranslationContent>? = null
     private var maududiTranslationByVerse: Map<String, QuranTranslationContent>? = null
     private var tajweedByVerse: Map<String, List<TajweedAnnotation>>? = null
@@ -71,6 +73,17 @@ class QuranTextRepository @Inject constructor(
                 }
         }
         hits
+    }
+
+    suspend fun getAyahSearchIndex(): Map<String, String> {
+        ayahSearchIndex?.let { return it }
+        return ayahSearchIndexMutex.withLock {
+            ayahSearchIndex ?: loadArabicSource().let { source ->
+                withContext(Dispatchers.Default) {
+                    source.toQuranAyahSearchIndex()
+                }
+            }.also { ayahSearchIndex = it }
+        }
     }
 
     suspend fun getSurahAyahs(
@@ -659,6 +672,20 @@ private fun stripTrailingVerseNumber(text: String): String {
     }
     return text.substring(0, index + 1).trimEnd()
 }
+
+internal fun JSONObject.toQuranAyahSearchIndex(): Map<String, String> =
+    buildMap {
+        val keys = keys()
+        while (keys.hasNext()) {
+            val verseKey = keys.next()
+            val text = optJSONObject(verseKey)
+                ?.optString("text")
+                .orEmpty()
+                .let(::stripTrailingVerseNumber)
+                .trim()
+            if (text.isNotBlank()) put(verseKey, text)
+        }
+    }
 
 private fun QuranAyah.withIndexedWords(metadataByWordId: Map<String, QuranWordMetadata>): QuranAyah = copy(
     words = buildQuranWords(

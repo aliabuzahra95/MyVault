@@ -58,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -72,10 +71,7 @@ import com.myvault.app.data.quran.SurahInfo
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.theme.VaultThemeTokens
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 private val QuranSelectorUthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
@@ -242,6 +238,7 @@ internal fun QuranSurahSelectorOverlay(
     selectedSurah: Int,
     search: String,
     typeFilter: String,
+    loadAyahSearchIndex: suspend () -> Map<String, String>,
     onSearchChange: (String) -> Unit,
     onTypeFilterChange: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -249,16 +246,11 @@ internal fun QuranSurahSelectorOverlay(
     onSelectAyah: (String) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val context = LocalContext.current
     val listState: LazyListState = rememberLazyListState()
     var ayahSearchIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(visible) {
         if (visible && ayahSearchIndex.isEmpty()) {
-            ayahSearchIndex = withContext(Dispatchers.IO) {
-                JSONObject(
-                    context.assets.open("qpc_hafs.json").bufferedReader().use { it.readText() },
-                ).toAyahSearchIndex()
-            }
+            ayahSearchIndex = loadAyahSearchIndex()
         }
     }
     val ayahResults = remember(search, typeFilter, ayahSearchIndex) {
@@ -719,20 +711,3 @@ private fun buildQuranAyahSelectorResults(
     if (text.isBlank()) return emptyList()
     return listOf(QuranAyahSelectorResult(surah = surah, ayahNumber = ayahNumber, arabicText = text))
 }
-
-private fun JSONObject.toAyahSearchIndex(): Map<String, String> =
-    buildMap {
-        val keys = keys()
-        while (keys.hasNext()) {
-            val verseKey = keys.next()
-            val text = optJSONObject(verseKey)
-                ?.optString("text")
-                .orEmpty()
-                .stripQuranTrailingVerseMarker()
-                .trim()
-            if (text.isNotBlank()) put(verseKey, text)
-        }
-    }
-
-private fun String.stripQuranTrailingVerseMarker(): String =
-    replace(Regex("\\s*[۝۞]?\\s*[\\u0660-\\u0669٠-٩]+\\s*$"), "").trim()

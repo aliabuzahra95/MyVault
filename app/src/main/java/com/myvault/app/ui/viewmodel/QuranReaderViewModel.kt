@@ -544,6 +544,8 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
+    suspend fun getAyahSearchIndex(): Map<String, String> = quranTextRepository.getAyahSearchIndex()
+
     fun startMemorizingAyah(ayah: QuranAyah) {
         updateMemorizationRecord(ayah) { existing, now ->
             (existing ?: ayah.toMemorizationRecord(now)).copy(

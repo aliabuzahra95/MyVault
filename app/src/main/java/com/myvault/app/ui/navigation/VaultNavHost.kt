@@ -773,6 +773,7 @@ fun VaultNavHost(
                         onChooseOtherReciter = quranViewModel::chooseOtherReciterForCurrentAudio,
                         onRefreshAudioDownloads = quranViewModel::refreshAudioDownloadStates,
                         onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
+                        loadAyahSearchIndex = quranViewModel::getAyahSearchIndex,
                         onMemoriseFromHere = { ayah ->
                             quranViewModel.startMemorizingAyah(ayah)
                             pendingMemoriseVerseKey = ayah.verseKey
