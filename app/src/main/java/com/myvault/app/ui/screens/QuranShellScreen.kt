@@ -21,9 +21,6 @@ import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.QuranTranslationSource
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
-import com.myvault.app.data.quran.memorization.MemorizationConcealAmount
-import com.myvault.app.data.quran.memorization.QuranMemorizationAttempt
-import com.myvault.app.data.quran.memorization.QuranSurahMemorizationAttempt
 import com.myvault.app.ui.quran.QuranReaderSurface
 import com.myvault.app.ui.quran.QuranSurahSelectorOverlay
 import com.myvault.app.ui.components.IconBtn
@@ -72,17 +69,6 @@ fun QuranShellScreen(
     onChooseOtherReciter: () -> Unit,
     onRefreshAudioDownloads: (AudioReciterUiModel) -> Unit,
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
-    onStartMemorizingAyah: (QuranAyah) -> Unit,
-    onRemoveMemorizingAyah: (QuranAyah) -> Unit,
-    onToggleMemorizedAyah: (QuranAyah) -> Unit,
-    onMarkRevisedAyah: (QuranAyah) -> Unit,
-    onAiListenAttemptCompleted: (QuranMemorizationAttempt) -> Unit,
-    onSurahTestAttemptCompleted: (QuranSurahMemorizationAttempt) -> Unit,
-    onMarkCurrentSurahMemorized: () -> Unit,
-    onToggleNeedsRevisionMemorization: (QuranAyah) -> Unit,
-    onToggleIncorrectMemorization: (QuranAyah) -> Unit,
-    onToggleWeakMemorization: (QuranAyah) -> Unit,
-    onSetMemorizationConcealAmount: (String, MemorizationConcealAmount?) -> Unit,
     onMemoriseFromHere: (QuranAyah) -> Unit,
     onPendingScrollHandled: () -> Unit,
     showNavigationHeader: Boolean = true,

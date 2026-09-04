@@ -18,13 +18,9 @@ import com.myvault.app.data.quran.audio.PlaybackMode
 import com.myvault.app.data.quran.audio.QuranAudioPlayer
 import com.myvault.app.data.quran.audio.QuranAudioRepository
 import com.myvault.app.data.quran.audio.SurahDownloadState
-import com.myvault.app.data.quran.memorization.MemorizationConcealAmount
 import com.myvault.app.data.quran.memorization.MemorizationRecord
 import com.myvault.app.data.quran.memorization.MemorizationRepeatMode
-import com.myvault.app.data.quran.memorization.QuranMemorizationAttempt
 import com.myvault.app.data.quran.memorization.QuranMemorizationSavedAttempt
-import com.myvault.app.data.quran.memorization.QuranSurahMemorizationAttempt
-import com.myvault.app.data.quran.memorization.toSavedAttempt
 import com.myvault.app.data.quran.memorization.toStatusSnapshot
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.NoteRepository
@@ -556,146 +552,6 @@ class QuranReaderViewModel @Inject constructor(
                 isMemorising = true,
                 updatedAt = now,
             )
-        }
-    }
-
-    fun removeMemorizingAyah(ayah: QuranAyah) {
-        updateMemorizationRecord(ayah) { existing, now ->
-            val current = existing ?: ayah.toMemorizationRecord(now)
-            current.copy(
-                isMemorising = false,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun toggleMemorizedAyah(ayah: QuranAyah) {
-        updateMemorizationRecord(ayah) { existing, now ->
-            val current = existing ?: ayah.toMemorizationRecord(now)
-            current.copy(
-                memorizedAt = if (current.isMemorized) null else now,
-                lastReviewedAt = now,
-                reviewCount = current.reviewCount + 1,
-                isNeedsRevision = if (current.isMemorized) current.isNeedsRevision else false,
-                isIncorrect = if (current.isMemorized) current.isIncorrect else false,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun markRevisedAyah(ayah: QuranAyah) {
-        updateMemorizationRecord(ayah) { existing, now ->
-            val current = existing ?: ayah.toMemorizationRecord(now)
-            current.copy(
-                lastReviewedAt = now,
-                reviewCount = current.reviewCount + 1,
-                isNeedsRevision = false,
-                isRevision = false,
-                isIncorrect = false,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun markCurrentSurahMemorized() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            val surah = state.selectedSurah
-            val now = System.currentTimeMillis()
-            val currentRecords = vaultPreferences.userPreferences.first().quranMemorizationRecords
-            val existingByVerse = currentRecords.associateBy { it.verseKey }
-            val shouldUnmark = (1..surah.ayat).all { ayahNumber ->
-                existingByVerse["${surah.num}:$ayahNumber"]?.isMemorized == true
-            }
-            val surahRecords = (1..surah.ayat).map { ayahNumber ->
-                val verseKey = "${surah.num}:$ayahNumber"
-                val existing = existingByVerse[verseKey]
-                existing?.copy(
-                    lastReviewedAt = now,
-                    reviewCount = if (existing.reviewCount == 0) 1 else existing.reviewCount,
-                    memorizedAt = if (shouldUnmark) null else existing.memorizedAt ?: now,
-                    updatedAt = now,
-                ) ?: MemorizationRecord(
-                    verseKey = verseKey,
-                    surahNumber = surah.num,
-                    ayahNumber = ayahNumber,
-                    startedAt = now,
-                    lastReviewedAt = now,
-                    reviewCount = 1,
-                    memorizedAt = if (shouldUnmark) null else now,
-                    isRevision = false,
-                    isWeak = false,
-                    updatedAt = now,
-                )
-            }
-            val updated = (currentRecords.filterNot { it.surahNumber == surah.num } + surahRecords)
-                .sortedWith(compareBy<MemorizationRecord> { it.surahNumber }.thenBy { it.ayahNumber })
-            _uiState.value = _uiState.value.copy(memorizationRecords = updated)
-            vaultPreferences.setQuranMemorizationRecords(updated)
-        }
-    }
-
-    fun toggleWeakMemorization(ayah: QuranAyah) {
-        updateMemorizationRecord(ayah) { existing, now ->
-            val current = existing ?: ayah.toMemorizationRecord(now)
-            current.copy(
-                isWeak = !current.isWeak,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun toggleNeedsRevisionMemorization(ayah: QuranAyah) {
-        updateMemorizationRecord(ayah) { existing, now ->
-            val current = existing ?: ayah.toMemorizationRecord(now)
-            current.copy(
-                isNeedsRevision = !current.isNeedsRevision,
-                isRevision = !current.isNeedsRevision,
-                isIncorrect = if (!current.isNeedsRevision) false else current.isIncorrect,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun toggleIncorrectMemorization(ayah: QuranAyah) {
-        updateMemorizationRecord(ayah) { existing, now ->
-            val current = existing ?: ayah.toMemorizationRecord(now)
-            current.copy(
-                isIncorrect = !current.isIncorrect,
-                isNeedsRevision = if (!current.isIncorrect) false else current.isNeedsRevision,
-                isRevision = if (!current.isIncorrect) false else current.isRevision,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun setMemorizationConcealAmount(verseKey: String, amount: MemorizationConcealAmount?) {
-        _uiState.value = _uiState.value.copy(
-            memorizationConcealedVerseKey = if (amount == null) null else verseKey,
-            memorizationConcealAmount = amount,
-        )
-    }
-
-    fun recordAiListenAttempt(attempt: QuranMemorizationAttempt) {
-        val savedAttempt = attempt.toSavedAttempt()
-        _uiState.value = _uiState.value.copy(
-            memorizationAttemptStatuses = _uiState.value.memorizationAttemptStatuses + (savedAttempt.verseKey to savedAttempt.toStatusSnapshot()),
-        )
-        viewModelScope.launch {
-            vaultPreferences.addQuranMemorizationAttempt(savedAttempt)
-        }
-    }
-
-    fun recordSurahTestAttempt(attempt: QuranSurahMemorizationAttempt) {
-        val savedAttempt = attempt.toSavedAttempt()
-        _uiState.value = _uiState.value.copy(
-            surahMemorizationAttempts = (
-                _uiState.value.surahMemorizationAttempts
-                    .filterNot { it.attemptId == savedAttempt.attemptId } + savedAttempt
-                ).sortedByDescending { it.timestampMs },
-        )
-        viewModelScope.launch {
-            vaultPreferences.addQuranSurahMemorizationAttempt(savedAttempt)
         }
     }
 

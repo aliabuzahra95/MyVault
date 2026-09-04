@@ -773,17 +773,6 @@ fun VaultNavHost(
                         onChooseOtherReciter = quranViewModel::chooseOtherReciterForCurrentAudio,
                         onRefreshAudioDownloads = quranViewModel::refreshAudioDownloadStates,
                         onDownloadSurahAudio = quranViewModel::downloadSurahAudio,
-                        onStartMemorizingAyah = quranViewModel::startMemorizingAyah,
-                        onRemoveMemorizingAyah = quranViewModel::removeMemorizingAyah,
-                        onToggleMemorizedAyah = quranViewModel::toggleMemorizedAyah,
-                        onMarkRevisedAyah = quranViewModel::markRevisedAyah,
-                        onAiListenAttemptCompleted = quranViewModel::recordAiListenAttempt,
-                        onSurahTestAttemptCompleted = quranViewModel::recordSurahTestAttempt,
-                        onMarkCurrentSurahMemorized = quranViewModel::markCurrentSurahMemorized,
-                        onToggleNeedsRevisionMemorization = quranViewModel::toggleNeedsRevisionMemorization,
-                        onToggleIncorrectMemorization = quranViewModel::toggleIncorrectMemorization,
-                        onToggleWeakMemorization = quranViewModel::toggleWeakMemorization,
-                        onSetMemorizationConcealAmount = quranViewModel::setMemorizationConcealAmount,
                         onMemoriseFromHere = { ayah ->
                             quranViewModel.startMemorizingAyah(ayah)
                             pendingMemoriseVerseKey = ayah.verseKey
