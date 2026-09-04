@@ -23,8 +23,6 @@ android {
 
     val supabaseUrl = providers.gradleProperty("MYVAULT_SUPABASE_URL").orElse("").get()
     val supabaseAnonKey = providers.gradleProperty("MYVAULT_SUPABASE_ANON_KEY").orElse("").get()
-    val syncProxyUrl = providers.gradleProperty("MYVAULT_SYNC_PROXY_URL").orElse("").get()
-    val syncProxyToken = providers.gradleProperty("MYVAULT_SYNC_PROXY_TOKEN").orElse("").get()
     fun String.escapedForBuildConfig(): String = replace("\\", "\\\\").replace("\"", "\\\"")
 
     val localOpenAiApiKey = localProperties.getProperty("MYVAULT_OPENAI_API_KEY").orEmpty().trim()
@@ -95,8 +93,6 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "SYNC_PROXY_URL", "\"$syncProxyUrl\"")
-        buildConfigField("String", "SYNC_PROXY_TOKEN", "\"$syncProxyToken\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
