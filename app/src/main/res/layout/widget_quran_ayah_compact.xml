@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/quran_widget_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="7dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="7dp">
+    <TextView android:id="@+id/quran_widget_ayah_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="@font/uthmani_hafs" android:gravity="end" android:includeFontPadding="true" android:lineSpacingExtra="5dp" android:textColor="@color/quran_widget_text" android:textDirection="rtl" android:textSize="24sp" />
+    <TextView android:id="@+id/quran_widget_ayah_reference" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="@font/plus_jakarta_sans_medium" android:gravity="end" android:paddingTop="2dp" android:textColor="@color/quran_widget_accent" android:textSize="10sp" />
+</LinearLayout>

@@ -1,4 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">My Vault</string>
+    <string name="quran_widget_name">Qur’an Reader</string>
+    <string name="quran_widget_description">Read and navigate the Qur’an from your Home screen</string>
+    <string name="quran_widget_choose_surah">Choose Surah</string>
+    <string name="quran_widget_surah_metadata">%1$d · %2$d ayat · %1$d:%3$d</string>
+    <string name="quran_widget_surah_count">%1$d Surahs · tap to choose</string>
+    <string name="quran_widget_surah_row_metadata">%1$s · %2$d ayat</string>
+    <string name="quran_widget_previous_surah">Previous Surah</string>
+    <string name="quran_widget_next_surah">Next Surah</string>
+    <string name="quran_widget_change_surah">Choose another Surah</string>
+    <string name="quran_widget_back_to_reader">Back to Qur’an reader</string>
+    <string name="quran_widget_open_in_myvault">Open in MyVault</string>
+    <string name="quran_widget_open_ayah">Open ayah %1$s in MyVault</string>
+    <string name="quran_widget_select_surah">Open Surah %1$d, %2$s</string>
+    <string name="quran_widget_loading">Loading Qur’an…</string>
+    <string name="quran_widget_unavailable">Qur’an is unavailable. Tap to open MyVault.</string>
 </resources>

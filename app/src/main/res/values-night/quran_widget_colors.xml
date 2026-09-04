@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="quran_widget_surface">#202124</color>
+    <color name="quran_widget_text">#F3F1EC</color>
+    <color name="quran_widget_secondary">#B8BBC2</color>
+    <color name="quran_widget_accent">#8CB5F5</color>
+    <color name="quran_widget_icon">#D5D7DC</color>
+    <color name="quran_widget_divider">#34363B</color>
+    <color name="quran_widget_pressed">#253C5D</color>
+</resources>

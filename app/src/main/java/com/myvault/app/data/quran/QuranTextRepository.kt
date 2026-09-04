@@ -24,7 +24,6 @@ class QuranTextRepository @Inject constructor(
     private val surahMutex = Mutex()
     private val searchMutex = Mutex()
     private val ayahSearchIndexMutex = Mutex()
-    private var arabicSource: JSONObject? = null
     private var ayahSearchIndex: Map<String, String>? = null
     private var sahihTranslationByVerse: Map<String, QuranTranslationContent>? = null
     private var maududiTranslationByVerse: Map<String, QuranTranslationContent>? = null
@@ -191,14 +190,7 @@ class QuranTextRepository @Inject constructor(
     }
 
     private suspend fun loadArabicSource(): JSONObject {
-        arabicSource?.let { return it }
-        return jsonMutex.withLock {
-            arabicSource ?: withContext(Dispatchers.IO) {
-                JSONObject(
-                    context.assets.open("qpc_hafs.json").bufferedReader().use { it.readText() },
-                )
-            }.also { arabicSource = it }
-        }
+        return withContext(Dispatchers.IO) { QuranCanonicalSource.json(context) }
     }
 
     private suspend fun loadTajweedSource(): Map<String, List<TajweedAnnotation>> {
@@ -665,14 +657,6 @@ private fun JSONArray?.toTajweedAnnotations(): List<TajweedAnnotation> = buildLi
     }
 }
 
-private fun stripTrailingVerseNumber(text: String): String {
-    var index = text.length - 1
-    while (index >= 0 && (text[index].isWhitespace() || text[index] in arabicDigitSet)) {
-        index--
-    }
-    return text.substring(0, index + 1).trimEnd()
-}
-
 internal fun JSONObject.toQuranAyahSearchIndex(): Map<String, String> =
     buildMap {
         val keys = keys()
@@ -827,10 +811,6 @@ private data class QuranImlaeiComparisonWord(
     val wordId: String,
     val imlaeiText: String,
     val imlaeiSimpleText: String,
-)
-
-private val arabicDigitSet = setOf(
-    '٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩',
 )
 
 private const val QURAN_WORD_METADATA_ASSET = "quran_word_metadata.json"

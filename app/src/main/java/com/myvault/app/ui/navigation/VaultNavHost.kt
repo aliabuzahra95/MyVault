@@ -132,6 +132,8 @@ import kotlinx.coroutines.launch
 fun VaultNavHost(
     pendingOpenNoteId: String? = null,
     onPendingOpenNoteConsumed: () -> Unit = {},
+    pendingOpenQuranVerseKey: String? = null,
+    onPendingOpenQuranConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -403,6 +405,15 @@ fun VaultNavHost(
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
         navController.navigate(VaultDestination.Editor.route(noteId))
         onPendingOpenNoteConsumed()
+    }
+
+    LaunchedEffect(pendingOpenQuranVerseKey) {
+        val verseKey = pendingOpenQuranVerseKey ?: return@LaunchedEffect
+        pendingQuranVerseKey = verseKey
+        shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+        selectedIslamicRootMode = VaultRootMode.Quran.name
+        navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
+        onPendingOpenQuranConsumed()
     }
 
     LaunchedEffect(currentRoute) {

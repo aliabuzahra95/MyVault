@@ -53,6 +53,10 @@ import com.myvault.app.ui.screens.toJsonArrayString
 import com.myvault.app.ui.theme.VaultTheme
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.widget.quran.QuranWidgetContract
+import com.myvault.app.widget.quran.QuranWidgetProvider
+import com.myvault.app.widget.quran.QuranWidgetStateStore
+import com.myvault.app.widget.quran.validatedWidgetLocation
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -64,14 +68,17 @@ class MainActivity : FragmentActivity() {
     private var promptShowing = false
     private var lastPausedAt = 0L
     private var pendingSharedNoteId by mutableStateOf<String?>(null)
+    private var pendingWidgetQuranVerseKey by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState != null) {
             lastPausedAt = savedInstanceState.getLong("lastPausedAt", 0L)
             pendingSharedNoteId = savedInstanceState.getString("pendingSharedNoteId")
+            pendingWidgetQuranVerseKey = savedInstanceState.getString("pendingWidgetQuranVerseKey")
         }
         handleSharedIntent(intent)
+        handleQuranWidgetIntent(intent)
 
         setContent {
             val loadedPreferences by preferences.userPreferences.collectAsStateWithLifecycle(initialValue = null)
@@ -163,6 +170,8 @@ class MainActivity : FragmentActivity() {
                             VaultNavHost(
                                 pendingOpenNoteId = pendingSharedNoteId,
                                 onPendingOpenNoteConsumed = { pendingSharedNoteId = null },
+                                pendingOpenQuranVerseKey = pendingWidgetQuranVerseKey,
+                                onPendingOpenQuranConsumed = { pendingWidgetQuranVerseKey = null },
                             )
                         }
                     }
@@ -185,12 +194,36 @@ class MainActivity : FragmentActivity() {
         super.onSaveInstanceState(outState)
         outState.putLong("lastPausedAt", lastPausedAt)
         outState.putString("pendingSharedNoteId", pendingSharedNoteId)
+        outState.putString("pendingWidgetQuranVerseKey", pendingWidgetQuranVerseKey)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSharedIntent(intent)
+        handleQuranWidgetIntent(intent)
+    }
+
+    private fun handleQuranWidgetIntent(intent: Intent?) {
+        val source = intent ?: return
+        if (!source.hasExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER)) return
+        val location = validatedWidgetLocation(
+            surahNumber = source.getIntExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, 1),
+            ayahNumber = source.getIntExtra(QuranWidgetContract.EXTRA_AYAH_NUMBER, 1),
+        )
+        val appWidgetId = source.getIntExtra(
+            QuranWidgetContract.EXTRA_WIDGET_ID,
+            android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID,
+        )
+        QuranWidgetStateStore(this).setAnchor(appWidgetId, location.surahNumber, location.ayahNumber)
+        if (appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+            QuranWidgetProvider.updateWidget(
+                this,
+                android.appwidget.AppWidgetManager.getInstance(this),
+                appWidgetId,
+            )
+        }
+        pendingWidgetQuranVerseKey = location.verseKey
     }
 
     private fun handleSharedIntent(intent: Intent?) {
