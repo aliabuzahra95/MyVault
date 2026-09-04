@@ -325,12 +325,6 @@ class SettingsViewModel @Inject constructor(
         googleDriveRestoreController.get().dismissMessage()
     }
 
-    fun checkGoogleDriveUpdates(onComplete: (String) -> Unit) {
-        viewModelScope.launch {
-            onComplete(googleDriveSyncRepository.checkForRemoteUpdates().displayMessage())
-        }
-    }
-
     fun signInFormattingAccount(email: String, password: String, onComplete: (String) -> Unit) {
         viewModelScope.launch {
             supabaseAuthRepository.signInWithPassword(email, password)

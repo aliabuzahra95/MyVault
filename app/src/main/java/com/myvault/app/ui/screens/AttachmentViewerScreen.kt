@@ -1092,66 +1092,6 @@ private fun PdfAttachmentViewer(
         }
     }
 
-    fun saveDragHighlight(start: Offset?, end: Offset?) {
-        val view = pdfView
-        if (view == null || !pdfReady || pageCount <= 0 || start == null || end == null) {
-            highlightSaveMessage = "Highlight not saved"
-            return
-        }
-
-        val startPoint = view.toPdfPointOrNull(start)
-        val endPoint = view.toPdfPointOrNull(end)
-        if (startPoint == null || endPoint == null || startPoint.pageNum != endPoint.pageNum) {
-            highlightSaveMessage = "Highlight one page at a time"
-            return
-        }
-
-        val rect = pdfRectFromDrag(startPoint, endPoint)
-        if (rect == null) {
-            highlightSaveMessage = "Highlight too small"
-            return
-        }
-
-        onAddHighlight(
-            attachment.libraryFolderId,
-            rect.pageNum,
-            rect.left,
-            rect.top,
-            rect.right,
-            rect.bottom,
-            highlightColor,
-        ) { saved ->
-            highlightSaveMessage = if (saved) "Highlight saved" else "Highlight not saved"
-            if (saved) drawHighlightMode = false
-        }
-    }
-
-    fun openTextBoxAt(offset: Offset) {
-        val view = pdfView
-        if (view == null || !pdfReady || pageCount <= 0) {
-            highlightSaveMessage = "Text box not placed"
-            return
-        }
-        val startPoint = view.toPdfPointOrNull(offset)
-        val endPoint = view.toPdfPointOrNull(offset + Offset(PdfTextBoxDefaultWidthPx, PdfTextBoxDefaultHeightPx))
-        if (startPoint == null || endPoint == null || startPoint.pageNum != endPoint.pageNum) {
-            highlightSaveMessage = "Tap inside one PDF page"
-            return
-        }
-        val rect = pdfRectFromDrag(startPoint, endPoint)
-        if (rect == null) {
-            highlightSaveMessage = "Text box not placed"
-            return
-        }
-        textBoxDraft = ""
-        textBoxColor = "black"
-        textBoxBackgroundColor = PdfAnnotationEntity.BACKGROUND_NONE
-        textBoxSize = 18f
-        textBoxDialog = PdfTextBoxDraft.New(rect)
-        textBoxPlacementMode = false
-        annotationPickMode = false
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
         when {
             error != null -> AttachmentViewerEmpty(error ?: "Unable to load PDF")

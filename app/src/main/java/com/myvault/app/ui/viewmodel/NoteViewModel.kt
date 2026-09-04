@@ -270,10 +270,6 @@ class NoteViewModel @Inject constructor(
         viewModelScope.launch { noteRepository.updateTitle(noteId, title) }
     }
 
-    fun updateBlock(blockId: String, content: String) {
-        viewModelScope.launch { noteRepository.updateBlockContent(noteId, blockId, content) }
-    }
-
     fun updateBody(body: String) {
         viewModelScope.launch { noteRepository.updateBody(noteId, body) }
     }
@@ -313,26 +309,6 @@ class NoteViewModel @Inject constructor(
 
     fun startAzureNarrationFromSelection(title: String, body: String, startOffset: Int) {
         narrationController.startAzure(noteId, title, body, bodyStartOffset = startOffset)
-    }
-
-    fun toggleNarrationPlayback() {
-        narrationController.toggle()
-    }
-
-    fun stopNarration() {
-        narrationController.stop()
-    }
-
-    fun setNarrationSpeed(speed: Float) {
-        narrationController.setSpeed(speed)
-    }
-
-    fun seekNarration(positionMs: Long) {
-        narrationController.seekTo(positionMs)
-    }
-
-    fun refreshNarrationProgress() {
-        narrationController.refreshProgress()
     }
 
     fun createTable(rows: Int, columns: Int) {
@@ -455,12 +431,6 @@ class NoteViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    fun cancelFormatting() {
-        formattingJob?.cancel()
-        formattingJob = null
-        _formattingState.update { it.copy(loading = false, progressLabel = null) }
     }
 
     fun setFormattingProvider(provider: NoteFormattingProvider) {

@@ -434,12 +434,6 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun importFile(uri: Uri, onImported: (String) -> Unit = {}) {
-        viewModelScope.launch {
-            onImported(attachmentRepository.importLibraryDocument(targetLibraryFolderId(), uri))
-        }
-    }
-
     fun importFiles(uris: List<Uri>, onImported: (String) -> Unit = {}) {
         importFilesToFolder(folderId = null, uris = uris, onImported = onImported)
     }

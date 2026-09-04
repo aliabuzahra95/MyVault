@@ -573,30 +573,6 @@ fun EditorScreen(
         bodyFocusRequester.requestFocus()
     }
 
-    fun runStructureOnlyLocally() {
-        val current = sanitizeVaultTextFieldValue(bodyValue)
-        val formattedHtml = current.text.toLocalStructureOnlyHtml()
-        if (formattedHtml.isBlank()) {
-            structureOnlyNotice = "Add note text first."
-            return
-        }
-        val imported = parseRichImport(html = formattedHtml, plainText = null).document
-        val cleanBody = sanitizeVaultTextFieldValue(TextFieldValue(imported.text, selection = TextRange(imported.text.length)))
-        val cleanMarks = sanitizeVaultStyleMarks(imported.styleMarks, imported.text.length)
-        val cleanLinks = sanitizeVaultNoteLinks(imported.noteLinks, imported.text.length)
-
-        bodyValue = cleanBody
-        styleMarks = cleanMarks
-        noteLinks = cleanLinks
-        pendingInlineStyles = emptySet()
-        lastSavedText = cleanBody.text
-        lastSavedMarks = cleanMarks
-        lastSavedLinks = cleanLinks
-        onContentChange(cleanBody.text, cleanMarks, cleanLinks)
-        structureOnlyNotice = "Structure applied."
-        bodyFocusRequester.requestFocus()
-    }
-
 
     fun insertNoteLink(targetId: String, targetTitle: String) {
         val range = mentionRange ?: return
@@ -1678,66 +1654,6 @@ private fun EditorHistorySnapshot.hasSameEditorContentAs(other: EditorHistorySna
         noteLinks == other.noteLinks &&
         pendingInlineStyles == other.pendingInlineStyles
 
-@Composable
-private fun EditorTopActionButton(
-    icon: ImageVector,
-    contentDescription: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.size(38.dp),
-        color = colors.surface,
-        contentColor = if (enabled) colors.textSecondary else colors.textMuted,
-        border = BorderStroke(1.dp, if (enabled) colors.border else colors.border.copy(alpha = 0.55f)),
-        shape = VaultShapes.sm,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun EditorBreadcrumb(
-    items: List<String>,
-    modifier: Modifier = Modifier,
-) {
-    val colors = VaultThemeTokens.colors
-    Row(
-        modifier = modifier.height(24.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxs),
-    ) {
-        items.forEachIndexed { index, item ->
-            val isCurrentNote = index == items.lastIndex
-            Text(
-                text = item,
-                modifier = Modifier.widthIn(max = if (isCurrentNote) 96.dp else 116.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (isCurrentNote) colors.textSecondary else colors.textMuted,
-            )
-            if (!isCurrentNote) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = colors.textMuted,
-                )
-            }
-        }
-    }
-}
-
 private fun String.toSafeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "note" }
 
@@ -2171,70 +2087,6 @@ internal fun TextFieldValue.currentLine(): String {
     return if (start <= end) safeValue.text.substring(start, end) else ""
 }
 
-@Composable
-private fun TextColorDialog(
-    onDismiss: () -> Unit,
-    onColorSelected: (VaultInlineStyle?) -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    val options = remember {
-        listOf(
-            TextColorOption("Red", Color(0xFFE5484D), VaultInlineStyle.ColorRed),
-            TextColorOption("Orange", Color(0xFFF97316), VaultInlineStyle.ColorOrange),
-            TextColorOption("Green", Color(0xFF2F9E66), VaultInlineStyle.ColorGreen),
-            TextColorOption("Blue", Color(0xFF2F80ED), VaultInlineStyle.ColorBlue),
-            TextColorOption("Purple", Color(0xFF8B5CF6), VaultInlineStyle.ColorPurple),
-            TextColorOption("Pink", Color(0xFFDB2777), VaultInlineStyle.ColorPink),
-            TextColorOption("Slate", Color(0xFF64748B), VaultInlineStyle.ColorSlate),
-            TextColorOption("Default", colors.text, null),
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Text colour",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
-                color = colors.text,
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-                options.chunked(4).forEach { rowOptions ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        rowOptions.forEach { option ->
-                            Surface(
-                                onClick = { onColorSelected(option.style) },
-                                modifier = Modifier.size(46.dp),
-                                color = colors.surface,
-                                shape = VaultShapes.md,
-                                border = BorderStroke(1.dp, colors.border),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Surface(
-                                        modifier = Modifier.size(24.dp),
-                                        color = option.color,
-                                        shape = VaultShapes.pill,
-                                        border = BorderStroke(1.dp, colors.border),
-                                        content = {},
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        containerColor = colors.elevated,
-        tonalElevation = 0.dp,
-    )
-}
-
 private data class TextColorOption(
     val label: String,
     val color: Color,
@@ -2484,50 +2336,6 @@ private fun TableSizeDialog(
         containerColor = colors.elevated,
         tonalElevation = 0.dp,
     )
-}
-
-@Composable
-private fun EditorActionRow(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    destructive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val colors = VaultThemeTokens.colors
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = VaultShapes.md,
-        border = BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                modifier = Modifier.size(30.dp),
-                color = colors.accentSoft,
-                shape = VaultShapes.sm,
-                border = BorderStroke(1.dp, colors.accentBorder),
-            ) {
-                androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                        tint = if (destructive) colors.warning else colors.accent,
-                    )
-                }
-            }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                color = if (destructive) colors.warning else colors.text,
-            )
-        }
-    }
 }
 
 @Composable

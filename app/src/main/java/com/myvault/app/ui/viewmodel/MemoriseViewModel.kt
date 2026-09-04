@@ -49,21 +49,11 @@ class MemoriseViewModel @Inject constructor(
         }
     }
 
-    fun selectGroup(group: MemorizationDashboardGroup) {
-        _uiState.value = _uiState.value.copy(selectedGroup = group)
-    }
-
     fun selectSurah(surahNumber: Int) {
         val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: return
         _uiState.value = _uiState.value.copy(
             selectedSurah = surah,
             selectedAyah = _uiState.value.selectedAyah.coerceIn(1, surah.ayat),
-        )
-    }
-
-    fun selectAyah(ayahNumber: Int) {
-        _uiState.value = _uiState.value.copy(
-            selectedAyah = ayahNumber.coerceIn(1, _uiState.value.selectedSurah.ayat),
         )
     }
 
@@ -245,124 +235,6 @@ class MemoriseViewModel @Inject constructor(
 
     fun recordSurahAttempt(attempt: QuranSurahMemorizationAttempt) {
         viewModelScope.launch { vaultPreferences.addQuranSurahMemorizationAttempt(attempt.toSavedAttempt()) }
-    }
-
-    fun startSelectedAyah() {
-        val state = _uiState.value
-        upsertRecord(state.selectedSurah.num, state.selectedAyah) { existing, now ->
-            existing?.copy(
-                lastReviewedAt = now,
-                reviewCount = existing.reviewCount + 1,
-                updatedAt = now,
-            ) ?: MemorizationRecord(
-                verseKey = "${state.selectedSurah.num}:${state.selectedAyah}",
-                surahNumber = state.selectedSurah.num,
-                ayahNumber = state.selectedAyah,
-                startedAt = now,
-                lastReviewedAt = now,
-                reviewCount = 1,
-                memorizedAt = null,
-                isRevision = false,
-                isWeak = false,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun markSelectedSurahMemorized() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            val now = System.currentTimeMillis()
-            val existingByVerse = state.records.associateBy { it.verseKey }
-            val surahRecords = (1..state.selectedSurah.ayat).map { ayah ->
-                val verseKey = "${state.selectedSurah.num}:$ayah"
-                val existing = existingByVerse[verseKey]
-                existing?.copy(
-                    lastReviewedAt = now,
-                    reviewCount = if (existing.reviewCount == 0) 1 else existing.reviewCount,
-                    memorizedAt = existing.memorizedAt ?: now,
-                    updatedAt = now,
-                ) ?: MemorizationRecord(
-                    verseKey = verseKey,
-                    surahNumber = state.selectedSurah.num,
-                    ayahNumber = ayah,
-                    startedAt = now,
-                    lastReviewedAt = now,
-                    reviewCount = 1,
-                    memorizedAt = now,
-                    isRevision = false,
-                    isWeak = false,
-                    updatedAt = now,
-                )
-            }
-            val updated = (state.records.filterNot { it.surahNumber == state.selectedSurah.num } + surahRecords)
-                .sortedByDescending { it.updatedAt }
-            vaultPreferences.setQuranMemorizationRecords(updated)
-        }
-    }
-
-    fun markReviewed(verseKey: String) {
-        val (surah, ayah) = parseVerseKey(verseKey) ?: return
-        upsertRecord(surah, ayah) { existing, now ->
-            existing?.copy(
-                lastReviewedAt = now,
-                reviewCount = existing.reviewCount + 1,
-                isNeedsRevision = false,
-                isIncorrect = false,
-                updatedAt = now,
-            ) ?: freshRecord(surah, ayah, now, reviewCount = 1)
-        }
-    }
-
-    fun toggleMemorized(verseKey: String) {
-        val (surah, ayah) = parseVerseKey(verseKey) ?: return
-        upsertRecord(surah, ayah) { existing, now ->
-            val current = existing ?: freshRecord(surah, ayah, now)
-            current.copy(
-                memorizedAt = if (current.memorizedAt == null) now else null,
-                lastReviewedAt = now,
-                isIncorrect = false,
-                isNeedsRevision = if (current.memorizedAt == null) false else current.isNeedsRevision,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun toggleRevision(verseKey: String) {
-        val (surah, ayah) = parseVerseKey(verseKey) ?: return
-        upsertRecord(surah, ayah) { existing, now ->
-            val current = existing ?: freshRecord(surah, ayah, now)
-            current.copy(
-                isRevision = !current.isRevision,
-                isNeedsRevision = !current.isRevision,
-                isIncorrect = if (!current.isRevision) false else current.isIncorrect,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun toggleWeak(verseKey: String) {
-        val (surah, ayah) = parseVerseKey(verseKey) ?: return
-        upsertRecord(surah, ayah) { existing, now ->
-            val current = existing ?: freshRecord(surah, ayah, now)
-            current.copy(
-                isWeak = !current.isWeak,
-                updatedAt = now,
-            )
-        }
-    }
-
-    fun toggleIncorrect(verseKey: String) {
-        val (surah, ayah) = parseVerseKey(verseKey) ?: return
-        upsertRecord(surah, ayah) { existing, now ->
-            val current = existing ?: freshRecord(surah, ayah, now)
-            current.copy(
-                isIncorrect = !current.isIncorrect,
-                isNeedsRevision = if (!current.isIncorrect) false else current.isNeedsRevision,
-                isRevision = if (!current.isIncorrect) false else current.isRevision,
-                updatedAt = now,
-            )
-        }
     }
 
     private fun upsertRecord(

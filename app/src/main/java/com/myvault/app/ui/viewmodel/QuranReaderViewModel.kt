@@ -182,14 +182,6 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
-    fun increaseArabicFont() {
-        setArabicFontPercent(_uiState.value.arabicFontPercent + 8)
-    }
-
-    fun decreaseArabicFont() {
-        setArabicFontPercent(_uiState.value.arabicFontPercent - 8)
-    }
-
     fun setTajweedEnabled(enabled: Boolean) {
         if (_uiState.value.tajweedEnabled == enabled) return
         _uiState.value = _uiState.value.copy(tajweedEnabled = enabled)
@@ -681,21 +673,6 @@ class QuranReaderViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             memorizationConcealedVerseKey = if (amount == null) null else verseKey,
             memorizationConcealAmount = amount,
-        )
-    }
-
-    fun setMemorizationRepeatMode(ayah: QuranAyah, mode: MemorizationRepeatMode) {
-        _uiState.value = _uiState.value.copy(
-            memorizationRepeatVerseKey = ayah.verseKey,
-            memorizationRepeatMode = mode,
-        )
-        playAudioForAyah(ayah)
-    }
-
-    fun stopMemorizationRepeat() {
-        _uiState.value = _uiState.value.copy(
-            memorizationRepeatVerseKey = null,
-            memorizationRepeatMode = null,
         )
     }
 

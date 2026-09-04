@@ -307,12 +307,6 @@ internal fun clearVaultHeadingFromToolbar(
     )
 }
 
-internal fun applyBulletList(value: TextFieldValue): TextFieldValue =
-    applyBulletListTransform(value).value
-
-internal fun applyNumberedList(value: TextFieldValue): TextFieldValue =
-    applyNumberedListTransform(value).value
-
 internal data class VaultTextTransform(
     val oldValueForMarks: TextFieldValue,
     val value: TextFieldValue,

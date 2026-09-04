@@ -197,28 +197,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun createNoteFromSharedText(
-        text: String,
-        mode: String = FOLDER_MODE_STUDY,
-        onCreated: (String) -> Unit,
-    ) {
-        val cleaned = text.trim()
-        if (cleaned.isBlank()) return
-        viewModelScope.launch {
-            val targetFolderId = if (mode == FOLDER_MODE_PERSONAL) {
-                folderRepository.ensureRootFolderForMode(name = "Inbox", mode = FOLDER_MODE_PERSONAL)
-            } else {
-                null
-            }
-            val noteId = noteRepository.createNote(
-                folderId = targetFolderId,
-                title = cleaned.firstTitleLine(),
-            )
-            noteRepository.saveRichText(noteId = noteId, text = cleaned, styleMarksJson = "[]")
-            onCreated(noteId)
-        }
-    }
-
     fun importDocument(uri: Uri, mode: String = FOLDER_MODE_STUDY, onImported: (String) -> Unit) {
         viewModelScope.launch {
             val fileName = attachmentRepository.displayName(uri).ifBlank { "Imported file" }
