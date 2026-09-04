@@ -23,7 +23,7 @@ import com.myvault.app.ui.components.SearchResultData
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
-import com.myvault.app.ui.screens.AttachmentSample
+import com.myvault.app.ui.model.AttachmentSample
 import com.myvault.app.ui.screens.parseRichImport
 import com.myvault.app.ui.screens.toJsonArrayString
 import dagger.hilt.android.lifecycle.HiltViewModel

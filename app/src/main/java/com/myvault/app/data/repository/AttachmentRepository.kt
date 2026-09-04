@@ -11,7 +11,7 @@ import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
-import com.myvault.app.ui.screens.AttachmentSample
+import com.myvault.app.ui.model.AttachmentSample
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine

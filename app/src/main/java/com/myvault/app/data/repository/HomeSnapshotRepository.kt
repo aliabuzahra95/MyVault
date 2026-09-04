@@ -8,7 +8,7 @@ import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.data.local.entity.normalizeFolderColorKey
-import com.myvault.app.ui.screens.AttachmentSample
+import com.myvault.app.ui.model.AttachmentSample
 import com.myvault.app.ui.viewmodel.HomeUiState
 import com.myvault.app.ui.viewmodel.HomeQuranContinue
 import dagger.hilt.android.qualifiers.ApplicationContext

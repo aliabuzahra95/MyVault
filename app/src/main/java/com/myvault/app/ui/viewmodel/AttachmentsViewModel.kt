@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.DatabaseSeeder
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.repository.AttachmentRepository
-import com.myvault.app.ui.screens.AttachmentSample
+import com.myvault.app.ui.model.AttachmentSample
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow

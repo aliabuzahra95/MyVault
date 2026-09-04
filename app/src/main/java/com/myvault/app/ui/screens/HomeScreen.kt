@@ -95,7 +95,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,6 +104,7 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.quran.QuranReflectionItem
+import com.myvault.app.ui.model.AttachmentSample
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.CompactActionGroup
 import com.myvault.app.ui.components.CompactPrimaryAction
@@ -144,8 +144,6 @@ import com.myvault.app.ui.components.VaultWorkspaceSwitcher
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
 import com.myvault.app.ui.theme.VaultSpacing
-import com.myvault.app.ui.theme.VaultTheme
-import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.util.openAttachment
@@ -1414,39 +1412,3 @@ private fun List<VaultTreeItem>.toPremiumNoteActions(
             PremiumAction(note.name, icon) { onClick(note) }
         }
     }
-
-@Preview(name = "HomeScreen Light")
-@Composable
-private fun HomeScreenLightPreview() {
-    VaultTheme(mode = VaultThemeMode.Light) {
-        HomeScreen(
-            uiState = HomeUiState(
-                pinnedNotes = HomeSampleData.pinnedNotes,
-                attachments = Pass4Samples.attachments,
-                workspace = HomeSampleData.workspace,
-            ),
-            onSearchClick = {},
-            onSettingsClick = {},
-            onFolderClick = {},
-            onNoteClick = {},
-        )
-    }
-}
-
-@Preview(name = "HomeScreen Dark")
-@Composable
-private fun HomeScreenDarkPreview() {
-    VaultTheme(mode = VaultThemeMode.Dark) {
-        HomeScreen(
-            uiState = HomeUiState(
-                pinnedNotes = HomeSampleData.pinnedNotes,
-                attachments = Pass4Samples.attachments,
-                workspace = HomeSampleData.workspace,
-            ),
-            onSearchClick = {},
-            onSettingsClick = {},
-            onFolderClick = {},
-            onNoteClick = {},
-        )
-    }
-}

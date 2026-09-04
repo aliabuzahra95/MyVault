@@ -1,22 +1,27 @@
 package com.myvault.app.ui.screens
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.tooling.preview.Preview
 import com.myvault.app.ui.components.VaultNoteCardData
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
+import com.myvault.app.ui.model.AttachmentSample
+import com.myvault.app.ui.theme.VaultTheme
+import com.myvault.app.ui.theme.VaultThemeMode
+import com.myvault.app.ui.viewmodel.HomeUiState
 
-object HomeSampleData {
+private object HomePreviewData {
     val pinnedNotes = listOf(
         VaultNoteCardData("Current Study Plan", "Islamic Studies"),
         VaultNoteCardData("Important Health Notes", "Health"),
         VaultNoteCardData("Weekly Bread Orders", "Business"),
     )
 
-    val recentNotes = listOf(
-        VaultNoteCardData("TRT Notes", "Edited 2h ago"),
-        VaultNoteCardData("Al-Wasitiyyah", "Edited 5h ago"),
-        VaultNoteCardData("Bread Customers", "Edited 1d ago"),
-        VaultNoteCardData("Blood Test Review", "Edited 2d ago"),
-        VaultNoteCardData("Peptide Stack", "Edited 3d ago"),
+    val attachments = listOf(
+        AttachmentSample("aqeedah-summary.pdf", "Al-Wasitiyyah Notes", "2.4 MB", "Today", "PDF"),
+        AttachmentSample("blood-review.jpg", "Blood Test Review", "740 KB", "Yesterday", "Image"),
+        AttachmentSample("bread-orders.xlsx", "Weekly Bread Orders", "86 KB", "Apr 24", "Doc"),
+        AttachmentSample("lesson-audio.m4a", "Class Notes", "12 MB", "Apr 21", "Audio"),
     )
 
     val workspace = listOf(
@@ -96,4 +101,33 @@ object HomeSampleData {
             ),
         ),
     )
+}
+
+@Preview(name = "HomeScreen Light")
+@Composable
+private fun HomeScreenLightPreview() {
+    HomeScreenPreview(VaultThemeMode.Light)
+}
+
+@Preview(name = "HomeScreen Dark")
+@Composable
+private fun HomeScreenDarkPreview() {
+    HomeScreenPreview(VaultThemeMode.Dark)
+}
+
+@Composable
+private fun HomeScreenPreview(mode: VaultThemeMode) {
+    VaultTheme(mode = mode) {
+        HomeScreen(
+            uiState = HomeUiState(
+                pinnedNotes = HomePreviewData.pinnedNotes,
+                attachments = HomePreviewData.attachments,
+                workspace = HomePreviewData.workspace,
+            ),
+            onSearchClick = {},
+            onSettingsClick = {},
+            onFolderClick = {},
+            onNoteClick = {},
+        )
+    }
 }
