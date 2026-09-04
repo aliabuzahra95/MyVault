@@ -57,6 +57,9 @@ import com.myvault.app.widget.quran.QuranWidgetContract
 import com.myvault.app.widget.quran.QuranWidgetProvider
 import com.myvault.app.widget.quran.QuranWidgetStateStore
 import com.myvault.app.widget.quran.validatedWidgetLocation
+import com.myvault.app.widget.note.NoteWidgetContract
+import com.myvault.app.widget.note.QuickNoteLaunchGuard
+import com.myvault.app.widget.note.shouldCreateQuickNote
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
@@ -69,16 +72,30 @@ class MainActivity : FragmentActivity() {
     private var lastPausedAt = 0L
     private var pendingSharedNoteId by mutableStateOf<String?>(null)
     private var pendingWidgetQuranVerseKey by mutableStateOf<String?>(null)
+    private var pendingWidgetNoteOpen by mutableStateOf<PendingWidgetNoteOpen?>(null)
+    private var pendingQuickNoteCreate by mutableStateOf(false)
+    private var quickNoteCreationInFlight = false
+    private lateinit var quickNoteLaunchGuard: QuickNoteLaunchGuard
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        quickNoteLaunchGuard = QuickNoteLaunchGuard(this)
         if (savedInstanceState != null) {
             lastPausedAt = savedInstanceState.getLong("lastPausedAt", 0L)
             pendingSharedNoteId = savedInstanceState.getString("pendingSharedNoteId")
             pendingWidgetQuranVerseKey = savedInstanceState.getString("pendingWidgetQuranVerseKey")
+            savedInstanceState.getString("pendingWidgetNoteId")?.let { noteId ->
+                pendingWidgetNoteOpen = PendingWidgetNoteOpen(
+                    noteId = noteId,
+                    courseId = savedInstanceState.getString("pendingWidgetCourseId"),
+                    quickFocus = savedInstanceState.getBoolean("pendingWidgetQuickFocus"),
+                )
+            }
+            pendingQuickNoteCreate = savedInstanceState.getBoolean("pendingQuickNoteCreate")
         }
         handleSharedIntent(intent)
         handleQuranWidgetIntent(intent)
+        handleNoteWidgetIntent(intent)
 
         setContent {
             val loadedPreferences by preferences.userPreferences.collectAsStateWithLifecycle(initialValue = null)
@@ -125,6 +142,30 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
+            LaunchedEffect(unlocked, pendingQuickNoteCreate) {
+                if (!shouldCreateQuickNote(unlocked, pendingQuickNoteCreate, quickNoteCreationInFlight)) {
+                    return@LaunchedEffect
+                }
+                quickNoteCreationInFlight = true
+                runCatching { noteRepository.createNote(folderId = null) }
+                    .onSuccess { noteId ->
+                        pendingWidgetNoteOpen = PendingWidgetNoteOpen(
+                            noteId = noteId,
+                            courseId = null,
+                            quickFocus = true,
+                        )
+                    }
+                    .onFailure { error ->
+                        Toast.makeText(
+                            this@MainActivity,
+                            error.message ?: "Unable to create note",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                pendingQuickNoteCreate = false
+                quickNoteCreationInFlight = false
+            }
+
             DisposableEffect(
                 lifecycleOwner,
                 userPreferences.securityLockEnabled,
@@ -168,8 +209,17 @@ class MainActivity : FragmentActivity() {
                                 .then(if (locked) Modifier.blur(18.dp) else Modifier),
                         ) {
                             VaultNavHost(
-                                pendingOpenNoteId = pendingSharedNoteId,
-                                onPendingOpenNoteConsumed = { pendingSharedNoteId = null },
+                                pendingOpenNoteId = if (unlocked) {
+                                    pendingWidgetNoteOpen?.noteId ?: pendingSharedNoteId
+                                } else {
+                                    null
+                                },
+                                pendingOpenNoteCourseId = pendingWidgetNoteOpen?.courseId,
+                                pendingOpenNoteQuickFocus = pendingWidgetNoteOpen?.quickFocus == true,
+                                onPendingOpenNoteConsumed = {
+                                    pendingWidgetNoteOpen = null
+                                    pendingSharedNoteId = null
+                                },
                                 pendingOpenQuranVerseKey = pendingWidgetQuranVerseKey,
                                 onPendingOpenQuranConsumed = { pendingWidgetQuranVerseKey = null },
                             )
@@ -195,6 +245,10 @@ class MainActivity : FragmentActivity() {
         outState.putLong("lastPausedAt", lastPausedAt)
         outState.putString("pendingSharedNoteId", pendingSharedNoteId)
         outState.putString("pendingWidgetQuranVerseKey", pendingWidgetQuranVerseKey)
+        outState.putString("pendingWidgetNoteId", pendingWidgetNoteOpen?.noteId)
+        outState.putString("pendingWidgetCourseId", pendingWidgetNoteOpen?.courseId)
+        outState.putBoolean("pendingWidgetQuickFocus", pendingWidgetNoteOpen?.quickFocus == true)
+        outState.putBoolean("pendingQuickNoteCreate", pendingQuickNoteCreate)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -202,6 +256,34 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         handleSharedIntent(intent)
         handleQuranWidgetIntent(intent)
+        handleNoteWidgetIntent(intent)
+    }
+
+    private fun handleNoteWidgetIntent(intent: Intent?) {
+        val source = intent ?: return
+        when (source.action) {
+            NoteWidgetContract.ACTION_OPEN_NOTE -> {
+                val noteId = source.getStringExtra(NoteWidgetContract.EXTRA_NOTE_ID)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return
+                pendingWidgetNoteOpen = PendingWidgetNoteOpen(
+                    noteId = noteId,
+                    courseId = source.getStringExtra(NoteWidgetContract.EXTRA_COURSE_ID),
+                    quickFocus = false,
+                )
+                source.action = Intent.ACTION_MAIN
+            }
+            NoteWidgetContract.ACTION_QUICK_CREATE_NOTE -> {
+                if (
+                    !pendingQuickNoteCreate &&
+                    !quickNoteCreationInFlight &&
+                    quickNoteLaunchGuard.accept()
+                ) {
+                    pendingQuickNoteCreate = true
+                }
+                source.action = Intent.ACTION_MAIN
+            }
+        }
     }
 
     private fun handleQuranWidgetIntent(intent: Intent?) {
@@ -306,6 +388,12 @@ class MainActivity : FragmentActivity() {
     }
 
 }
+
+private data class PendingWidgetNoteOpen(
+    val noteId: String,
+    val courseId: String?,
+    val quickFocus: Boolean,
+)
 
 @Composable
 private fun VaultLockOverlay(

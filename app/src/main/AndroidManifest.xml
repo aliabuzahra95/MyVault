@@ -62,6 +62,10 @@
             android:noHistory="true"
             android:theme="@style/Theme.MyVault.QuranWidgetSearch"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible" />
+        <activity
+            android:name=".widget.note.NoteWidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MyVault" />
         <service
             android:name=".data.quran.audio.QuranAudioDownloadService"
             android:exported="false"
@@ -81,6 +85,32 @@
             android:name=".widget.quran.QuranWidgetRemoteViewsService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <receiver
+            android:name=".widget.note.NoteWidgetProvider"
+            android:exported="false"
+            android:label="@string/note_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/note_widget_info" />
+        </receiver>
+        <service
+            android:name=".widget.note.NoteWidgetRemoteViewsService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <receiver
+            android:name=".widget.note.QuickNoteWidgetProvider"
+            android:exported="false"
+            android:label="@string/quick_note_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_note_widget_info" />
+        </receiver>
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

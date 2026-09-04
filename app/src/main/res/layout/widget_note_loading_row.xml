@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="@font/plus_jakarta_sans_medium" android:gravity="center" android:padding="16dp" android:text="@string/note_widget_loading" android:textColor="@color/quran_widget_secondary" android:textSize="12sp" />

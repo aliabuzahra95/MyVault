@@ -35,4 +35,16 @@
     <string name="quran_widget_select_surah">Open Surah %1$d, %2$s</string>
     <string name="quran_widget_loading">Loading Qur’an…</string>
     <string name="quran_widget_unavailable">Qur’an is unavailable. Tap to open MyVault.</string>
+    <string name="note_widget_name">MyVault Note</string>
+    <string name="note_widget_description">Keep a selected MyVault note visible and scrollable on your home screen.</string>
+    <string name="note_widget_eyebrow">MYVAULT NOTE</string>
+    <string name="note_widget_settings">Note widget settings</string>
+    <string name="note_widget_unavailable_title">Note unavailable</string>
+    <string name="note_widget_unavailable_context">It may have been deleted</string>
+    <string name="note_widget_choose_another">Choose another note</string>
+    <string name="note_widget_empty_note">This note is empty. Tap to start writing.</string>
+    <string name="note_widget_loading">Loading note…</string>
+    <string name="quick_note_widget_name">Quick Note</string>
+    <string name="quick_note_widget_description">Create a new Study note and open the editor.</string>
+    <string name="quick_note_widget_label">New note</string>
 </resources>

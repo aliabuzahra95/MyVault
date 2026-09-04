@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/note_widget_body_text"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fontFamily="@font/plus_jakarta_sans_medium"
+    android:includeFontPadding="true"
+    android:lineSpacingExtra="4dp"
+    android:paddingBottom="10dp"
+    android:textColor="@color/quran_widget_text"
+    android:textDirection="firstStrong"
+    android:textSize="14sp" />

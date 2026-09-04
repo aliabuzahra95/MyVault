@@ -131,6 +131,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun VaultNavHost(
     pendingOpenNoteId: String? = null,
+    pendingOpenNoteCourseId: String? = null,
+    pendingOpenNoteQuickFocus: Boolean = false,
     onPendingOpenNoteConsumed: () -> Unit = {},
     pendingOpenQuranVerseKey: String? = null,
     onPendingOpenQuranConsumed: () -> Unit = {},
@@ -401,9 +403,12 @@ fun VaultNavHost(
         shellViewModel.setWorkspace(workspace)
     }
 
-    LaunchedEffect(pendingOpenNoteId) {
+    LaunchedEffect(pendingOpenNoteId, pendingOpenNoteCourseId, pendingOpenNoteQuickFocus) {
         val noteId = pendingOpenNoteId ?: return@LaunchedEffect
-        navController.navigate(VaultDestination.Editor.route(noteId))
+        pendingOpenNoteCourseId?.let { courseId ->
+            revealCourseLocation(courseId)
+        }
+        navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = pendingOpenNoteQuickFocus))
         onPendingOpenNoteConsumed()
     }
 
