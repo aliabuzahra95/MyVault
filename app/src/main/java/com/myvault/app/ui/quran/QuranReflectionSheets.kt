@@ -62,52 +62,6 @@ private val QuranReflectionUthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
 )
 @Composable
-internal fun QuranAyahReflectionCard(reflection: QuranReflectionItem, onClick: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    val shape = RoundedCornerShape(12.dp)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(colors.elevated.copy(alpha = 0.78f))
-            .border(1.dp, colors.accentBorder.copy(alpha = 0.55f), shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Edit,
-                contentDescription = null,
-                tint = colors.accent,
-                modifier = Modifier.size(14.dp),
-            )
-            Text(
-                text = reflection.title,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                color = colors.text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (reflection.reflectionPreview.isNotBlank()) {
-            Text(
-                text = reflection.reflectionPreview,
-                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                color = colors.textSecondary,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun AyahActionsSheet(
     ayah: QuranAyah?,
