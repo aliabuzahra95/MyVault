@@ -107,15 +107,9 @@ class NoteRepository @Inject constructor(
         notes.map { it.toNoteCard(folderNames[it.folderId], tableCounts[it.id] ?: 0) }
     }
 
-    fun observeRecentCards(limit: Int = 8) = noteDao.observeRecent(limit).map { notes ->
-        notes.map { it.toRecentCard() }
-    }
-
     fun observeDeletedNotes() = noteDao.observeDeleted()
 
     fun observeForFolder(folderId: String) = noteDao.observeForFolder(folderId)
-
-    fun observeSubNotes(noteId: String) = noteDao.observeChildren(noteId)
 
     fun observeNote(noteId: String) = noteDao.observeById(noteId)
 

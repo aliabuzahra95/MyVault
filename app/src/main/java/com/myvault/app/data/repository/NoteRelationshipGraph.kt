@@ -51,9 +51,6 @@ internal object NoteRelationshipGraph {
         note.folderId != null && note.folderId !in availableFolderIds
     }
 
-    fun isValid(notes: List<NoteEntity>): Boolean =
-        sanitizedForPersistence(notes) == notes
-
     private fun hasValidParentChain(note: NoteEntity, notesById: Map<String, NoteEntity>): Boolean {
         val visited = mutableSetOf(note.id)
         var current = note

@@ -2,7 +2,6 @@ package com.myvault.app.data.quran.audio
 
 import android.media.AudioAttributes
 import android.media.MediaPlayer
-import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,12 +53,7 @@ class QuranAudioPlayer @Inject constructor() {
                 applyPlaybackSpeed(it)
                 if (requestedStartMs > 0L) {
                     shouldStartAfterSeek = true
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        it.seekTo(requestedStartMs, MediaPlayer.SEEK_PREVIOUS_SYNC)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        it.seekTo(requestedStartMs.toInt())
-                    }
+                    it.seekTo(requestedStartMs, MediaPlayer.SEEK_PREVIOUS_SYNC)
                 } else {
                     it.start()
                     updatePlaybackState(
@@ -130,12 +124,7 @@ class QuranAudioPlayer @Inject constructor() {
     fun seekTo(positionMs: Long) {
         mediaPlayer?.let {
             val clamped = positionMs.coerceIn(0L, durationMs())
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                it.seekTo(clamped, MediaPlayer.SEEK_CLOSEST_SYNC)
-            } else {
-                @Suppress("DEPRECATION")
-                it.seekTo(clamped.toInt())
-            }
+            it.seekTo(clamped, MediaPlayer.SEEK_CLOSEST_SYNC)
             updatePlaybackState(
                 hasActiveMedia = true,
                 isPlaying = it.isPlaying,
@@ -174,9 +163,7 @@ class QuranAudioPlayer @Inject constructor() {
     }
 
     private fun applyPlaybackSpeed(player: MediaPlayer) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            player.playbackParams = player.playbackParams.setSpeed(playbackSpeed)
-        }
+        player.playbackParams = player.playbackParams.setSpeed(playbackSpeed)
     }
 
     private fun isCurrentRequest(player: MediaPlayer, requestId: Long): Boolean {

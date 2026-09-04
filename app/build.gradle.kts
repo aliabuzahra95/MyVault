@@ -27,21 +27,10 @@ android {
     val syncProxyToken = providers.gradleProperty("MYVAULT_SYNC_PROXY_TOKEN").orElse("").get()
     fun String.escapedForBuildConfig(): String = replace("\\", "\\\\").replace("\"", "\\\"")
 
-    val firebaseApiKey = providers.gradleProperty("MYVAULT_FIREBASE_API_KEY").orElse("").get()
-    val firebaseAppId = providers.gradleProperty("MYVAULT_FIREBASE_APP_ID").orElse("").get()
-    val firebaseProjectId = providers.gradleProperty("MYVAULT_FIREBASE_PROJECT_ID").orElse("").get()
     val localOpenAiApiKey = localProperties.getProperty("MYVAULT_OPENAI_API_KEY").orEmpty().trim()
     val openAiApiKey = localOpenAiApiKey.ifBlank {
         providers.environmentVariable("OPENAI_API_KEY")
             .orElse(providers.gradleProperty("MYVAULT_OPENAI_API_KEY"))
-            .orElse("")
-            .get()
-            .trim()
-    }
-    val localGeminiApiKey = localProperties.getProperty("MYVAULT_GEMINI_API_KEY").orEmpty().trim()
-    val geminiApiKey = localGeminiApiKey.ifBlank {
-        providers.environmentVariable("GEMINI_API_KEY")
-            .orElse(providers.gradleProperty("MYVAULT_GEMINI_API_KEY"))
             .orElse("")
             .get()
             .trim()
@@ -110,11 +99,7 @@ android {
         buildConfigField("String", "SYNC_PROXY_TOKEN", "\"$syncProxyToken\"")
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
-        buildConfigField("String", "FIREBASE_API_KEY", "\"$firebaseApiKey\"")
-        buildConfigField("String", "FIREBASE_APP_ID", "\"$firebaseAppId\"")
-        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$firebaseProjectId\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
-        buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "KIMI_API_KEY", "\"${kimiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "OPENAI_TRANSCRIBE_MODEL", "\"${openAiTranscribeModel.escapedForBuildConfig()}\"")
         buildConfigField("String", "NOTE_FORMATTING_KIMI_FAST_MODEL", "\"${noteFormattingKimiFastModel.escapedForBuildConfig()}\"")

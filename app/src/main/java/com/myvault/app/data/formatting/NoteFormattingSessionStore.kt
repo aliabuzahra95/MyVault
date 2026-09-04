@@ -1,7 +1,6 @@
 package com.myvault.app.data.formatting
 
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,6 +20,4 @@ class NoteFormattingSessionStore @Inject constructor() {
 
     fun stateFor(noteId: String): MutableStateFlow<NoteFormattingUiState> =
         states.getOrPut(noteId) { MutableStateFlow(NoteFormattingUiState()) }
-
-    fun observe(noteId: String): StateFlow<NoteFormattingUiState> = stateFor(noteId)
 }

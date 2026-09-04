@@ -86,8 +86,6 @@ class FolderRepository @Inject constructor(
         buildTree(folders, notes, attachments, tables, mode)
     }
 
-    fun observeSubfolders(id: String) = folderDao.observeChildren(id)
-
     fun observeLibraryFolders() = folderDao.observeAll()
 
     fun observeDeletedFolders() = folderDao.observeDeleted()

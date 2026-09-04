@@ -20,29 +20,6 @@ class TtsRepository @Inject constructor(
     private val cacheManager: NarrationCacheManager,
     private val textPreparer: NoteNarrationTextPreparer,
 ) {
-    suspend fun getOrCreateNarration(
-        noteId: String,
-        noteTitle: String,
-        narrationText: String,
-        voice: String = NarrationConfig.DEFAULT_VOICE,
-        speed: Float = 1f,
-        onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
-    ): NarrationSession = withContext(Dispatchers.IO) {
-        val generatedFiles = mutableListOf<File>()
-        generateNarrationProgressively(
-            noteId = noteId,
-            noteTitle = noteTitle,
-            narrationText = narrationText,
-            voice = voice,
-            speed = speed,
-            onChunkGenerating = onChunkGenerating,
-            onChunkReady = { session, _, _ ->
-                generatedFiles.clear()
-                generatedFiles += session.files
-            },
-        )
-    }
-
     suspend fun generateNarrationProgressively(
         noteId: String,
         noteTitle: String,

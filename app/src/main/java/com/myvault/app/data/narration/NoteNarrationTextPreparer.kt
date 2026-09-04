@@ -1,6 +1,5 @@
 package com.myvault.app.data.narration
 
-import android.os.Build
 import android.text.Html
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -86,12 +85,7 @@ class NoteNarrationTextPreparer @Inject constructor() {
             .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
             .replace(Regex("</(p|div|h[1-6]|li|tr|blockquote)>", RegexOption.IGNORE_CASE), "\n\n")
             .replace(Regex("<li[^>]*>", RegexOption.IGNORE_CASE), "\n• ")
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            Html.fromHtml(withBreaks, Html.FROM_HTML_MODE_LEGACY).toString()
-        } else {
-            @Suppress("DEPRECATION")
-            Html.fromHtml(withBreaks).toString()
-        }
+        return Html.fromHtml(withBreaks, Html.FROM_HTML_MODE_LEGACY).toString()
     }
 
     private fun normalizePlainText(input: String): String = input

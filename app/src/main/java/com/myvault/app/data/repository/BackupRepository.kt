@@ -139,21 +139,6 @@ class BackupRepository @Inject constructor(
         source.inputStream().use { input -> restoreBackup(input) }
     }
 
-    suspend fun verifyCurrentBackupIntegrity(): BackupVerificationResult = withContext(Dispatchers.IO) {
-        val file = File(context.cacheDir, "vault-backup-verification.vaultbackup")
-        runCatching {
-            val exported = exportBackupToFile(file)
-            verifyBackupFile(file, exported)
-        }.also {
-            file.delete()
-        }.getOrElse { error ->
-            BackupVerificationResult(
-                valid = false,
-                message = "Backup check failed: ${error.message ?: "Unknown error"}",
-            )
-        }
-    }
-
     private suspend fun writeBackup(output: OutputStream): BackupResult {
         val snapshot = buildBackupSnapshot()
         ZipOutputStream(output.buffered()).use { zip ->

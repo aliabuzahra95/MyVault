@@ -30,23 +30,6 @@ class AttachmentRepository @Inject constructor(
     private val noteDao: NoteDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
 ) {
-    fun observeAllCards() = combine(attachmentDao.observeAll(), noteDao.observeAll()) { attachments, notes ->
-        val noteTitles = notes.associate { it.id to it.title }
-        attachments.map {
-            AttachmentSample(
-                name = it.fileName,
-                note = if (it.libraryFolderId != null) "Library" else noteTitles[it.noteId] ?: "Untitled note",
-                size = it.sizeLabel(),
-                date = it.createdAt.toRelativeTime(),
-                kind = it.kindLabel(),
-                id = it.id,
-                noteId = it.noteId,
-                mimeType = it.mimeType,
-                localPath = it.localPath,
-            )
-        }
-    }
-
     fun observeCardsForMode(mode: String) = combine(
         attachmentDao.observeAll(),
         noteDao.observeAll(),
@@ -222,10 +205,6 @@ class AttachmentRepository @Inject constructor(
 
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
-    }
-
-    suspend fun restoreAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
-        attachmentDao.updateDeletedAt(attachmentId, null)
     }
 
     suspend fun renameAttachment(attachmentId: String, fileName: String) = withContext(Dispatchers.IO) {

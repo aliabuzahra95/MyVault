@@ -6,7 +6,6 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
-import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -281,10 +280,6 @@ class NarrationPlayerManager @Inject constructor(
     fun stop() {
         persistAzureProgress(force = true)
         stopInternal(resetState = true)
-    }
-
-    fun stopForNote(noteId: String) {
-        if (_state.value.noteId == noteId) stop()
     }
 
     fun setSpeed(newSpeed: Float) {
@@ -623,20 +618,18 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     private fun applyPlaybackSpeed(player: MediaPlayer) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }
-                .onFailure { error ->
-                    logPlaybackDiagnostic(
-                        event = "MediaPlayer speed change failed",
-                        session = activeSession,
-                        file = activeFiles.getOrNull(activeChunkIndex),
-                        chunkIndex = activeChunkIndex,
-                        throwable = error,
-                        warning = true,
-                        player = player,
-                    )
-                }
-        }
+        runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }
+            .onFailure { error ->
+                logPlaybackDiagnostic(
+                    event = "MediaPlayer speed change failed",
+                    session = activeSession,
+                    file = activeFiles.getOrNull(activeChunkIndex),
+                    chunkIndex = activeChunkIndex,
+                    throwable = error,
+                    warning = true,
+                    player = player,
+                )
+            }
     }
 
 
@@ -687,12 +680,7 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     private fun seekPlayer(player: MediaPlayer, positionMs: Long) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            player.seekTo(positionMs, MediaPlayer.SEEK_CLOSEST)
-        } else {
-            @Suppress("DEPRECATION")
-            player.seekTo(positionMs.toInt())
-        }
+        player.seekTo(positionMs, MediaPlayer.SEEK_CLOSEST)
     }
 
     private fun globalPositionMs(chunkPositionMs: Long = mediaPlayer?.currentPosition?.toLong() ?: 0L): Long =

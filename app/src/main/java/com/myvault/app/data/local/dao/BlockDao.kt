@@ -24,12 +24,6 @@ interface BlockDao {
     @Query("UPDATE blocks SET content = :content WHERE id = :id")
     suspend fun updateContent(id: String, content: String)
 
-    @Query("DELETE FROM blocks WHERE noteId = :noteId")
-    suspend fun deleteForNote(noteId: String)
-
-    @Query("DELETE FROM blocks WHERE noteId = :noteId AND type IN (:types)")
-    suspend fun deleteTypesForNote(noteId: String, types: List<String>)
-
     @Query("DELETE FROM blocks WHERE noteId = :noteId AND type IN (:types) AND id != :keepId")
     suspend fun deleteTypesForNoteExcept(noteId: String, types: List<String>, keepId: String)
 

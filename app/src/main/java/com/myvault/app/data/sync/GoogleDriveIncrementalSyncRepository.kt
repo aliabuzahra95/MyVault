@@ -688,10 +688,6 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             }
         }
 
-        fun copyFileTo(fileId: String, output: OutputStream) {
-            requestToOutput("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", output)
-        }
-
         fun deleteFile(fileId: String) {
             requestBytes("DELETE", "$DriveFilesUrl/${fileId.urlPathEncode()}", null, null)
         }

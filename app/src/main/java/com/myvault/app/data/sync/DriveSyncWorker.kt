@@ -3,7 +3,6 @@ package com.myvault.app.data.sync
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -99,15 +98,10 @@ class DriveSyncWorker @AssistedInject constructor(
                 }
             }
             .build()
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NotificationId, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NotificationId, notification)
-        }
+        return ForegroundInfo(NotificationId, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(ChannelId, "MyVault Drive sync", NotificationManager.IMPORTANCE_LOW).apply {
             description = "Shows Google Drive backup and restore progress."

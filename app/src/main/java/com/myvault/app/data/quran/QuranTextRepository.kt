@@ -149,55 +149,6 @@ class QuranTextRepository @Inject constructor(
         }
     }
 
-    suspend fun getWordMetadata(wordId: String): QuranWordMetadata? = withContext(Dispatchers.IO) {
-        val parts = wordId.split(':')
-        val surahNumber = parts.getOrNull(0)?.toIntOrNull() ?: return@withContext null
-        val ayahNumber = parts.getOrNull(1)?.toIntOrNull() ?: return@withContext null
-        val wordPosition = parts.getOrNull(2)?.toIntOrNull() ?: return@withContext null
-        getSurahAyahs(surahNumber)
-            .firstOrNull { it.ayahNumber == ayahNumber }
-            ?.words
-            ?.firstOrNull { it.wordPosition == wordPosition && it.wordId == wordId }
-            ?.metadata
-    }
-
-    suspend fun verifyWordMetadataAlignment(verseKeys: Collection<String>): QuranWordMetadataVerificationResult = withContext(Dispatchers.IO) {
-        val metadataSource = loadWordMetadataSource()
-        val displayedWords = verseKeys
-            .mapNotNull { verseKey ->
-                val surahNumber = verseKey.substringBefore(':').toIntOrNull()
-                val ayahNumber = verseKey.substringAfter(':').toIntOrNull()
-                if (surahNumber == null || ayahNumber == null) null else surahNumber to ayahNumber
-            }
-            .groupBy({ it.first }, { it.second })
-            .flatMap { (surahNumber, ayahNumbers) ->
-                getSurahAyahs(surahNumber).filter { it.ayahNumber in ayahNumbers }.flatMap { it.words }
-            }
-        val missingWordIds = mutableListOf<String>()
-        val mismatchedRows = mutableListOf<QuranWordMetadataMismatch>()
-        var attachedRows = 0
-        displayedWords.forEach { word ->
-            val metadata = metadataSource.metadataByWordId[word.wordId]
-            when {
-                metadata == null -> missingWordIds += word.wordId
-                metadata.alignsWith(word) -> attachedRows += 1
-                else -> mismatchedRows += QuranWordMetadataMismatch(
-                    wordId = word.wordId,
-                    displayedArabic = word.arabicText,
-                    metadataArabic = metadata.arabicText,
-                )
-            }
-        }
-        QuranWordMetadataVerificationResult(
-            totalDisplayedWords = displayedWords.size,
-            metadataRows = metadataSource.metadataByWordId.size,
-            attachedRows = attachedRows,
-            missingWordIds = missingWordIds,
-            mismatchedRows = mismatchedRows,
-            duplicateMetadataWordIds = metadataSource.duplicateWordIds,
-        )
-    }
-
     private suspend fun loadSurahAyahs(
         surahNumber: Int,
         selectedTranslationSource: QuranTranslationSource,
