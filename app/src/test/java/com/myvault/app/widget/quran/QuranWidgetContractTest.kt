@@ -30,7 +30,37 @@ class QuranWidgetContractTest {
         assertTrue(store.contains("\"surah_\$id\""))
         assertTrue(store.contains("\"mode_\$id\""))
         assertTrue(store.contains("\"anchor_\$id\""))
+        assertTrue(store.contains("\"translation_\$id\""))
+        assertTrue(store.contains("\"font_level_\$id\""))
+        assertTrue(store.contains("\"tajweed_\$id\""))
+        assertTrue(store.contains("\"search_\$id\""))
         assertTrue(store.contains("preferences.edit()"))
+    }
+
+    @Test
+    fun `widget settings and search use the existing collection architecture`() {
+        val manifest = String(Files.readAllBytes(projectRoot.resolve("app/src/main/AndroidManifest.xml")))
+        val provider = source("widget/quran/QuranWidgetProvider.kt")
+        val factory = source("widget/quran/QuranWidgetRemoteViewsService.kt")
+
+        assertTrue(manifest.contains(".widget.quran.QuranWidgetSearchActivity"))
+        assertTrue(provider.contains("QuranWidgetMode.Settings"))
+        assertTrue(provider.contains("QuranWidgetContract.ACTION_SHOW_SETTINGS"))
+        assertTrue(provider.contains("QuranWidgetContract.EXTRA_SEARCH_QUERY"))
+        assertTrue(factory.contains("filteredWidgetSurahs(state.searchQuery)"))
+        assertTrue(factory.contains("QuranWidgetDisplaySource"))
+        assertTrue(factory.contains("quranWidgetArabicTextSize"))
+    }
+
+    @Test
+    fun `widget rows expose translation and larger picker typography`() {
+        val ayahLayout = resource("layout/widget_quran_ayah_large.xml")
+        val surahLayout = resource("layout/widget_quran_surah_row.xml")
+
+        assertTrue(ayahLayout.contains("@+id/quran_widget_translation"))
+        assertTrue(surahLayout.contains("android:textSize=\"15sp\""))
+        assertTrue(surahLayout.contains("android:textSize=\"24sp\""))
+        assertTrue(surahLayout.contains("android:minHeight=\"62dp\""))
     }
 
     @Test
@@ -46,4 +76,7 @@ class QuranWidgetContractTest {
 
     private fun source(relativePath: String): String =
         String(Files.readAllBytes(projectRoot.resolve("app/src/main/java/com/myvault/app/$relativePath")))
+
+    private fun resource(relativePath: String): String =
+        String(Files.readAllBytes(projectRoot.resolve("app/src/main/res/$relativePath")))
 }

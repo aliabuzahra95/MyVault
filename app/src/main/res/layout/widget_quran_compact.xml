@@ -66,6 +66,15 @@
             android:src="@drawable/ic_widget_chevron_right" />
 
         <ImageButton
+            android:id="@+id/quran_widget_settings"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/quran_widget_icon_touch"
+            android:padding="10dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_widget_settings" />
+
+        <ImageButton
             android:id="@+id/quran_widget_open"
             android:layout_width="40dp"
             android:layout_height="40dp"

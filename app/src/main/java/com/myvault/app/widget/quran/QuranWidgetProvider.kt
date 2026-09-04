@@ -68,13 +68,32 @@ class QuranWidgetProvider : AppWidgetProvider() {
         when (intent.action) {
             QuranWidgetContract.ACTION_PREVIOUS_SURAH -> store.moveSurah(appWidgetId, -1)
             QuranWidgetContract.ACTION_NEXT_SURAH -> store.moveSurah(appWidgetId, 1)
-            QuranWidgetContract.ACTION_SHOW_PICKER -> store.setMode(appWidgetId, QuranWidgetMode.Picker)
+            QuranWidgetContract.ACTION_SHOW_PICKER -> {
+                store.setSearchQuery(appWidgetId, "")
+                store.setMode(appWidgetId, QuranWidgetMode.Picker)
+            }
             QuranWidgetContract.ACTION_SHOW_READER -> store.setMode(appWidgetId, QuranWidgetMode.Reader)
+            QuranWidgetContract.ACTION_SHOW_SETTINGS -> store.setMode(appWidgetId, QuranWidgetMode.Settings)
             QuranWidgetContract.ACTION_SELECT_SURAH -> {
                 store.selectSurah(
                     appWidgetId,
                     intent.getIntExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, 1),
                 )
+            }
+            QuranWidgetContract.ACTION_SETTING_COMMAND -> {
+                when (intent.getStringExtra(QuranWidgetContract.EXTRA_SETTING_COMMAND)) {
+                    QuranWidgetContract.COMMAND_TOGGLE_TRANSLATION -> {
+                        val current = store.read(appWidgetId)
+                        store.setTranslationEnabled(appWidgetId, !current.translationEnabled)
+                    }
+                    QuranWidgetContract.COMMAND_DECREASE_ARABIC -> store.adjustArabicFontLevel(appWidgetId, -1)
+                    QuranWidgetContract.COMMAND_INCREASE_ARABIC -> store.adjustArabicFontLevel(appWidgetId, 1)
+                    QuranWidgetContract.COMMAND_TOGGLE_TAJWEED -> {
+                        val current = store.read(appWidgetId)
+                        store.setTajweedEnabled(appWidgetId, !current.tajweedEnabled)
+                    }
+                    QuranWidgetContract.COMMAND_DONE -> store.setMode(appWidgetId, QuranWidgetMode.Reader)
+                }
             }
         }
         updateWidget(context, AppWidgetManager.getInstance(context), appWidgetId)
@@ -86,7 +105,9 @@ class QuranWidgetProvider : AppWidgetProvider() {
             QuranWidgetContract.ACTION_NEXT_SURAH,
             QuranWidgetContract.ACTION_SHOW_PICKER,
             QuranWidgetContract.ACTION_SHOW_READER,
+            QuranWidgetContract.ACTION_SHOW_SETTINGS,
             QuranWidgetContract.ACTION_SELECT_SURAH,
+            QuranWidgetContract.ACTION_SETTING_COMMAND,
         )
 
         fun updateAll(context: Context) {
@@ -106,7 +127,6 @@ class QuranWidgetProvider : AppWidgetProvider() {
             bindHeader(context, views, appWidgetId, state, bucket)
             bindCollection(context, views, appWidgetId, state, bucket)
             manager.updateAppWidget(appWidgetId, views)
-            manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.quran_widget_collection)
         }
 
         private fun bindHeader(
@@ -118,22 +138,40 @@ class QuranWidgetProvider : AppWidgetProvider() {
         ) {
             val surah = quranCatalog.first { it.num == state.surahNumber }
             val isReader = state.mode == QuranWidgetMode.Reader
+            val isPicker = state.mode == QuranWidgetMode.Picker
             views.setTextViewText(
                 R.id.quran_widget_title,
-                if (isReader) surah.name else context.getString(R.string.quran_widget_choose_surah),
+                when (state.mode) {
+                    QuranWidgetMode.Reader -> surah.name
+                    QuranWidgetMode.Picker -> context.getString(R.string.quran_widget_choose_surah)
+                    QuranWidgetMode.Settings -> context.getString(R.string.quran_widget_reader_settings)
+                },
             )
             views.setTextViewText(R.id.quran_widget_arabic_title, if (isReader) surah.arabic else "")
             views.setTextViewText(
                 R.id.quran_widget_metadata,
-                if (isReader) {
-                    context.getString(
+                when (state.mode) {
+                    QuranWidgetMode.Reader -> context.getString(
                         R.string.quran_widget_surah_metadata,
                         surah.num,
                         surah.ayat,
                         state.anchorAyah,
                     )
-                } else {
-                    context.getString(R.string.quran_widget_surah_count, quranCatalog.size)
+                    QuranWidgetMode.Picker -> {
+                        if (state.searchQuery.isBlank()) {
+                            context.getString(R.string.quran_widget_surah_count, quranCatalog.size)
+                        } else {
+                            context.getString(
+                                R.string.quran_widget_search_results,
+                                state.searchQuery,
+                                filteredWidgetSurahs(state.searchQuery).size,
+                            )
+                        }
+                    }
+                    QuranWidgetMode.Settings -> context.getString(
+                        R.string.quran_widget_settings_for_surah,
+                        surah.name,
+                    )
                 },
             )
 
@@ -142,8 +180,13 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.quran_widget_next, View.VISIBLE)
                 views.setViewVisibility(
                     R.id.quran_widget_open,
-                    if (bucket == QuranWidgetSizeBucket.Compact) View.GONE else View.VISIBLE,
+                    if (bucket == QuranWidgetSizeBucket.Compact || bucket == QuranWidgetSizeBucket.Medium) {
+                        View.GONE
+                    } else {
+                        View.VISIBLE
+                    },
                 )
+                views.setViewVisibility(R.id.quran_widget_settings, View.VISIBLE)
                 views.setViewVisibility(
                     R.id.quran_widget_arabic_title,
                     if (bucket == QuranWidgetSizeBucket.Compact) View.GONE else View.VISIBLE,
@@ -163,6 +206,11 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 views.setOnClickPendingIntent(
                     R.id.quran_widget_open,
                     openAppIntent(context, appWidgetId, state.surahNumber, state.anchorAyah, 4),
+                )
+                views.setImageViewResource(R.id.quran_widget_settings, R.drawable.ic_widget_settings)
+                views.setOnClickPendingIntent(
+                    R.id.quran_widget_settings,
+                    broadcastIntent(context, appWidgetId, QuranWidgetContract.ACTION_SHOW_SETTINGS, 10),
                 )
                 views.setContentDescription(
                     R.id.quran_widget_previous,
@@ -185,6 +233,20 @@ class QuranWidgetProvider : AppWidgetProvider() {
                     R.id.quran_widget_previous,
                     context.getString(R.string.quran_widget_back_to_reader),
                 )
+                if (isPicker) {
+                    views.setViewVisibility(R.id.quran_widget_settings, View.VISIBLE)
+                    views.setImageViewResource(R.id.quran_widget_settings, R.drawable.ic_widget_search)
+                    views.setOnClickPendingIntent(
+                        R.id.quran_widget_settings,
+                        searchIntent(context, appWidgetId),
+                    )
+                    views.setContentDescription(
+                        R.id.quran_widget_settings,
+                        context.getString(R.string.quran_widget_search_surahs),
+                    )
+                } else {
+                    views.setViewVisibility(R.id.quran_widget_settings, View.GONE)
+                }
             }
             views.setContentDescription(
                 R.id.quran_widget_next,
@@ -199,6 +261,12 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 if (isReader) context.getString(R.string.quran_widget_change_surah)
                 else context.getString(R.string.quran_widget_back_to_reader),
             )
+            if (isReader) {
+                views.setContentDescription(
+                    R.id.quran_widget_settings,
+                    context.getString(R.string.quran_widget_open_reader_settings),
+                )
+            }
         }
 
         private fun bindCollection(
@@ -213,23 +281,35 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 putExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, state.surahNumber)
                 putExtra(QuranWidgetContract.EXTRA_MODE, state.mode.name)
                 putExtra(QuranWidgetContract.EXTRA_SIZE_BUCKET, bucket.name)
+                putExtra(QuranWidgetContract.EXTRA_TRANSLATION_ENABLED, state.translationEnabled)
+                putExtra(QuranWidgetContract.EXTRA_ARABIC_FONT_LEVEL, state.arabicFontLevel)
+                putExtra(QuranWidgetContract.EXTRA_TAJWEED_ENABLED, state.tajweedEnabled)
+                putExtra(QuranWidgetContract.EXTRA_SEARCH_QUERY, state.searchQuery)
                 data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
             }
             views.setRemoteAdapter(R.id.quran_widget_collection, serviceIntent)
             views.setEmptyView(R.id.quran_widget_collection, R.id.quran_widget_empty)
-            val template = if (state.mode == QuranWidgetMode.Reader) {
-                PendingIntent.getActivity(
+            val template = when (state.mode) {
+                QuranWidgetMode.Reader -> PendingIntent.getActivity(
                     context,
-                    appWidgetId * 10 + 7,
+                    requestCode(appWidgetId, 7),
                     Intent(context, MainActivity::class.java),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
                 )
-            } else {
-                PendingIntent.getBroadcast(
+                QuranWidgetMode.Picker -> PendingIntent.getBroadcast(
                     context,
-                    appWidgetId * 10 + 8,
+                    requestCode(appWidgetId, 8),
                     Intent(context, QuranWidgetProvider::class.java).apply {
                         action = QuranWidgetContract.ACTION_SELECT_SURAH
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                )
+                QuranWidgetMode.Settings -> PendingIntent.getBroadcast(
+                    context,
+                    requestCode(appWidgetId, 11),
+                    Intent(context, QuranWidgetProvider::class.java).apply {
+                        action = QuranWidgetContract.ACTION_SETTING_COMMAND
                         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
@@ -243,7 +323,19 @@ class QuranWidgetProvider : AppWidgetProvider() {
             }
             views.setOnClickPendingIntent(
                 R.id.quran_widget_empty,
-                openAppIntent(context, appWidgetId, state.surahNumber, state.anchorAyah, 9),
+                if (state.mode == QuranWidgetMode.Picker) {
+                    searchIntent(context, appWidgetId)
+                } else {
+                    openAppIntent(context, appWidgetId, state.surahNumber, state.anchorAyah, 9)
+                },
+            )
+            views.setTextViewText(
+                R.id.quran_widget_empty,
+                if (state.mode == QuranWidgetMode.Picker && state.searchQuery.isNotBlank()) {
+                    context.getString(R.string.quran_widget_no_surah_found)
+                } else {
+                    context.getString(R.string.quran_widget_unavailable)
+                },
             )
         }
 
@@ -254,7 +346,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
             suffix: Int,
         ): PendingIntent = PendingIntent.getBroadcast(
             context,
-            appWidgetId * 10 + suffix,
+            requestCode(appWidgetId, suffix),
             Intent(context, QuranWidgetProvider::class.java).apply {
                 this.action = action
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -272,7 +364,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
             val location = validatedWidgetLocation(surahNumber, ayahNumber)
             return PendingIntent.getActivity(
                 context,
-                appWidgetId * 10 + suffix,
+                requestCode(appWidgetId, suffix),
                 Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                     putExtra(QuranWidgetContract.EXTRA_WIDGET_ID, appWidgetId)
@@ -290,5 +382,17 @@ class QuranWidgetProvider : AppWidgetProvider() {
             QuranWidgetSizeBucket.Large -> R.layout.widget_quran_large
             QuranWidgetSizeBucket.ExtraLarge -> R.layout.widget_quran_extra_large
         }
+
+        private fun searchIntent(context: Context, appWidgetId: Int): PendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode(appWidgetId, 12),
+            Intent(context, QuranWidgetSearchActivity::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("myvault://quran-widget/$appWidgetId/search")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        private fun requestCode(appWidgetId: Int, suffix: Int): Int = appWidgetId * 100 + suffix
     }
 }

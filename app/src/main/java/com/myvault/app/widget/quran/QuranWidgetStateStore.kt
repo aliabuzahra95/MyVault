@@ -17,7 +17,16 @@ class QuranWidgetStateStore(context: Context) {
             ?.let { stored -> QuranWidgetMode.entries.firstOrNull { it.name == stored } }
             ?: QuranWidgetMode.Reader
         val location = validatedWidgetLocation(surah, ayah)
-        return QuranWidgetState(location.surahNumber, mode, location.ayahNumber)
+        return QuranWidgetState(
+            surahNumber = location.surahNumber,
+            mode = mode,
+            anchorAyah = location.ayahNumber,
+            translationEnabled = preferences.getBoolean(translationKey(appWidgetId), false),
+            arabicFontLevel = preferences.getInt(fontLevelKey(appWidgetId), DEFAULT_ARABIC_FONT_LEVEL)
+                .coerceIn(MIN_ARABIC_FONT_LEVEL, MAX_ARABIC_FONT_LEVEL),
+            tajweedEnabled = preferences.getBoolean(tajweedKey(appWidgetId), false),
+            searchQuery = preferences.getString(searchKey(appWidgetId), "").orEmpty(),
+        )
     }
 
     fun exists(appWidgetId: Int): Boolean = preferences.contains(surahKey(appWidgetId))
@@ -30,7 +39,15 @@ class QuranWidgetStateStore(context: Context) {
 
     fun selectSurah(appWidgetId: Int, surahNumber: Int) {
         val selected = validatedWidgetLocation(surahNumber, 1)
-        write(appWidgetId, QuranWidgetState(selected.surahNumber, QuranWidgetMode.Reader, 1))
+        write(
+            appWidgetId,
+            read(appWidgetId).copy(
+                surahNumber = selected.surahNumber,
+                mode = QuranWidgetMode.Reader,
+                anchorAyah = 1,
+                searchQuery = "",
+            ),
+        )
     }
 
     fun moveSurah(appWidgetId: Int, direction: Int) {
@@ -41,6 +58,26 @@ class QuranWidgetStateStore(context: Context) {
     fun setMode(appWidgetId: Int, mode: QuranWidgetMode) {
         val current = read(appWidgetId)
         write(appWidgetId, current.copy(mode = mode))
+    }
+
+    fun setTranslationEnabled(appWidgetId: Int, enabled: Boolean) {
+        write(appWidgetId, read(appWidgetId).copy(translationEnabled = enabled))
+    }
+
+    fun adjustArabicFontLevel(appWidgetId: Int, direction: Int) {
+        val current = read(appWidgetId)
+        write(
+            appWidgetId,
+            current.copy(arabicFontLevel = adjustedArabicFontLevel(current.arabicFontLevel, direction)),
+        )
+    }
+
+    fun setTajweedEnabled(appWidgetId: Int, enabled: Boolean) {
+        write(appWidgetId, read(appWidgetId).copy(tajweedEnabled = enabled))
+    }
+
+    fun setSearchQuery(appWidgetId: Int, query: String) {
+        write(appWidgetId, read(appWidgetId).copy(searchQuery = query.trim().take(64)))
     }
 
     fun setAnchor(appWidgetId: Int, surahNumber: Int, ayahNumber: Int) {
@@ -58,6 +95,10 @@ class QuranWidgetStateStore(context: Context) {
             .remove(surahKey(appWidgetId))
             .remove(modeKey(appWidgetId))
             .remove(anchorKey(appWidgetId))
+            .remove(translationKey(appWidgetId))
+            .remove(fontLevelKey(appWidgetId))
+            .remove(tajweedKey(appWidgetId))
+            .remove(searchKey(appWidgetId))
             .apply()
     }
 
@@ -66,10 +107,18 @@ class QuranWidgetStateStore(context: Context) {
             .putInt(surahKey(appWidgetId), state.surahNumber)
             .putString(modeKey(appWidgetId), state.mode.name)
             .putInt(anchorKey(appWidgetId), state.anchorAyah)
+            .putBoolean(translationKey(appWidgetId), state.translationEnabled)
+            .putInt(fontLevelKey(appWidgetId), state.arabicFontLevel)
+            .putBoolean(tajweedKey(appWidgetId), state.tajweedEnabled)
+            .putString(searchKey(appWidgetId), state.searchQuery)
             .apply()
     }
 
     private fun surahKey(id: Int) = "surah_$id"
     private fun modeKey(id: Int) = "mode_$id"
     private fun anchorKey(id: Int) = "anchor_$id"
+    private fun translationKey(id: Int) = "translation_$id"
+    private fun fontLevelKey(id: Int) = "font_level_$id"
+    private fun tajweedKey(id: Int) = "tajweed_$id"
+    private fun searchKey(id: Int) = "search_$id"
 }

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/quran_widget_row"
+    android:layout_width="match_parent"
+    android:layout_height="64dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="8dp">
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:fontFamily="@font/plus_jakarta_sans_semi_bold"
+        android:paddingStart="6dp"
+        android:text="@string/quran_widget_arabic_size"
+        android:textColor="@color/quran_widget_text"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/quran_widget_setting_decrease"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/quran_widget_icon_touch"
+        android:contentDescription="@string/quran_widget_decrease_arabic"
+        android:fontFamily="@font/plus_jakarta_sans_semi_bold"
+        android:gravity="center"
+        android:text="A−"
+        android:textColor="@color/quran_widget_icon"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/quran_widget_setting_size_value"
+        android:layout_width="42dp"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/plus_jakarta_sans_semi_bold"
+        android:gravity="center"
+        android:textColor="@color/quran_widget_accent"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/quran_widget_setting_increase"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/quran_widget_icon_touch"
+        android:contentDescription="@string/quran_widget_increase_arabic"
+        android:fontFamily="@font/plus_jakarta_sans_semi_bold"
+        android:gravity="center"
+        android:text="A+"
+        android:textColor="@color/quran_widget_icon"
+        android:textSize="13sp" />
+</LinearLayout>

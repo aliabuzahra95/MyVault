@@ -18,8 +18,9 @@ compatibility.
 - `QuranCanonicalSource` is the single process-wide loader for `qpc_hafs.json`.
   The in-app reader and widget therefore read the same immutable Arabic source.
 - Existing `quranCatalog` metadata supplies Surah names and ayah counts.
-- Each widget stores only `surah`, `mode`, and best-known `anchor ayah` under its
-  Android widget ID in device-local `SharedPreferences`.
+- Each widget stores `surah`, `mode`, best-known `anchor ayah`, translation state,
+  Arabic font level, Tajweed state, and the temporary picker query under its Android
+  widget ID in device-local `SharedPreferences`.
 - Passive launcher scroll position is not observable through the widget API. The
   widget honestly retains the last ayah opened and uses stable IDs so the launcher
   can retain ordinary list position where supported.
@@ -29,6 +30,11 @@ compatibility.
 
 - Reader mode is a lazy, vertically scrolling ayah collection.
 - The Surah heading switches the same widget to a scrolling 114-Surah picker.
+- The Reader gear switches the widget to a compact settings collection. Translation,
+  Arabic size, and Tajweed update only that widget and return to the same reader.
+- The picker search icon opens a small focused input activity because launcher
+  `RemoteViews` cannot host editable text. Applying the query filters the existing
+  picker in place; selection returns immediately to Reader mode.
 - Previous and next controls update only the tapped widget instance.
 - An ayah or the open icon launches `MainActivity` with an exact validated
   `surah:ayah`. `VaultNavHost` then uses the existing Qur'an reader location route.
@@ -38,7 +44,20 @@ compatibility.
 The provider uses the launcher's reported minimum width and height to choose one of
 four layouts: compact, medium, large, or extra large. These variants change header
 density, metadata visibility, padding, and Arabic type size rather than simply
-stretching one fixed layout. Resize updates target only the affected widget.
+stretching one fixed layout. The selected Arabic font level remains authoritative
+while each size bucket supplies a readable base size. Resize updates target only
+the affected widget.
+
+## Display sources
+
+- Translation uses the existing bundled `Sahih_international.json` source.
+- Tajweed uses the existing bundled `Tajweed.json` annotations and the same rule
+  colours/range adjustment as the in-app Qur'an reader.
+- Both optional sources are read with a streaming parser and cached per Surah for
+  the process. Disabled features do not parse their asset, row refreshes do not
+  reparse a Surah, and the widget does not build a memory-heavy corpus-wide JSON
+  object merely to render the selected Surah.
+- Canonical Arabic remains sourced exclusively from `qpc_hafs.json`.
 
 ## Update behavior
 

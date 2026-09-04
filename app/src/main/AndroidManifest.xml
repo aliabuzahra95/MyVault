@@ -55,6 +55,13 @@
                 <data android:mimeType="text/markdown" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".widget.quran.QuranWidgetSearchActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.MyVault.QuranWidgetSearch"
+            android:windowSoftInputMode="adjustResize|stateAlwaysVisible" />
         <service
             android:name=".data.quran.audio.QuranAudioDownloadService"
             android:exported="false"
