@@ -270,10 +270,10 @@ The following remain intentionally intact:
 
 | Metric | Before | After | Change |
 |---|---:|---:|---:|
-| Tracked files | 606 | 597 | -9 |
+| Tracked files, including this report | 606 | 598 | -8 |
 | Kotlin/Java source files | 248 | 241 | -7 |
 | Kotlin/Java source lines | 69,157 | 62,878 | -6,279 |
-| All committed diff lines | — | 135 additions / 8,020 deletions | Net -7,885 |
+| Cleanup code/test diff, excluding this report | — | 135 additions / 8,020 deletions | Net -7,885 |
 | Whole tracked files removed | 0 | 11 | +11 removed |
 | Unit tests | 251 | 252 | +1 regression test |
 | Lint | 0 errors, 72 warnings, 2 hints | 0 errors, 63 warnings, 1 hint | -9 warnings, -1 hint |
