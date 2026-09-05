@@ -1,0 +1,44 @@
+{
+  "audio_file": {
+    "id": 683,
+    "chapter_id": 1,
+    "audio_url": "https://download.quranicaudio.com/qdc/saud_ash-shuraym/murattal/001.mp3",
+    "timestamps": [
+      {
+        "verse_key": "1:1",
+        "timestamp_from": 0,
+        "timestamp_to": 2760
+      },
+      {
+        "verse_key": "1:2",
+        "timestamp_from": 2751,
+        "timestamp_to": 6281
+      },
+      {
+        "verse_key": "1:3",
+        "timestamp_from": 6272,
+        "timestamp_to": 9442
+      },
+      {
+        "verse_key": "1:4",
+        "timestamp_from": 9433,
+        "timestamp_to": 12233
+      },
+      {
+        "verse_key": "1:5",
+        "timestamp_from": 12223,
+        "timestamp_to": 17013
+      },
+      {
+        "verse_key": "1:6",
+        "timestamp_from": 17004,
+        "timestamp_to": 20614
+      },
+      {
+        "verse_key": "1:7",
+        "timestamp_from": 20605,
+        "timestamp_to": 34615
+      }
+    ]
+  }
+}

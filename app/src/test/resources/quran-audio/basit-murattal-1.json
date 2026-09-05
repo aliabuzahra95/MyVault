@@ -1,0 +1,44 @@
+{
+  "audio_file": {
+    "id": 7470,
+    "chapter_id": 1,
+    "audio_url": "https://download.quranicaudio.com/qdc/abdul_baset/murattal/1.mp3",
+    "timestamps": [
+      {
+        "verse_key": "1:1",
+        "timestamp_from": 0,
+        "timestamp_to": 4370
+      },
+      {
+        "verse_key": "1:2",
+        "timestamp_from": 4370,
+        "timestamp_to": 9680
+      },
+      {
+        "verse_key": "1:3",
+        "timestamp_from": 9680,
+        "timestamp_to": 13710
+      },
+      {
+        "verse_key": "1:4",
+        "timestamp_from": 13710,
+        "timestamp_to": 18260
+      },
+      {
+        "verse_key": "1:5",
+        "timestamp_from": 18260,
+        "timestamp_to": 23880
+      },
+      {
+        "verse_key": "1:6",
+        "timestamp_from": 23880,
+        "timestamp_to": 28690
+      },
+      {
+        "verse_key": "1:7",
+        "timestamp_from": 28690,
+        "timestamp_to": 41830
+      }
+    ]
+  }
+}

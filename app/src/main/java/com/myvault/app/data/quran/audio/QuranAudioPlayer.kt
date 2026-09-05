@@ -2,6 +2,9 @@ package com.myvault.app.data.quran.audio
 
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.content.Context
+import android.os.PowerManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,7 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class QuranAudioPlayer @Inject constructor() {
+class QuranAudioPlayer @Inject constructor(@param:ApplicationContext private val context: Context) {
     private var mediaPlayer: MediaPlayer? = null
     private var playbackSpeed = 1f
     private var shouldStartAfterSeek = false
@@ -41,6 +44,7 @@ class QuranAudioPlayer @Inject constructor() {
         updatePlaybackState(hasActiveMedia = true, isPlaying = false, currentPositionMs = 0L, durationMs = 0L)
 
         runCatching {
+            player.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
             player.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)

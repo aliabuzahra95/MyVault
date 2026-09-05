@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -26,12 +27,18 @@ class QuranAudioRepository @Inject constructor(
 
     suspend fun getSupportedReciters(): List<AudioReciterUiModel> = withContext(Dispatchers.IO) {
         recitersMutex.withLock {
-            cachedReciters ?: fetchSupportedReciters().ifEmpty { fallbackReciters }.also { cachedReciters = it }
+            cachedReciters ?: QuranTimedRecitations.includeRequested(
+                runCatching { fetchSupportedReciters() }.getOrDefault(emptyList()).ifEmpty { fallbackReciters },
+            ).also { cachedReciters = it }
         }
     }
 
     internal suspend fun fullSurahResponse(chapterReciterId: Int, surah: Int): JSONObject = withContext(Dispatchers.IO) {
         getJson("$workerBaseUrl/proxy/content/api/v4/chapter_recitations/$chapterReciterId/$surah?segments=true")
+    }
+
+    internal suspend fun mp3QuranTimings(read: Int, surah: Int): JSONArray = withContext(Dispatchers.IO) {
+        JSONArray(getBody("https://www.mp3quran.net/api/v3/ayat_timing?surah=$surah&read=$read"))
     }
 
     suspend fun getChapterAudio(
@@ -207,6 +214,14 @@ class QuranAudioRepository @Inject constructor(
         reciter: AudioReciterUiModel,
         surahNumber: Int,
     ): ChapterAudioMetadata {
+        if (reciter.id in QuranTimedRecitations.additionalReciters.map { it.id }) {
+            val source = QuranTimedRecitations.sources.getValue(reciter.id)
+            val raw = JSONArray(getBody("https://www.mp3quran.net/api/v3/ayat_timing?surah=$surahNumber&read=${source.mp3QuranRead}"))
+            val count = com.myvault.app.data.quran.quranCatalog.first { it.num == surahNumber }.ayat
+            val timing = QuranTimingMap.parseMp3Quran(raw, source, surahNumber, count)
+            return ChapterAudioMetadata(reciter, surahNumber, PlaybackMode.FullSurah, timing.audioUrl,
+                timing.ayahs.associate { it.verseKey to it.startMs }, emptyMap(), surahAudioFile(reciter.id, surahNumber))
+        }
         val timingsJson = getJson(
             "$workerBaseUrl/proxy/content/api/v4/chapter_recitations/${reciter.id}/$surahNumber?segments=true",
         )
@@ -277,7 +292,9 @@ class QuranAudioRepository @Inject constructor(
         }
     }
 
-    private fun getJson(url: String): JSONObject {
+    private fun getJson(url: String): JSONObject = JSONObject(getBody(url))
+
+    private fun getBody(url: String): String {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
         connection.connectTimeout = 15_000
@@ -288,7 +305,7 @@ class QuranAudioRepository @Inject constructor(
             val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (responseCode !in 200..299) error(body.ifBlank { "Audio request failed with code $responseCode." })
-            JSONObject(body)
+            body
         } finally {
             connection.disconnect()
         }

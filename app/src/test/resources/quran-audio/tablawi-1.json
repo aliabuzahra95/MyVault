@@ -1,0 +1,42 @@
+[
+  {
+    "ayah": 0,
+    "start_time": 0,
+    "end_time": 6070
+  },
+  {
+    "ayah": 1,
+    "start_time": 6070,
+    "end_time": 12063
+  },
+  {
+    "ayah": 2,
+    "start_time": 12063,
+    "end_time": 18121
+  },
+  {
+    "ayah": 3,
+    "start_time": 18121,
+    "end_time": 22291
+  },
+  {
+    "ayah": 4,
+    "start_time": 22291,
+    "end_time": 26761
+  },
+  {
+    "ayah": 5,
+    "start_time": 26761,
+    "end_time": 32808
+  },
+  {
+    "ayah": 6,
+    "start_time": 32808,
+    "end_time": 37932
+  },
+  {
+    "ayah": 7,
+    "start_time": 37932,
+    "end_time": 52050
+  }
+]

@@ -35,3 +35,18 @@ Verify recording/timing contract, extend existing MediaPlayer with a shared back
 - Two executed emulator real-MediaPlayer tests passed in 33.792s: same player/recording through Continue and boundaries, manual pause/mode changes, seek/speed, single-ayah stopping, background continuation, final completion, unsupported-reciter error and latest-request cancellation.
 - Captured actual emulator PCM output through the emulator's local gRPC audio API. This capture includes explicit test pauses/seeks and is not a gap-free listening acceptance recording. No human audible judgment claimed.
 - Launcher pin test passed but initial screenshot showed an empty page. Investigating actual rendering before accepting widget controls. Full lint/R8 validation running.
+
+## Requested reciter expansion and emulator verification
+
+- User explicitly requested Shatri, both Abdul Basit styles, Tablawi, Shuraym, Dossari, Ghamdi and confirmed Fares Abbad (not Fouad). Existing choices retained.
+- Added an explicit provider registry and MP3Quran adapter. Reserved app IDs for the three new names preserve the existing integer preference; no backup/schema changes.
+- Widget playback reads the same existing selected-reciter preference as the app. The real widget Play test confirmed Fares Abbad starts without opening the Activity.
+- Foundation chapter ID 11 is al-Qasim, not app ayah-reciter 11 Tablawi. Tablawi uses its own MP3Quran read 106. No namespace guessing.
+- Found overlapping Foundation timestamps for Shuraym Al-Fatihah and Basit Murattal Al-Baqara. Switched each to the matching MP3Quran recording/timing pair (31/53), retaining strict rejection rather than rewriting timestamps.
+- Eight requested full recordings passed actual MediaPlayer preparation, unique identity, exact-ayah start and advancing position. Long Al-Baqara timing data checked separately. Final-source rerun is tracked in acceptance.
+- Added MediaPlayer partial wake lock and documented the platform media-session notification permission exemption. No microphone permission added.
+- Real widget OPEN dispatch passed after explicitly binding reading surfaces independently from the Play child. Earlier launcher-page visibility and persistence-based test assertions were corrected; screenshots show An-Nisaa ayah 5, not saved An-Nahl 16:1.
+- Two actual launcher tests passed (65.221s); screenshots inspected. Samsung remains unavailable. Backup/Drive and protected data remain untouched.
+- Final verification: 297 unit tests passed; four playback tests passed with final reciter mappings (91.511s); native widget rendering passed across four sizes and manual Light/Dark (10.013s). Screen-off full-Surah state progression completed without a player replacement or boundary pause.
+- Extra 2:255 launcher case did not reach its tap assertion because the existing smooth-scroll setup missed the visibility deadline. Retained as an explicit open acceptance item, not a claimed navigation pass.
+- JBR 21 full unit/lint/debug/release-R8 command passed in 5m 23s. Lint has zero errors, 305 warnings and one hint. No signed APK upload or Drive mutation was requested/performed in this pass. Physical/audible acceptance remains separate.

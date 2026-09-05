@@ -115,6 +115,12 @@ internal class QuranWidgetFactory(
             )
             setOnClickFillInIntent(R.id.quran_widget_row,
                 QuranWidgetPlayback.rowIntent(appWidgetId, surahNumber, ayahNumber, QuranWidgetPlayback.OPEN))
+            // A focusable Play child can suppress the collection's root item click.
+            // Bind the reading surfaces explicitly while keeping Play independent.
+            for (viewId in intArrayOf(R.id.quran_widget_ayah_text, R.id.quran_widget_translation, R.id.quran_widget_ayah_reference)) {
+                setOnClickFillInIntent(viewId,
+                    QuranWidgetPlayback.rowIntent(appWidgetId, surahNumber, ayahNumber, QuranWidgetPlayback.OPEN))
+            }
             setOnClickFillInIntent(R.id.quran_widget_ayah_play,
                 QuranWidgetPlayback.rowIntent(appWidgetId, surahNumber, ayahNumber, QuranWidgetPlayback.PLAY))
             val playback = quranWidgetPlayback(context).state.value

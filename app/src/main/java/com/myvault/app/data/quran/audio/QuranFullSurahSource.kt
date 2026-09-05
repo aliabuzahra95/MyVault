@@ -26,16 +26,19 @@ class QuranFullSurahSource @Inject constructor(
     private val directory get() = File(context.cacheDir, "quran_continuous_v1").apply { mkdirs() }
 
     // Verified mapping between the separate ayah-recitation and chapter-reciter catalogs.
-    fun supports(reciter: AudioReciterUiModel): Boolean = reciter.id == 7
+    fun supports(reciter: AudioReciterUiModel): Boolean = reciter.id in QuranTimedRecitations.sources
 
     suspend fun resolve(reciter: AudioReciterUiModel, surah: Int): Pair<QuranTimingMap, File> = withContext(Dispatchers.IO) {
         require(supports(reciter)) { "Continuous synchronized playback is not available for this reciter. This ayah remains available." }
+        val source = QuranTimedRecitations.sources.getValue(reciter.id)
         val count = quranCatalog.firstOrNull { it.num == surah }?.ayat ?: error("Unknown Surah.")
         mutex.withLock {
-            val metadata = File(directory, "chapter-7-$surah.json")
+            val metadata = File(directory, "${source.cacheKey}-$surah.json")
             val json = if (metadata.isFile) runCatching { JSONObject(metadata.readText()) }.getOrNull() else null
-            val response = json ?: repository.fullSurahResponse(7, surah)
-            val timing = QuranTimingMap.parse(response, 7, surah, count)
+            val response = json ?: source.chapterReciterId?.let { repository.fullSurahResponse(it, surah) }
+                ?: JSONObject().put("timings", repository.mp3QuranTimings(source.mp3QuranRead!!, surah))
+            val timing = source.chapterReciterId?.let { QuranTimingMap.parse(response, it, surah, count, source.folder) }
+                ?: QuranTimingMap.parseMp3Quran(response.getJSONArray("timings"), source, surah, count)
             coroutineContext.ensureActive()
             val file = File(directory, "${timing.recordingId}.mp3")
             if (file.isFile && runCatching { validate(file, timing) }.isFailure) file.delete()
@@ -71,7 +74,7 @@ class QuranFullSurahSource @Inject constructor(
                     temporary.delete()
                 }
             }
-            val pending = File(directory, "chapter-7-$surah.json.part")
+            val pending = File(directory, "${source.cacheKey}-$surah.json.part")
             pending.writeText(response.toString())
             check(pending.renameTo(metadata)) { "Audio timings could not be stored." }
             file.setLastModified(System.currentTimeMillis())

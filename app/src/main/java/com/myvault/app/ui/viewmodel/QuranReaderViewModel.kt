@@ -106,7 +106,7 @@ class QuranReaderViewModel @Inject constructor(
                     audioStatusMessage = playback.message,
                     audioStatusIsError = playback.status == QuranPlaybackStatus.Error,
                     selectedAudioReciter = playback.reciter ?: current.selectedAudioReciter,
-                    miniPlayer = playback.verseKey?.let { key ->
+                    miniPlayer = (playback.verseKey ?: "${playback.surah}:1".takeIf { playback.active })?.let { key ->
                         AudioMiniPlayerUiState(key, key.substringAfter(':').toInt(), playback.reciter?.name.orEmpty(),
                             playback.isPlaying, playback.speed, playback.positionMs, playback.durationMs,
                             playback.mode, playback.synchronized)

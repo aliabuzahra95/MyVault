@@ -21,6 +21,73 @@ class QuranPlaybackIntegrationTest {
         assertTrue(message, condition())
     }
 
+    @Test fun requestedRecitersPrepareTheirOwnFullRecording() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = quranWidgetPlayback(context)
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        val ids = listOf(1, 2, 4, 10, 11, 1_000_092, 1_000_030, 1_000_081)
+        val recordings = mutableSetOf<String>()
+        val evidence = java.io.File(context.getExternalFilesDir(null), "requested-reciter-playback.txt")
+        try {
+            evidence.bufferedWriter().use { output ->
+                for (id in ids) {
+                    main { controller.requestPlay(1, 2, AudioReciterUiModel(id, "Reciter $id"), QuranListeningMode.ContinueSurah) }
+                    waitFor("Reciter $id prepared", 90_000) {
+                        controller.state.value.isPlaying || controller.state.value.status == QuranPlaybackStatus.Error
+                    }
+                    val state = controller.state.value
+                    assertTrue("Reciter $id: ${state.message}", state.isPlaying)
+                    assertTrue(state.synchronized)
+                    assertEquals(id, state.reciter?.id)
+                    assertEquals("1:2", state.verseKey)
+                    assertTrue("Distinct recording for $id", recordings.add(state.recordingId!!))
+                    Thread.sleep(700)
+                    assertTrue("Real media position advances for $id", controller.state.value.positionMs > state.positionMs)
+                    output.appendLine("$id: Playing, exact ayah 1:2, synchronized, recording=${state.recordingId}")
+                    output.flush()
+                    main { controller.stop() }
+                }
+            }
+        } finally { main { controller.stop() }; scenario.close() }
+    }
+
+    @Test fun uninterruptedFullSurahWithScreenOff() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = quranWidgetPlayback(context)
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        val evidence = java.io.File(context.getExternalFilesDir(null), "continuous-screen-off.csv")
+        try {
+            main { controller.requestPlay(1, 1, AudioReciterUiModel(7, "Mishary al-Afasy"), QuranListeningMode.ContinueSurah) }
+            waitFor("Full recording prepared", 90_000) { controller.state.value.isPlaying }
+            val field = QuranPlaybackController::class.java.getDeclaredField("player").apply { isAccessible = true }
+            val player = field.get(controller) as QuranAudioPlayer
+            val media = QuranAudioPlayer::class.java.getDeclaredField("mediaPlayer").apply { isAccessible = true }
+            val instance = media.get(player)
+            instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_SLEEP").close()
+            val visited = mutableSetOf<String>()
+            val deadline = android.os.SystemClock.elapsedRealtime() + 65_000
+            evidence.bufferedWriter().use { output ->
+                output.appendLine("elapsedMs,mediaPositionMs,verse,status")
+                while (controller.state.value.status != QuranPlaybackStatus.Ended && android.os.SystemClock.elapsedRealtime() < deadline) {
+                    val state = controller.state.value
+                    assertEquals("No ayah-boundary pause", QuranPlaybackStatus.Playing, state.status)
+                    assertSame("No player recreation", instance, media.get(player))
+                    state.verseKey?.let(visited::add)
+                    output.appendLine("${android.os.SystemClock.elapsedRealtime()},${state.positionMs},${state.verseKey},${state.status}")
+                    Thread.sleep(100)
+                }
+            }
+            assertEquals(QuranPlaybackStatus.Ended, controller.state.value.status)
+            assertEquals((1..7).map { "1:$it" }.toSet(), visited)
+            Thread.sleep(500)
+            assertFalse(player.isPlaying())
+        } finally {
+            instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()
+            main { controller.stop() }
+            scenario.close()
+        }
+    }
+
     @Test fun realFullTrackKeepsOneMediaPlayerThroughModesSeekAndBackground() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val controller = quranWidgetPlayback(context)

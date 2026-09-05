@@ -1,0 +1,44 @@
+{
+  "audio_file": {
+    "id": 10734,
+    "chapter_id": 1,
+    "audio_url": "https://download.quranicaudio.com/qdc/abdul_baset/mujawwad/1.mp3",
+    "timestamps": [
+      {
+        "verse_key": "1:1",
+        "timestamp_from": 0,
+        "timestamp_to": 6300
+      },
+      {
+        "verse_key": "1:2",
+        "timestamp_from": 6300,
+        "timestamp_to": 16440
+      },
+      {
+        "verse_key": "1:3",
+        "timestamp_from": 16440,
+        "timestamp_to": 25120
+      },
+      {
+        "verse_key": "1:4",
+        "timestamp_from": 25120,
+        "timestamp_to": 32440
+      },
+      {
+        "verse_key": "1:5",
+        "timestamp_from": 32440,
+        "timestamp_to": 43990
+      },
+      {
+        "verse_key": "1:6",
+        "timestamp_from": 43990,
+        "timestamp_to": 53400
+      },
+      {
+        "verse_key": "1:7",
+        "timestamp_from": 53400,
+        "timestamp_to": 78410
+      }
+    ]
+  }
+}

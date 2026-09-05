@@ -174,6 +174,11 @@ internal fun QuranReaderSurface(
                 onOpenSelector = onOpenSelector,
                 onOpenOverflow = { overflowOpen = true },
             )
+            uiState.audioStatusMessage?.let { status ->
+                Text(status, color = if (uiState.audioStatusIsError) Color(0xFFE06666) else colors.textSecondary,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp))
+            }
             if (uiState.loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
@@ -226,16 +231,6 @@ internal fun QuranReaderSurface(
                             onMore = { moreTargetKey = ayah.verseKey },
                             onWordClick = { selectedWordId = it.wordId },
                         )
-                    }
-                    uiState.audioStatusMessage?.let { status ->
-                        item(key = "quran_audio_status") {
-                            Text(
-                                text = status,
-                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W700),
-                                color = if (uiState.audioStatusIsError) Color(0xFFE06666) else colors.textSecondary,
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-                            )
-                        }
                     }
                     item("quran_bottom_pad") { Spacer(Modifier.height(12.dp).navigationBarsPadding()) }
                 }

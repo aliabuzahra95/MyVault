@@ -102,7 +102,8 @@ class QuranPlaybackController @Inject constructor(
                 mutableState.value = state.value.copy(synchronized = full != null, recordingId = full?.first?.recordingId,
                     message = if (full == null) "This ayah audio. Continuous synchronized playback is unavailable for this recording." else null)
                 check(audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { "Audio focus is unavailable. Try again after other playback stops." }
-                player.play(file, timeline?.target?.startMs ?: 0, state.value.speed, full == null,
+                val start = if (mode == QuranListeningMode.ContinueSurah && ayah == 1) 0L else timeline?.target?.startMs ?: 0L
+                player.play(file, start, state.value.speed, full == null,
                     onStarted = {
                         if (request == generation) {
                             mutableState.value = state.value.copy(status = QuranPlaybackStatus.Playing, durationMs = player.durationMs())
@@ -139,7 +140,11 @@ class QuranPlaybackController @Inject constructor(
             mutableState.value = current.copy(status = QuranPlaybackStatus.Paused, verseKey = policy.target.verseKey, positionMs = policy.target.endMs)
             return
         }
-        val verse = if (policy?.boundaryReached == true) policy.target.verseKey else policy?.timing?.at(position)?.verseKey ?: current.verseKey
+        val verse = when {
+            policy == null -> current.verseKey
+            policy.boundaryReached -> policy.target.verseKey
+            else -> policy.timing.at(position)?.verseKey
+        }
         mutableState.value = current.copy(positionMs = position, durationMs = player.durationMs(), verseKey = verse)
     }
 

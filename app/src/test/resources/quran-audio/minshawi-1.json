@@ -1,0 +1,44 @@
+{
+  "audio_file": {
+    "id": 1139,
+    "chapter_id": 1,
+    "audio_url": "https://download.quranicaudio.com/qdc/siddiq_minshawi/murattal/1.mp3",
+    "timestamps": [
+      {
+        "verse_key": "1:1",
+        "timestamp_from": 0,
+        "timestamp_to": 5040
+      },
+      {
+        "verse_key": "1:2",
+        "timestamp_from": 5040,
+        "timestamp_to": 10840
+      },
+      {
+        "verse_key": "1:3",
+        "timestamp_from": 10840,
+        "timestamp_to": 15280
+      },
+      {
+        "verse_key": "1:4",
+        "timestamp_from": 15280,
+        "timestamp_to": 19510
+      },
+      {
+        "verse_key": "1:5",
+        "timestamp_from": 19510,
+        "timestamp_to": 25570
+      },
+      {
+        "verse_key": "1:6",
+        "timestamp_from": 25570,
+        "timestamp_to": 30770
+      },
+      {
+        "verse_key": "1:7",
+        "timestamp_from": 30770,
+        "timestamp_to": 43940
+      }
+    ]
+  }
+}

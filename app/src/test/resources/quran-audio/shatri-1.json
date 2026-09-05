@@ -1,0 +1,44 @@
+{
+  "audio_file": {
+    "id": 457,
+    "chapter_id": 1,
+    "audio_url": "https://download.quranicaudio.com/qdc/abu_bakr_shatri/murattal/1.mp3",
+    "timestamps": [
+      {
+        "verse_key": "1:1",
+        "timestamp_from": 0,
+        "timestamp_to": 6493
+      },
+      {
+        "verse_key": "1:2",
+        "timestamp_from": 6493,
+        "timestamp_to": 11546
+      },
+      {
+        "verse_key": "1:3",
+        "timestamp_from": 11546,
+        "timestamp_to": 15985
+      },
+      {
+        "verse_key": "1:4",
+        "timestamp_from": 15985,
+        "timestamp_to": 21521
+      },
+      {
+        "verse_key": "1:5",
+        "timestamp_from": 21521,
+        "timestamp_to": 27835
+      },
+      {
+        "verse_key": "1:6",
+        "timestamp_from": 27835,
+        "timestamp_to": 33388
+      },
+      {
+        "verse_key": "1:7",
+        "timestamp_from": 33388,
+        "timestamp_to": 53092
+      }
+    ]
+  }
+}

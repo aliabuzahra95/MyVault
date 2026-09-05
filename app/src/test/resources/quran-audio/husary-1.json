@@ -1,0 +1,44 @@
+{
+  "audio_file": {
+    "id": 1675,
+    "chapter_id": 1,
+    "audio_url": "https://download.quranicaudio.com/qdc/khalil_al_husary/murattal/1.mp3",
+    "timestamps": [
+      {
+        "verse_key": "1:1",
+        "timestamp_from": 0,
+        "timestamp_to": 5220
+      },
+      {
+        "verse_key": "1:2",
+        "timestamp_from": 5220,
+        "timestamp_to": 11570
+      },
+      {
+        "verse_key": "1:3",
+        "timestamp_from": 11570,
+        "timestamp_to": 16140
+      },
+      {
+        "verse_key": "1:4",
+        "timestamp_from": 16140,
+        "timestamp_to": 20840
+      },
+      {
+        "verse_key": "1:5",
+        "timestamp_from": 20840,
+        "timestamp_to": 27760
+      },
+      {
+        "verse_key": "1:6",
+        "timestamp_from": 27760,
+        "timestamp_to": 33190
+      },
+      {
+        "verse_key": "1:7",
+        "timestamp_from": 33190,
+        "timestamp_to": 48210
+      }
+    ]
+  }
+}

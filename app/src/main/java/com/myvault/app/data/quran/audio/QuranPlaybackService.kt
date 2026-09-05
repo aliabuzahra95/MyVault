@@ -28,6 +28,8 @@ class QuranPlaybackService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) { controller.pause() }
     }
 
+    // MediaSession notifications are exempt from Android 13's notification permission.
+    @android.annotation.SuppressLint("NotificationPermission")
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "Qur'an playback", NotificationManager.IMPORTANCE_LOW))
