@@ -50,7 +50,7 @@ private class NoteWidgetBodyFactory(
     override fun getViewAt(position: Int): RemoteViews? {
         val item = note ?: return null
         val text = chunks.getOrNull(position) ?: return null
-        return RemoteViews(context.packageName, R.layout.widget_note_body_row).apply {
+        return com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_note_body_row).apply {
             setTextViewText(R.id.note_widget_body_text, text)
             setTextViewTextSize(
                 R.id.note_widget_body_text,
@@ -70,7 +70,7 @@ private class NoteWidgetBodyFactory(
     }
 
     override fun getLoadingView(): RemoteViews =
-        RemoteViews(context.packageName, R.layout.widget_note_loading_row)
+        com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_note_loading_row)
 
     override fun getViewTypeCount(): Int = 1
 

@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<TextView xmlns:android='http://schemas.android.com/apk/res/android' android:fontFamily='@font/plus_jakarta_sans_medium' android:id='@+id/note_widget_body_text' android:includeFontPadding='true' android:layout_height='wrap_content' android:layout_width='match_parent' android:lineSpacingExtra='4dp' android:paddingBottom='10dp' android:textColor='#172033' android:textDirection='firstStrong' android:textSize='14sp'/>

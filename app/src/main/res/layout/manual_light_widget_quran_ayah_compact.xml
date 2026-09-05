@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<LinearLayout xmlns:android='http://schemas.android.com/apk/res/android' android:id='@+id/quran_widget_row' android:layout_height='wrap_content' android:layout_width='match_parent' android:orientation='vertical' android:paddingBottom='7dp' android:paddingHorizontal='7dp' android:paddingTop='8dp'>
+    <TextView android:fontFamily='@font/uthmani_hafs' android:gravity='end' android:id='@+id/quran_widget_ayah_text' android:includeFontPadding='true' android:layout_height='wrap_content' android:layout_width='match_parent' android:lineSpacingExtra='5dp' android:textColor='#172033' android:textDirection='rtl' android:textSize='24sp'/>
+    <TextView android:fontFamily='@font/plus_jakarta_sans_medium' android:id='@+id/quran_widget_translation' android:layout_height='wrap_content' android:layout_width='match_parent' android:lineSpacingExtra='2dp' android:paddingTop='5dp' android:textColor='#737B89' android:textSize='12sp' android:visibility='gone'/>
+    <TextView android:fontFamily='@font/plus_jakarta_sans_medium' android:gravity='end' android:id='@+id/quran_widget_ayah_reference' android:layout_height='wrap_content' android:layout_width='match_parent' android:paddingTop='2dp' android:textColor='#3D7BD9' android:textSize='10sp'/>
+</LinearLayout>

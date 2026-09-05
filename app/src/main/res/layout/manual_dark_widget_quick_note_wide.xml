@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<LinearLayout xmlns:android='http://schemas.android.com/apk/res/android' android:background='@drawable/manual_dark_quran_widget_background' android:contentDescription='@string/quick_note_widget_description' android:gravity='center' android:id='@+id/quick_note_widget_root' android:layout_height='match_parent' android:layout_width='match_parent' android:orientation='horizontal' android:paddingHorizontal='18dp' android:paddingVertical='12dp'>
+    <ImageView android:contentDescription='@null' android:layout_height='24dp' android:layout_width='24dp' android:src='@drawable/manual_dark_ic_widget_edit'/>
+    <TextView android:fontFamily='@font/plus_jakarta_sans_semi_bold' android:layout_height='wrap_content' android:layout_marginStart='10dp' android:layout_width='wrap_content' android:text='@string/quick_note_widget_label' android:textColor='#F3F1EC' android:textSize='15sp'/>
+    <ImageButton android:background='@drawable/manual_dark_quran_widget_icon_touch' android:contentDescription='Widget settings' android:id='@+id/quick_note_widget_settings' android:layout_height='36dp' android:layout_marginStart='8dp' android:layout_width='36dp' android:padding='9dp' android:src='@drawable/manual_dark_ic_widget_settings'/>
+</LinearLayout>

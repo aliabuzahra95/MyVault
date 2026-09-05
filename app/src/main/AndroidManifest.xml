@@ -63,6 +63,9 @@
             android:theme="@style/Theme.MyVault.QuranWidgetSearch"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible" />
         <activity
+            android:name=".widget.WidgetAppearanceActivity"
+            android:exported="false" />
+        <activity
             android:name=".widget.note.NoteWidgetConfigActivity"
             android:exported="true"
             android:theme="@style/Theme.MyVault" />

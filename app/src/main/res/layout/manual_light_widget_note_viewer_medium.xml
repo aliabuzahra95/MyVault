@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<LinearLayout xmlns:android='http://schemas.android.com/apk/res/android' android:background='@drawable/manual_light_quran_widget_background' android:id='@+id/note_widget_root' android:layout_height='match_parent' android:layout_width='match_parent' android:orientation='vertical' android:padding='14dp'>
+    <LinearLayout android:gravity='center_vertical' android:layout_height='wrap_content' android:layout_width='match_parent' android:orientation='horizontal'>
+        <ImageView android:contentDescription='@null' android:layout_height='19dp' android:layout_width='19dp' android:src='@drawable/manual_light_ic_widget_note'/>
+        <TextView android:fontFamily='@font/plus_jakarta_sans_semi_bold' android:layout_height='wrap_content' android:layout_marginStart='8dp' android:layout_weight='1' android:layout_width='0dp' android:text='@string/note_widget_eyebrow' android:textColor='#737B89' android:textSize='10sp'/>
+        <ImageButton android:background='@drawable/manual_light_quran_widget_icon_touch' android:contentDescription='@string/note_widget_settings' android:id='@+id/note_widget_settings' android:layout_height='38dp' android:layout_width='38dp' android:padding='9dp' android:src='@drawable/manual_light_ic_widget_settings'/>
+    </LinearLayout>
+    <TextView android:ellipsize='end' android:fontFamily='@font/plus_jakarta_sans_semi_bold' android:id='@+id/note_widget_title' android:layout_height='wrap_content' android:layout_width='match_parent' android:maxLines='2' android:textColor='#172033' android:textSize='16sp'/>
+    <TextView android:ellipsize='end' android:fontFamily='@font/plus_jakarta_sans_medium' android:id='@+id/note_widget_context' android:layout_height='wrap_content' android:layout_marginTop='2dp' android:layout_width='match_parent' android:maxLines='1' android:textColor='#737B89' android:textSize='11sp'/>
+    <ImageView android:background='@drawable/manual_light_note_widget_divider' android:contentDescription='@null' android:layout_height='1dp' android:layout_marginTop='9dp' android:layout_width='match_parent'/>
+    <ListView android:clipToPadding='false' android:divider='@null' android:id='@+id/note_widget_body' android:layout_height='0dp' android:layout_marginTop='7dp' android:layout_weight='1' android:layout_width='match_parent' android:overScrollMode='never' android:scrollbars='none'/>
+    <TextView android:fontFamily='@font/plus_jakarta_sans_medium' android:gravity='center' android:id='@+id/note_widget_empty' android:layout_height='0dp' android:layout_weight='1' android:layout_width='match_parent' android:padding='12dp' android:text='@string/note_widget_choose_another' android:textColor='#737B89' android:textSize='13sp' android:visibility='gone'/>
+</LinearLayout>

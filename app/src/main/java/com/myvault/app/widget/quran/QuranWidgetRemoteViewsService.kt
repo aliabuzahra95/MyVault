@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
+import com.myvault.app.widget.widgetAppearanceContext
 import android.widget.RemoteViewsService
 import com.myvault.app.R
 import com.myvault.app.data.quran.SurahInfo
@@ -73,7 +74,7 @@ private class QuranWidgetFactory(
         QuranWidgetMode.Settings -> settingsView(position)
     }
 
-    override fun getLoadingView(): RemoteViews = RemoteViews(context.packageName, R.layout.widget_quran_loading_row)
+    override fun getLoadingView(): RemoteViews = com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_loading_row)
 
     override fun getViewTypeCount(): Int = 5
 
@@ -92,10 +93,10 @@ private class QuranWidgetFactory(
             QuranWidgetSizeBucket.Large -> R.layout.widget_quran_ayah_large
             QuranWidgetSizeBucket.ExtraLarge -> R.layout.widget_quran_ayah_extra_large
         }
-        return RemoteViews(context.packageName, layout).apply {
+        return com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, layout).apply {
             setTextViewText(
                 R.id.quran_widget_ayah_text,
-                quranWidgetArabicText(arabicText, tajweedAnnotations, state.tajweedEnabled, context.isWidgetDarkTheme()),
+                quranWidgetArabicText(arabicText, tajweedAnnotations, state.tajweedEnabled, com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId)),
             )
             setTextViewTextSize(
                 R.id.quran_widget_ayah_text,
@@ -128,7 +129,7 @@ private class QuranWidgetFactory(
     }
 
     private fun SurahInfo.toPickerView(): RemoteViews =
-        RemoteViews(context.packageName, R.layout.widget_quran_surah_row).apply {
+        com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_surah_row).apply {
             setTextViewText(R.id.quran_widget_surah_number, num.toString())
             setTextViewText(R.id.quran_widget_surah_name, name)
             setTextViewText(R.id.quran_widget_surah_arabic, arabic)
@@ -156,7 +157,7 @@ private class QuranWidgetFactory(
             enabled = state.translationEnabled,
             command = QuranWidgetContract.COMMAND_TOGGLE_TRANSLATION,
         )
-        1 -> RemoteViews(context.packageName, R.layout.widget_quran_setting_size_row).apply {
+        1 -> com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_setting_size_row).apply {
             setTextViewText(
                 R.id.quran_widget_setting_size_value,
                 context.getString(R.string.quran_widget_arabic_size_level, state.arabicFontLevel),
@@ -185,7 +186,15 @@ private class QuranWidgetFactory(
             enabled = state.tajweedEnabled,
             command = QuranWidgetContract.COMMAND_TOGGLE_TAJWEED,
         )
-        3 -> RemoteViews(context.packageName, R.layout.widget_quran_setting_done_row).apply {
+        3 -> toggleSettingView(
+            label = "Appearance",
+            enabled = com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId),
+            command = "toggle_appearance",
+        ).apply {
+            setTextViewText(R.id.quran_widget_setting_value,
+                if (com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId)) "Dark" else "Light")
+        }
+        4 -> com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_setting_done_row).apply {
             setOnClickFillInIntent(
                 R.id.quran_widget_setting_done,
                 settingIntent(QuranWidgetContract.COMMAND_DONE),
@@ -195,7 +204,7 @@ private class QuranWidgetFactory(
     }
 
     private fun toggleSettingView(label: String, enabled: Boolean, command: String): RemoteViews =
-        RemoteViews(context.packageName, R.layout.widget_quran_setting_toggle_row).apply {
+        com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_setting_toggle_row).apply {
             setTextViewText(R.id.quran_widget_setting_label, label)
             setTextViewText(
                 R.id.quran_widget_setting_value,
@@ -203,7 +212,7 @@ private class QuranWidgetFactory(
             )
             setTextColor(
                 R.id.quran_widget_setting_value,
-                context.getColor(if (enabled) R.color.quran_widget_accent else R.color.quran_widget_secondary),
+                context.widgetAppearanceContext(appWidgetId).getColor(if (enabled) R.color.quran_widget_accent else R.color.quran_widget_secondary),
             )
             setOnClickFillInIntent(R.id.quran_widget_row, settingIntent(command))
         }
@@ -212,6 +221,6 @@ private class QuranWidgetFactory(
         Intent().putExtra(QuranWidgetContract.EXTRA_SETTING_COMMAND, command)
 
     private companion object {
-        const val SETTINGS_ROW_COUNT = 4
+        const val SETTINGS_ROW_COUNT = 5
     }
 }

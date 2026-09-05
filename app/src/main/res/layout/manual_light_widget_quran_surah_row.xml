@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<LinearLayout xmlns:android='http://schemas.android.com/apk/res/android' android:gravity='center_vertical' android:id='@+id/quran_widget_row' android:layout_height='wrap_content' android:layout_width='match_parent' android:minHeight='62dp' android:orientation='horizontal' android:paddingHorizontal='10dp' android:paddingVertical='7dp'>
+    <TextView android:fontFamily='@font/plus_jakarta_sans_semi_bold' android:gravity='start|center_vertical' android:id='@+id/quran_widget_surah_number' android:layout_height='wrap_content' android:layout_width='36dp' android:textColor='#3D7BD9' android:textSize='13sp'/>
+    <LinearLayout android:layout_height='wrap_content' android:layout_weight='1' android:layout_width='0dp' android:orientation='vertical' android:paddingEnd='8dp'>
+        <TextView android:ellipsize='end' android:fontFamily='@font/plus_jakarta_sans_semi_bold' android:id='@+id/quran_widget_surah_name' android:layout_height='wrap_content' android:layout_width='match_parent' android:maxLines='1' android:textColor='#172033' android:textSize='15sp'/>
+        <TextView android:ellipsize='end' android:fontFamily='@font/plus_jakarta_sans_medium' android:id='@+id/quran_widget_surah_detail' android:layout_height='wrap_content' android:layout_width='match_parent' android:maxLines='1' android:textColor='#737B89' android:textSize='11sp'/>
+    </LinearLayout>
+    <TextView android:fontFamily='@font/uthmani_hafs' android:gravity='end|center_vertical' android:id='@+id/quran_widget_surah_arabic' android:includeFontPadding='true' android:layout_height='wrap_content' android:layout_width='wrap_content' android:maxLines='1' android:textColor='#172033' android:textDirection='rtl' android:textSize='24sp'/>
+</LinearLayout>

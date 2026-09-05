@@ -48,6 +48,7 @@ class NoteWidgetProvider : AppWidgetProvider() {
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val store = NoteWidgetStateStore(context)
         appWidgetIds.forEach(store::delete)
+        appWidgetIds.forEach(com.myvault.app.widget.WidgetAppearanceStore(context)::delete)
         super.onDeleted(context, appWidgetIds)
     }
 
@@ -66,7 +67,7 @@ class NoteWidgetProvider : AppWidgetProvider() {
                 NoteWidgetSizeBucket.Large -> R.layout.widget_note_viewer_large
                 NoteWidgetSizeBucket.ExtraLarge -> R.layout.widget_note_viewer_extra_large
             }
-            val views = RemoteViews(context.packageName, layout)
+            val views = com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, layout)
             val configIntent = NoteWidgetConfigActivity.intent(context, appWidgetId, editing = state.noteId != null)
             val configPendingIntent = PendingIntent.getActivity(
                 context,
@@ -119,7 +120,7 @@ class NoteWidgetProvider : AppWidgetProvider() {
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                     putExtra(NoteWidgetContract.EXTRA_SIZE_BUCKET, bucket.name)
                     data = Uri.parse(
-                        "myvault://note-widget/$appWidgetId/${note.updatedAt}/${state.textSizeLevel}/${bucket.name}",
+                        "myvault://note-widget/$appWidgetId/${note.updatedAt}/${state.textSizeLevel}/${bucket.name}/${com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId)}",
                     )
                 }
                 views.setRemoteAdapter(R.id.note_widget_body, serviceIntent)

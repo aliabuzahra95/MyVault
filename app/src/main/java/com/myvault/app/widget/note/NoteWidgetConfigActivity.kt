@@ -78,7 +78,8 @@ class NoteWidgetConfigActivity : androidx.fragment.app.FragmentActivity() {
         }
         val store = NoteWidgetStateStore(this)
         setContent {
-            VaultTheme(mode = VaultThemeMode.FollowSystemDark, materialYouEnabled = false) {
+            val dark = com.myvault.app.widget.rememberWidgetDark(appWidgetId)
+            VaultTheme(mode = if (dark) VaultThemeMode.Dark else VaultThemeMode.Light, materialYouEnabled = false) {
                 val items by dataSource.observeItems().collectAsStateWithLifecycle(initialValue = emptyList())
                 var choosingNote by remember {
                     mutableStateOf(store.state(appWidgetId).noteId == null || !intent.getBooleanExtra(EXTRA_EDITING, false))
@@ -355,6 +356,11 @@ private fun NoteWidgetSettings(
             Text("Change", color = colors.accent, style = MaterialTheme.typography.labelLarge)
         }
         HorizontalDivider(color = colors.border.copy(alpha = 0.55f))
+        val activity = androidx.activity.compose.LocalActivity.current
+        val widgetId = activity?.intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+        if (widgetId != null && widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            com.myvault.app.widget.WidgetAppearanceControl(widgetId)
+        }
         SettingRow(label = "Text size") {
             IconButton(onClick = { onTextSizeChange(-1); refreshState() }) {
                 Icon(Icons.Rounded.Remove, contentDescription = "Smaller text", tint = colors.text)

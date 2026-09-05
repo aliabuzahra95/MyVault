@@ -9,6 +9,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import com.myvault.app.widget.widgetAppearanceContext
+import com.myvault.app.widget.setWidgetIcon
 import android.widget.RemoteViews
 import com.myvault.app.MainActivity
 import com.myvault.app.R
@@ -53,6 +55,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val store = QuranWidgetStateStore(context)
         appWidgetIds.forEach(store::delete)
+        appWidgetIds.forEach(com.myvault.app.widget.WidgetAppearanceStore(context)::delete)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -92,6 +95,10 @@ class QuranWidgetProvider : AppWidgetProvider() {
                         val current = store.read(appWidgetId)
                         store.setTajweedEnabled(appWidgetId, !current.tajweedEnabled)
                     }
+                    "toggle_appearance" -> {
+                        val appearance = com.myvault.app.widget.WidgetAppearanceStore(context)
+                        appearance.setDark(appWidgetId, !appearance.isDark(appWidgetId))
+                    }
                     QuranWidgetContract.COMMAND_DONE -> store.setMode(appWidgetId, QuranWidgetMode.Reader)
                 }
             }
@@ -123,8 +130,8 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320),
                 heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300),
             )
-            val views = RemoteViews(context.packageName, bucket.layoutResource())
-            bindHeader(context, views, appWidgetId, state, bucket)
+            val views = com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, bucket.layoutResource())
+            bindHeader(context.widgetAppearanceContext(appWidgetId), views, appWidgetId, state, bucket)
             bindCollection(context, views, appWidgetId, state, bucket)
             manager.updateAppWidget(appWidgetId, views)
         }
@@ -176,7 +183,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
             )
 
             if (isReader) {
-                views.setImageViewResource(R.id.quran_widget_previous, R.drawable.ic_widget_chevron_left)
+                views.setWidgetIcon(context, appWidgetId, R.id.quran_widget_previous, R.drawable.ic_widget_chevron_left)
                 views.setViewVisibility(R.id.quran_widget_next, View.VISIBLE)
                 views.setViewVisibility(
                     R.id.quran_widget_open,
@@ -207,7 +214,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
                     R.id.quran_widget_open,
                     openAppIntent(context, appWidgetId, state.surahNumber, state.anchorAyah, 4),
                 )
-                views.setImageViewResource(R.id.quran_widget_settings, R.drawable.ic_widget_settings)
+                views.setWidgetIcon(context, appWidgetId, R.id.quran_widget_settings, R.drawable.ic_widget_settings)
                 views.setOnClickPendingIntent(
                     R.id.quran_widget_settings,
                     broadcastIntent(context, appWidgetId, QuranWidgetContract.ACTION_SHOW_SETTINGS, 10),
@@ -217,7 +224,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
                     context.getString(R.string.quran_widget_previous_surah),
                 )
             } else {
-                views.setImageViewResource(R.id.quran_widget_previous, R.drawable.ic_widget_back)
+                views.setWidgetIcon(context, appWidgetId, R.id.quran_widget_previous, R.drawable.ic_widget_back)
                 views.setViewVisibility(R.id.quran_widget_next, View.GONE)
                 views.setViewVisibility(R.id.quran_widget_open, View.GONE)
                 views.setViewVisibility(R.id.quran_widget_arabic_title, View.GONE)
@@ -235,7 +242,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 )
                 if (isPicker) {
                     views.setViewVisibility(R.id.quran_widget_settings, View.VISIBLE)
-                    views.setImageViewResource(R.id.quran_widget_settings, R.drawable.ic_widget_search)
+                    views.setWidgetIcon(context, appWidgetId, R.id.quran_widget_settings, R.drawable.ic_widget_search)
                     views.setOnClickPendingIntent(
                         R.id.quran_widget_settings,
                         searchIntent(context, appWidgetId),
@@ -285,6 +292,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
                 putExtra(QuranWidgetContract.EXTRA_ARABIC_FONT_LEVEL, state.arabicFontLevel)
                 putExtra(QuranWidgetContract.EXTRA_TAJWEED_ENABLED, state.tajweedEnabled)
                 putExtra(QuranWidgetContract.EXTRA_SEARCH_QUERY, state.searchQuery)
+                putExtra("widget_dark", com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId))
                 data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
             }
             views.setRemoteAdapter(R.id.quran_widget_collection, serviceIntent)

@@ -39,3 +39,8 @@ The Note Viewer intentionally displays the selected note's content on the Androi
 - Notes cannot be edited inside the widget.
 - Full rich-text styling is not reproduced in `RemoteViews`; readable structure is preserved as plain text.
 - Launcher widget dimensions and available resize stops remain launcher-dependent.
+# Manual widget appearance
+
+Note Viewer, Quick Note and Quran Reader each store a manual Light/Dark choice by widget ID in device-local `widget_appearance` preferences. Light is the default; the system theme never overrides the choice. Note Viewer exposes Appearance in its existing settings, Quick Note has a separate gear control, and Quran Reader includes an Appearance row in its in-widget settings.
+
+Explicit `manual_light_*` and `manual_dark_*` layout/drawable resources preserve the existing layout while preventing the launcher from resolving system-night colours. `ManualWidgetLayouts` selects them for the root and collection rows. When a widget layout changes, keep both manual variants in sync. Dynamic Quran icons and Tajweed use the selected widget palette. Appearance is excluded from backup and removed when its widget is deleted.
