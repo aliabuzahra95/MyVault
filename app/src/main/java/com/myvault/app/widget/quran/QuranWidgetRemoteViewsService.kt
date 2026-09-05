@@ -15,7 +15,7 @@ class QuranWidgetRemoteViewsService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = QuranWidgetFactory(applicationContext, intent)
 }
 
-private class QuranWidgetFactory(
+internal class QuranWidgetFactory(
     private val context: Context,
     intent: Intent,
 ) : RemoteViewsService.RemoteViewsFactory {
@@ -116,6 +116,7 @@ private class QuranWidgetFactory(
             setOnClickFillInIntent(
                 R.id.quran_widget_row,
                 Intent().apply {
+                    action = Intent.ACTION_VIEW
                     flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                     putExtra(QuranWidgetContract.EXTRA_WIDGET_ID, appWidgetId)
                     putExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, this@toReaderView.surahNumber)

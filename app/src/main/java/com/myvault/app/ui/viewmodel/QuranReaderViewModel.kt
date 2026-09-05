@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 @HiltViewModel
 class QuranReaderViewModel @Inject constructor(
@@ -54,13 +56,16 @@ class QuranReaderViewModel @Inject constructor(
     private var audioPrepareJob: Job? = null
     private var audioRequestGeneration = 0L
     private var reciterPickerStartsPlayback = true
+    private val initialNavigation = QuranInitialNavigation()
 
     init {
         viewModelScope.launch {
             val preferences = vaultPreferences.userPreferences.first()
+            val target = initialNavigation.initialize(preferences.quranLastReadSurah, preferences.quranLastReadAyah)
             loadSurah(
-                surahNumber = preferences.quranLastReadSurah,
-                restoredAyah = preferences.quranLastReadAyah,
+                surahNumber = target.surah,
+                restoredAyah = target.ayah,
+                pendingScrollVerseKey = if (target.exact) "${target.surah}:${target.ayah}" else null,
                 fontPercent = preferences.quranArabicFontPercent,
                 translationFontPercent = preferences.quranTranslationFontPercent,
                 translationEnabled = preferences.quranTranslationEnabled,
@@ -127,6 +132,7 @@ class QuranReaderViewModel @Inject constructor(
         } else {
             1
         }
+        if (initialNavigation.request(surahNumber, restoredAyah) == null) return
         loadSurah(
             surahNumber = surahNumber,
             restoredAyah = restoredAyah,
@@ -143,6 +149,7 @@ class QuranReaderViewModel @Inject constructor(
     fun openBookmarkedAyah(verseKey: String) {
         val surah = verseKey.substringBefore(':').toIntOrNull() ?: return
         val ayah = verseKey.substringAfter(':').toIntOrNull() ?: return
+        if (initialNavigation.request(surah, ayah) == null) return
         loadSurah(
             surahNumber = surah,
             restoredAyah = ayah,
@@ -607,6 +614,7 @@ class QuranReaderViewModel @Inject constructor(
             val requestedAyahs = runCatching {
                 quranTextRepository.getSurahAyahs(surah.num, translationSource)
             }
+            coroutineContext.ensureActive()
             val (ayahs, loadedTranslationSource, translationMessage) = requestedAyahs.fold(
                 onSuccess = { Triple(it, translationSource, null) },
                 onFailure = {
@@ -628,6 +636,7 @@ class QuranReaderViewModel @Inject constructor(
                     )
                 },
             )
+            coroutineContext.ensureActive()
             _uiState.value = _uiState.value.copy(
                 selectedSurah = surah,
                 ayahs = ayahs,

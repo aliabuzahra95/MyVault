@@ -306,6 +306,11 @@ class MainActivity : FragmentActivity() {
             )
         }
         pendingWidgetQuranVerseKey = location.verseKey
+        // The pending target now owns delivery through unlock/navigation.
+        source.removeExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER)
+        source.removeExtra(QuranWidgetContract.EXTRA_AYAH_NUMBER)
+        source.removeExtra(QuranWidgetContract.EXTRA_WIDGET_ID)
+        source.data = null
     }
 
     private fun handleSharedIntent(intent: Intent?) {
