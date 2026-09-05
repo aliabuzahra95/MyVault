@@ -109,143 +109,87 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val driveAccount = driveAccountOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
         val drive = driveAccount.client
         val vault = drive.ensureMyVaultLayout()
-        val remoteManifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
-        val remoteManifest = remoteManifestFile?.let { drive.downloadJsonObject(it.id) }
-        val remoteVersion = remoteManifest?.optLong("cloudVersion", 0L) ?: 0L
+        val previous = drive.readCommittedBackup(vault.manifests.id)
+        val remoteVersion = previous?.let { JSONObject(it.text).optLong("cloudVersion", 0L) } ?: 0L
         val lastSyncedVersion = preferences.googleDriveSyncMetadata(driveAccount.email).lastManifestAt
         if (!force && hasNewerRemoteDriveVersion(remoteVersion, lastSyncedVersion)) {
-            return@withContext DriveSyncResult.Conflict(
-                DriveConflictMessage,
-            )
+            return@withContext DriveSyncResult.Conflict(DriveConflictMessage)
         }
-
         val metadataDir = File(context.cacheDir, "drive-api-sync-metadata-${System.currentTimeMillis()}").apply { mkdirs() }
         try {
             onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Exporting changed metadata"))
             backupRepository.exportMetadataForDriveSync(metadataDir)
-            val remoteEntries = remoteManifest.toRemoteEntryMap()
-            val localFileEntries = localFileDriveEntries(remoteEntries)
-            val currentDriveFilesByName = drive.listChildren(vault.files.id).associateBy { it.name }
+            val localFileEntries = metadataDir.localFileDriveEntries()
             metadataDir.reconcileAttachmentFileClaims(localFileEntries.map { it.backupEntry }.toSet())
             val entries = metadataDir.toMetadataDriveEntries() + localFileEntries
-            var uploadedMetadata = 0
-            var uploadedFiles = 0
-            var skippedFiles = 0
+            val cloudVersion = maxOf(System.currentTimeMillis(), remoteVersion + 1)
+            val transport = object : DriveBackupPublicationTransport {
+                override fun readCommitted() = drive.readCommittedBackup(vault.manifests.id)
+                override fun existingMatches(id: String, kind: String, size: Long, sha256: String): Boolean =
+                    drive.existingFileMatches(id, if (kind == EntryKindFile) vault.files.id else vault.metadata.id, size, sha256)
 
-            onProgress(
-                DriveRestoreProgress(
-                    stage = DriveRestoreStage.Uploading,
-                    message = "Uploading changed vault files",
-                    current = 0,
-                    total = entries.size,
-                ),
-            )
-            entries.forEachIndexed { index, entry ->
-                val progressMessage = if (entry.kind == EntryKindFile) {
-                    "Uploading file ${entry.fileName}"
-                } else {
-                    "Uploading metadata ${entry.fileName}"
+                override fun create(upload: DriveBackupUpload): String {
+                    // Freeze changed binary bytes before the upload; never modify the original.
+                    val source = if (upload.kind == EntryKindFile) {
+                        File(metadataDir, "binary-${java.util.UUID.randomUUID()}").also {
+                            upload.file.copyTo(it)
+                            check(it.length() == upload.size && it.sha256() == upload.sha256) {
+                                "The attachment changed while backup was being prepared. Try again."
+                            }
+                        }
+                    } else upload.file
+                    return drive.uploadFile(
+                        parentId = if (upload.kind == EntryKindFile) vault.files.id else vault.metadata.id,
+                        existingFileId = null,
+                        name = upload.name,
+                        mimeType = if (upload.kind == EntryKindFile) "application/octet-stream" else "application/json",
+                        source = source,
+                    ).id
                 }
-                onProgress(
-                    DriveRestoreProgress(
-                        stage = DriveRestoreStage.Uploading,
-                        message = progressMessage,
-                        current = index,
-                        total = entries.size,
-                    ),
-                )
-                val remote = remoteEntries[entry.path]
-                val currentDriveFile = if (entry.kind == EntryKindFile) currentDriveFilesByName[entry.fileName] else null
-                if (entry.kind == EntryKindFile && remote != null && remote.size == entry.size && remote.sha256.isNotBlank() && currentDriveFile != null) {
-                    entry.sha256 = remote.sha256
-                    entry.cloudFileId = currentDriveFile.id
-                    skippedFiles += 1
-                    onProgress(
-                        DriveRestoreProgress(
-                            stage = DriveRestoreStage.Uploading,
-                            message = progressMessage,
-                            current = index + 1,
-                            total = entries.size,
-                        ),
+
+                override fun verify(id: String, size: Long, sha256: String) = drive.uploadedFileMatches(id, size, sha256)
+
+                override fun preserve(previous: PublishedDriveBackup) {
+                    val bytes = previous.text.toByteArray(Charsets.UTF_8)
+                    val copy = drive.uploadTextFile(
+                        parentId = vault.backups.id,
+                        existingFileId = null,
+                        name = "sync-manifest-${remoteVersion}-${java.util.UUID.randomUUID()}.json",
+                        text = previous.text,
+                        mimeType = "application/json",
                     )
-                    return@forEachIndexed
+                    check(drive.uploadedFileMatches(copy.id, bytes.size.toLong(), bytes.sha256())) { "Previous manifest preservation failed." }
                 }
-                entry.ensureSha256()
-                if (remote?.sha256 == entry.sha256 && remote.size == entry.size) {
-                    val reusableId = reusableDriveEntryId(
-                        isAttachmentFile = entry.kind == EntryKindFile,
-                        contentMatches = true,
-                        currentFileIdByName = currentDriveFile?.id,
-                    )
-                    if (!reusableId.isNullOrBlank()) {
-                        entry.cloudFileId = reusableId
-                        if (entry.kind == EntryKindFile) skippedFiles += 1
-                        onProgress(
-                            DriveRestoreProgress(
-                                stage = DriveRestoreStage.Uploading,
-                                message = progressMessage,
-                                current = index + 1,
-                                total = entries.size,
-                            ),
-                        )
-                        return@forEachIndexed
-                    }
+
+                override fun publish(previousId: String?, text: String) {
+                    drive.uploadTextFile(vault.manifests.id, previousId, SyncManifestFile, text, "application/json")
                 }
-                val parentId = if (entry.kind == EntryKindFile) vault.files.id else vault.metadata.id
-                val existingId = if (entry.kind == EntryKindFile) {
-                    currentDriveFile?.id
-                } else {
-                    remote?.cloudFileId ?: drive.findChild(parentId, entry.fileName)?.id
-                }
-                val uploaded = drive.uploadFile(
-                    parentId = parentId,
-                    existingFileId = existingId,
-                    name = entry.fileName,
-                    mimeType = entry.mimeType,
-                    source = entry.file,
-                )
-                entry.cloudFileId = uploaded.id
-                if (entry.kind == EntryKindFile) {
-                    uploadedFiles += 1
-                } else {
-                    check(drive.uploadedFileMatches(uploaded.id, entry.size, entry.sha256)) {
-                        "Google Drive metadata verification failed for ${entry.fileName}. The backup manifest was not published."
-                    }
-                    uploadedMetadata += 1
-                }
-                onProgress(
-                    DriveRestoreProgress(
-                        stage = DriveRestoreStage.Uploading,
-                        message = progressMessage,
-                        current = index + 1,
-                        total = entries.size,
-                    ),
-                )
             }
-
-            onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Finalising, message = "Finalising Drive backup"))
-            val cloudVersion = System.currentTimeMillis()
-            val manifest = entries.toManifest(cloudVersion)
-            val existingManifestId = remoteManifestFile?.id ?: drive.findChild(vault.manifests.id, SyncManifestFile)?.id
-            drive.uploadTextFile(
-                parentId = vault.manifests.id,
-                existingFileId = existingManifestId,
-                name = SyncManifestFile,
-                text = manifest.toString(2),
-                mimeType = "application/json",
+            val result = DriveBackupPublisher(transport).publish(
+                previous = previous,
+                uploads = entries.map { DriveBackupUpload(it.path, it.fileName, it.kind, it.file, it.size, it.sha256) },
+                manifest = { ids ->
+                    entries.forEach { it.cloudFileId = ids.getValue(it.path) }
+                    entries.toManifest(cloudVersion).toString(2)
+                },
+                checkAccount = {
+                    check(GoogleSignIn.getLastSignedInAccount(context)?.email?.trim().equals(driveAccount.email, ignoreCase = true)) {
+                        "The Google account changed. Backup stopped without deleting Drive files."
+                    }
+                },
+                progress = { count, entry ->
+                    onProgress(DriveRestoreProgress(
+                        stage = if (count == entries.size) DriveRestoreStage.Finalising else DriveRestoreStage.Uploading,
+                        message = if (count == entries.size) "Verifying and publishing backup" else "Uploading ${entry.name}",
+                        current = count,
+                        total = entries.size,
+                    ))
+                },
             )
-
-            val localPaths = entries.map { it.path }.toSet()
-            remoteEntries.values
-                .filter { it.path !in localPaths && it.cloudFileId.isNotBlank() }
-                .forEach { stale ->
-                    runCatching { drive.deleteFile(stale.cloudFileId) }
-                }
-
             preferences.markGoogleDriveSync(driveAccount.email, cloudVersion)
-
             DriveSyncResult.Success(
-                "Drive push complete: $uploadedMetadata metadata file(s), $uploadedFiles file(s) uploaded, $skippedFiles unchanged file(s) skipped.",
+                "Drive push complete: ${result.uploadedMetadata} metadata file(s), ${result.uploadedFiles} file(s) uploaded, " +
+                    "${result.skippedFiles} unchanged file(s) skipped. Previous backup files retained.",
             )
         } catch (error: Throwable) {
             if (error.requiresDriveReconnect()) preferences.setGoogleDriveAccountEmail("")
@@ -254,7 +198,6 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             metadataDir.deleteRecursively()
         }
     }
-
     suspend fun pullLatestFromDrive(
         onProgress: suspend (DriveRestoreProgress) -> Unit = {},
     ): DriveSyncResult = withContext(Dispatchers.IO) {
@@ -405,23 +348,24 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         attachmentsFile.writeText(attachments.toString())
     }
 
-    private suspend fun localFileDriveEntries(remoteEntries: Map<String, RemoteEntry>): List<DriveEntry> {
-        val attachments = attachmentDao.getAllIncludingDeleted()
+    private fun File.localFileDriveEntries(): List<DriveEntry> {
+        val json = JSONArray(resolve("attachments.json").readText())
+        val attachments = (0 until json.length()).map { json.getJSONObject(it) }
         return attachments
             .mapNotNull { attachment ->
-                val file = File(attachment.localPath)
+                val file = File(attachment.getString("localPath"))
                 if (!file.exists() || !file.isFile) return@mapNotNull null
-                val fileName = "${attachment.id}.${attachment.fileName.safeExtension()}"
+                val attachmentId = attachment.getString("id")
+                val fileName = "${attachmentId}.${attachment.getString("fileName").safeExtension()}"
                 val path = "files/$fileName"
-                val remote = remoteEntries[path]
                 DriveEntry(
                     path = path,
                     fileName = fileName,
-                    backupEntry = "files/${attachment.id}",
+                    backupEntry = "files/$attachmentId",
                     kind = EntryKindFile,
                     mimeType = "application/octet-stream",
                     size = file.length(),
-                    sha256 = if (remote?.size == file.length()) remote.sha256 else "",
+                    sha256 = file.sha256(),
                     file = file,
                 )
             }
@@ -667,12 +611,37 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         fun downloadJsonObject(fileId: String): JSONObject =
             JSONObject(requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null).toString(Charsets.UTF_8))
 
-        fun uploadedFileMatches(fileId: String, expectedSize: Long, expectedSha256: String): Boolean =
-            uploadedBytesMatchManifest(
-                bytes = requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null),
-                expectedSize = expectedSize,
-                expectedSha256 = expectedSha256,
-            )
+        fun readCommittedBackup(manifestsId: String): PublishedDriveBackup? {
+            val matches = listChildren(manifestsId).filter { it.name == SyncManifestFile }
+            check(matches.size <= 1) { "Multiple committed manifests exist. Backup stopped; no files were changed." }
+            val file = matches.singleOrNull() ?: return null
+            val text = requestBytes("GET", "$DriveFilesUrl/${file.id.urlPathEncode()}?alt=media", null, null).toString(Charsets.UTF_8)
+            return PublishedDriveBackup(file.id, text)
+        }
+
+        fun existingFileMatches(fileId: String, parentId: String, size: Long, sha256: String): Boolean {
+            val metadata = requestJson("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?fields=size,sha256Checksum,parents")
+            val parents = metadata.optJSONArray("parents") ?: return false
+            if ((0 until parents.length()).none { parents.optString(it) == parentId }) return false
+            if (metadata.optLong("size", -1L) != size) return false
+            val checksum = metadata.optString("sha256Checksum")
+            return if (checksum.isNotBlank()) checksum.equals(sha256, ignoreCase = true)
+            else uploadedFileMatches(fileId, size, sha256)
+        }
+
+        fun uploadedFileMatches(fileId: String, expectedSize: Long, expectedSha256: String): Boolean {
+            val digest = MessageDigest.getInstance("SHA-256")
+            var count = 0L
+            val output = object : OutputStream() {
+                override fun write(value: Int) { digest.update(value.toByte()); count += 1 }
+                override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                    digest.update(bytes, offset, length)
+                    count += length
+                }
+            }
+            requestToOutput("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", output)
+            return count == expectedSize && digest.digest().joinToString("") { "%02x".format(it) }.equals(expectedSha256, ignoreCase = true)
+        }
 
         suspend fun copyFileToWithRetry(fileId: String, output: OutputStream) {
             val temp = File.createTempFile("myvault-drive-download-", ".tmp", context.cacheDir)

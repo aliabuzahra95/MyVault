@@ -120,7 +120,7 @@ class BackupRepository @Inject constructor(
 
     suspend fun exportMetadataForDriveSync(destinationDir: File): BackupResult = withContext(Dispatchers.IO) {
         destinationDir.mkdirs()
-        val snapshot = buildBackupSnapshot()
+        val snapshot = database.withTransaction { buildBackupSnapshot() }
         snapshot.writeMetadataFiles(destinationDir)
         BackupResult(
             folderCount = snapshot.folders.size,
