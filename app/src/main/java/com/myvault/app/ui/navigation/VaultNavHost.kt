@@ -784,6 +784,7 @@ fun VaultNavHost(
                         onStopAudio = quranViewModel::stopAudio,
                         onSeekAudioTo = quranViewModel::seekAudioTo,
                         onSetAudioSpeed = quranViewModel::setAudioPlaybackSpeed,
+                        onSetAudioListeningMode = quranViewModel::setAudioListeningMode,
                         onSkipAudioBy = quranViewModel::skipAudioBy,
                         onPlayAdjacentAudio = quranViewModel::playAdjacentAudio,
                         onChooseOtherReciter = quranViewModel::chooseOtherReciterForCurrentAudio,

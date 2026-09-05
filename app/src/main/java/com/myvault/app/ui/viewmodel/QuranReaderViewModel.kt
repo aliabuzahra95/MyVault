@@ -14,8 +14,9 @@ import com.myvault.app.data.quran.MUKHTASAR_TAFSIR_ID
 import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
 import com.myvault.app.data.quran.audio.AudioPickerAyah
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
-import com.myvault.app.data.quran.audio.PlaybackMode
-import com.myvault.app.data.quran.audio.QuranAudioPlayer
+import com.myvault.app.data.quran.audio.QuranListeningMode
+import com.myvault.app.data.quran.audio.QuranPlaybackController
+import com.myvault.app.data.quran.audio.QuranPlaybackStatus
 import com.myvault.app.data.quran.audio.QuranAudioRepository
 import com.myvault.app.data.quran.audio.SurahDownloadState
 import com.myvault.app.data.quran.memorization.MemorizationRecord
@@ -45,16 +46,13 @@ class QuranReaderViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
     private val quranReflectionRepository: QuranReflectionRepository,
     private val quranAudioRepository: QuranAudioRepository,
-    private val quranAudioPlayer: QuranAudioPlayer,
+    private val playbackController: QuranPlaybackController,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(QuranReaderUiState())
     val uiState: StateFlow<QuranReaderUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
     private var lastSavedPosition: Pair<Int, Int>? = null
-    private var audioProgressJob: Job? = null
-    private var audioPrepareJob: Job? = null
-    private var audioRequestGeneration = 0L
     private var reciterPickerStartsPlayback = true
     private val initialNavigation = QuranInitialNavigation()
 
@@ -100,9 +98,20 @@ class QuranReaderViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            quranAudioPlayer.playbackState.collect { playback ->
+            playbackController.state.collect { playback ->
                 val current = _uiState.value
-                _uiState.value = current.copy(miniPlayer = current.buildMiniPlayer(playback))
+                _uiState.value = current.copy(
+                    playingVerseKey = playback.verseKey,
+                    audioLoadingVerseKey = playback.verseKey.takeIf { playback.status == QuranPlaybackStatus.Preparing },
+                    audioStatusMessage = playback.message,
+                    audioStatusIsError = playback.status == QuranPlaybackStatus.Error,
+                    selectedAudioReciter = playback.reciter ?: current.selectedAudioReciter,
+                    miniPlayer = playback.verseKey?.let { key ->
+                        AudioMiniPlayerUiState(key, key.substringAfter(':').toInt(), playback.reciter?.name.orEmpty(),
+                            playback.isPlaying, playback.speed, playback.positionMs, playback.durationMs,
+                            playback.mode, playback.synchronized)
+                    },
+                )
             }
         }
         viewModelScope.launch {
@@ -303,7 +312,7 @@ class QuranReaderViewModel @Inject constructor(
     fun playWithReciter(reciter: AudioReciterUiModel) {
         val pickerAyah = _uiState.value.reciterPickerAyah ?: return
         val activeVerseKey = _uiState.value.playingVerseKey
-        val shouldStartPlayback = reciterPickerStartsPlayback || activeVerseKey != null || quranAudioPlayer.hasActiveMedia()
+        val shouldStartPlayback = reciterPickerStartsPlayback || activeVerseKey != null || playbackController.state.value.active
         reciterPickerStartsPlayback = true
         _uiState.value = _uiState.value.copy(
             reciterPickerAyah = null,
@@ -314,12 +323,16 @@ class QuranReaderViewModel @Inject constructor(
             vaultPreferences.setQuranAudioReciterId(reciter.id)
         }
         if (shouldStartPlayback) {
-            playAudio(activeVerseKey ?: pickerAyah.verseKey, reciter)
+            playAudio(activeVerseKey ?: pickerAyah.verseKey, reciter, playbackController.state.value.mode)
         }
     }
 
     fun playAudioForAyah(ayah: QuranAyah) {
-        if (_uiState.value.playingVerseKey == ayah.verseKey && quranAudioPlayer.hasActiveMedia()) {
+        if (_uiState.value.playingVerseKey == ayah.verseKey && playbackController.state.value.active) {
+            if (playbackController.state.value.mode != QuranListeningMode.ThisAyah) {
+                playbackController.setMode(QuranListeningMode.ThisAyah)
+                return
+            }
             toggleAudioPlayback()
             return
         }
@@ -337,58 +350,24 @@ class QuranReaderViewModel @Inject constructor(
         openReciterPicker(ayah)
     }
 
-    fun toggleAudioPlayback() {
-        if (quranAudioPlayer.isPlaying()) {
-            quranAudioPlayer.pause()
-        } else if (quranAudioPlayer.hasActiveMedia()) {
-            quranAudioPlayer.resume()
-        } else {
-            val verseKey = _uiState.value.playingVerseKey ?: _uiState.value.ayahs.firstOrNull()?.verseKey ?: return
-            val selected = _uiState.value.selectedAudioReciter ?: return
-            playAudio(verseKey, selected)
-        }
-    }
+    fun toggleAudioPlayback() = playbackController.toggle()
 
-    fun stopAudio() {
-        audioRequestGeneration += 1
-        audioPrepareJob?.cancel()
-        audioPrepareJob = null
-        audioProgressJob?.cancel()
-        quranAudioPlayer.stop()
-        _uiState.value = _uiState.value.copy(
-            playingVerseKey = null,
-            audioLoadingVerseKey = null,
-            miniPlayer = null,
-        )
-    }
+    fun stopAudio() = playbackController.stop()
 
-    fun seekAudioTo(positionMs: Long) {
-        quranAudioPlayer.seekTo(positionMs)
-    }
+    fun seekAudioTo(positionMs: Long) = playbackController.seek(positionMs)
+
+    fun setAudioListeningMode(mode: QuranListeningMode) = playbackController.setMode(mode)
 
     fun setAudioPlaybackSpeed(speed: Float) {
         val clamped = speed.coerceIn(0.5f, 2f)
-        quranAudioPlayer.setPlaybackSpeed(clamped)
-        _uiState.value = _uiState.value.copy(
-            audioPlaybackSpeed = clamped,
-            miniPlayer = _uiState.value.miniPlayer?.copy(playbackSpeed = clamped),
-        )
-        viewModelScope.launch {
-            vaultPreferences.setQuranAudioPlaybackSpeed(clamped)
-        }
+        playbackController.speed(clamped)
+        _uiState.value = _uiState.value.copy(audioPlaybackSpeed = clamped)
+        viewModelScope.launch { vaultPreferences.setQuranAudioPlaybackSpeed(clamped) }
     }
 
-    fun skipAudioBy(deltaMs: Long) {
-        quranAudioPlayer.seekTo(quranAudioPlayer.currentPositionMs() + deltaMs)
-    }
+    fun skipAudioBy(deltaMs: Long) = playbackController.seek(playbackController.state.value.positionMs + deltaMs)
 
-    fun playAdjacentAudio(delta: Int) {
-        val currentVerseKey = _uiState.value.playingVerseKey ?: return
-        val currentIndex = _uiState.value.ayahs.indexOfFirst { it.verseKey == currentVerseKey }
-        val nextAyah = _uiState.value.ayahs.getOrNull(currentIndex + delta) ?: return
-        val selected = _uiState.value.selectedAudioReciter ?: return
-        playAudio(nextAyah.verseKey, selected)
-    }
+    fun playAdjacentAudio(delta: Int) = playbackController.adjacent(delta)
 
     fun createReflectionNoteForAyah(ayah: QuranAyah, title: String, body: String, onCreated: (String) -> Unit) {
         viewModelScope.launch {
@@ -440,101 +419,10 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
-    private fun playAudio(verseKey: String, reciter: AudioReciterUiModel) {
-        val surah = _uiState.value.selectedSurah
-        val ayah = _uiState.value.ayahs.firstOrNull { it.verseKey == verseKey } ?: return
-        val requestGeneration = ++audioRequestGeneration
-        audioPrepareJob?.cancel()
-        audioProgressJob?.cancel()
-        quranAudioPlayer.stop()
-        _uiState.value = _uiState.value.copy(
-            selectedAudioReciter = reciter,
-            playingVerseKey = verseKey,
-            audioLoadingVerseKey = verseKey,
-            audioStatusMessage = "Preparing audio...",
-            audioStatusIsError = false,
-            miniPlayer = AudioMiniPlayerUiState(
-                verseKey = verseKey,
-                ayahNumber = ayah.ayahNumber,
-                reciterName = reciter.name,
-                isPlaying = false,
-                playbackSpeed = _uiState.value.audioPlaybackSpeed,
-                progressMs = 0L,
-                durationMs = 0L,
-            ),
-        )
-        audioPrepareJob = viewModelScope.launch {
-            runCatching {
-                val metadata = quranAudioRepository.getChapterAudio(reciter, surah.num)
-                val file = quranAudioRepository.ensurePlaybackFile(metadata, verseKey)
-                if (requestGeneration != audioRequestGeneration) return@launch
-                val startMs = metadata.timestamps[verseKey] ?: 0L
-                quranAudioPlayer.play(
-                    file = file,
-                    startMs = startMs,
-                    speed = _uiState.value.audioPlaybackSpeed,
-                    verseByVerse = metadata.mode == PlaybackMode.VerseByVerse,
-                    onStarted = {
-                        if (requestGeneration != audioRequestGeneration) return@play
-                        val playbackState = quranAudioPlayer.playbackState.value
-                        _uiState.value = _uiState.value.copy(
-                            playingVerseKey = verseKey,
-                            audioLoadingVerseKey = null,
-                            audioStatusMessage = null,
-                            audioStatusIsError = false,
-                            miniPlayer = AudioMiniPlayerUiState(
-                                verseKey = verseKey,
-                                ayahNumber = ayah.ayahNumber,
-                                reciterName = reciter.name,
-                                isPlaying = true,
-                                playbackSpeed = _uiState.value.audioPlaybackSpeed,
-                                progressMs = playbackState.currentPositionMs,
-                                durationMs = playbackState.durationMs,
-                            ),
-                        )
-                        startAudioProgressTicker()
-                    },
-                    onCompleted = {
-                        if (requestGeneration != audioRequestGeneration) return@play
-                        _uiState.value = _uiState.value.copy(playingVerseKey = null, audioLoadingVerseKey = null)
-                    },
-                    onError = {
-                        if (requestGeneration != audioRequestGeneration) return@play
-                        _uiState.value = _uiState.value.copy(
-                            playingVerseKey = null,
-                            audioLoadingVerseKey = null,
-                            audioStatusMessage = "Audio could not be played.",
-                            audioStatusIsError = true,
-                        )
-                    },
-                )
-            }.onFailure { error ->
-                if (requestGeneration != audioRequestGeneration) return@onFailure
-                _uiState.value = _uiState.value.copy(
-                    playingVerseKey = null,
-                    audioLoadingVerseKey = null,
-                    audioStatusMessage = error.message ?: "Audio could not be prepared.",
-                    audioStatusIsError = true,
-                )
-            }
-        }
-    }
-
-    private fun startAudioProgressTicker() {
-        audioProgressJob?.cancel()
-        audioProgressJob = viewModelScope.launch {
-            while (quranAudioPlayer.hasActiveMedia()) {
-                val current = _uiState.value
-                val playback = quranAudioPlayer.playbackState.value.copy(
-                    currentPositionMs = quranAudioPlayer.currentPositionMs(),
-                    durationMs = quranAudioPlayer.durationMs(),
-                )
-                _uiState.value = current.copy(
-                    miniPlayer = current.buildMiniPlayer(playback),
-                )
-                kotlinx.coroutines.delay(250L)
-            }
-        }
+    private fun playAudio(verseKey: String, reciter: AudioReciterUiModel, mode: QuranListeningMode = QuranListeningMode.ThisAyah) {
+        val surah = verseKey.substringBefore(':').toIntOrNull() ?: return
+        val ayah = verseKey.substringAfter(':').toIntOrNull() ?: return
+        playbackController.requestPlay(surah, ayah, reciter, mode)
     }
 
     fun refreshAudioDownloadStates(reciter: AudioReciterUiModel) {
@@ -693,31 +581,10 @@ class QuranReaderViewModel @Inject constructor(
         }
     }
 
-    override fun onCleared() {
-        quranAudioPlayer.release()
-        super.onCleared()
-    }
 }
 
 internal fun normalizedQuranVerseKey(surahNumber: Int, requestedAyah: Int, lastAyah: Int): String =
     "$surahNumber:${requestedAyah.coerceIn(1, lastAyah.coerceAtLeast(1))}"
-
-private fun QuranReaderUiState.buildMiniPlayer(
-    playback: QuranAudioPlayer.PlaybackState,
-): AudioMiniPlayerUiState? {
-    val verseKey = playingVerseKey ?: return null
-    val ayahNumber = ayahs.firstOrNull { it.verseKey == verseKey }?.ayahNumber ?: return null
-    if (!playback.hasActiveMedia && audioLoadingVerseKey != verseKey) return null
-    return AudioMiniPlayerUiState(
-        verseKey = verseKey,
-        ayahNumber = ayahNumber,
-        reciterName = selectedAudioReciter?.name.orEmpty(),
-        isPlaying = playback.isPlaying,
-        playbackSpeed = audioPlaybackSpeed,
-        progressMs = playback.currentPositionMs,
-        durationMs = playback.durationMs,
-    )
-}
 
 private fun List<com.myvault.app.data.quran.QuranRecentLocation>.updatedWith(
     surahNumber: Int,

@@ -23,3 +23,15 @@
 ## Next
 
 Verify recording/timing contract, extend existing MediaPlayer with a shared background owner, then wire reader and widget controls. Backup/Drive/canonical content remain protected.
+
+## Checkpoint B/C - Full-track contract and shared playback
+
+- Existing proxy returned Afasy Murattal full recordings; verified separate chapter-reciter mapping. Ordered timing fixtures for 1/2/4/9 are covered by executed unit tests. Personal-use source terms and unverified wider/audible coverage are recorded in the contract.
+- Added a bounded, recording-identity-specific full-track cache; existing single-ayah download implementation retained.
+- Existing MediaPlayer retained; preparation cancellation, full-track boundary policy, actual-position sampling, audio focus, non-sticky foreground service and platform MediaSession added. Reader lifetime no longer owns/release-stops the player.
+- Added compact listening-mode and opt-in follow controls; selected ayah and saved reading state remain independent.
+- Widget collection now separates OPEN and PLAY through one explicit per-widget broadcast template. Header play/continue/stop and independent row Play controls wired; meaningful partial updates contain no scroll commands.
+- Full unit suite and debug/test APK assembly passed. Nine new timing/policy tests passed. Updated one older source-location assertion to follow cancellation ownership from ViewModel into the shared controller.
+- Two executed emulator real-MediaPlayer tests passed in 33.792s: same player/recording through Continue and boundaries, manual pause/mode changes, seek/speed, single-ayah stopping, background continuation, final completion, unsupported-reciter error and latest-request cancellation.
+- Captured actual emulator PCM output through the emulator's local gRPC audio API. This capture includes explicit test pauses/seeks and is not a gap-free listening acceptance recording. No human audible judgment claimed.
+- Launcher pin test passed but initial screenshot showed an empty page. Investigating actual rendering before accepting widget controls. Full lint/R8 validation running.

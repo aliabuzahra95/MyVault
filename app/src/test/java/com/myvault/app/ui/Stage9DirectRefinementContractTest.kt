@@ -42,11 +42,12 @@ class Stage9DirectRefinementContractTest {
     fun `reciter changes cancel stale preparation and retain one selected source`() {
         val viewModel = source("ui/viewmodel/QuranReaderViewModel.kt")
 
-        assertTrue(viewModel.contains("audioPrepareJob?.cancel()"))
-        assertTrue(viewModel.contains("audioRequestGeneration"))
-        assertTrue(viewModel.contains("requestGeneration != audioRequestGeneration"))
+        val controller = source("data/quran/audio/QuranPlaybackController.kt")
+        assertTrue(controller.contains("preparation?.cancel()"))
+        assertTrue(controller.contains("++generation"))
+        assertTrue(controller.contains("request != generation"))
         assertTrue(viewModel.contains("selectedAudioReciter = reciter"))
-        assertTrue(viewModel.contains("playAudio(activeVerseKey ?: pickerAyah.verseKey, reciter)"))
+        assertTrue(viewModel.contains("playAudio(activeVerseKey ?: pickerAyah.verseKey, reciter, playbackController.state.value.mode)"))
     }
 
     @Test

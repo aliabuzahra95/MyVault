@@ -15,6 +15,9 @@ class QuranAudioPlayer @Inject constructor() {
     private var playbackSpeed = 1f
     private var shouldStartAfterSeek = false
     private var requestCounter = 0L
+    private var prepared = false
+    var isSeeking = false
+        private set
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
@@ -50,10 +53,12 @@ class QuranAudioPlayer @Inject constructor() {
                     it.release()
                     return@setOnPreparedListener
                 }
+                prepared = true
                 applyPlaybackSpeed(it)
                 if (requestedStartMs > 0L) {
                     shouldStartAfterSeek = true
-                    it.seekTo(requestedStartMs, MediaPlayer.SEEK_PREVIOUS_SYNC)
+                    isSeeking = true
+                    it.seekTo(requestedStartMs, MediaPlayer.SEEK_CLOSEST)
                 } else {
                     it.start()
                     updatePlaybackState(
@@ -67,6 +72,7 @@ class QuranAudioPlayer @Inject constructor() {
             }
             player.setOnSeekCompleteListener {
                 if (!isCurrentRequest(it, requestId)) return@setOnSeekCompleteListener
+                isSeeking = false
                 if (shouldStartAfterSeek) {
                     shouldStartAfterSeek = false
                     it.start()
@@ -84,9 +90,11 @@ class QuranAudioPlayer @Inject constructor() {
                 onCompleted()
                 if (isCurrentRequest(it, requestId)) stop()
             }
-            player.setOnErrorListener { _, _, _ ->
-                stop()
-                onError()
+            player.setOnErrorListener { failed, _, _ ->
+                if (isCurrentRequest(failed, requestId)) {
+                    stop()
+                    onError()
+                }
                 true
             }
             player.prepareAsync()
@@ -97,6 +105,7 @@ class QuranAudioPlayer @Inject constructor() {
     }
 
     fun pause() {
+        if (!prepared) return
         mediaPlayer?.takeIf { it.isPlaying }?.pause()
         mediaPlayer?.let {
             updatePlaybackState(
@@ -109,6 +118,7 @@ class QuranAudioPlayer @Inject constructor() {
     }
 
     fun resume() {
+        if (!prepared) return
         mediaPlayer?.let {
             applyPlaybackSpeed(it)
             if (!it.isPlaying) it.start()
@@ -122,9 +132,11 @@ class QuranAudioPlayer @Inject constructor() {
     }
 
     fun seekTo(positionMs: Long) {
+        if (!prepared) return
         mediaPlayer?.let {
             val clamped = positionMs.coerceIn(0L, durationMs())
-            it.seekTo(clamped, MediaPlayer.SEEK_CLOSEST_SYNC)
+            isSeeking = true
+            it.seekTo(clamped, MediaPlayer.SEEK_CLOSEST)
             updatePlaybackState(
                 hasActiveMedia = true,
                 isPlaying = it.isPlaying,
@@ -136,19 +148,22 @@ class QuranAudioPlayer @Inject constructor() {
 
     fun setPlaybackSpeed(speed: Float) {
         playbackSpeed = speed
-        mediaPlayer?.let(::applyPlaybackSpeed)
+        if (prepared) mediaPlayer?.let(::applyPlaybackSpeed)
     }
 
-    fun isPlaying(): Boolean = mediaPlayer?.isPlaying == true
+    fun isPlaying(): Boolean = prepared && mediaPlayer?.isPlaying == true
 
-    fun currentPositionMs(): Long = mediaPlayer?.currentPosition?.toLong() ?: 0L
+    fun currentPositionMs(): Long = if (prepared) mediaPlayer?.currentPosition?.toLong() ?: 0L else 0L
 
-    fun durationMs(): Long = mediaPlayer?.duration?.takeIf { it > 0 }?.toLong() ?: 0L
+    fun durationMs(): Long = if (prepared) mediaPlayer?.duration?.takeIf { it > 0 }?.toLong() ?: 0L else 0L
 
     fun hasActiveMedia(): Boolean = mediaPlayer != null
 
     fun stop() {
         shouldStartAfterSeek = false
+        prepared = false
+        isSeeking = false
+        requestCounter += 1
         mediaPlayer?.runCatching {
             if (isPlaying) stop()
             reset()

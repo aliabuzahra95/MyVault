@@ -113,19 +113,15 @@ internal class QuranWidgetFactory(
                 R.id.quran_widget_row,
                 context.getString(R.string.quran_widget_open_ayah, verseKey),
             )
-            setOnClickFillInIntent(
-                R.id.quran_widget_row,
-                Intent().apply {
-                    action = Intent.ACTION_VIEW
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra(QuranWidgetContract.EXTRA_WIDGET_ID, appWidgetId)
-                    putExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, this@toReaderView.surahNumber)
-                    putExtra(QuranWidgetContract.EXTRA_AYAH_NUMBER, ayahNumber)
-                    data = android.net.Uri.parse(
-                        "myvault://quran/${this@toReaderView.surahNumber}/$ayahNumber?widget=$appWidgetId",
-                    )
-                },
-            )
+            setOnClickFillInIntent(R.id.quran_widget_row,
+                QuranWidgetPlayback.rowIntent(appWidgetId, surahNumber, ayahNumber, QuranWidgetPlayback.OPEN))
+            setOnClickFillInIntent(R.id.quran_widget_ayah_play,
+                QuranWidgetPlayback.rowIntent(appWidgetId, surahNumber, ayahNumber, QuranWidgetPlayback.PLAY))
+            val playback = quranWidgetPlayback(context).state.value
+            val active = playback.verseKey == verseKey && playback.isPlaying
+            setQuranAudioIcon(context, appWidgetId, R.id.quran_widget_ayah_play, if (active) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+            setContentDescription(R.id.quran_widget_ayah_play, if (active) "Pause ayah $verseKey" else "Play ayah $verseKey")
+
         }
     }
 

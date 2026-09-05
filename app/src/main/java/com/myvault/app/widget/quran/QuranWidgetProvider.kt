@@ -16,6 +16,8 @@ import com.myvault.app.MainActivity
 import com.myvault.app.R
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.quran.quranCatalog
+import com.myvault.app.data.quran.audio.QuranListeningMode
+import com.myvault.app.data.quran.audio.QuranPlaybackService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -67,6 +69,44 @@ class QuranWidgetProvider : AppWidgetProvider() {
         )
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
 
+        if (intent.action in audioActions) {
+            val state = QuranWidgetStateStore(context).read(appWidgetId)
+            val controller = quranWidgetPlayback(context)
+            val playing = controller.state.value
+            when (intent.action) {
+                QuranWidgetPlayback.ROW -> {
+                    val location = validatedWidgetLocation(intent.getIntExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, 1), intent.getIntExtra(QuranWidgetContract.EXTRA_AYAH_NUMBER, 1))
+                    when (intent.getStringExtra(QuranWidgetPlayback.COMMAND)) {
+                        QuranWidgetPlayback.OPEN -> {
+                            val open = Intent(context, MainActivity::class.java).apply {
+                                action = Intent.ACTION_VIEW
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                putExtra(QuranWidgetContract.EXTRA_WIDGET_ID, appWidgetId)
+                                putExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, location.surahNumber)
+                                putExtra(QuranWidgetContract.EXTRA_AYAH_NUMBER, location.ayahNumber)
+                                data = Uri.parse("myvault://quran/${location.surahNumber}/${location.ayahNumber}?widget=$appWidgetId")
+                            }
+                            context.startActivity(open)
+                        }
+                        QuranWidgetPlayback.PLAY -> {
+                            val same = playing.verseKey == "${location.surahNumber}:${location.ayahNumber}" && playing.active
+                            if (same) {
+                                if (playing.mode == QuranListeningMode.ThisAyah) controller.toggle()
+                                else controller.setMode(QuranListeningMode.ThisAyah)
+                            } else QuranPlaybackService.start(context, QuranPlaybackService.PLAY, location.surahNumber, location.ayahNumber)
+                        }
+                    }
+                }
+                QuranWidgetPlayback.HEADER_PLAY -> {
+                    if (playing.surah == state.surahNumber && playing.active) controller.toggle()
+                    else QuranPlaybackService.start(context, QuranPlaybackService.PLAY, state.surahNumber, 1, mode = QuranListeningMode.ContinueSurah)
+                }
+                QuranWidgetPlayback.HEADER_CONTINUE -> if (playing.surah == state.surahNumber && playing.active) controller.setMode(QuranListeningMode.ContinueSurah)
+                QuranWidgetPlayback.HEADER_STOP -> if (playing.surah == state.surahNumber) controller.stop()
+            }
+            return
+        }
+
         val store = QuranWidgetStateStore(context)
         when (intent.action) {
             QuranWidgetContract.ACTION_PREVIOUS_SURAH -> store.moveSurah(appWidgetId, -1)
@@ -107,6 +147,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        private val audioActions = setOf(QuranWidgetPlayback.ROW, QuranWidgetPlayback.HEADER_PLAY, QuranWidgetPlayback.HEADER_STOP, QuranWidgetPlayback.HEADER_CONTINUE)
         private val widgetActions = setOf(
             QuranWidgetContract.ACTION_PREVIOUS_SURAH,
             QuranWidgetContract.ACTION_NEXT_SURAH,
@@ -115,7 +156,22 @@ class QuranWidgetProvider : AppWidgetProvider() {
             QuranWidgetContract.ACTION_SHOW_SETTINGS,
             QuranWidgetContract.ACTION_SELECT_SURAH,
             QuranWidgetContract.ACTION_SETTING_COMMAND,
-        )
+        ) + audioActions
+
+        fun updatePlayback(context: Context, surahs: Set<Int>) {
+            val manager = AppWidgetManager.getInstance(context)
+            for (id in manager.getAppWidgetIds(ComponentName(context, QuranWidgetProvider::class.java))) {
+                val state = QuranWidgetStateStore(context).read(id)
+                if (state.mode != QuranWidgetMode.Reader || state.surahNumber !in surahs) continue
+                val options = manager.getAppWidgetOptions(id)
+                val bucket = quranWidgetSizeBucket(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320), options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300))
+                val views = com.myvault.app.widget.widgetRemoteViews(context, id, bucket.layoutResource())
+                bindHeader(context.widgetAppearanceContext(id), views, id, state, bucket)
+                // No adapter replacement or scroll command during playback updates.
+                manager.partiallyUpdateAppWidget(id, views)
+                manager.notifyAppWidgetViewDataChanged(id, R.id.quran_widget_collection)
+            }
+        }
 
         fun updateAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -146,6 +202,18 @@ class QuranWidgetProvider : AppWidgetProvider() {
             val surah = quranCatalog.first { it.num == state.surahNumber }
             val isReader = state.mode == QuranWidgetMode.Reader
             val isPicker = state.mode == QuranWidgetMode.Picker
+            val playback = quranWidgetPlayback(context).state.value
+            val active = playback.active && playback.surah == state.surahNumber
+            views.setViewVisibility(R.id.quran_widget_audio_controls, if (isReader) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.quran_widget_stop, if (active) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.quran_widget_continue, if (active && playback.mode == QuranListeningMode.ThisAyah) View.VISIBLE else View.GONE)
+            views.setQuranAudioIcon(context, appWidgetId, R.id.quran_widget_play_surah, if (active && playback.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+            views.setQuranAudioIcon(context, appWidgetId, R.id.quran_widget_continue, android.R.drawable.ic_media_next)
+            views.setQuranAudioIcon(context, appWidgetId, R.id.quran_widget_stop, android.R.drawable.ic_menu_close_clear_cancel)
+            views.setContentDescription(R.id.quran_widget_play_surah, if (active) { if (playback.isPlaying) "Pause recitation" else "Resume recitation" } else "Play Surah")
+            views.setOnClickPendingIntent(R.id.quran_widget_play_surah, broadcastIntent(context, appWidgetId, QuranWidgetPlayback.HEADER_PLAY, 20))
+            views.setOnClickPendingIntent(R.id.quran_widget_continue, broadcastIntent(context, appWidgetId, QuranWidgetPlayback.HEADER_CONTINUE, 21))
+            views.setOnClickPendingIntent(R.id.quran_widget_stop, broadcastIntent(context, appWidgetId, QuranWidgetPlayback.HEADER_STOP, 22))
             views.setTextViewText(
                 R.id.quran_widget_title,
                 when (state.mode) {
@@ -298,13 +366,13 @@ class QuranWidgetProvider : AppWidgetProvider() {
             views.setRemoteAdapter(R.id.quran_widget_collection, serviceIntent)
             views.setEmptyView(R.id.quran_widget_collection, R.id.quran_widget_empty)
             val template = when (state.mode) {
-                QuranWidgetMode.Reader -> PendingIntent.getActivity(
+                QuranWidgetMode.Reader -> PendingIntent.getBroadcast(
                     context,
                     requestCode(appWidgetId, 7),
-                    Intent(context, MainActivity::class.java).apply {
-                        action = Intent.ACTION_VIEW
+                    Intent(context, QuranWidgetProvider::class.java).apply {
+                        action = QuranWidgetPlayback.ROW
                         identifier = "quran-widget-reader:$appWidgetId"
-                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
                 )

@@ -1,5 +1,7 @@
 package com.myvault.app.ui.quran
 
+import androidx.compose.material3.SegmentedButton
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -657,6 +659,9 @@ internal fun QuranAudioMiniPlayer(
     onChooseOtherReciter: () -> Unit,
     onClose: () -> Unit,
     onDownloadCurrentSurah: () -> Unit,
+    onSetListeningMode: (com.myvault.app.data.quran.audio.QuranListeningMode) -> Unit,
+    followRecitation: Boolean,
+    onFollowRecitation: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -827,6 +832,22 @@ internal fun QuranAudioMiniPlayer(
             }
 
             Spacer(Modifier.height(7.dp))
+
+            androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                com.myvault.app.data.quran.audio.QuranListeningMode.entries.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = player.listeningMode == mode,
+                        onClick = { onSetListeningMode(mode) },
+                        shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index, 2),
+                    ) {
+                        Text(if (index == 0) "This ayah" else "Continue Surah", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Follow recitation", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
+                androidx.compose.material3.Switch(checked = followRecitation, onCheckedChange = onFollowRecitation, enabled = player.synchronized)
+            }
 
             Slider(
                 value = sliderPosition.coerceIn(0f, player.durationMs.toFloat().coerceAtLeast(1f)),

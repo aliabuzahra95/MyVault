@@ -202,7 +202,11 @@ internal fun FrozenQuranAyah(
     ) { mutableStateOf<String?>(null) }
     val shape = RoundedCornerShape(10.dp)
     val selectedBackground by animateColorAsState(
-        targetValue = if (selected) colors.accentSoft.copy(alpha = 0.08f) else Color.Transparent,
+        targetValue = when {
+            isAudioPlaying -> colors.accent.copy(alpha = 0.055f)
+            selected -> colors.accentSoft.copy(alpha = 0.08f)
+            else -> Color.Transparent
+        },
         animationSpec = tween(durationMillis = 155, easing = FastOutSlowInEasing),
         label = "ayah-selected-surface",
     )

@@ -15,6 +15,8 @@ data class AudioMiniPlayerUiState(
     val playbackSpeed: Float,
     val progressMs: Long,
     val durationMs: Long,
+    val listeningMode: QuranListeningMode = QuranListeningMode.ThisAyah,
+    val synchronized: Boolean = false,
 )
 
 sealed interface SurahDownloadState {

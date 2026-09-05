@@ -30,6 +30,10 @@ class QuranAudioRepository @Inject constructor(
         }
     }
 
+    internal suspend fun fullSurahResponse(chapterReciterId: Int, surah: Int): JSONObject = withContext(Dispatchers.IO) {
+        getJson("$workerBaseUrl/proxy/content/api/v4/chapter_recitations/$chapterReciterId/$surah?segments=true")
+    }
+
     suspend fun getChapterAudio(
         reciter: AudioReciterUiModel,
         surahNumber: Int,

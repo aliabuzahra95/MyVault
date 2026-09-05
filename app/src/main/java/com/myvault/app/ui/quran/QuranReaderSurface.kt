@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,7 @@ internal fun QuranReaderSurface(
     onStopAudio: () -> Unit,
     onSeekAudioTo: (Long) -> Unit,
     onSetAudioSpeed: (Float) -> Unit,
+    onSetAudioListeningMode: (com.myvault.app.data.quran.audio.QuranListeningMode) -> Unit,
     onSkipAudioBy: (Long) -> Unit,
     onPlayAdjacentAudio: (Int) -> Unit,
     onChooseOtherReciter: () -> Unit,
@@ -105,6 +107,7 @@ internal fun QuranReaderSurface(
     var reflectionEditTargetId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedWordId by rememberSaveable { mutableStateOf<String?>(null) }
     var savedMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var followRecitation by remember { mutableStateOf(false) }
     val headerCount = 1
     val currentAyah by remember(uiState.ayahs, listState) {
         derivedStateOf {
@@ -137,6 +140,7 @@ internal fun QuranReaderSurface(
     }
     LaunchedEffect(uiState.pendingScrollVerseKey, uiState.loading, uiState.ayahs.size) {
         val key = uiState.pendingScrollVerseKey ?: return@LaunchedEffect
+        followRecitation = false
         if (uiState.loading) return@LaunchedEffect
         val index = uiState.ayahs.indexOfFirst { it.verseKey == key }
         if (index >= 0) {
@@ -148,6 +152,16 @@ internal fun QuranReaderSurface(
         if (savedMessage != null) {
             delay(1600)
             savedMessage = null
+        }
+    }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) followRecitation = false }
+    }
+    LaunchedEffect(uiState.playingVerseKey, followRecitation) {
+        if (!followRecitation || uiState.pendingScrollVerseKey != null || uiState.loading) return@LaunchedEffect
+        val index = uiState.ayahs.indexOfFirst { it.verseKey == uiState.playingVerseKey }
+        if (index >= 0 && listState.layoutInfo.visibleItemsInfo.none { it.index == index + headerCount }) {
+            listState.animateScrollToItem(index + headerCount)
         }
     }
 
@@ -197,10 +211,7 @@ internal fun QuranReaderSurface(
                                 onLastReadAyahChanged(uiState.selectedSurah.num, ayah.ayahNumber)
                                 savedMessage = "Reading position saved"
                             },
-                            onListen = {
-                                if (uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer != null) onToggleAudioPlayback()
-                                else onPlayAudioForAyah(ayah)
-                            },
+                            onListen = { onPlayAudioForAyah(ayah) },
                             onToggleTafsir = { onToggleTafsir(ayah.verseKey) },
                             onReflect = {
                                 reflectionEditTargetId = uiState.reflectionsByVerse[ayah.verseKey]?.firstOrNull()?.noteId
@@ -233,7 +244,7 @@ internal fun QuranReaderSurface(
 
         uiState.miniPlayer?.let { player ->
             QuranAudioMiniPlayer(
-                surahName = uiState.selectedSurah.name,
+                surahName = com.myvault.app.data.quran.quranCatalog.firstOrNull { it.num == player.verseKey.substringBefore(':').toIntOrNull() }?.name ?: uiState.selectedSurah.name,
                 player = player,
                 onTogglePlayback = onToggleAudioPlayback,
                 onSkipBack = { onSkipAudioBy(-10_000) },
@@ -242,6 +253,9 @@ internal fun QuranReaderSurface(
                 onNextAyah = { onPlayAdjacentAudio(1) },
                 onSeekTo = onSeekAudioTo,
                 onSetSpeed = onSetAudioSpeed,
+                onSetListeningMode = onSetAudioListeningMode,
+                followRecitation = followRecitation,
+                onFollowRecitation = { followRecitation = it },
                 onChooseOtherReciter = onChooseOtherReciter,
                 onClose = onStopAudio,
                 onDownloadCurrentSurah = { uiState.selectedAudioReciter?.let { onDownloadSurahAudio(it, uiState.selectedSurah.num) } },
