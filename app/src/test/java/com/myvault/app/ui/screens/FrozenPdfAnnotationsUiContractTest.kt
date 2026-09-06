@@ -1,8 +1,6 @@
 package com.myvault.app.ui.screens
 
 import java.io.File
-import androidx.compose.ui.unit.Velocity
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,12 +46,11 @@ class FrozenPdfAnnotationsUiContractTest {
     }
 
     @Test
-    fun annotationListConsumesOnlyItsRemainingFlingBeforeTheSheetCanMove() {
-        val remainder = Velocity(0f, 2_400f)
-
-        assertEquals(remainder, consumeAnnotationListRemainder(remainder))
-        assertTrue(reader.contains(".nestedScroll(listFlingBoundary)"))
-        assertTrue(reader.contains("override suspend fun onPostFling"))
+    fun annotationListOwnsScrollingWithoutElasticOrSheetMotionAtItsBoundary() {
+        assertTrue(reader.contains("overscrollEffect = null"))
+        assertTrue(reader.contains("sheetGesturesEnabled = sheetGesturesEnabled"))
+        assertTrue(reader.contains("!annotationListState.isScrollInProgress"))
+        assertTrue(reader.contains("!annotationListState.canScrollBackward"))
     }
 
     @Test

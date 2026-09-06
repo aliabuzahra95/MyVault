@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -67,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -79,8 +81,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -88,7 +88,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.pdf.PdfRect
@@ -142,8 +141,6 @@ private enum class PdfAnnotationScope(val label: String) {
     AllPages("All pages"),
     ThisPage("This page"),
 }
-
-internal fun consumeAnnotationListRemainder(available: Velocity): Velocity = available
 
 @Composable
 internal fun FrozenPdfReaderScreen(
@@ -1100,10 +1097,10 @@ private fun FrozenLocalPdfActivitySheet(
 ) {
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    val listFlingBoundary = remember {
-        object : NestedScrollConnection {
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
-                consumeAnnotationListRemainder(available)
+    val annotationListState = rememberLazyListState()
+    val sheetGesturesEnabled by remember {
+        derivedStateOf {
+            !annotationListState.isScrollInProgress && !annotationListState.canScrollBackward
         }
     }
     var scopeMenuOpen by remember { mutableStateOf(false) }
@@ -1131,6 +1128,7 @@ private fun FrozenLocalPdfActivitySheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetGesturesEnabled = sheetGesturesEnabled,
         containerColor = colors.surface,
     ) {
         Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
@@ -1211,10 +1209,10 @@ private fun FrozenLocalPdfActivitySheet(
                 }
             }
             LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .nestedScroll(listFlingBoundary),
+                modifier = Modifier.weight(1f),
+                state = annotationListState,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
+                overscrollEffect = null,
             ) {
                 items(filteredAnnotations, key = { it.id }) { annotation ->
                     FrozenLocalAnnotationRow(
