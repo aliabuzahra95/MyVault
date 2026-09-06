@@ -1,6 +1,8 @@
 package com.myvault.app.ui.screens
 
 import java.io.File
+import androidx.compose.ui.unit.Velocity
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,5 +45,20 @@ class FrozenPdfAnnotationsUiContractTest {
         assertTrue(reader.contains("scrollToAnnotation(annotation, annotationSegments)"))
         assertTrue(reader.contains("emphasizedAnnotationId = annotation.id"))
         assertTrue(reader.contains("delay(550)"))
+    }
+
+    @Test
+    fun annotationListConsumesOnlyItsRemainingFlingBeforeTheSheetCanMove() {
+        val remainder = Velocity(0f, 2_400f)
+
+        assertEquals(remainder, consumeAnnotationListRemainder(remainder))
+        assertTrue(reader.contains(".nestedScroll(listFlingBoundary)"))
+        assertTrue(reader.contains("override suspend fun onPostFling"))
+    }
+
+    @Test
+    fun highlightFilteringDoesNotHideAHighlightThatAlsoHasANote() {
+        assertTrue(reader.contains("PdfActivityFilter.Highlights -> annotation.isPdfHighlightActivity()"))
+        assertTrue(reader.contains("PdfActivityFilter.Notes -> annotation.isPdfNoteActivity()"))
     }
 }

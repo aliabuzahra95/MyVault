@@ -78,3 +78,37 @@ fun PdfAnnotationEntity.resolvedGeometrySegments(
         .toList()
     return validSegments.ifEmpty { listOfNotNull(legacyGeometrySegment()) }
 }
+
+fun PdfAnnotationEntity.isSupportedPdfAnnotation(
+    segments: List<PdfAnnotationSegmentEntity>,
+): Boolean =
+    when (annotationType) {
+        PdfAnnotationEntity.TYPE_HIGHLIGHT ->
+            attachmentId.isNotBlank() &&
+                pageIndex >= 0 &&
+                resolvedGeometrySegments(segments).isNotEmpty()
+
+        PdfAnnotationEntity.TYPE_PAGE_NOTE -> isCurrentPdfAnnotation()
+        PdfAnnotationEntity.TYPE_TEXT_BOX -> isCompatibilityPreservedPdfTextBox()
+        else -> false
+    }
+
+fun PdfAnnotationEntity.occursOnPdfPage(
+    targetPageIndex: Int,
+    segments: List<PdfAnnotationSegmentEntity>,
+): Boolean =
+    when (annotationType) {
+        PdfAnnotationEntity.TYPE_HIGHLIGHT ->
+            resolvedGeometrySegments(segments).any { it.pageIndex == targetPageIndex }
+        else -> pageIndex == targetPageIndex
+    }
+
+fun PdfAnnotationEntity.primaryPdfPageIndex(
+    segments: List<PdfAnnotationSegmentEntity>,
+): Int = resolvedGeometrySegments(segments).firstOrNull()?.pageIndex ?: pageIndex
+
+fun PdfAnnotationEntity.isPdfHighlightActivity(): Boolean =
+    annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT
+
+fun PdfAnnotationEntity.isPdfNoteActivity(): Boolean =
+    annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !noteText.isNullOrBlank()

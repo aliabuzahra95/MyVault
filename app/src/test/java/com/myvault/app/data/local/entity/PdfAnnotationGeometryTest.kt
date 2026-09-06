@@ -1,6 +1,7 @@
 package com.myvault.app.data.local.entity
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -52,6 +53,61 @@ class PdfAnnotationGeometryTest {
         assertEquals(1, resolved.size)
         assertEquals(parent.left, resolved.single().left)
         assertTrue(resolved.single().isValidPdfAnnotationSegment())
+    }
+
+    @Test
+    fun restoredGeometryKeepsHighlightVisibleWhenLegacyRectangleIsUnavailable() {
+        val geometryOnlyParent = parent.copy(left = 0f, top = 0f, right = 0f, bottom = 0f)
+        val restoredSegments = listOf(segment(order = 0, page = 11, top = 120f))
+
+        assertTrue(geometryOnlyParent.isSupportedPdfAnnotation(restoredSegments))
+        assertTrue(geometryOnlyParent.occursOnPdfPage(11, restoredSegments))
+        assertEquals(11, geometryOnlyParent.primaryPdfPageIndex(restoredSegments))
+    }
+
+    @Test
+    fun multiRectangleHighlightAppearsOnEveryRepresentedPage() {
+        val restoredSegments = listOf(
+            segment(order = 0, page = 10, top = 120f),
+            segment(order = 1, page = 11, top = 20f),
+        )
+
+        assertTrue(parent.isSupportedPdfAnnotation(restoredSegments))
+        assertTrue(parent.occursOnPdfPage(10, restoredSegments))
+        assertTrue(parent.occursOnPdfPage(11, restoredSegments))
+        assertFalse(parent.occursOnPdfPage(12, restoredSegments))
+    }
+
+    @Test
+    fun unknownAnnotationTypeIsNotAcceptedAsSupportedContent() {
+        val unknown = parent.copy(annotationType = "future_unknown")
+
+        assertFalse(unknown.isSupportedPdfAnnotation(emptyList()))
+    }
+
+    @Test
+    fun highlightWithANoteBelongsToBothSupportedActivityCategories() {
+        val annotatedHighlight = parent.copy(noteText = "A note attached to this highlight")
+
+        assertTrue(annotatedHighlight.isPdfHighlightActivity())
+        assertTrue(annotatedHighlight.isPdfNoteActivity())
+    }
+
+    @Test
+    fun webStyleDirectRectangleUsesZeroBasedPageIndexWithoutConversion() {
+        val webHighlight = parent.copy(
+            pageIndex = 11,
+            left = 58.35f,
+            top = 340f,
+            right = 412.37f,
+            bottom = 437.59f,
+            selectedText = null,
+            annotationType = PdfAnnotationEntity.TYPE_HIGHLIGHT,
+        )
+
+        assertTrue(webHighlight.isSupportedPdfAnnotation(emptyList()))
+        assertEquals(11, webHighlight.primaryPdfPageIndex(emptyList()))
+        assertTrue(webHighlight.occursOnPdfPage(11, emptyList()))
     }
 
     private fun segment(order: Int, page: Int, top: Float) = PdfAnnotationSegmentEntity(

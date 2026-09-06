@@ -27,6 +27,8 @@ class PdfAnnotationRepository @Inject constructor(
 
     fun observeForAttachment(attachmentId: String) = annotationDao.observeForAttachment(attachmentId)
 
+    fun observeAllSegments() = segmentDao.observeAll()
+
     fun observeSegmentsForAttachment(attachmentId: String) = segmentDao.observeForAttachment(attachmentId)
 
     suspend fun cleanupGenuinelyInvalidAnnotations() {

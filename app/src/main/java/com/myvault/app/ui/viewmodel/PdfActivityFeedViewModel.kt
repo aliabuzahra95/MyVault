@@ -7,7 +7,8 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
-import com.myvault.app.data.local.entity.isCurrentPdfAnnotation
+import com.myvault.app.data.local.entity.isSupportedPdfAnnotation
+import com.myvault.app.data.local.entity.primaryPdfPageIndex
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.PdfAnnotationRepository
@@ -66,8 +67,9 @@ class PdfActivityFeedViewModel @Inject constructor(
         folderRepository.observeLibraryFolders(),
         attachmentRepository.observeLibraryFiles(),
         pdfAnnotationRepository.observeAll(),
+        pdfAnnotationRepository.observeAllSegments(),
         filterState,
-    ) { folders, allFiles, annotations, (expandedIds, query, selectedIds) ->
+    ) { folders, allFiles, annotations, annotationSegments, (expandedIds, query, selectedIds) ->
         val modeFolders = folders.filter { it.mode == libraryMode }
         val modeFolderIds = modeFolders.map { it.id }.toSet()
 
@@ -85,7 +87,7 @@ class PdfActivityFeedViewModel @Inject constructor(
         val normalizedQuery = query.trim().lowercase()
 
         val mappedAnnotations = annotations
-            .filter { it.isCurrentPdfAnnotation() && it.attachmentId in filesById }
+            .filter { it.isSupportedPdfAnnotation(annotationSegments) && it.attachmentId in filesById }
             .mapNotNull { annotation ->
                 filesById[annotation.attachmentId]?.let { file ->
                     val matchesQuery = if (normalizedQuery.isBlank()) {
@@ -101,7 +103,7 @@ class PdfActivityFeedViewModel @Inject constructor(
                             id = annotation.id,
                             attachmentId = annotation.attachmentId,
                             fileName = file.fileName,
-                            pageIndex = annotation.pageIndex,
+                            pageIndex = annotation.primaryPdfPageIndex(annotationSegments),
                             color = annotation.color,
                             annotationType = annotation.annotationType,
                             displayTitle = annotation.displayTitle,

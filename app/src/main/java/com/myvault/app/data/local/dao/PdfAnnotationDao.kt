@@ -81,10 +81,25 @@ interface PdfAnnotationDao {
                 AND (
                     attachmentId = ''
                     OR pageIndex < 0
-                    OR right <= left
-                    OR bottom <= top
-                    OR right - left < 0.5
-                    OR bottom - top < 0.5
+                    OR (
+                        (
+                            right <= left
+                            OR bottom <= top
+                            OR right - left < 0.5
+                            OR bottom - top < 0.5
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pdf_annotation_segments AS segment
+                            WHERE segment.annotationId = pdf_annotations.id
+                              AND segment.annotationId != ''
+                              AND segment.orderIndex >= 0
+                              AND segment.pageIndex >= 0
+                              AND segment.right > segment.left
+                              AND segment.bottom > segment.top
+                              AND segment.right - segment.left >= 0.5
+                              AND segment.bottom - segment.top >= 0.5
+                        )
+                    )
                 )
            )
            OR (

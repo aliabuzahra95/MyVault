@@ -25,9 +25,12 @@ class PdfAnnotationPreservationContractTest {
 
     @Test
     fun `viewer cleanup deletes only ids proven genuinely invalid`() {
+        val dao = source("data/local/dao/PdfAnnotationDao.kt")
         val repository = source("data/repository/PdfAnnotationRepository.kt")
         val viewer = source("ui/viewmodel/AttachmentViewerViewModel.kt")
 
+        assertTrue(dao.contains("AND NOT EXISTS"))
+        assertTrue(dao.contains("segment.annotationId = pdf_annotations.id"))
         assertTrue(repository.contains("val ids = annotationDao.getGenuinelyInvalidIds()"))
         assertTrue(repository.contains("if (ids.isEmpty()) return"))
         assertTrue(repository.contains("annotationDao.deleteByIds(ids)"))

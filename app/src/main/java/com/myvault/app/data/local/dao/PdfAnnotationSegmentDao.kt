@@ -20,6 +20,9 @@ interface PdfAnnotationSegmentDao {
     fun observeForAttachment(attachmentId: String): Flow<List<PdfAnnotationSegmentEntity>>
 
     @Query("SELECT * FROM pdf_annotation_segments ORDER BY annotationId ASC, orderIndex ASC")
+    fun observeAll(): Flow<List<PdfAnnotationSegmentEntity>>
+
+    @Query("SELECT * FROM pdf_annotation_segments ORDER BY annotationId ASC, orderIndex ASC")
     suspend fun getAll(): List<PdfAnnotationSegmentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

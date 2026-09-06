@@ -79,6 +79,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -86,6 +88,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.pdf.PdfRect
@@ -97,7 +100,11 @@ import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.isCompatibilityPreservedPdfTextBox
-import com.myvault.app.data.local.entity.isCurrentPdfAnnotation
+import com.myvault.app.data.local.entity.isPdfHighlightActivity
+import com.myvault.app.data.local.entity.isPdfNoteActivity
+import com.myvault.app.data.local.entity.isSupportedPdfAnnotation
+import com.myvault.app.data.local.entity.occursOnPdfPage
+import com.myvault.app.data.local.entity.primaryPdfPageIndex
 import com.myvault.app.data.local.entity.resolvedGeometrySegments
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.data.repository.LibraryReferencedNote
@@ -135,6 +142,8 @@ private enum class PdfAnnotationScope(val label: String) {
     AllPages("All pages"),
     ThisPage("This page"),
 }
+
+internal fun consumeAnnotationListRemainder(available: Velocity): Velocity = available
 
 @Composable
 internal fun FrozenPdfReaderScreen(
@@ -202,31 +211,26 @@ internal fun FrozenPdfReaderScreen(
     var jumpDraft by remember(attachment.id) { mutableStateOf("") }
     var transientMessage by remember(attachment.id) { mutableStateOf<String?>(null) }
 
-    val visibleAnnotations = remember(annotations) {
-        annotations.filter { it.isCurrentPdfAnnotation() || it.isCompatibilityPreservedPdfTextBox() }
+    val visibleAnnotations = remember(annotations, annotationSegments) {
+        annotations.filter { it.isSupportedPdfAnnotation(annotationSegments) }
     }
     val selectedAnnotation = remember(selectedAnnotationId, visibleAnnotations) {
         visibleAnnotations.firstOrNull { it.id == selectedAnnotationId }
     }
-    val currentPageAnnotations = remember(pageIndex, visibleAnnotations) {
-        visibleAnnotations.filter { it.pageIndex == pageIndex }
+    val currentPageAnnotations = remember(pageIndex, visibleAnnotations, annotationSegments) {
+        visibleAnnotations.filter { it.occursOnPdfPage(pageIndex, annotationSegments) }
     }
     val currentPageReferences = remember(pageIndex, references) {
         references.filter { it.pageIndex == pageIndex }
     }
     val currentPageNoteCount = remember(currentPageAnnotations) {
-        currentPageAnnotations.count {
-            it.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE ||
-                (it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT && !it.noteText.isNullOrBlank())
-        }
+        currentPageAnnotations.count(PdfAnnotationEntity::isPdfNoteActivity)
     }
     val highlightCount = remember(visibleAnnotations) {
-        visibleAnnotations.count { it.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT }
+        visibleAnnotations.count(PdfAnnotationEntity::isPdfHighlightActivity)
     }
     val noteCount = remember(visibleAnnotations) {
-        visibleAnnotations.count {
-            it.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !it.noteText.isNullOrBlank()
-        }
+        visibleAnnotations.count(PdfAnnotationEntity::isPdfNoteActivity)
     }
     val annotationPillBottom = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight + 10.dp else 16.dp
 
@@ -1096,18 +1100,25 @@ private fun FrozenLocalPdfActivitySheet(
 ) {
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val listFlingBoundary = remember {
+        object : NestedScrollConnection {
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                consumeAnnotationListRemainder(available)
+        }
+    }
     var scopeMenuOpen by remember { mutableStateOf(false) }
-    val filteredAnnotations = remember(annotations, filter, scope, currentPageIndex) {
+    val filteredAnnotations = remember(annotations, annotationSegments, filter, scope, currentPageIndex) {
         annotations.filter { annotation ->
             val typeMatches = when (filter) {
                 PdfActivityFilter.All -> true
-                PdfActivityFilter.Highlights ->
-                    annotation.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT && annotation.noteText.isNullOrBlank()
-                PdfActivityFilter.Notes ->
-                    annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
+                PdfActivityFilter.Highlights -> annotation.isPdfHighlightActivity()
+                PdfActivityFilter.Notes -> annotation.isPdfNoteActivity()
                 PdfActivityFilter.StudyLinks -> false
             }
-            typeMatches && (scope == PdfAnnotationScope.AllPages || annotation.pageIndex == currentPageIndex)
+            typeMatches && (
+                scope == PdfAnnotationScope.AllPages ||
+                    annotation.occursOnPdfPage(currentPageIndex, annotationSegments)
+                )
         }
     }
     val filteredReferences = remember(references, filter, scope, currentPageIndex) {
@@ -1199,7 +1210,12 @@ private fun FrozenLocalPdfActivitySheet(
                     }
                 }
             }
-            LazyColumn(modifier = Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp)) {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .nestedScroll(listFlingBoundary),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp),
+            ) {
                 items(filteredAnnotations, key = { it.id }) { annotation ->
                     FrozenLocalAnnotationRow(
                         attachment = attachment,
@@ -1810,8 +1826,8 @@ private fun FrozenPdfActivity(
         annotations.filter { annotation ->
             val typeMatch = when (filter) {
                 PdfActivityFilter.All -> true
-                PdfActivityFilter.Highlights -> annotation.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT && annotation.noteText.isNullOrBlank()
-                PdfActivityFilter.Notes -> annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
+                PdfActivityFilter.Highlights -> annotation.isPdfHighlightActivity()
+                PdfActivityFilter.Notes -> annotation.isPdfNoteActivity()
                 PdfActivityFilter.StudyLinks -> false
             }
             val text = annotation.selectedText.orEmpty() + " " + annotation.noteText.orEmpty()
@@ -1824,7 +1840,10 @@ private fun FrozenPdfActivity(
                 (query.isBlank() || it.noteTitle.contains(query, ignoreCase = true))
         }
     }
-    val pages = (annotationEntries.map { it.pageIndex } + referenceEntries.map { it.pageIndex }).distinct().sorted()
+    val pages = (
+        annotationEntries.map { it.primaryPdfPageIndex(annotationSegments) } +
+            referenceEntries.map { it.pageIndex }
+        ).distinct().sorted()
     Surface(modifier = Modifier.fillMaxSize().zIndex(10f), color = colors.bg) {
         Column {
             Row(
@@ -1869,7 +1888,10 @@ private fun FrozenPdfActivity(
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 pages.forEach { page ->
                     item(key = "page-$page") { FrozenSectionLabel("PAGE ${page + 1}") }
-                    items(annotationEntries.filter { it.pageIndex == page }, key = { it.id }) { annotation ->
+                    items(
+                        annotationEntries.filter { it.primaryPdfPageIndex(annotationSegments) == page },
+                        key = { it.id },
+                    ) { annotation ->
                         FrozenActivityAnnotationRow(
                             attachment = attachment,
                             annotation = annotation,
