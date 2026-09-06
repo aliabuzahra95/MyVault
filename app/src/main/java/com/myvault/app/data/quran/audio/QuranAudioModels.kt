@@ -41,7 +41,36 @@ data class ChapterAudioMetadata(
     val timestamps: Map<String, Long>,
     val verseAudioUrls: Map<String, String>,
     val localSurahFile: File,
+    val endTimestamps: Map<String, Long> = emptyMap(),
+    val recordingId: String? = null,
 )
+
+internal fun ChapterAudioMetadata.toDownloadedTimingMap(
+    ayahCount: Int,
+    durationMs: Long,
+): QuranTimingMap? {
+    if (mode != PlaybackMode.FullSurah || ayahCount <= 0 || durationMs <= 0) return null
+    return runCatching {
+        val starts = (1..ayahCount).map { ayah ->
+            timestamps.getValue("$surahNumber:$ayah")
+        }
+        val ayahs = starts.mapIndexed { index, start ->
+            val verseKey = "$surahNumber:${index + 1}"
+            val end = endTimestamps[verseKey]
+                ?: starts.getOrNull(index + 1)
+                ?: durationMs
+            require(start >= 0 && end > start)
+            QuranAyahTiming(verseKey, start, end)
+        }
+        require(ayahs.zipWithNext().all { (current, next) -> next.startMs >= current.endMs })
+        QuranTimingMap(
+            recordingId = recordingId ?: "offline-${reciter.id}-$surahNumber-${localSurahFile.length()}",
+            surah = surahNumber,
+            audioUrl = audioUrl.orEmpty(),
+            ayahs = ayahs,
+        ).also { it.validateDuration(durationMs) }
+    }.getOrNull()
+}
 
 enum class PlaybackMode {
     FullSurah,

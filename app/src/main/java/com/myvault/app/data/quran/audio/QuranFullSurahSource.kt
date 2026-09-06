@@ -33,6 +33,12 @@ class QuranFullSurahSource @Inject constructor(
         val source = QuranTimedRecitations.sources.getValue(reciter.id)
         val count = quranCatalog.firstOrNull { it.num == surah }?.ayat ?: error("Unknown Surah.")
         mutex.withLock {
+            repository.downloadedFullSurahMetadata(reciter, surah)?.let { downloaded ->
+                val duration = recordingDuration(downloaded.localSurahFile)
+                downloaded.toDownloadedTimingMap(count, duration)?.let { timing ->
+                    return@withLock timing to downloaded.localSurahFile
+                }
+            }
             val metadata = File(directory, "${source.cacheKey}-$surah.json")
             val json = if (metadata.isFile) runCatching { JSONObject(metadata.readText()) }.getOrNull() else null
             val response = json ?: source.chapterReciterId?.let { repository.fullSurahResponse(it, surah) }
@@ -83,10 +89,14 @@ class QuranFullSurahSource @Inject constructor(
     }
 
     private fun validate(file: File, timing: QuranTimingMap) {
+        timing.validateDuration(recordingDuration(file))
+    }
+
+    private fun recordingDuration(file: File): Long {
         val retriever = MediaMetadataRetriever()
-        try {
+        return try {
             retriever.setDataSource(file.absolutePath)
-            timing.validateDuration(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
         } finally { retriever.release() }
     }
 

@@ -79,6 +79,16 @@ class QuranAudioRepository @Inject constructor(
         }
     }
 
+    internal fun downloadedFullSurahMetadata(
+        reciter: AudioReciterUiModel,
+        surahNumber: Int,
+    ): ChapterAudioMetadata? = loadLocalChapterMetadata(reciter, surahNumber)
+        ?.takeIf { metadata ->
+            metadata.mode == PlaybackMode.FullSurah &&
+                metadata.localSurahFile.isFile &&
+                metadata.localSurahFile.length() > 0L
+        }
+
     fun currentDownloadState(reciterId: Int, surahNumber: Int): SurahDownloadState {
         val key = downloadKey(reciterId, surahNumber)
         return surahDownloadStates.value[key]
@@ -125,8 +135,8 @@ class QuranAudioRepository @Inject constructor(
             downloadChapterAudio(metadata) { progress ->
                 setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloading(progress.coerceIn(1, 100)))
             }
-            writeCompletionMarker(reciter.id, surahNumber)
             persistChapterMetadata(metadata)
+            writeCompletionMarker(reciter.id, surahNumber)
             setDownloadState(reciter.id, surahNumber, SurahDownloadState.Downloaded)
         }.onFailure { error ->
             completionMarkerFile(reciter.id, surahNumber).delete()
@@ -219,8 +229,17 @@ class QuranAudioRepository @Inject constructor(
             val raw = JSONArray(getBody("https://www.mp3quran.net/api/v3/ayat_timing?surah=$surahNumber&read=${source.mp3QuranRead}"))
             val count = com.myvault.app.data.quran.quranCatalog.first { it.num == surahNumber }.ayat
             val timing = QuranTimingMap.parseMp3Quran(raw, source, surahNumber, count)
-            return ChapterAudioMetadata(reciter, surahNumber, PlaybackMode.FullSurah, timing.audioUrl,
-                timing.ayahs.associate { it.verseKey to it.startMs }, emptyMap(), surahAudioFile(reciter.id, surahNumber))
+            return ChapterAudioMetadata(
+                reciter = reciter,
+                surahNumber = surahNumber,
+                mode = PlaybackMode.FullSurah,
+                audioUrl = timing.audioUrl,
+                timestamps = timing.ayahs.associate { it.verseKey to it.startMs },
+                verseAudioUrls = emptyMap(),
+                localSurahFile = surahAudioFile(reciter.id, surahNumber),
+                endTimestamps = timing.ayahs.associate { it.verseKey to it.endMs },
+                recordingId = timing.recordingId,
+            )
         }
         val timingsJson = getJson(
             "$workerBaseUrl/proxy/content/api/v4/chapter_recitations/${reciter.id}/$surahNumber?segments=true",
@@ -230,6 +249,7 @@ class QuranAudioRepository @Inject constructor(
             .takeIf { it.isNotBlank() }
             ?.let(::resolveAudioUrl)
         val timestamps = parseTimestamps(audioFile)
+        val endTimestamps = parseEndTimestamps(audioFile)
         val verseUrls = fetchVerseAudioUrls(reciter.id, surahNumber)
 
         if (verseUrls.isNotEmpty()) {
@@ -241,6 +261,7 @@ class QuranAudioRepository @Inject constructor(
                 timestamps = timestamps,
                 verseAudioUrls = verseUrls,
                 localSurahFile = surahAudioFile(reciter.id, surahNumber),
+                endTimestamps = endTimestamps,
             )
         }
         if (fullAudioUrl != null) {
@@ -252,6 +273,7 @@ class QuranAudioRepository @Inject constructor(
                 timestamps = timestamps,
                 verseAudioUrls = emptyMap(),
                 localSurahFile = surahAudioFile(reciter.id, surahNumber),
+                endTimestamps = endTimestamps,
             )
         }
         error("No playable audio metadata found for ${reciter.name}.")
@@ -288,6 +310,17 @@ class QuranAudioRepository @Inject constructor(
                 val item = timestamps.optJSONObject(index) ?: continue
                 val verseKey = item.optString("verse_key")
                 if (verseKey.isNotBlank()) put(verseKey, item.optLong("timestamp_from"))
+            }
+        }
+    }
+
+    private fun parseEndTimestamps(audioFile: JSONObject?): Map<String, Long> {
+        val timestamps = audioFile?.optJSONArray("timestamps") ?: return emptyMap()
+        return buildMap {
+            for (index in 0 until timestamps.length()) {
+                val item = timestamps.optJSONObject(index) ?: continue
+                val verseKey = item.optString("verse_key")
+                if (verseKey.isNotBlank()) put(verseKey, item.optLong("timestamp_to"))
             }
         }
     }
@@ -383,6 +416,10 @@ class QuranAudioRepository @Inject constructor(
             put("timestamps", JSONObject().apply {
                 metadata.timestamps.forEach { (verseKey, timestamp) -> put(verseKey, timestamp) }
             })
+            put("endTimestamps", JSONObject().apply {
+                metadata.endTimestamps.forEach { (verseKey, timestamp) -> put(verseKey, timestamp) }
+            })
+            put("recordingId", metadata.recordingId.orEmpty())
             put("verseAudioUrls", JSONObject().apply {
                 metadata.verseAudioUrls.forEach { (verseKey, audioUrl) -> put(verseKey, audioUrl) }
             })
@@ -407,6 +444,8 @@ class QuranAudioRepository @Inject constructor(
                 timestamps = json.optJSONObject("timestamps").toLongMap(),
                 verseAudioUrls = json.optJSONObject("verseAudioUrls").toStringMap(),
                 localSurahFile = surahAudioFile(reciter.id, surahNumber),
+                endTimestamps = json.optJSONObject("endTimestamps").toLongMap(),
+                recordingId = json.optString("recordingId").takeIf { it.isNotBlank() },
             )
         }.getOrNull()
     }

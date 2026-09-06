@@ -5,5 +5,5 @@
         <TextView android:ellipsize='end' android:fontFamily='@font/plus_jakarta_sans_semi_bold' android:id='@+id/quran_widget_surah_name' android:layout_height='wrap_content' android:layout_width='match_parent' android:maxLines='1' android:textColor='#F3F1EC' android:textSize='15sp'/>
         <TextView android:ellipsize='end' android:fontFamily='@font/plus_jakarta_sans_medium' android:id='@+id/quran_widget_surah_detail' android:layout_height='wrap_content' android:layout_width='match_parent' android:maxLines='1' android:textColor='#B8BBC2' android:textSize='11sp'/>
     </LinearLayout>
-    <TextView android:fontFamily='@font/uthmani_hafs' android:gravity='end|center_vertical' android:id='@+id/quran_widget_surah_arabic' android:includeFontPadding='true' android:layout_height='wrap_content' android:layout_width='wrap_content' android:maxLines='1' android:textColor='#F3F1EC' android:textDirection='rtl' android:textSize='24sp'/>
+    <TextView android:fontFamily='@font/uthmani_hafs' android:gravity='end|center_vertical' android:id='@+id/quran_widget_surah_arabic' android:includeFontPadding='false' android:layout_height='wrap_content' android:layout_width='wrap_content' android:maxLines='1' android:textColor='#F3F1EC' android:textDirection='rtl' android:textSize='24sp'/>
 </LinearLayout>

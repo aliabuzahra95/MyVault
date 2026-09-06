@@ -58,6 +58,9 @@ class QuranWidgetContractTest {
         val surahLayout = resource("layout/widget_quran_surah_row.xml")
 
         assertTrue(ayahLayout.contains("@+id/quran_widget_translation"))
+        assertTrue(ayahLayout.contains("android:fontFamily=\"@font/uthmani_hafs\""))
+        assertTrue(ayahLayout.contains("android:includeFontPadding=\"false\""))
+        assertTrue(surahLayout.contains("android:includeFontPadding=\"false\""))
         assertTrue(surahLayout.contains("android:textSize=\"15sp\""))
         assertTrue(surahLayout.contains("android:textSize=\"24sp\""))
         assertTrue(surahLayout.contains("android:minHeight=\"62dp\""))

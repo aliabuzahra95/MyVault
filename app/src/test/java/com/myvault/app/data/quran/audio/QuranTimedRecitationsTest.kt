@@ -63,4 +63,53 @@ class QuranTimedRecitationsTest {
                 "https://download.quranicaudio.com/qdc/saud_ash-shuraym/murattal/")
         }
     }
+
+    @Test fun completedFullSurahDownloadReusesPersistedExactBoundaries() {
+        val metadata = ChapterAudioMetadata(
+            reciter = AudioReciterUiModel(QuranTimedRecitations.FARES_ABBAD, "Fares Abbad"),
+            surahNumber = 1,
+            mode = PlaybackMode.FullSurah,
+            audioUrl = "https://server8.mp3quran.net/frs_a/001.mp3",
+            timestamps = mapOf("1:1" to 500L, "1:2" to 1_500L, "1:3" to 2_500L),
+            verseAudioUrls = emptyMap(),
+            localSurahFile = java.io.File("surah_1.mp3"),
+            endTimestamps = mapOf("1:1" to 1_400L, "1:2" to 2_400L, "1:3" to 3_500L),
+            recordingId = "fares-1",
+        )
+
+        val timing = requireNotNull(metadata.toDownloadedTimingMap(ayahCount = 3, durationMs = 3_500L))
+
+        assertEquals("fares-1", timing.recordingId)
+        assertEquals(listOf(1_400L, 2_400L, 3_500L), timing.ayahs.map { it.endMs })
+    }
+
+    @Test fun olderFullSurahDownloadInfersMissingEndsWithoutRedownload() {
+        val metadata = ChapterAudioMetadata(
+            reciter = AudioReciterUiModel(QuranTimedRecitations.SAAD_AL_GHAMDI, "Saad al-Ghamdi"),
+            surahNumber = 1,
+            mode = PlaybackMode.FullSurah,
+            audioUrl = "https://server7.mp3quran.net/s_gmd/001.mp3",
+            timestamps = mapOf("1:1" to 400L, "1:2" to 1_400L, "1:3" to 2_400L),
+            verseAudioUrls = emptyMap(),
+            localSurahFile = java.io.File("surah_1.mp3"),
+        )
+
+        val timing = requireNotNull(metadata.toDownloadedTimingMap(ayahCount = 3, durationMs = 3_600L))
+
+        assertEquals(listOf(1_400L, 2_400L, 3_600L), timing.ayahs.map { it.endMs })
+    }
+
+    @Test fun incompleteOrVerseByVerseMetadataCannotMasqueradeAsOfflineSurah() {
+        val metadata = ChapterAudioMetadata(
+            reciter = AudioReciterUiModel(4, "Abu Bakr al-Shatri"),
+            surahNumber = 1,
+            mode = PlaybackMode.VerseByVerse,
+            audioUrl = null,
+            timestamps = mapOf("1:1" to 0L),
+            verseAudioUrls = mapOf("1:1" to "https://example.test/1.mp3"),
+            localSurahFile = java.io.File("surah_1.mp3"),
+        )
+
+        assertNull(metadata.toDownloadedTimingMap(ayahCount = 1, durationMs = 1_000L))
+    }
 }
