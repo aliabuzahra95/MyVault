@@ -242,6 +242,11 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
             field = value
             postInvalidateOnAnimation()
         }
+    var emphasizedAnnotationId: String? = null
+        set(value) {
+            field = value
+            postInvalidateOnAnimation()
+        }
     var highlightColor: String = "yellow"
     var drawMode: Boolean = false
         set(value) {
@@ -272,6 +277,11 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2.2f
+    }
+    private val emphasisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+        color = 0xFF4C8DF6.toInt()
     }
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -321,6 +331,15 @@ private class NativePdfAnnotationOverlayView(context: Context) : View(context) {
                     val bounds = annotation.toNativeOverlayBounds() ?: return@forEach
                     drawTextBox(canvas, annotation, bounds)
                 }
+            emphasizedAnnotationId?.let { emphasizedId ->
+                annotations.firstOrNull { it.id == emphasizedId }
+                    ?.resolvedGeometrySegments(annotationSegments)
+                    ?.forEach { segment ->
+                        val bounds = segment.toNativeOverlayBounds() ?: return@forEach
+                        bounds.inset(-7f, -7f)
+                        canvas.drawRoundRect(bounds, 11f, 11f, emphasisPaint)
+                    }
+            }
         }
         val start = dragStart
         val end = dragEnd
@@ -1496,6 +1515,7 @@ internal fun AndroidxPdfViewer(
     modifier: Modifier = Modifier,
     annotations: List<PdfAnnotationEntity>,
     annotationSegments: List<PdfAnnotationSegmentEntity> = emptyList(),
+    emphasizedAnnotationId: String? = null,
     viewportTick: Long,
     pageCount: Int,
     highlightColor: String,
@@ -1606,6 +1626,7 @@ internal fun AndroidxPdfViewer(
             val overlay = root.findViewWithTag<NativePdfAnnotationOverlayView>(NativePdfAnnotationOverlayTag)
             overlay?.annotations = annotations
             overlay?.annotationSegments = annotationSegments
+            overlay?.emphasizedAnnotationId = emphasizedAnnotationId
             overlay?.pageCount = pageCount
             overlay?.highlightColor = highlightColor
             overlay?.drawMode = drawHighlightMode
@@ -1635,6 +1656,7 @@ private fun FrameLayout.releaseNativePdfViewer(activity: FragmentActivity?, frag
         overlay.pdfView = null
         overlay.annotations = emptyList()
         overlay.annotationSegments = emptyList()
+        overlay.emphasizedAnnotationId = null
         overlay.onCreateTextBox = {}
         overlay.onUpdateTextBoxBounds = { _, _ -> }
         overlay.onSelectAnnotation = {}

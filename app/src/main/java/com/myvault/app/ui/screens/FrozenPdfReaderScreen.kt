@@ -5,6 +5,7 @@ package com.myvault.app.ui.screens
 import android.graphics.RectF
 import android.view.View
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +26,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -61,6 +64,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,7 +77,9 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -123,6 +129,11 @@ private enum class PdfActivityFilter(val label: String) {
     Highlights("Highlights"),
     Notes("Notes"),
     StudyLinks("Study links"),
+}
+
+private enum class PdfAnnotationScope(val label: String) {
+    AllPages("All pages"),
+    ThisPage("This page"),
 }
 
 @Composable
@@ -186,6 +197,8 @@ internal fun FrozenPdfReaderScreen(
     var activityQuery by remember(attachment.id) { mutableStateOf("") }
     var activityFilter by remember(attachment.id) { mutableStateOf(PdfActivityFilter.All) }
     var localActivityFilter by remember(attachment.id) { mutableStateOf(PdfActivityFilter.All) }
+    var localActivityScope by remember(attachment.id) { mutableStateOf(PdfAnnotationScope.AllPages) }
+    var emphasizedAnnotationId by remember(attachment.id) { mutableStateOf<String?>(null) }
     var jumpDraft by remember(attachment.id) { mutableStateOf("") }
     var transientMessage by remember(attachment.id) { mutableStateOf<String?>(null) }
 
@@ -267,6 +280,13 @@ internal fun FrozenPdfReaderScreen(
         }
     }
 
+    LaunchedEffect(emphasizedAnnotationId) {
+        if (emphasizedAnnotationId != null) {
+            delay(550)
+            emphasizedAnnotationId = null
+        }
+    }
+
     LaunchedEffect(pendingPersistedAnnotationId, visibleAnnotations) {
         val pending = pendingPersistedAnnotationId ?: return@LaunchedEffect
         if (visibleAnnotations.any { it.id == pending }) {
@@ -318,6 +338,7 @@ internal fun FrozenPdfReaderScreen(
                 modifier = Modifier.fillMaxSize(),
                 annotations = visibleAnnotations,
                 annotationSegments = annotationSegments,
+                emphasizedAnnotationId = emphasizedAnnotationId,
                 viewportTick = viewportTick,
                 pageCount = pageCount,
                 highlightColor = drawColour,
@@ -501,7 +522,14 @@ internal fun FrozenPdfReaderScreen(
                     drawColour = it
                     drawColourPickerOpen = false
                 },
-                onOpenActivity = { sheet = PdfReaderSheet.LocalActivity },
+                onOpenHighlights = {
+                    localActivityFilter = PdfActivityFilter.Highlights
+                    sheet = PdfReaderSheet.LocalActivity
+                },
+                onOpenNotes = {
+                    localActivityFilter = PdfActivityFilter.Notes
+                    sheet = PdfReaderSheet.LocalActivity
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = annotationPillBottom)
@@ -531,6 +559,7 @@ internal fun FrozenPdfReaderScreen(
             FrozenPdfActivity(
                 attachment = attachment,
                 annotations = visibleAnnotations,
+                annotationSegments = annotationSegments,
                 references = references,
                 searchOpen = activitySearchOpen,
                 query = activityQuery,
@@ -542,6 +571,7 @@ internal fun FrozenPdfReaderScreen(
                 onAnnotationClick = { annotation ->
                     pdfView?.scrollToAnnotation(annotation, annotationSegments)
                     pageIndex = annotation.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                    emphasizedAnnotationId = annotation.id
                     activityOpen = false
                 },
                 onAnnotationActions = { annotation ->
@@ -614,17 +644,33 @@ internal fun FrozenPdfReaderScreen(
             ),
         )
         PdfReaderSheet.LocalActivity -> FrozenLocalPdfActivitySheet(
+            attachment = attachment,
             annotations = visibleAnnotations,
+            annotationSegments = annotationSegments,
             references = references,
             highlightCount = highlightCount,
             noteCount = noteCount,
+            currentPageIndex = pageIndex,
             filter = localActivityFilter,
             onFilterChange = { localActivityFilter = it },
+            scope = localActivityScope,
+            onScopeChange = { localActivityScope = it },
             onDismiss = { sheet = PdfReaderSheet.None },
             onAnnotationClick = { annotation ->
                 pdfView?.scrollToAnnotation(annotation, annotationSegments)
                 pageIndex = annotation.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                emphasizedAnnotationId = annotation.id
                 sheet = PdfReaderSheet.None
+            },
+            onEditAnnotation = { annotation ->
+                editingAnnotationNoteId = annotation.id
+                noteDraft = annotation.noteText.orEmpty()
+                selectedAnnotationId = annotation.id
+                sheet = PdfReaderSheet.SelectionNote
+            },
+            onDeleteAnnotation = { annotation ->
+                PdfAnnotationPreviewRenderer.invalidate(annotation.id)
+                onDeleteAnnotation(annotation.id)
             },
             onAnnotationActions = { annotation ->
                 if (annotation.isCompatibilityPreservedPdfTextBox()) {
@@ -692,6 +738,7 @@ internal fun FrozenPdfReaderScreen(
                     sheet = PdfReaderSheet.None
                 },
                 onDelete = {
+                    PdfAnnotationPreviewRenderer.invalidate(annotation.id)
                     onDeleteAnnotation(annotation.id)
                     sheet = PdfReaderSheet.None
                 },
@@ -701,7 +748,10 @@ internal fun FrozenPdfReaderScreen(
             title = "Change colour",
             onDismiss = { sheet = PdfReaderSheet.None },
             onSelect = { color ->
-                selectedAnnotationId?.let { onUpdateAnnotationColor(it, color) }
+                selectedAnnotationId?.let {
+                    PdfAnnotationPreviewRenderer.invalidate(it)
+                    onUpdateAnnotationColor(it, color)
+                }
                 sheet = PdfReaderSheet.None
             },
         )
@@ -1025,22 +1075,31 @@ private fun FrozenCurrentPageSheet(
 
 @Composable
 private fun FrozenLocalPdfActivitySheet(
+    attachment: AttachmentEntity,
     annotations: List<PdfAnnotationEntity>,
+    annotationSegments: List<PdfAnnotationSegmentEntity>,
     references: List<LibraryReferencedNote>,
     highlightCount: Int,
     noteCount: Int,
+    currentPageIndex: Int,
     filter: PdfActivityFilter,
     onFilterChange: (PdfActivityFilter) -> Unit,
+    scope: PdfAnnotationScope,
+    onScopeChange: (PdfAnnotationScope) -> Unit,
     onDismiss: () -> Unit,
     onAnnotationClick: (PdfAnnotationEntity) -> Unit,
+    onEditAnnotation: (PdfAnnotationEntity) -> Unit,
+    onDeleteAnnotation: (PdfAnnotationEntity) -> Unit,
     onAnnotationActions: (PdfAnnotationEntity) -> Unit,
     onReferenceClick: (LibraryReferencedNote) -> Unit,
     onViewAllActivity: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val filteredAnnotations = remember(annotations, filter) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    var scopeMenuOpen by remember { mutableStateOf(false) }
+    val filteredAnnotations = remember(annotations, filter, scope, currentPageIndex) {
         annotations.filter { annotation ->
-            when (filter) {
+            val typeMatches = when (filter) {
                 PdfActivityFilter.All -> true
                 PdfActivityFilter.Highlights ->
                     annotation.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT && annotation.noteText.isNullOrBlank()
@@ -1048,26 +1107,33 @@ private fun FrozenLocalPdfActivitySheet(
                     annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
                 PdfActivityFilter.StudyLinks -> false
             }
+            typeMatches && (scope == PdfAnnotationScope.AllPages || annotation.pageIndex == currentPageIndex)
         }
     }
-    val filteredReferences = remember(references, filter) {
-        references.takeIf { filter == PdfActivityFilter.All || filter == PdfActivityFilter.StudyLinks }.orEmpty()
+    val filteredReferences = remember(references, filter, scope, currentPageIndex) {
+        references.filter {
+            (filter == PdfActivityFilter.All || filter == PdfActivityFilter.StudyLinks) &&
+                (scope == PdfAnnotationScope.AllPages || it.pageIndex == currentPageIndex)
+        }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = colors.surface) {
-        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.52f)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.surface,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = VaultSpacing.screen, end = 8.dp, top = 1.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
+                    Text("Annotations", fontSize = 16.sp, fontWeight = FontWeight.W800, color = colors.text)
                     Text(
-                        "$highlightCount HIGHLIGHT${if (highlightCount == 1) "" else "S"} · $noteCount NOTE${if (noteCount == 1) "" else "S"}",
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.W700,
+                        "$highlightCount highlight${if (highlightCount == 1) "" else "s"} · $noteCount note${if (noteCount == 1) "" else "s"}",
+                        fontSize = 9.5.sp,
                         color = colors.textMuted,
                     )
-                    Text("PDF annotations", fontSize = 16.sp, fontWeight = FontWeight.W800, color = colors.text)
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Rounded.Close, "Close PDF annotations", Modifier.size(18.dp), tint = colors.text)
@@ -1100,31 +1166,70 @@ private fun FrozenLocalPdfActivitySheet(
                     }
                 }
             }
-            Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                filteredAnnotations.forEach { annotation ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Box {
+                    Surface(
+                        onClick = { scopeMenuOpen = true },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp),
+                        color = colors.elevated,
+                        border = BorderStroke(1.dp, colors.border),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(scope.label, fontSize = 9.5.sp, fontWeight = FontWeight.W700, color = colors.text)
+                            Icon(Icons.Rounded.ChevronRight, null, Modifier.size(13.dp), tint = colors.textMuted)
+                        }
+                    }
+                    DropdownMenu(expanded = scopeMenuOpen, onDismissRequest = { scopeMenuOpen = false }) {
+                        PdfAnnotationScope.entries.forEach { choice ->
+                            DropdownMenuItem(
+                                text = { Text(choice.label) },
+                                onClick = {
+                                    onScopeChange(choice)
+                                    scopeMenuOpen = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            LazyColumn(modifier = Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 8.dp)) {
+                items(filteredAnnotations, key = { it.id }) { annotation ->
                     FrozenLocalAnnotationRow(
+                        attachment = attachment,
                         annotation = annotation,
+                        annotationSegments = annotationSegments,
                         onClick = { onAnnotationClick(annotation) },
+                        onEdit = { onEditAnnotation(annotation) },
+                        onDelete = { onDeleteAnnotation(annotation) },
                         onActions = { onAnnotationActions(annotation) },
                     )
                 }
-                filteredReferences.forEach { reference ->
+                items(filteredReferences, key = { "${it.noteId}:${it.pageIndex}" }) { reference ->
                     FrozenLocalReferenceRow(reference, onClick = { onReferenceClick(reference) })
                 }
                 if (filteredAnnotations.isEmpty() && filteredReferences.isEmpty()) {
-                    Text(
-                        "No ${filter.label.lowercase()} in this PDF",
-                        modifier = Modifier.padding(VaultSpacing.screen),
-                        fontSize = 13.sp,
-                        color = colors.textMuted,
-                    )
+                    item {
+                        PdfAnnotationEmptyState(
+                            currentPageIndex = currentPageIndex,
+                            scope = scope,
+                            highlightCount = highlightCount,
+                            noteCount = noteCount,
+                            onShowAllPages = { onScopeChange(PdfAnnotationScope.AllPages) },
+                        )
+                    }
                 }
             }
             Surface(
                 onClick = onViewAllActivity,
-                modifier = Modifier.fillMaxWidth().height(44.dp).padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
-                shape = VaultShapes.md,
-                color = colors.accentSoft,
+                modifier = Modifier.fillMaxWidth().height(38.dp),
+                color = Color.Transparent,
             ) {
                 Row(
                     modifier = Modifier.fillMaxSize().padding(horizontal = VaultSpacing.md),
@@ -1142,51 +1247,215 @@ private fun FrozenLocalPdfActivitySheet(
 
 @Composable
 private fun FrozenLocalAnnotationRow(
+    attachment: AttachmentEntity,
     annotation: PdfAnnotationEntity,
+    annotationSegments: List<PdfAnnotationSegmentEntity>,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onActions: () -> Unit,
+    showNoteActions: Boolean = true,
 ) {
     val colors = VaultThemeTokens.colors
-    val isNote = annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
-    Row(
+    val isHistoric = annotation.isCompatibilityPreservedPdfTextBox()
+    val isNote = isHistoric || annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 57.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = VaultSpacing.screen, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = VaultSpacing.screen, vertical = 8.dp),
     ) {
-        Surface(
-            modifier = Modifier.size(31.dp),
-            shape = VaultShapes.md,
-            color = colors.elevated,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    if (isNote) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.BorderColor,
-                    if (isNote) "Note" else "Highlight",
-                    Modifier.size(17.dp),
-                    tint = if (isNote) colors.textSecondary else pdfColour(annotation.color),
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(modifier = Modifier.size(31.dp), shape = VaultShapes.md, color = colors.elevated) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (isNote) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.BorderColor,
+                        if (isNote) "Note" else "Highlight",
+                        Modifier.size(17.dp),
+                        tint = if (isNote) colors.textSecondary else pdfColour(annotation.color),
+                    )
+                }
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(
+                    if (isNote) annotation.displayTitle?.takeIf(String::isNotBlank) ?: if (isHistoric) "Historic text box" else "Note" else annotation.selectedText?.takeIf(String::isNotBlank) ?: "Highlight",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.W700,
+                    color = colors.text,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${if (isHistoric) "Historic text box" else if (isNote) "Note" else "Highlight"} · Page ${annotation.pageIndex + 1}",
+                    fontSize = 9.sp,
+                    color = colors.textMuted,
                 )
             }
+            IconButton(onClick = onActions, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Rounded.MoreHoriz, "Annotation actions", Modifier.size(16.dp), tint = colors.textMuted)
+            }
         }
-        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+        if (isNote) {
             Text(
-                annotationActivityTitle(annotation),
+                annotation.noteText.orEmpty(),
+                modifier = Modifier.fillMaxWidth().padding(start = 39.dp, end = 4.dp, top = 7.dp),
                 fontSize = 11.5.sp,
-                fontWeight = FontWeight.W700,
-                color = colors.text,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                lineHeight = 17.sp,
+                color = colors.textSecondary,
             )
+            Row(
+                modifier = Modifier.padding(start = 39.dp, top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FrozenPdfMiniAction("Go to page", primary = true, onClick = onClick)
+                if (!isHistoric && showNoteActions) {
+                    FrozenPdfMiniAction("Edit", onClick = onEdit)
+                    FrozenPdfMiniAction("Delete", onClick = onDelete)
+                }
+            }
+        } else {
+            FrozenHighlightPreview(
+                attachment = attachment,
+                annotation = annotation,
+                annotationSegments = annotationSegments,
+                onClick = onClick,
+            )
+        }
+        HorizontalDivider(modifier = Modifier.padding(top = 9.dp), color = colors.border.copy(alpha = 0.55f))
+    }
+}
+
+@Composable
+private fun FrozenHighlightPreview(
+    attachment: AttachmentEntity,
+    annotation: PdfAnnotationEntity,
+    annotationSegments: List<PdfAnnotationSegmentEntity>,
+    onClick: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    val selectedText = annotation.selectedText?.trim().orEmpty()
+    if (selectedText.isNotEmpty()) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().padding(start = 39.dp, top = 7.dp),
+            shape = VaultShapes.md,
+            color = colors.elevated,
+            border = BorderStroke(1.dp, colors.border),
+        ) {
+            Column {
+                Text(
+                    selectedText,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                    fontSize = 11.5.sp,
+                    lineHeight = 18.sp,
+                    color = colors.text,
+                )
+                FrozenPreviewFooter("Page ${annotation.pageIndex + 1} · Open highlighted area", onClick)
+            }
+        }
+        return
+    }
+
+    val file = remember(attachment.localPath) { File(attachment.localPath) }
+    val segments = remember(annotation, annotationSegments) { annotation.resolvedGeometrySegments(annotationSegments) }
+    var preview by remember(file.absolutePath, annotation.id) { mutableStateOf<PdfAnnotationRasterPreview?>(null) }
+    var complete by remember(file.absolutePath, annotation.id) { mutableStateOf(false) }
+    LaunchedEffect(file.absolutePath, file.length(), file.lastModified(), annotation.updatedAt, annotation.color, segments) {
+        complete = false
+        preview = PdfAnnotationPreviewRenderer.load(file, annotation, annotationSegments)
+        complete = true
+    }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(start = 39.dp, top = 7.dp),
+        shape = VaultShapes.md,
+        color = colors.elevated,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Column {
+            when {
+                preview != null -> Image(
+                    bitmap = preview!!.bitmap.asImageBitmap(),
+                    contentDescription = "Highlighted PDF region",
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 170.dp),
+                    contentScale = ContentScale.FillWidth,
+                )
+                complete -> Column(Modifier.padding(horizontal = 12.dp, vertical = 13.dp)) {
+                    Text("Preview unavailable", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.text)
+                    Text("Open highlighted area", fontSize = 9.5.sp, color = colors.textMuted)
+                }
+                else -> Text("Preparing preview…", Modifier.padding(12.dp), fontSize = 10.sp, color = colors.textMuted)
+            }
+            val footer = if (preview?.partial == true) {
+                "Page ${annotation.pageIndex + 1} · Partial preview · Open full highlighted region"
+            } else {
+                "Page ${annotation.pageIndex + 1} · Open highlighted area"
+            }
+            FrozenPreviewFooter(footer, onClick)
+        }
+    }
+}
+
+@Composable
+private fun FrozenPreviewFooter(text: String, onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Surface(onClick = onClick, color = colors.inset.copy(alpha = 0.9f)) {
+        Text(
+            text,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp),
+            fontSize = 8.2.sp,
+            color = colors.textMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun FrozenPdfMiniAction(label: String, primary: Boolean = false, onClick: () -> Unit) {
+    val colors = VaultThemeTokens.colors
+    Surface(
+        onClick = onClick,
+        shape = VaultShapes.md,
+        color = if (primary) colors.accent else Color.Transparent,
+        border = if (primary) null else BorderStroke(1.dp, colors.border),
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.W700,
+            color = if (primary) Color.White else colors.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun PdfAnnotationEmptyState(
+    currentPageIndex: Int,
+    scope: PdfAnnotationScope,
+    highlightCount: Int,
+    noteCount: Int,
+    onShowAllPages: () -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Text(
+            if (scope == PdfAnnotationScope.ThisPage) "No annotations on page ${currentPageIndex + 1}" else "No matching annotations",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.W700,
+            color = colors.text,
+        )
+        if (scope == PdfAnnotationScope.ThisPage) {
             Text(
-                "${if (isNote) "Note" else "Highlight"} · Page ${annotation.pageIndex + 1}",
-                fontSize = 9.sp,
+                "This PDF still has $highlightCount highlight${if (highlightCount == 1) "" else "s"} and $noteCount note${if (noteCount == 1) "" else "s"}.",
+                fontSize = 9.5.sp,
                 color = colors.textMuted,
             )
-        }
-        IconButton(onClick = onActions, modifier = Modifier.size(34.dp)) {
-            Icon(Icons.Rounded.ChevronRight, "Annotation actions", Modifier.size(15.dp), tint = colors.textMuted)
+            FrozenPdfMiniAction("Show all pages", primary = true, onClick = onShowAllPages)
         }
     }
 }
@@ -1385,7 +1654,8 @@ private fun FrozenPdfAnnotationPill(
     onDrawHighlight: () -> Unit,
     onToggleColorPicker: () -> Unit,
     onColorChange: (String) -> Unit,
-    onOpenActivity: () -> Unit,
+    onOpenHighlights: () -> Unit,
+    onOpenNotes: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -1437,7 +1707,7 @@ private fun FrozenPdfAnnotationPill(
         }
 
         Surface(
-            modifier = Modifier.width(276.dp).height(48.dp).zIndex(1f),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(48.dp).zIndex(1f),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(17.dp),
             color = colors.surface.copy(alpha = 0.96f),
             border = BorderStroke(1.dp, colors.border),
@@ -1449,7 +1719,7 @@ private fun FrozenPdfAnnotationPill(
             ) {
                 Surface(
                     onClick = onDrawHighlight,
-                    modifier = Modifier.height(35.dp),
+                    modifier = Modifier.weight(1.05f).height(35.dp),
                     shape = VaultShapes.md,
                     color = if (drawMode) colors.accentSoft else Color.Transparent,
                 ) {
@@ -1483,20 +1753,21 @@ private fun FrozenPdfAnnotationPill(
                     }
                 }
                 Surface(
-                    onClick = onOpenActivity,
+                    onClick = onOpenHighlights,
                     modifier = Modifier.weight(1f).height(36.dp),
                     shape = VaultShapes.md,
                     color = Color.Transparent,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 5.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FrozenPdfPillCount(Icons.Rounded.BorderColor, highlightCount, "H")
-                        Box(Modifier.width(1.dp).height(18.dp).background(colors.border))
-                        FrozenPdfPillCount(Icons.Rounded.ChatBubbleOutline, noteCount, "N")
-                    }
+                    FrozenPdfPillCount(Icons.Rounded.BorderColor, "Highlights", highlightCount)
+                }
+                Box(Modifier.width(1.dp).height(18.dp).background(colors.border))
+                Surface(
+                    onClick = onOpenNotes,
+                    modifier = Modifier.weight(0.78f).height(36.dp),
+                    shape = VaultShapes.md,
+                    color = Color.Transparent,
+                ) {
+                    FrozenPdfPillCount(Icons.Rounded.ChatBubbleOutline, "Notes", noteCount)
                 }
             }
         }
@@ -1504,15 +1775,16 @@ private fun FrozenPdfAnnotationPill(
 }
 
 @Composable
-private fun FrozenPdfPillCount(icon: ImageVector, count: Int, suffix: String) {
+private fun FrozenPdfPillCount(icon: ImageVector, label: String, count: Int) {
     val colors = VaultThemeTokens.colors
     Row(
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier.padding(horizontal = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, Modifier.size(12.dp), tint = colors.textSecondary)
-        Text(count.toString(), fontSize = 9.7.sp, fontWeight = FontWeight.W700, color = colors.text)
-        Text(suffix, fontSize = 7.8.sp, fontWeight = FontWeight.W800, color = colors.textMuted)
+        Text(label, fontSize = 8.8.sp, fontWeight = FontWeight.W700, color = colors.textSecondary)
+        Text(count.toString(), fontSize = 9.5.sp, fontWeight = FontWeight.W800, color = colors.text)
     }
 }
 
@@ -1520,6 +1792,7 @@ private fun FrozenPdfPillCount(icon: ImageVector, count: Int, suffix: String) {
 private fun FrozenPdfActivity(
     attachment: AttachmentEntity,
     annotations: List<PdfAnnotationEntity>,
+    annotationSegments: List<PdfAnnotationSegmentEntity>,
     references: List<LibraryReferencedNote>,
     searchOpen: Boolean,
     query: String,
@@ -1579,7 +1852,7 @@ private fun FrozenPdfActivity(
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 PdfActivityFilter.entries.forEach { choice ->
@@ -1593,23 +1866,31 @@ private fun FrozenPdfActivity(
                     )
                 }
             }
-            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
                 pages.forEach { page ->
-                    FrozenSectionLabel("PAGE ${page + 1}")
-                    annotationEntries.filter { it.pageIndex == page }.forEach { annotation ->
-                        FrozenActivityAnnotationRow(annotation, { onAnnotationClick(annotation) }, { onAnnotationActions(annotation) })
+                    item(key = "page-$page") { FrozenSectionLabel("PAGE ${page + 1}") }
+                    items(annotationEntries.filter { it.pageIndex == page }, key = { it.id }) { annotation ->
+                        FrozenActivityAnnotationRow(
+                            attachment = attachment,
+                            annotation = annotation,
+                            annotationSegments = annotationSegments,
+                            onClick = { onAnnotationClick(annotation) },
+                            onActions = { onAnnotationActions(annotation) },
+                        )
                     }
-                    referenceEntries.filter { it.pageIndex == page }.forEach { reference ->
+                    items(referenceEntries.filter { it.pageIndex == page }, key = { "${it.noteId}:${it.pageIndex}" }) { reference ->
                         FrozenActivityReferenceRow(reference, { onReferenceClick(reference) })
                     }
                 }
                 if (pages.isEmpty()) {
-                    Text(
-                        "No matching PDF activity",
-                        modifier = Modifier.padding(VaultSpacing.screen),
-                        color = colors.textMuted,
-                        fontSize = 12.sp,
-                    )
+                    item {
+                        Text(
+                            "No matching PDF activity",
+                            modifier = Modifier.padding(VaultSpacing.screen),
+                            color = colors.textMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             }
         }
@@ -1617,29 +1898,22 @@ private fun FrozenPdfActivity(
 }
 
 @Composable
-private fun FrozenActivityAnnotationRow(annotation: PdfAnnotationEntity, onClick: () -> Unit, onActions: () -> Unit) {
-    val colors = VaultThemeTokens.colors
-    val isNote = annotation.annotationType == PdfAnnotationEntity.TYPE_PAGE_NOTE || !annotation.noteText.isNullOrBlank()
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = VaultSpacing.screen, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (isNote) Icons.Rounded.StickyNote2 else Icons.Rounded.BorderColor,
-            if (isNote) "Note" else "Highlight",
-            Modifier.size(17.dp),
-            tint = if (isNote) colors.textSecondary else pdfColour(annotation.color),
-        )
-        Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
-            Text(annotationActivityTitle(annotation), fontSize = 13.2.sp, fontWeight = FontWeight.W700, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(annotationActivitySubtitle(annotation), fontSize = 10.5.sp, color = colors.textMuted)
-        }
-        IconButton(onClick = onActions) {
-            Icon(Icons.Rounded.MoreHoriz, "Annotation actions", Modifier.size(17.dp), tint = colors.textMuted)
-        }
-    }
-    HorizontalDivider(color = colors.border.copy(alpha = 0.55f))
-}
+private fun FrozenActivityAnnotationRow(
+    attachment: AttachmentEntity,
+    annotation: PdfAnnotationEntity,
+    annotationSegments: List<PdfAnnotationSegmentEntity>,
+    onClick: () -> Unit,
+    onActions: () -> Unit,
+) = FrozenLocalAnnotationRow(
+    attachment = attachment,
+    annotation = annotation,
+    annotationSegments = annotationSegments,
+    onClick = onClick,
+    onEdit = onActions,
+    onDelete = onActions,
+    onActions = onActions,
+    showNoteActions = false,
+)
 
 @Composable
 private fun FrozenActivityReferenceRow(reference: LibraryReferencedNote, onClick: () -> Unit) {
