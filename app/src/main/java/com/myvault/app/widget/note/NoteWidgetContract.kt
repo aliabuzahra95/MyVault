@@ -3,6 +3,7 @@ package com.myvault.app.widget.note
 import android.appwidget.AppWidgetManager
 
 enum class NoteWidgetSizeBucket { Compact, Medium, Large, ExtraLarge }
+enum class QuickNoteSizeBucket { Compact, Wide }
 
 data class NoteWidgetState(
     val noteId: String? = null,
@@ -34,6 +35,9 @@ internal fun noteWidgetSizeBucket(widthDp: Int, heightDp: Int): NoteWidgetSizeBu
     widthDp < 440 || heightDp < 440 -> NoteWidgetSizeBucket.Large
     else -> NoteWidgetSizeBucket.ExtraLarge
 }
+
+internal fun quickNoteSizeBucket(widthDp: Int): QuickNoteSizeBucket =
+    if (widthDp < 145) QuickNoteSizeBucket.Compact else QuickNoteSizeBucket.Wide
 
 internal fun shouldCreateQuickNote(
     unlocked: Boolean,

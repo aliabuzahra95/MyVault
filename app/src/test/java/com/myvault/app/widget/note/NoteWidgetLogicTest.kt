@@ -69,6 +69,14 @@ class NoteWidgetLogicTest {
     }
 
     @Test
+    fun quickNoteUsesCompactLayoutUntilFullWideLabelFits() {
+        assertEquals(QuickNoteSizeBucket.Compact, quickNoteSizeBucket(64))
+        assertEquals(QuickNoteSizeBucket.Compact, quickNoteSizeBucket(144))
+        assertEquals(QuickNoteSizeBucket.Wide, quickNoteSizeBucket(145))
+        assertEquals(QuickNoteSizeBucket.Wide, quickNoteSizeBucket(220))
+    }
+
+    @Test
     fun quickCreateWaitsForUnlockAndRejectsRapidDuplicateTap() {
         assertFalse(shouldCreateQuickNote(unlocked = false, pending = true, creationInFlight = false))
         assertTrue(shouldCreateQuickNote(unlocked = true, pending = true, creationInFlight = false))

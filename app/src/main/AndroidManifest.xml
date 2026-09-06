@@ -66,7 +66,7 @@
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible" />
         <activity
             android:name=".widget.WidgetAppearanceActivity"
-            android:exported="false" />
+            android:exported="true" />
         <activity
             android:name=".widget.note.NoteWidgetConfigActivity"
             android:exported="true"

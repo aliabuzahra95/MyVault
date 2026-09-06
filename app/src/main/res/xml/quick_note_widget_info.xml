@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.myvault.app.widget.WidgetAppearanceActivity"
     android:description="@string/quick_note_widget_description"
     android:initialKeyguardLayout="@layout/widget_quick_note_wide"
     android:initialLayout="@layout/widget_quick_note_wide"
@@ -14,4 +15,5 @@
     android:targetCellHeight="1"
     android:targetCellWidth="2"
     android:updatePeriodMillis="0"
-    android:widgetCategory="home_screen" />
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

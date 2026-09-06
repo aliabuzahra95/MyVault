@@ -1,6 +1,9 @@
 package com.myvault.app.widget
 
 import android.appwidget.AppWidgetManager
+import android.app.Activity
+import android.content.ComponentName
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultTheme
 import com.myvault.app.ui.theme.VaultThemeMode
+import com.myvault.app.widget.note.QuickNoteWidgetProvider
 import kotlinx.coroutines.launch
 
 @Composable
@@ -55,6 +59,9 @@ class WidgetAppearanceActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
         if (id == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
+        val provider = AppWidgetManager.getInstance(this).getAppWidgetInfo(id)?.provider
+        if (provider != ComponentName(this, QuickNoteWidgetProvider::class.java)) { finish(); return }
+        setResult(Activity.RESULT_CANCELED)
         setContent {
             val dark = rememberWidgetDark(id)
             VaultTheme(mode = if (dark) VaultThemeMode.Dark else VaultThemeMode.Light, materialYouEnabled = false) {
@@ -63,7 +70,13 @@ class WidgetAppearanceActivity : ComponentActivity() {
                         Text("Quick Note settings", style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(16.dp))
                         WidgetAppearanceControl(id)
-                        TextButton(onClick = { finish() }) { Text("Done") }
+                        TextButton(onClick = {
+                            setResult(
+                                Activity.RESULT_OK,
+                                Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id),
+                            )
+                            finish()
+                        }) { Text("Done") }
                     }
                 }
             }

@@ -12,7 +12,33 @@ class NoteWidgetContractTest {
         assertTrue(manifest.contains(".widget.note.QuickNoteWidgetProvider"))
         assertTrue(manifest.contains(".widget.note.NoteWidgetConfigActivity"))
         assertTrue(File("src/main/res/xml/note_widget_info.xml").readText().contains("android:configure"))
-        assertTrue(File("src/main/res/xml/quick_note_widget_info.xml").readText().contains("widget_quick_note_wide"))
+        val quickInfo = File("src/main/res/xml/quick_note_widget_info.xml").readText()
+        assertTrue(quickInfo.contains("widget_quick_note_wide"))
+        assertTrue(quickInfo.contains("WidgetAppearanceActivity"))
+        assertTrue(quickInfo.contains("reconfigurable|configuration_optional"))
+        assertTrue(manifest.contains(".widget.WidgetAppearanceActivity"))
+        assertTrue(manifest.contains("android:exported=\"true\""))
+    }
+
+    @Test
+    fun quickNoteLayoutsAreCreationOnlyAndContainNoVisibleSettingsGear() {
+        val layouts = listOf(
+            "widget_quick_note_compact.xml",
+            "widget_quick_note_wide.xml",
+            "manual_light_widget_quick_note_compact.xml",
+            "manual_dark_widget_quick_note_compact.xml",
+            "manual_light_widget_quick_note_wide.xml",
+            "manual_dark_widget_quick_note_wide.xml",
+        ).map { File("src/main/res/layout/$it").readText() }
+        val provider = File("src/main/java/com/myvault/app/widget/note/QuickNoteWidgetProvider.kt").readText()
+
+        assertTrue(layouts.all { !it.contains("quick_note_widget_settings") })
+        assertTrue(layouts.all { !it.contains("ic_widget_settings") })
+        assertTrue(provider.contains("R.id.quick_note_widget_root"))
+        assertTrue(!provider.contains("R.id.quick_note_widget_settings"))
+        assertTrue(layouts[0].contains("layout_height=\"36dp\""))
+        assertTrue(!layouts[0].contains("quick_note_widget_label"))
+        assertTrue(layouts[1].contains("quick_note_widget_label"))
     }
 
     @Test

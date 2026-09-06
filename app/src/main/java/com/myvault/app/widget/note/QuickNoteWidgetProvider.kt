@@ -32,7 +32,10 @@ class QuickNoteWidgetProvider : AppWidgetProvider() {
         fun updateWidget(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
             val width = manager.getAppWidgetOptions(appWidgetId)
                 .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180)
-            val layout = if (width < 145) R.layout.widget_quick_note_compact else R.layout.widget_quick_note_wide
+            val layout = when (quickNoteSizeBucket(width)) {
+                QuickNoteSizeBucket.Compact -> R.layout.widget_quick_note_compact
+                QuickNoteSizeBucket.Wide -> R.layout.widget_quick_note_wide
+            }
             val views = com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, layout)
             val intent = Intent(context, MainActivity::class.java).apply {
                 action = NoteWidgetContract.ACTION_QUICK_CREATE_NOTE
@@ -48,12 +51,6 @@ class QuickNoteWidgetProvider : AppWidgetProvider() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 ),
             )
-            views.setOnClickPendingIntent(R.id.quick_note_widget_settings, PendingIntent.getActivity(
-                context, 450_000 + appWidgetId,
-                Intent(context, com.myvault.app.widget.WidgetAppearanceActivity::class.java)
-                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            ))
             manager.updateAppWidget(appWidgetId, views)
         }
     }
