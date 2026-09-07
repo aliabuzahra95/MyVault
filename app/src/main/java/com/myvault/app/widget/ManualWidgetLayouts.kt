@@ -6,6 +6,8 @@ internal fun manualWidgetLayout(layout: Int, dark: Boolean): Int = when (layout)
     R.layout.widget_quran_ayah_extra_large -> if (dark) R.layout.manual_dark_widget_quran_ayah_extra_large else R.layout.manual_light_widget_quran_ayah_extra_large
     R.layout.widget_quran_medium -> if (dark) R.layout.manual_dark_widget_quran_medium else R.layout.manual_light_widget_quran_medium
     R.layout.widget_quran_setting_toggle_row -> if (dark) R.layout.manual_dark_widget_quran_setting_toggle_row else R.layout.manual_light_widget_quran_setting_toggle_row
+    R.layout.widget_quran_setting_reciter_row -> if (dark) R.layout.manual_dark_widget_quran_setting_reciter_row else R.layout.manual_light_widget_quran_setting_reciter_row
+    R.layout.widget_quran_reciter_row -> if (dark) R.layout.manual_dark_widget_quran_reciter_row else R.layout.manual_light_widget_quran_reciter_row
     R.layout.widget_note_body_row -> if (dark) R.layout.manual_dark_widget_note_body_row else R.layout.manual_light_widget_note_body_row
     R.layout.widget_quran_setting_size_row -> if (dark) R.layout.manual_dark_widget_quran_setting_size_row else R.layout.manual_light_widget_quran_setting_size_row
     R.layout.widget_note_loading_row -> if (dark) R.layout.manual_dark_widget_note_loading_row else R.layout.manual_light_widget_note_loading_row

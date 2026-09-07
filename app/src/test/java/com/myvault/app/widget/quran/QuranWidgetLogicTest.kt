@@ -58,11 +58,14 @@ class QuranWidgetLogicTest {
             translationEnabled = true,
             arabicFontLevel = MAX_ARABIC_FONT_LEVEL,
             tajweedEnabled = true,
+            reciterId = 6,
+            reciterName = "Mahmoud Khalil al-Husary",
         )
 
         assertTrue(changedA.translationEnabled)
         assertEquals(MAX_ARABIC_FONT_LEVEL, changedA.arabicFontLevel)
         assertTrue(changedA.tajweedEnabled)
+        assertEquals(6, changedA.reciterId)
         assertEquals(QuranWidgetState(2, QuranWidgetMode.Reader, 1), widgetB)
     }
 }

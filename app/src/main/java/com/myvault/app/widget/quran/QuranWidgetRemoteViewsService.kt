@@ -10,6 +10,8 @@ import com.myvault.app.widget.widgetAppearanceContext
 import android.widget.RemoteViewsService
 import com.myvault.app.R
 import com.myvault.app.data.quran.SurahInfo
+import com.myvault.app.data.quran.audio.AudioReciterUiModel
+import com.myvault.app.data.quran.audio.QuranTimedRecitations
 
 class QuranWidgetRemoteViewsService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = QuranWidgetFactory(applicationContext, intent)
@@ -23,17 +25,17 @@ internal class QuranWidgetFactory(
         AppWidgetManager.EXTRA_APPWIDGET_ID,
         AppWidgetManager.INVALID_APPWIDGET_ID,
     )
-    private val bucket = intent.getStringExtra(QuranWidgetContract.EXTRA_SIZE_BUCKET)
-        ?.let { name -> QuranWidgetSizeBucket.entries.firstOrNull { it.name == name } }
-        ?: QuranWidgetSizeBucket.Medium
+    private var bucket = currentBucket()
     private var state = QuranWidgetStateStore(context).read(appWidgetId)
     private var ayahs: List<QuranWidgetAyah> = emptyList()
     private var surahs: List<SurahInfo> = emptyList()
+    private var reciters: List<AudioReciterUiModel> = emptyList()
 
     override fun onCreate() = Unit
 
     override fun onDataSetChanged() {
         state = QuranWidgetStateStore(context).read(appWidgetId)
+        bucket = currentBucket()
         when (state.mode) {
             QuranWidgetMode.Reader -> {
                 ayahs = runCatching {
@@ -45,14 +47,22 @@ internal class QuranWidgetFactory(
                     )
                 }.getOrDefault(emptyList())
                 surahs = emptyList()
+                reciters = emptyList()
             }
             QuranWidgetMode.Picker -> {
                 surahs = filteredWidgetSurahs(state.searchQuery)
                 ayahs = emptyList()
+                reciters = emptyList()
             }
             QuranWidgetMode.Settings -> {
                 ayahs = emptyList()
                 surahs = emptyList()
+                reciters = emptyList()
+            }
+            QuranWidgetMode.ReciterPicker -> {
+                ayahs = emptyList()
+                surahs = emptyList()
+                reciters = QuranTimedRecitations.widgetReciters
             }
         }
     }
@@ -60,28 +70,32 @@ internal class QuranWidgetFactory(
     override fun onDestroy() {
         ayahs = emptyList()
         surahs = emptyList()
+        reciters = emptyList()
     }
 
     override fun getCount(): Int = when (state.mode) {
         QuranWidgetMode.Reader -> ayahs.size
         QuranWidgetMode.Picker -> surahs.size
         QuranWidgetMode.Settings -> SETTINGS_ROW_COUNT
+        QuranWidgetMode.ReciterPicker -> reciters.size
     }
 
     override fun getViewAt(position: Int): RemoteViews? = when (state.mode) {
         QuranWidgetMode.Reader -> ayahs.getOrNull(position)?.toReaderView()
         QuranWidgetMode.Picker -> surahs.getOrNull(position)?.toPickerView()
         QuranWidgetMode.Settings -> settingsView(position)
+        QuranWidgetMode.ReciterPicker -> reciters.getOrNull(position)?.toReciterView()
     }
 
     override fun getLoadingView(): RemoteViews = com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_loading_row)
 
-    override fun getViewTypeCount(): Int = 5
+    override fun getViewTypeCount(): Int = 7
 
     override fun getItemId(position: Int): Long = when (state.mode) {
         QuranWidgetMode.Reader -> ayahs.getOrNull(position)?.let { it.surahNumber * 1_000L + it.ayahNumber } ?: position.toLong()
         QuranWidgetMode.Picker -> surahs.getOrNull(position)?.num?.toLong() ?: position.toLong()
         QuranWidgetMode.Settings -> 10_000L + position
+        QuranWidgetMode.ReciterPicker -> 20_000L + (reciters.getOrNull(position)?.id ?: position)
     }
 
     override fun hasStableIds(): Boolean = true
@@ -124,8 +138,13 @@ internal class QuranWidgetFactory(
             setOnClickFillInIntent(R.id.quran_widget_ayah_play,
                 QuranWidgetPlayback.rowIntent(appWidgetId, surahNumber, ayahNumber, QuranWidgetPlayback.PLAY))
             val playback = quranWidgetPlayback(context).state.value
-            val active = playback.verseKey == verseKey && playback.isPlaying
-            setQuranAudioIcon(context, appWidgetId, R.id.quran_widget_ayah_play, if (active) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+            val active = playback.sourceWidgetId == appWidgetId && playback.verseKey == verseKey && playback.isPlaying
+            setQuranAudioIcon(
+                context,
+                appWidgetId,
+                R.id.quran_widget_ayah_play,
+                if (active) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
+            )
             setContentDescription(R.id.quran_widget_ayah_play, if (active) "Pause ayah $verseKey" else "Play ayah $verseKey")
 
         }
@@ -150,8 +169,29 @@ internal class QuranWidgetFactory(
             )
             setOnClickFillInIntent(
                 R.id.quran_widget_row,
-                Intent().putExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, num),
+                Intent()
+                    .putExtra(QuranWidgetPlayback.COMMAND, QuranWidgetPlayback.SELECT_SURAH)
+                    .putExtra(QuranWidgetContract.EXTRA_SURAH_NUMBER, num),
             )
+        }
+
+    private fun AudioReciterUiModel.toReciterView(): RemoteViews =
+        com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_reciter_row).apply {
+            setTextViewText(R.id.quran_widget_reciter_name, name)
+            val selected = id == state.reciterId
+            setTextViewText(R.id.quran_widget_reciter_selected, if (selected) context.getString(R.string.quran_widget_selected) else "")
+            setViewVisibility(R.id.quran_widget_reciter_selected, if (selected) View.VISIBLE else View.GONE)
+            val selectionIntent = Intent()
+                .putExtra(QuranWidgetPlayback.COMMAND, QuranWidgetPlayback.SELECT_RECITER)
+                .putExtra(QuranWidgetContract.EXTRA_RECITER_ID, id)
+                .putExtra(QuranWidgetContract.EXTRA_RECITER_NAME, name)
+            for (viewId in intArrayOf(
+                R.id.quran_widget_row,
+                R.id.quran_widget_reciter_name,
+                R.id.quran_widget_reciter_selected,
+            )) {
+                setOnClickFillInIntent(viewId, selectionIntent)
+            }
         }
 
     private fun settingsView(position: Int): RemoteViews? = when (position) {
@@ -189,7 +229,19 @@ internal class QuranWidgetFactory(
             enabled = state.tajweedEnabled,
             command = QuranWidgetContract.COMMAND_TOGGLE_TAJWEED,
         )
-        3 -> toggleSettingView(
+        3 -> com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_setting_reciter_row).apply {
+            setTextViewText(R.id.quran_widget_setting_reciter_value, state.reciterName)
+            val reciterIntent = settingIntent(QuranWidgetContract.COMMAND_SHOW_RECITERS)
+            for (viewId in intArrayOf(
+                R.id.quran_widget_row,
+                R.id.quran_widget_setting_reciter_label,
+                R.id.quran_widget_setting_reciter_value,
+                R.id.quran_widget_setting_reciter_chevron,
+            )) {
+                setOnClickFillInIntent(viewId, reciterIntent)
+            }
+        }
+        4 -> toggleSettingView(
             label = "Appearance",
             enabled = com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId),
             command = "toggle_appearance",
@@ -197,7 +249,7 @@ internal class QuranWidgetFactory(
             setTextViewText(R.id.quran_widget_setting_value,
                 if (com.myvault.app.widget.WidgetAppearanceStore(context).isDark(appWidgetId)) "Dark" else "Light")
         }
-        4 -> com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_setting_done_row).apply {
+        5 -> com.myvault.app.widget.widgetRemoteViews(context, appWidgetId, R.layout.widget_quran_setting_done_row).apply {
             setOnClickFillInIntent(
                 R.id.quran_widget_setting_done,
                 settingIntent(QuranWidgetContract.COMMAND_DONE),
@@ -217,13 +269,30 @@ internal class QuranWidgetFactory(
                 R.id.quran_widget_setting_value,
                 context.widgetAppearanceContext(appWidgetId).getColor(if (enabled) R.color.quran_widget_accent else R.color.quran_widget_secondary),
             )
-            setOnClickFillInIntent(R.id.quran_widget_row, settingIntent(command))
+            val toggleIntent = settingIntent(command)
+            for (viewId in intArrayOf(
+                R.id.quran_widget_row,
+                R.id.quran_widget_setting_label,
+                R.id.quran_widget_setting_value,
+            )) {
+                setOnClickFillInIntent(viewId, toggleIntent)
+            }
         }
 
     private fun settingIntent(command: String): Intent =
-        Intent().putExtra(QuranWidgetContract.EXTRA_SETTING_COMMAND, command)
+        Intent()
+            .putExtra(QuranWidgetPlayback.COMMAND, QuranWidgetPlayback.SETTING)
+            .putExtra(QuranWidgetContract.EXTRA_SETTING_COMMAND, command)
+
+    private fun currentBucket(): QuranWidgetSizeBucket {
+        val options = AppWidgetManager.getInstance(context).getAppWidgetOptions(appWidgetId)
+        return quranWidgetSizeBucket(
+            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320),
+            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 300),
+        )
+    }
 
     private companion object {
-        const val SETTINGS_ROW_COUNT = 5
+        const val SETTINGS_ROW_COUNT = 6
     }
 }

@@ -11,7 +11,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.myvault.app.data.preferences.VaultPreferences
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -38,6 +37,25 @@ class QuranWidgetInteractionTest {
         automation.takeScreenshot()?.let { bitmap -> File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
     }
 
+    private fun showWidgetPage() {
+        shell("input keyevent KEYCODE_HOME")
+        Thread.sleep(1_000)
+        repeat(3) {
+            if (nodes(automation.rootInActiveWindow).any {
+                    it.viewIdResourceName == "com.myvault.app:id/quran_widget_collection" && it.isVisibleToUser
+                }) return
+            shell("input swipe 1000 1000 80 1000 700")
+            Thread.sleep(1_000)
+        }
+    }
+
+    private fun visibleAyahReferences(): List<String> = nodes(automation.rootInActiveWindow)
+        .filter {
+            it.isVisibleToUser &&
+                it.viewIdResourceName == "com.myvault.app:id/quran_widget_ayah_reference"
+        }
+        .mapNotNull { it.text?.toString() }
+
     @Test fun actualWidgetTextOpensExactAyahDespiteSavedSurah16() = runBlocking {
         assumeTrue("Never change production phone preferences", Build.MODEL.contains("sdk_gphone") || Build.FINGERPRINT.contains("generic"))
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -55,12 +73,8 @@ class QuranWidgetInteractionTest {
         store.setAnchor(id, surah, ayah)
         store.setTranslationEnabled(id, false)
         repeat(5) { store.adjustArabicFontLevel(id, -1) }
-        QuranWidgetProvider.updateWidget(context, manager, id)
-        shell("input keyevent KEYCODE_HOME")
-        Thread.sleep(1000)
-        if (nodes(automation.rootInActiveWindow).none { it.viewIdResourceName == "com.myvault.app:id/quran_widget_collection" && it.isVisibleToUser }) {
-            shell("input swipe 940 900 100 900 350")
-        }
+        QuranWidgetProvider.updateWidget(context, manager, id, scrollToAyah = ayah)
+        showWidgetPage()
         waitFor("Widget collection visible") { nodes(automation.rootInActiveWindow).any { it.viewIdResourceName == "com.myvault.app:id/quran_widget_collection" && it.isVisibleToUser } }
         Thread.sleep(1500)
         QuranWidgetProvider.updateWidget(context, manager, id)
@@ -88,34 +102,57 @@ class QuranWidgetInteractionTest {
         assertFalse("Text tap does not start playback", quranWidgetPlayback(context).state.value.active)
     }
 
-    @Test fun widgetPlayUsesFaresSelectedInAppWithoutOpeningReader() = runBlocking {
+    @Test fun widgetPlayUsesItsOwnFaresPreferenceWithoutOpeningReader() = runBlocking {
         assumeTrue(Build.MODEL.contains("sdk_gphone") || Build.FINGERPRINT.contains("generic"))
         val context = ApplicationProvider.getApplicationContext<Context>()
         val id = File(context.getExternalFilesDir(null), "quran-widget-test-id.txt").readText().trim().toInt()
-        val preferences = VaultPreferences(context)
-        val original = preferences.userPreferences.first().quranAudioReciterId
         val controller = quranWidgetPlayback(context)
         try {
-            preferences.setQuranAudioReciterId(1_000_081)
-            QuranWidgetStateStore(context).selectSurah(id, 1)
-            QuranWidgetProvider.updateWidget(context, AppWidgetManager.getInstance(context), id)
-            shell("input keyevent KEYCODE_HOME")
-            Thread.sleep(1500)
-            if (nodes(automation.rootInActiveWindow).none { it.viewIdResourceName == "com.myvault.app:id/quran_widget_collection" && it.isVisibleToUser }) {
-                shell("input swipe 940 900 100 900 350")
+            QuranWidgetStateStore(context).apply {
+                selectSurah(id, 1)
+                setReciter(id, 1_000_081, "Fares Abbad")
+                setMode(id, QuranWidgetMode.Reader)
             }
+            QuranWidgetProvider.updateWidget(context, AppWidgetManager.getInstance(context), id)
+            showWidgetPage()
             waitFor("Widget play visible") { nodes(automation.rootInActiveWindow).any { it.viewIdResourceName == "com.myvault.app:id/quran_widget_play_surah" && it.isVisibleToUser } }
             val play = nodes(automation.rootInActiveWindow).first { it.viewIdResourceName == "com.myvault.app:id/quran_widget_play_surah" && it.isVisibleToUser }
             val bounds = Rect().also(play::getBoundsInScreen)
             shell("input tap ${bounds.centerX()} ${bounds.centerY()}")
             waitFor("Widget recitation started", 90_000) { controller.state.value.isPlaying }
             assertEquals(1_000_081, controller.state.value.reciter?.id)
+            assertEquals(id, controller.state.value.sourceWidgetId)
             assertTrue(controller.state.value.synchronized)
             assertNotEquals("com.myvault.app", automation.rootInActiveWindow?.packageName?.toString())
             capture(context, "widget-fares-playing")
         } finally {
             instrumentation.runOnMainSync { controller.stop() }
-            preferences.setQuranAudioReciterId(original)
         }
+    }
+
+    @Test fun routineWidgetUpdatePreservesLauncherManagedScrollPosition() = runBlocking {
+        assumeTrue(Build.MODEL.contains("sdk_gphone") || Build.FINGERPRINT.contains("generic"))
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val manager = AppWidgetManager.getInstance(context)
+        val id = File(context.getExternalFilesDir(null), "quran-widget-test-id.txt").readText().trim().toInt()
+        QuranWidgetStateStore(context).apply {
+            selectSurah(id, 2)
+            setAnchor(id, 2, 1)
+            setTranslationEnabled(id, false)
+        }
+        QuranWidgetProvider.updateWidget(context, manager, id, scrollToAyah = 1)
+        showWidgetPage()
+        waitFor("Widget ayahs visible") { visibleAyahReferences().isNotEmpty() }
+        repeat(3) {
+            shell("input swipe 800 930 800 350 600")
+            Thread.sleep(500)
+        }
+        val before = visibleAyahReferences()
+        assertTrue("Manual scroll moved beyond persisted ayah 2:1: $before", before.none { it == "2:1" })
+
+        QuranWidgetProvider.updateWidget(context, manager, id)
+        Thread.sleep(2_500)
+
+        assertEquals("Routine refresh must not issue a persisted-anchor scroll", before, visibleAyahReferences())
     }
 }

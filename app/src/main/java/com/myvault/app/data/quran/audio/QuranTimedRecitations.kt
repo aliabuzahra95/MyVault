@@ -28,6 +28,17 @@ internal object QuranTimedRecitations {
         AudioReciterUiModel(11, "Muhammad al-Tablawi"),
     ) + additionalReciters
 
+    val widgetReciters = listOf(
+        AudioReciterUiModel(1, "Abdul Basit (Mujawwad)"),
+        AudioReciterUiModel(2, "Abdul Basit (Murattal)"),
+        AudioReciterUiModel(4, "Abu Bakr al-Shatri"),
+        AudioReciterUiModel(6, "Mahmoud Khalil al-Husary"),
+        AudioReciterUiModel(7, "Mishary al-Afasy"),
+        AudioReciterUiModel(9, "Muhammad Siddiq al-Minshawi"),
+        AudioReciterUiModel(10, "Sa'ud ash-Shuraym"),
+        AudioReciterUiModel(11, "Muhammad al-Tablawi"),
+    ) + additionalReciters
+
     fun includeRequested(catalog: List<AudioReciterUiModel>) =
         (catalog + requestedReciters).distinctBy { it.id }
     private fun chapter(id: Int, path: String) = QuranTimedRecitation(id,

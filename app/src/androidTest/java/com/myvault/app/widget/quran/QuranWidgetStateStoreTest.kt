@@ -38,6 +38,7 @@ class QuranWidgetStateStoreTest {
         store.adjustArabicFontLevel(firstWidget, 1)
         store.setTajweedEnabled(firstWidget, true)
         store.setSearchQuery(firstWidget, "Shams")
+        store.setReciter(firstWidget, 6, "Mahmoud Khalil al-Husary")
 
         val restoredStore = QuranWidgetStateStore(context)
         val first = restoredStore.read(firstWidget)
@@ -48,12 +49,15 @@ class QuranWidgetStateStoreTest {
         assertEquals(DEFAULT_ARABIC_FONT_LEVEL + 1, first.arabicFontLevel)
         assertTrue(first.tajweedEnabled)
         assertEquals("Shams", first.searchQuery)
+        assertEquals(6, first.reciterId)
+        assertEquals("Mahmoud Khalil al-Husary", first.reciterName)
 
         assertEquals(2, second.surahNumber)
         assertFalse(second.translationEnabled)
         assertEquals(DEFAULT_ARABIC_FONT_LEVEL, second.arabicFontLevel)
         assertFalse(second.tajweedEnabled)
         assertEquals("", second.searchQuery)
+        assertEquals(DEFAULT_QURAN_WIDGET_RECITER_ID, second.reciterId)
     }
 
     @Test

@@ -5,6 +5,7 @@
     <string name="quran_widget_description">Read and navigate the Qur’an from your Home screen</string>
     <string name="quran_widget_choose_surah">Choose Surah</string>
     <string name="quran_widget_reader_settings">Reader settings</string>
+    <string name="quran_widget_choose_reciter">Choose reciter</string>
     <string name="quran_widget_surah_metadata">%1$d · %2$d ayat · %1$d:%3$d</string>
     <string name="quran_widget_surah_count">%1$d Surahs · tap to choose</string>
     <string name="quran_widget_search_results">“%1$s” · %2$d found</string>
@@ -28,6 +29,8 @@
     <string name="quran_widget_decrease_arabic">Decrease Arabic text size</string>
     <string name="quran_widget_increase_arabic">Increase Arabic text size</string>
     <string name="quran_widget_tajweed">Tajweed</string>
+    <string name="quran_widget_reciter">Reciter</string>
+    <string name="quran_widget_selected">Selected</string>
     <string name="quran_widget_on">On</string>
     <string name="quran_widget_off">Off</string>
     <string name="quran_widget_done">Done</string>

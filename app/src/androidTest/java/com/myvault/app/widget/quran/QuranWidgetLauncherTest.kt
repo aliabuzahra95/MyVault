@@ -51,7 +51,7 @@ class QuranWidgetLauncherTest {
             store.selectSurah(id, 4)
             store.setAnchor(id, 4, 5)
             store.setTranslationEnabled(id, true)
-            QuranWidgetProvider.updateWidget(context, manager, id)
+            QuranWidgetProvider.updateWidget(context, manager, id, scrollToAyah = 5)
             File(context.getExternalFilesDir(null), "quran-widget-test-id.txt").writeText(id.toString())
             instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
             Thread.sleep(2500)

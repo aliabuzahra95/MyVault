@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/quran_widget_row" android:layout_width="match_parent" android:layout_height="56dp" android:background="@drawable/manual_light_quran_widget_setting_touch" android:gravity="center_vertical" android:orientation="horizontal" android:paddingHorizontal="16dp">
+    <TextView android:id="@+id/quran_widget_setting_reciter_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFamily="@font/plus_jakarta_sans_semi_bold" android:text="@string/quran_widget_reciter" android:textColor="#172033" android:textSize="14sp" />
+    <TextView android:id="@+id/quran_widget_setting_reciter_value" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="@font/plus_jakarta_sans_medium" android:gravity="end" android:maxLines="1" android:textColor="#737B89" android:textSize="12sp" />
+    <ImageView android:id="@+id/quran_widget_setting_reciter_chevron" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginStart="4dp" android:padding="7dp" android:src="@drawable/manual_light_ic_widget_chevron_right" />
+</LinearLayout>

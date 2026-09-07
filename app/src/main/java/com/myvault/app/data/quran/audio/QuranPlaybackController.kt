@@ -26,6 +26,7 @@ data class QuranPlaybackState(
     val recordingId: String? = null,
     val synchronized: Boolean = false,
     val message: String? = null,
+    val sourceWidgetId: Int? = null,
 ) {
     val isPlaying get() = status == QuranPlaybackStatus.Playing
     val active get() = status in setOf(QuranPlaybackStatus.Preparing, QuranPlaybackStatus.Playing, QuranPlaybackStatus.Paused)
@@ -63,17 +64,36 @@ class QuranPlaybackController @Inject constructor(
             }
         }.build()
 
-    fun requestPlay(surah: Int, ayah: Int, reciter: AudioReciterUiModel, mode: QuranListeningMode = QuranListeningMode.ThisAyah) {
-        QuranPlaybackService.start(context, QuranPlaybackService.PLAY, surah, ayah, reciter, mode)
+    fun requestPlay(
+        surah: Int,
+        ayah: Int,
+        reciter: AudioReciterUiModel,
+        mode: QuranListeningMode = QuranListeningMode.ThisAyah,
+        sourceWidgetId: Int? = null,
+    ) {
+        QuranPlaybackService.start(context, QuranPlaybackService.PLAY, surah, ayah, reciter, mode, sourceWidgetId)
     }
 
-    internal fun play(surah: Int, ayah: Int, requestedReciter: AudioReciterUiModel?, mode: QuranListeningMode) {
+    internal fun play(
+        surah: Int,
+        ayah: Int,
+        requestedReciter: AudioReciterUiModel?,
+        mode: QuranListeningMode,
+        sourceWidgetId: Int? = null,
+    ) {
         val catalog = quranCatalog.firstOrNull { it.num == surah } ?: return
         if (ayah !in 1..catalog.ayat) return
         val request = ++generation
         preparation?.cancel(); ticker?.cancel(); player.stop()
         timeline = null
-        mutableState.value = QuranPlaybackState(reciter = requestedReciter, surah = surah, verseKey = "$surah:$ayah", mode = mode, status = QuranPlaybackStatus.Preparing)
+        mutableState.value = QuranPlaybackState(
+            reciter = requestedReciter,
+            surah = surah,
+            verseKey = "$surah:$ayah",
+            mode = mode,
+            status = QuranPlaybackStatus.Preparing,
+            sourceWidgetId = sourceWidgetId,
+        )
         preparation = scope.launch {
             try {
                 val prefs = preferences.userPreferences.first()
@@ -159,7 +179,13 @@ class QuranPlaybackController @Inject constructor(
         if (!player.hasActiveMedia()) {
             val current = state.value
             if (current.status == QuranPlaybackStatus.Ended) current.reciter?.let {
-                requestPlay(current.surah, current.verseKey?.substringAfter(':')?.toIntOrNull() ?: 1, it, current.mode)
+                requestPlay(
+                    current.surah,
+                    current.verseKey?.substringAfter(':')?.toIntOrNull() ?: 1,
+                    it,
+                    current.mode,
+                    current.sourceWidgetId,
+                )
             }
             return
         }
@@ -196,7 +222,7 @@ class QuranPlaybackController @Inject constructor(
         if (target !in 1..(quranCatalog.firstOrNull { it.num == current.surah }?.ayat ?: return)) return
         val timing = timeline?.timing?.ayah(target)
         if (timing != null) { seek(timing.startMs); return }
-        current.reciter?.let { requestPlay(current.surah, target, it, current.mode) }
+        current.reciter?.let { requestPlay(current.surah, target, it, current.mode, current.sourceWidgetId) }
     }
 
     fun speed(speed: Float) {

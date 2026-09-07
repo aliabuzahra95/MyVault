@@ -37,6 +37,9 @@ internal object QuranWidgetPlayback {
     const val COMMAND = "quran_widget_row_command"
     const val OPEN = "open"
     const val PLAY = "play"
+    const val SELECT_SURAH = "select_surah"
+    const val SELECT_RECITER = "select_reciter"
+    const val SETTING = "setting"
 
     fun rowIntent(widget: Int, surah: Int, ayah: Int, command: String): Intent = Intent().apply {
         putExtra(COMMAND, command)

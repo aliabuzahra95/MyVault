@@ -40,7 +40,12 @@ class QuranWidgetRenderingTest {
                     assertEquals(View.TEXT_DIRECTION_RTL, arabic.textDirection)
                     assertEquals(Gravity.RIGHT, arabic.gravity and Gravity.HORIZONTAL_GRAVITY_MASK)
                     assertEquals(-1, arabic.layout.getParagraphDirection(0))
-                    assertTrue(arabic.includeFontPadding)
+                    assertFalse(arabic.includeFontPadding)
+                    val lineHeightRatio = arabic.lineHeight / arabic.textSize
+                    assertTrue(
+                        "Arabic line height must leave diacritic room; ratio=$lineHeightRatio",
+                        lineHeightRatio in 1.75f..2.15f,
+                    )
                     assertEquals(View.TEXT_DIRECTION_LTR, row.findViewById<TextView>(R.id.quran_widget_translation).textDirection)
                     assertEquals("4:5", row.findViewById<TextView>(R.id.quran_widget_ayah_reference).text.toString())
                 }

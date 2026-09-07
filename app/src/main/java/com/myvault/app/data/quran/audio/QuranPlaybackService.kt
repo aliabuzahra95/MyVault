@@ -1,6 +1,7 @@
 package com.myvault.app.data.quran.audio
 
 import android.app.*
+import android.appwidget.AppWidgetManager
 import android.content.*
 import android.media.MediaMetadata
 import android.media.session.MediaSession
@@ -83,7 +84,10 @@ class QuranPlaybackService : Service() {
         when (intent?.action) {
             PLAY -> controller.play(intent.getIntExtra(SURAH, 1), intent.getIntExtra(AYAH, 1),
                 intent.getIntExtra(RECITER, -1).takeIf { it > 0 }?.let { AudioReciterUiModel(it, intent.getStringExtra(RECITER_NAME).orEmpty()) },
-                if (intent.getBooleanExtra(CONTINUOUS, false)) QuranListeningMode.ContinueSurah else QuranListeningMode.ThisAyah)
+                if (intent.getBooleanExtra(CONTINUOUS, false)) QuranListeningMode.ContinueSurah else QuranListeningMode.ThisAyah,
+                intent.getIntExtra(SOURCE_WIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                    .takeIf { it != AppWidgetManager.INVALID_APPWIDGET_ID },
+            )
             TOGGLE -> controller.toggle()
             PAUSE -> controller.pause()
             STOP -> controller.stop()
@@ -136,10 +140,20 @@ class QuranPlaybackService : Service() {
         private const val RECITER = "audio_reciter"
         private const val RECITER_NAME = "audio_reciter_name"
         private const val CONTINUOUS = "audio_continuous"
-        fun start(context: Context, action: String, surah: Int = 1, ayah: Int = 1, reciter: AudioReciterUiModel? = null, mode: QuranListeningMode = QuranListeningMode.ThisAyah) {
+        private const val SOURCE_WIDGET_ID = "audio_source_widget_id"
+        fun start(
+            context: Context,
+            action: String,
+            surah: Int = 1,
+            ayah: Int = 1,
+            reciter: AudioReciterUiModel? = null,
+            mode: QuranListeningMode = QuranListeningMode.ThisAyah,
+            sourceWidgetId: Int? = null,
+        ) {
             val intent = Intent(context, QuranPlaybackService::class.java).setAction(action)
                 .putExtra(SURAH, surah).putExtra(AYAH, ayah).putExtra(CONTINUOUS, mode == QuranListeningMode.ContinueSurah)
             reciter?.let { intent.putExtra(RECITER, it.id).putExtra(RECITER_NAME, it.name) }
+            sourceWidgetId?.let { intent.putExtra(SOURCE_WIDGET_ID, it) }
             try { ContextCompat.startForegroundService(context, intent) }
             catch (error: RuntimeException) { Toast.makeText(context, "Qur'an playback could not start: ${error.message}", Toast.LENGTH_LONG).show() }
         }

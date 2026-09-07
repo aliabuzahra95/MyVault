@@ -18,6 +18,18 @@ class QuranTimedRecitationsTest {
         assertTrue(QuranTimedRecitations.additionalReciters.all { it.id > 1_000_000 })
     }
 
+    @Test fun everyWidgetReciterHasARealContinuousSource() {
+        assertTrue(QuranTimedRecitations.widgetReciters.isNotEmpty())
+        assertEquals(
+            QuranTimedRecitations.widgetReciters.map { it.id }.toSet(),
+            QuranTimedRecitations.sources.keys,
+        )
+        assertEquals(
+            QuranTimedRecitations.widgetReciters.size,
+            QuranTimedRecitations.widgetReciters.distinctBy { it.id }.size,
+        )
+    }
+
     @Test fun requestedRecitersRemainSelectableWhenCatalogIsUnavailableWithoutRemovingExistingOnes() {
         val offline = QuranTimedRecitations.includeRequested(emptyList())
         assertEquals(setOf(1, 2, 4, 10, 11, 1_000_092, 1_000_030, 1_000_081), offline.map { it.id }.toSet())

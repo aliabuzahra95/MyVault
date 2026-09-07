@@ -26,15 +26,34 @@ class QuranWidgetStateStore(context: Context) {
                 .coerceIn(MIN_ARABIC_FONT_LEVEL, MAX_ARABIC_FONT_LEVEL),
             tajweedEnabled = preferences.getBoolean(tajweedKey(appWidgetId), false),
             searchQuery = preferences.getString(searchKey(appWidgetId), "").orEmpty(),
+            reciterId = preferences.getInt(reciterIdKey(appWidgetId), DEFAULT_QURAN_WIDGET_RECITER_ID),
+            reciterName = preferences.getString(reciterNameKey(appWidgetId), DEFAULT_QURAN_WIDGET_RECITER_NAME)
+                .orEmpty().ifBlank { DEFAULT_QURAN_WIDGET_RECITER_NAME },
         )
     }
 
     fun exists(appWidgetId: Int): Boolean = preferences.contains(surahKey(appWidgetId))
 
-    fun initialize(appWidgetId: Int, defaultSurah: Int, defaultAyah: Int) {
-        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID || exists(appWidgetId)) return
+    fun initialize(
+        appWidgetId: Int,
+        defaultSurah: Int,
+        defaultAyah: Int,
+        defaultReciterId: Int = DEFAULT_QURAN_WIDGET_RECITER_ID,
+        defaultReciterName: String = DEFAULT_QURAN_WIDGET_RECITER_NAME,
+    ): Boolean {
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID || exists(appWidgetId)) return false
         val location = validatedWidgetLocation(defaultSurah, defaultAyah)
-        write(appWidgetId, QuranWidgetState(location.surahNumber, QuranWidgetMode.Reader, location.ayahNumber))
+        write(
+            appWidgetId,
+            QuranWidgetState(
+                surahNumber = location.surahNumber,
+                mode = QuranWidgetMode.Reader,
+                anchorAyah = location.ayahNumber,
+                reciterId = defaultReciterId,
+                reciterName = defaultReciterName,
+            ),
+        )
+        return true
     }
 
     fun selectSurah(appWidgetId: Int, surahNumber: Int) {
@@ -80,6 +99,17 @@ class QuranWidgetStateStore(context: Context) {
         write(appWidgetId, read(appWidgetId).copy(searchQuery = query.trim().take(64)))
     }
 
+    fun setReciter(appWidgetId: Int, reciterId: Int, reciterName: String) {
+        write(
+            appWidgetId,
+            read(appWidgetId).copy(
+                mode = QuranWidgetMode.Settings,
+                reciterId = reciterId,
+                reciterName = reciterName,
+            ),
+        )
+    }
+
     fun setAnchor(appWidgetId: Int, surahNumber: Int, ayahNumber: Int) {
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
         val location = validatedWidgetLocation(surahNumber, ayahNumber)
@@ -99,7 +129,9 @@ class QuranWidgetStateStore(context: Context) {
             .remove(fontLevelKey(appWidgetId))
             .remove(tajweedKey(appWidgetId))
             .remove(searchKey(appWidgetId))
-            .apply()
+            .remove(reciterIdKey(appWidgetId))
+            .remove(reciterNameKey(appWidgetId))
+            .commit()
     }
 
     private fun write(appWidgetId: Int, state: QuranWidgetState) {
@@ -111,7 +143,9 @@ class QuranWidgetStateStore(context: Context) {
             .putInt(fontLevelKey(appWidgetId), state.arabicFontLevel)
             .putBoolean(tajweedKey(appWidgetId), state.tajweedEnabled)
             .putString(searchKey(appWidgetId), state.searchQuery)
-            .apply()
+            .putInt(reciterIdKey(appWidgetId), state.reciterId)
+            .putString(reciterNameKey(appWidgetId), state.reciterName)
+            .commit()
     }
 
     private fun surahKey(id: Int) = "surah_$id"
@@ -121,4 +155,6 @@ class QuranWidgetStateStore(context: Context) {
     private fun fontLevelKey(id: Int) = "font_level_$id"
     private fun tajweedKey(id: Int) = "tajweed_$id"
     private fun searchKey(id: Int) = "search_$id"
+    private fun reciterIdKey(id: Int) = "reciter_id_$id"
+    private fun reciterNameKey(id: Int) = "reciter_name_$id"
 }
