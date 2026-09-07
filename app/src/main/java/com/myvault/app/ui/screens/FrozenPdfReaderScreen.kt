@@ -66,14 +66,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -83,6 +84,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,6 +115,7 @@ import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 private enum class PdfReaderSheet {
@@ -130,14 +134,14 @@ private enum class PdfReaderSheet {
     PageJump,
 }
 
-private enum class PdfActivityFilter(val label: String) {
+internal enum class PdfActivityFilter(val label: String) {
     All("All"),
     Highlights("Highlights"),
     Notes("Notes"),
     StudyLinks("Study links"),
 }
 
-private enum class PdfAnnotationScope(val label: String) {
+internal enum class PdfAnnotationScope(val label: String) {
     AllPages("All pages"),
     ThisPage("This page"),
 }
@@ -1075,7 +1079,7 @@ private fun FrozenCurrentPageSheet(
 }
 
 @Composable
-private fun FrozenLocalPdfActivitySheet(
+internal fun FrozenLocalPdfActivitySheet(
     attachment: AttachmentEntity,
     annotations: List<PdfAnnotationEntity>,
     annotationSegments: List<PdfAnnotationSegmentEntity>,
@@ -1098,11 +1102,7 @@ private fun FrozenLocalPdfActivitySheet(
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val annotationListState = rememberLazyListState()
-    val sheetGesturesEnabled by remember {
-        derivedStateOf {
-            !annotationListState.isScrollInProgress && !annotationListState.canScrollBackward
-        }
-    }
+    val sheetScope = rememberCoroutineScope()
     var scopeMenuOpen by remember { mutableStateOf(false) }
     val filteredAnnotations = remember(annotations, annotationSegments, filter, scope, currentPageIndex) {
         annotations.filter { annotation ->
@@ -1128,7 +1128,27 @@ private fun FrozenLocalPdfActivitySheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        sheetGesturesEnabled = sheetGesturesEnabled,
+        sheetGesturesEnabled = false,
+        dragHandle = {
+            Surface(
+                modifier = Modifier.semantics {
+                    contentDescription = if (sheetState.currentValue == SheetValue.Expanded) "Collapse annotations" else "Expand annotations"
+                },
+                onClick = {
+                    if (sheetState.currentValue == sheetState.targetValue) {
+                        sheetScope.launch {
+                            if (sheetState.currentValue == SheetValue.Expanded) sheetState.partialExpand()
+                            else sheetState.expand()
+                        }
+                    }
+                },
+                color = Color.Transparent,
+            ) {
+                Box(Modifier.fillMaxWidth().height(40.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(32.dp, 4.dp).background(colors.textMuted, VaultShapes.md))
+                }
+            }
+        },
         containerColor = colors.surface,
     ) {
         Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.92f)) {
@@ -1386,18 +1406,20 @@ private fun FrozenHighlightPreview(
         border = BorderStroke(1.dp, colors.border),
     ) {
         Column {
-            when {
-                preview != null -> Image(
-                    bitmap = preview!!.bitmap.asImageBitmap(),
-                    contentDescription = "Highlighted PDF region",
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 170.dp),
-                    contentScale = ContentScale.FillWidth,
-                )
-                complete -> Column(Modifier.padding(horizontal = 12.dp, vertical = 13.dp)) {
-                    Text("Preview unavailable", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.text)
-                    Text("Open highlighted area", fontSize = 9.5.sp, color = colors.textMuted)
+            Box(Modifier.fillMaxWidth().height(170.dp), contentAlignment = Alignment.Center) {
+                when {
+                    preview != null -> Image(
+                        bitmap = preview!!.bitmap.asImageBitmap(),
+                        contentDescription = "Highlighted PDF region",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                    complete -> Column(Modifier.padding(horizontal = 12.dp, vertical = 13.dp)) {
+                        Text("Preview unavailable", fontSize = 11.sp, fontWeight = FontWeight.W700, color = colors.text)
+                        Text("Open highlighted area", fontSize = 9.5.sp, color = colors.textMuted)
+                    }
+                    else -> Text("Preparing preview…", Modifier.padding(12.dp), fontSize = 10.sp, color = colors.textMuted)
                 }
-                else -> Text("Preparing preview…", Modifier.padding(12.dp), fontSize = 10.sp, color = colors.textMuted)
             }
             val footer = if (preview?.partial == true) {
                 "Page ${annotation.pageIndex + 1} · Partial preview · Open full highlighted region"

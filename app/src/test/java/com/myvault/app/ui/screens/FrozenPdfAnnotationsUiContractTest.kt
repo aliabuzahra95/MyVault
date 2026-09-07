@@ -48,9 +48,11 @@ class FrozenPdfAnnotationsUiContractTest {
     @Test
     fun annotationListOwnsScrollingWithoutElasticOrSheetMotionAtItsBoundary() {
         assertTrue(reader.contains("overscrollEffect = null"))
-        assertTrue(reader.contains("sheetGesturesEnabled = sheetGesturesEnabled"))
-        assertTrue(reader.contains("!annotationListState.isScrollInProgress"))
-        assertTrue(reader.contains("!annotationListState.canScrollBackward"))
+        assertTrue(reader.contains("sheetGesturesEnabled = false"))
+        assertTrue(reader.contains("sheetState.partialExpand()"))
+        assertTrue(reader.contains("sheetState.expand()"))
+        assertTrue(reader.contains("sheetState.currentValue == sheetState.targetValue"))
+        assertTrue(reader.contains("Box(Modifier.fillMaxWidth().height(170.dp)"))
     }
 
     @Test
