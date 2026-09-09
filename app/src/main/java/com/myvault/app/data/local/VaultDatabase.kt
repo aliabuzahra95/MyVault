@@ -65,7 +65,7 @@ import com.myvault.app.data.local.entity.TagEntity
         CourseStickyNoteEntity::class,
         CourseConceptCardEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -577,6 +577,23 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attachments ADD COLUMN orderIndex INTEGER")
+                val maxima = mutableMapOf<String?, Int>()
+                db.query("SELECT parentId, MAX(orderIndex) FROM folders WHERE mode IN ('library', 'personal_library') GROUP BY parentId").use { cursor ->
+                    while (cursor.moveToNext()) maxima[if (cursor.isNull(0)) null else cursor.getString(0)] = cursor.getInt(1)
+                }
+                val files = mutableListOf<LibraryOrderSeed>()
+                db.query("SELECT id, libraryFolderId, fileName FROM attachments WHERE noteId = '' OR libraryFolderId IS NOT NULL").use { cursor ->
+                    while (cursor.moveToNext()) files += LibraryOrderSeed(cursor.getString(0), if (cursor.isNull(1)) null else cursor.getString(1), cursor.getString(2), null)
+                }
+                seedMissingLibraryOrders(files, maxima).forEach { (id, order) ->
+                    db.execSQL("UPDATE attachments SET orderIndex = ? WHERE id = ?", arrayOf<Any>(order, id))
+                }
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -606,6 +623,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_26_27,
             MIGRATION_27_28,
             MIGRATION_28_29,
+            MIGRATION_29_30,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

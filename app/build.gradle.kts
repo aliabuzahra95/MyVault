@@ -10,6 +10,7 @@ plugins {
 }
 
 android {
+    sourceSets.getByName("androidTest").assets.srcDir("schemas")
     namespace = "com.myvault.app"
     compileSdk = 36
     compileSdkExtension = 19

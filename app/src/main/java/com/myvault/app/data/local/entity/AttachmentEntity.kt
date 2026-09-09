@@ -25,4 +25,5 @@ data class AttachmentEntity(
     val isPinned: Boolean = false,
     val createdAt: Long,
     val deletedAt: Long? = null,
+    val orderIndex: Int? = null,
 )
