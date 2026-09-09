@@ -307,19 +307,29 @@ header is clear of status content and tapping Back returns to the launcher.
   do not replace large-document or real annotation deletion/restore acceptance.
 - Widget fixes/log checkpoint `a9d6ffa` pushed to `frozen-design-master-port` after
   successful diff check. Current installed release is f0a4b9e0 as recorded above.
-- App lock gate: original preference Off, timer 1 hour. Toggled the existing
-  Security lock switch once; Samsung displays `Unlock My Vault`, `Scan your
-  fingerprint`, `Use PIN`. No credential was entered or authentication bypassed.
-  Asked user to authenticate physically. Timer was not changed. Restore original
-  Off preference after completing the authorized lock tests; this cannot be done
-  from inside the app until authentication succeeds. No pending widget action
-  has yet been launched during this locked state.
+- App lock gate: original preference Off, timer 1 hour. Enabled the existing
+  Security lock through its normal authentication flow, then temporarily selected
+  the 30-second timer. After Home and 32 seconds, tapping the Course Note widget
+  reached the real locked overlay. On the next live inspection after user
+  authentication, the exact `RC-20260909-Course-note` editor and its expected
+  body were visible, rather than Dashboard. Screenshot:
+  `note-widget-unlocked-exact-course.png`. Locked Note widget continuation PASS.
+- Returned Home, waited another 32 seconds, then tapped the actual Quick Note
+  widget. The old Course editor remained behind the locked overlay; no new-note
+  editor appeared before authentication. The overlay said Authentication cancelled.
+  Tapped Unlock once to display the real Samsung fingerprint / Use PIN prompt.
+  User authentication is now required to verify creation and exact routing.
+  Quick Note locked continuation and duplicate prevention remain PENDING.
+  No credential was entered or authentication bypassed. Restore the original
+  timer of 1 hour and lock Off after the remaining lock checks. The temporary
+  setting is still On / 30 seconds at this checkpoint.
 
 ## Resume checklist
 
 Verify Samsung RFCY70CMWZR and installed bytes still match f0a4b9e0.
-First complete real user fingerprint/PIN authentication, then test locked widget
-destinations/actions. Preserve original security timer and return lock to Off
+First complete real user fingerprint/PIN authentication for the pending Quick
+Note action, then verify exactly one new Study-root note and its editor. Test
+remaining locked widget destinations/actions. Restore timer to 1 hour and lock Off
 after testing. Never request the actual PIN in conversation or simulate success.
 Continue actual widget resize/long scroll/
 multiple-instance and locked pending destinations. Continue every outstanding
