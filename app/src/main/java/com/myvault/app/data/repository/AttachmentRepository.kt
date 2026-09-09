@@ -126,22 +126,22 @@ class AttachmentRepository @Inject constructor(
 
         val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
         database.withTransaction {
-        attachmentDao.upsertAll(
-            listOf(
-                AttachmentEntity(
-                    id = id,
-                    noteId = "",
-                    libraryFolderId = folderId,
-                    orderIndex = nextLibraryOrder(folderId),
-                    fileName = fileName,
-                    mimeType = mimeType,
-                    sizeBytes = sizeBytes,
-                    localPath = localFile.absolutePath,
-                    remoteUrl = null,
-                    createdAt = System.currentTimeMillis(),
+            attachmentDao.upsertAll(
+                listOf(
+                    AttachmentEntity(
+                        id = id,
+                        noteId = "",
+                        libraryFolderId = folderId,
+                        orderIndex = nextLibraryOrder(folderId),
+                        fileName = fileName,
+                        mimeType = mimeType,
+                        sizeBytes = sizeBytes,
+                        localPath = localFile.absolutePath,
+                        remoteUrl = null,
+                        createdAt = System.currentTimeMillis(),
+                    ),
                 ),
-            ),
-        )
+            )
         }
         id
     }

@@ -1,6 +1,7 @@
 package com.myvault.app.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -21,6 +22,8 @@ import com.myvault.app.ui.model.moveStudySibling
 import com.myvault.app.ui.model.studySiblings
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -44,6 +47,7 @@ internal fun StudyOrganizeList(
     showFullTitle: Boolean,
     header: @Composable () -> Unit,
     pinned: @Composable () -> Unit,
+    leafContent: (@Composable (VaultTreeItem, Int, Modifier) -> Unit)? = null,
 ) {
     val colors = VaultThemeTokens.colors
     val scope = rememberCoroutineScope()
@@ -66,7 +70,16 @@ internal fun StudyOrganizeList(
         }
         saving = true
         scope.launch {
-            try { failure = !persist(ids) } finally { draft = null; saving = false }
+            try {
+                failure = !persist(ids)
+                if (!failure) withTimeoutOrNull(3000) {
+                    snapshotFlow { currentWorkspace.studySiblings(id)?.map { it.id }?.filter { it in ids } }
+                        .first { it == ids }
+                }
+            }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { failure = true }
+            finally { draft = null; saving = false }
         }
     }
 
@@ -98,18 +111,21 @@ internal fun StudyOrganizeList(
                     } else null,
                 )
                 Surface(color = if (isDragging) colors.elevated else colors.bg, shadowElevation = if (isDragging) 3.dp else 0.dp) {
-                    Row(Modifier.fillMaxWidth().semantics { customActions = actions }, verticalAlignment = Alignment.CenterVertically) {
+                    // Keep quick drags away from launcher/OEM edge-gesture interception.
+                    Row(Modifier.fillMaxWidth().padding(end = 26.dp).semantics { customActions = actions }, verticalAlignment = Alignment.CenterVertically) {
                         if (item.type == VaultTreeItemType.Folder) {
                             CorpusFolderRow(item.name, item.count, expanded(item.id),
                                 onToggle = { if (draggedId == null && !saving) onToggle(item) }, onLongPress = {},
                                 depth = row.depth, colorKey = item.colorKey, modifier = Modifier.weight(1f))
+                        } else if (leafContent != null) {
+                            leafContent(item, row.depth, Modifier.weight(1f))
                         } else {
                             CorpusLeafRow(item.name, Icons.Outlined.Description, onClick = {}, onLongPress = {},
                                 modifier = Modifier.weight(1f), depth = row.depth, pinned = item.pinned,
                                 attachmentCount = item.attachmentCount, showFullTitle = showFullTitle)
                         }
                         Box(contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(48.dp).longPressDraggableHandle(enabled = !saving,
+                            modifier = Modifier.size(48.dp).systemGestureExclusion().draggableHandle(enabled = !saving,
                                 onDragStarted = { draft = currentWorkspace; draggedId = item.id; failure = false },
                                 onDragStopped = { save(item.id) },
                             ),

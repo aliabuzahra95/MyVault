@@ -131,11 +131,23 @@ import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.ui.viewmodel.LibraryAnnotationItem
 import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.LibraryFolderItem
+import com.myvault.app.ui.model.StudySortMode
+import com.myvault.app.ui.model.librarySortModes
+import com.myvault.app.ui.model.libraryOrderTree
+import com.myvault.app.ui.components.VaultTreeItem
+import com.myvault.app.ui.components.VaultTreeItemType
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.FileUpload
 import com.myvault.app.ui.viewmodel.LibraryUiState
 import com.myvault.app.ui.viewmodel.LibraryViewMode
 
 @Composable
 fun LibraryScreen(
+    onSortModeChange: (StudySortMode) -> Unit = {},
+    onReorder: suspend (List<String>) -> Boolean = { false },
+    onFolderDetails: (String, String, String?) -> Unit = { _, _, _ -> },
     uiState: LibraryUiState,
     onFolderClick: (String) -> Unit,
     onAttachmentClick: (String) -> Unit,
@@ -184,6 +196,9 @@ fun LibraryScreen(
     onCorpusSearchActiveChange: (Boolean) -> Unit = {},
 ) {
     LibraryArchiveScreen(
+        onSortModeChange = onSortModeChange,
+        onReorder = onReorder,
+        onFolderDetails = onFolderDetails,
         title = "Library",
         subtitle = null,
         workspaceTitle = workspaceTitle,
@@ -239,6 +254,9 @@ fun LibraryScreen(
 
 @Composable
 fun LibraryFolderScreen(
+    onSortModeChange: (StudySortMode) -> Unit = {},
+    onReorder: suspend (List<String>) -> Boolean = { false },
+    onFolderDetails: (String, String, String?) -> Unit = { _, _, _ -> },
     uiState: LibraryUiState,
     onBackClick: () -> Unit,
     onFolderClick: (String) -> Unit,
@@ -280,6 +298,9 @@ fun LibraryFolderScreen(
 ) {
     val folder = uiState.currentFolder
     LibraryArchiveScreen(
+        onSortModeChange = onSortModeChange,
+        onReorder = onReorder,
+        onFolderDetails = onFolderDetails,
         title = folder?.name ?: "Library Folder",
         subtitle = "${uiState.folders.size} subfolders · ${uiState.files.size} files",
         uiState = uiState,
@@ -327,6 +348,9 @@ fun LibraryFolderScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryArchiveScreen(
+    onSortModeChange: (StudySortMode) -> Unit = {},
+    onReorder: suspend (List<String>) -> Boolean = { false },
+    onFolderDetails: (String, String, String?) -> Unit = { _, _, _ -> },
     title: String,
     subtitle: String?,
     workspaceTitle: String = title,
@@ -386,10 +410,12 @@ private fun LibraryArchiveScreen(
     var selectedFile by remember { mutableStateOf<LibraryFileItem?>(null) }
     var selectedAnnotation by remember { mutableStateOf<LibraryAnnotationItem?>(null) }
     var actionDialogOpen by remember { mutableStateOf(false) }
-    var folderMoreActionsOpen by remember { mutableStateOf(false) }
+    var organizeMode by rememberSaveable(currentFolderId) { mutableStateOf(false) }
+    var sortDialogOpen by remember { mutableStateOf(false) }
+    var folderDescription by remember { mutableStateOf("") }
+    val organizeListState = rememberLazyListState()
     var folderColorSheetOpen by remember { mutableStateOf(false) }
     var fileActionDialogOpen by remember { mutableStateOf(false) }
-    var fileMoreActionsOpen by remember { mutableStateOf(false) }
     var annotationActionDialogOpen by remember { mutableStateOf(false) }
     var moveDialogOpen by remember { mutableStateOf(false) }
     var fileMoveDialogOpen by remember { mutableStateOf(false) }
@@ -443,6 +469,9 @@ private fun LibraryArchiveScreen(
         (uiState.files + allFolders.flatMap { it.files }).distinctBy { it.id }
     }
     val query = librarySearchQuery.trim()
+    val orderTree = remember(uiState.folders, uiState.files, uiState.organisation, organizeMode) {
+        libraryOrderTree(uiState.folders, uiState.files, if (organizeMode) StudySortMode.Manual else uiState.organisation.sortMode, uiState.organisation.openedAt)
+    }
     val matchingFolders = remember(allFolders, query) {
         if (query.isBlank()) emptyList() else allFolders.filter { it.name.contains(query, ignoreCase = true) }
     }
@@ -456,7 +485,24 @@ private fun LibraryArchiveScreen(
             .zIndex(if (librarySearchOpen) 1f else 0f)
             .background(colors.bg),
     ) {
-        LazyColumn(
+        if (organizeMode) {
+            StudyOrganizeList(workspace = orderTree, listState = organizeListState,
+                expanded = { it in uiState.expandedFolderIds },
+                onToggle = { onFolderExpandedChange(it.id, it.id !in uiState.expandedFolderIds) },
+                onPersist = onReorder, onDone = { organizeMode = false }, showFullTitle = showFullFileTitles,
+                header = { Text(title, style = MaterialTheme.typography.titleLarge, color = colors.text) },
+                pinned = {
+                    if (uiState.pinnedFiles.isNotEmpty()) CorpusPinnedStrip(
+                        items = uiState.pinnedFiles.take(3).map { CorpusPinnedItem(it.id, it.name, allFolders.parentFolderName(it.id)) },
+                        onClick = onAttachmentClick, onLongPress = {}, modifier = Modifier.padding(bottom = 10.dp))
+                },
+                leafContent = { item, depth, rowModifier ->
+                    allFiles.firstOrNull { it.id == item.id }?.let { file ->
+                        LibraryCorpusFileRow(file, showFullFileTitles, {}, {}, depth, rowModifier)
+                    }
+                },
+            )
+        } else LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 14.dp, top = 4.dp, end = 14.dp, bottom = 96.dp),
         ) {
@@ -544,46 +590,14 @@ private fun LibraryArchiveScreen(
                 }
             } else {
                 item(key = "corpus_library_tree") {
-                    Column {
-                        uiState.folders.forEach { folderItem ->
-                            LibraryCorpusFolderItem(
-                                folder = folderItem,
-                                expandedFolderIds = uiState.expandedFolderIds,
-                                showFullFileTitles = showFullFileTitles,
-                                onFolderExpandedChange = onFolderExpandedChange,
-                                onFolderCreate = {
-                                    selectedFolder = it
-                                    folderCreateMenuOpen = true
-                                },
-                                onFolderLongPress = {
-                                    selectedFolder = it
-                                    actionDialogOpen = true
-                                },
-                                onAttachmentClick = onAttachmentClick,
-                                onFileLongPress = {
-                                    selectedFile = it
-                                    fileActionDialogOpen = true
-                                },
-                                depth = 0,
-                            )
-                        }
-                        uiState.files.forEach { file ->
-                            LibraryCorpusFileRow(
-                                file = file,
-                                showFullFileTitles = showFullFileTitles,
-                                onAttachmentClick = onAttachmentClick,
-                                onLongPress = {
-                                    selectedFile = file
-                                    fileActionDialogOpen = true
-                                },
-                            )
-                        }
-                    }
+                    LibraryOrderedTree(orderTree, uiState.expandedFolderIds, allFiles.associateBy { it.id }, showFullFileTitles,
+                        onFolderExpandedChange, { id -> selectedFolder = allFolders.firstOrNull { it.id == id }; actionDialogOpen = true },
+                        onAttachmentClick, { file -> selectedFile = file; fileActionDialogOpen = true })
                 }
             }
         }
 
-        CorpusFab(
+        if (!organizeMode) CorpusFab(
             onClick = { rootCreateMenuOpen = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -732,19 +746,35 @@ private fun LibraryArchiveScreen(
         LibraryActionDialog(
             title = selectedFolder?.name.orEmpty(),
             actions = listOf(
-                LibraryAction("Open", Icons.Rounded.FolderOpen) {
-                    selectedFolder?.let { onFolderClick(it.id) }
+                LibraryAction("Import files", Icons.Rounded.FileUpload) {
                     actionDialogOpen = false
+                    importTargetFolderId = selectedFolder?.id
+                    multiImportPicker.launch(arrayOf("*/*"))
+                },
+                LibraryAction("New subfolder", Icons.Rounded.CreateNewFolder) {
+                    actionDialogOpen = false
+                    folderName = ""
+                    folderDialog = LibraryFolderDialog.Create(selectedFolder?.id)
+                },
+                LibraryAction("Rename / Edit description", Icons.Rounded.Edit) {
+                    actionDialogOpen = false
+                    folderName = selectedFolder?.name.orEmpty()
+                    folderDescription = selectedFolder?.description.orEmpty()
+                    folderDialog = selectedFolder?.let { LibraryFolderDialog.Rename(it.id) }
+                },
+                LibraryAction("Change colour", Icons.Rounded.Palette) {
+                    actionDialogOpen = false
+                    folderColorSheetOpen = true
+                },
+                LibraryAction("Sort / Organize", Icons.Rounded.DragHandle) {
+                    actionDialogOpen = false
+                    sortDialogOpen = true
                 },
                 LibraryAction("Move", Icons.Rounded.DriveFileMove) {
                     actionDialogOpen = false
                     moveDialogOpen = true
                 },
-                LibraryAction("More actions", Icons.Rounded.MoreVert) {
-                    actionDialogOpen = false
-                    folderMoreActionsOpen = true
-                },
-                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
+                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true, section = "Delete") {
                     actionDialogOpen = false
                     folderDeleteDialogOpen = true
                 },
@@ -753,36 +783,16 @@ private fun LibraryArchiveScreen(
         )
     }
 
-    if (folderMoreActionsOpen && selectedFolder != null) {
-        LibraryActionDialog(
-            title = "More actions",
-            actions = listOf(
-                LibraryAction("New subfolder", Icons.Rounded.CreateNewFolder) {
-                    val parent = selectedFolder?.id
-                    folderMoreActionsOpen = false
-                    folderName = ""
-                    folderDialog = LibraryFolderDialog.Create(parentId = parent)
-                },
-                LibraryAction("Rename", Icons.Rounded.Edit) {
-                    folderMoreActionsOpen = false
-                    folderName = selectedFolder?.name.orEmpty()
-                    folderDialog = selectedFolder?.let { LibraryFolderDialog.Rename(it.id) }
-                },
-                LibraryAction("Change colour", Icons.Rounded.Palette) {
-                    folderMoreActionsOpen = false
-                    folderColorSheetOpen = true
-                },
-                LibraryAction("Move up", Icons.Rounded.KeyboardArrowUp) {
-                    selectedFolder?.let { onMoveFolderInOrder(it.id, -1) }
-                    folderMoreActionsOpen = false
-                },
-                LibraryAction("Move down", Icons.Rounded.KeyboardArrowDown) {
-                    selectedFolder?.let { onMoveFolderInOrder(it.id, 1) }
-                    folderMoreActionsOpen = false
-                },
-            ),
-            onDismiss = { folderMoreActionsOpen = false },
-        )
+    if (sortDialogOpen) {
+        LibraryActionDialog(title = "Sort / Organize",
+            actions = librarySortModes.map { mode ->
+                LibraryAction(mode.label, Icons.Rounded.DragHandle, selected = uiState.organisation.sortMode == mode) {
+                    onSortModeChange(mode)
+                    sortDialogOpen = false
+                    organizeMode = mode == StudySortMode.Manual
+                    if (organizeMode) closeLibrarySearch()
+                }
+            }, onDismiss = { sortDialogOpen = false })
     }
 
     if (folderColorSheetOpen && selectedFolder != null) {
@@ -792,7 +802,7 @@ private fun LibraryArchiveScreen(
             selectedColorKey = folder?.colorKey,
             onBack = {
                 folderColorSheetOpen = false
-                folderMoreActionsOpen = true
+                actionDialogOpen = true
             },
             onDismiss = { folderColorSheetOpen = false },
             onSelect = { colorKey ->
@@ -830,14 +840,19 @@ private fun LibraryArchiveScreen(
         val file = selectedFile
         LibraryActionDialog(
             title = file?.name.orEmpty(),
-            actions = listOf(
-                LibraryAction("Open", Icons.Rounded.MenuBook) {
-                    file?.let { onAttachmentClick(it.id) }
+            actions = listOfNotNull(
+                LibraryAction("Rename", Icons.Rounded.Edit) {
                     fileActionDialogOpen = false
+                    fileName = file?.name.orEmpty()
+                    fileRenameDialogOpen = true
                 },
                 LibraryAction("Move", Icons.Rounded.DriveFileMove) {
                     fileActionDialogOpen = false
                     fileMoveDialogOpen = true
+                },
+                LibraryAction("Sort / Organize", Icons.Rounded.DragHandle) {
+                    fileActionDialogOpen = false
+                    sortDialogOpen = true
                 },
                 LibraryAction(if (file?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
                     file?.let { onSetFilePinned(it.id, !it.pinned) }
@@ -846,45 +861,26 @@ private fun LibraryArchiveScreen(
                 LibraryAction("PDF activity", Icons.Rounded.Description) {
                     fileActionDialogOpen = false
                     onViewAllAnnotationsClick()
-                },
-                LibraryAction("More actions", Icons.Rounded.MoreVert) {
-                    fileActionDialogOpen = false
-                    fileMoreActionsOpen = true
-                },
-                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true) {
-                    fileActionDialogOpen = false
-                    fileDeleteDialogOpen = true
-                },
-            ).filterNotNull(),
-            onDismiss = { fileActionDialogOpen = false },
-        )
-    }
-
-    if (fileMoreActionsOpen && selectedFile != null) {
-        val file = selectedFile
-        LibraryActionDialog(
-            title = "More actions",
-            actions = listOf(
-                LibraryAction("Rename", Icons.Rounded.Edit) {
-                    fileMoreActionsOpen = false
-                    fileName = file?.name.orEmpty()
-                    fileRenameDialogOpen = true
-                },
+                }.takeIf { file?.mimeType == "application/pdf" },
                 LibraryAction("Save to device", Icons.Rounded.FileDownload) {
-                    fileMoreActionsOpen = false
+                    fileActionDialogOpen = false
                     file?.let { exportFileLauncher.launch(it.name.ifBlank { "myvault-file" }) }
                 },
                 LibraryAction("Add tag", Icons.Rounded.LocalOffer) {
-                    fileMoreActionsOpen = false
+                    fileActionDialogOpen = false
                     tagDraft = ""
                     fileTagDialogOpen = true
                 },
                 LibraryAction("Remove tag", Icons.Rounded.LocalOffer) {
-                    fileMoreActionsOpen = false
+                    fileActionDialogOpen = false
                     fileRemoveTagDialogOpen = true
-                }.takeIf { file?.id?.let { id -> uiState.attachmentTags[id].orEmpty().isNotEmpty() } == true },
-            ).filterNotNull(),
-            onDismiss = { fileMoreActionsOpen = false },
+                }.takeIf { file?.id?.let { uiState.attachmentTags[it].orEmpty().isNotEmpty() } == true },
+                LibraryAction("Delete", Icons.Rounded.Delete, destructive = true, section = "Delete") {
+                    fileActionDialogOpen = false
+                    fileDeleteDialogOpen = true
+                },
+            ),
+            onDismiss = { fileActionDialogOpen = false },
         )
     }
 
@@ -1272,19 +1268,24 @@ private fun LibraryArchiveScreen(
             onDismissRequest = { folderDialog = null },
             title = { Text(if (dialog is LibraryFolderDialog.Rename) "Rename folder" else "New Library folder") },
             text = {
-                OutlinedTextField(
-                    value = folderName,
-                    onValueChange = { folderName = it },
-                    singleLine = true,
-                    label = { Text("Folder name") },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = folderName,
+                        onValueChange = { folderName = it },
+                        singleLine = true,
+                        label = { Text("Folder name") },
+                    )
+                    if (dialog is LibraryFolderDialog.Rename) OutlinedTextField(
+                        value = folderDescription, onValueChange = { folderDescription = it }, label = { Text("Description") },
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         when (dialog) {
                             is LibraryFolderDialog.Create -> onCreateFolder(dialog.parentId, folderName)
-                            is LibraryFolderDialog.Rename -> onRenameFolder(dialog.folderId, folderName)
+                            is LibraryFolderDialog.Rename -> onFolderDetails(dialog.folderId, folderName, folderDescription)
                         }
                         folderDialog = null
                         folderName = ""
@@ -1697,8 +1698,10 @@ private fun LibraryCorpusFileRow(
     onAttachmentClick: (String) -> Unit,
     onLongPress: () -> Unit,
     depth: Int = 0,
+    modifier: Modifier = Modifier,
 ) {
     CorpusLeafRow(
+        modifier = modifier,
         title = file.name,
         icon = Icons.Outlined.Description,
         onClick = { onAttachmentClick(file.id) },
@@ -1708,6 +1711,31 @@ private fun LibraryCorpusFileRow(
         supportingText = file.pdfActivityMetadata(),
         depth = depth,
     )
+}
+
+@Composable
+private fun LibraryOrderedTree(
+    items: List<VaultTreeItem>, expandedIds: Set<String>, files: Map<String, LibraryFileItem>, fullTitles: Boolean,
+    onExpand: (String, Boolean) -> Unit, onFolderLongPress: (String) -> Unit,
+    onFileClick: (String) -> Unit, onFileLongPress: (LibraryFileItem) -> Unit, depth: Int = 0,
+) {
+    Column {
+        items.forEach { item ->
+            androidx.compose.runtime.key(item.id) {
+                if (item.type == VaultTreeItemType.Folder) {
+                    val expanded = item.id in expandedIds
+                    CorpusFolderRow(item.name, item.count, expanded,
+                        onToggle = { onExpand(item.id, !expanded) }, onLongPress = { onFolderLongPress(item.id) },
+                        depth = depth, colorKey = item.colorKey)
+                    CorpusExpandedChildren(expanded) {
+                        LibraryOrderedTree(item.children, expandedIds, files, fullTitles, onExpand, onFolderLongPress, onFileClick, onFileLongPress, depth + 1)
+                    }
+                } else files[item.id]?.let { file ->
+                    LibraryCorpusFileRow(file, fullTitles, onFileClick, { onFileLongPress(file) }, depth)
+                }
+            }
+        }
+    }
 }
 
 private fun LibraryFileItem.pdfActivityMetadata(): String? {

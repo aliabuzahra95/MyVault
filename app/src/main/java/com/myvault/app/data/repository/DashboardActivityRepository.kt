@@ -57,6 +57,31 @@ class DashboardActivityRepository @Inject constructor(
     val state: StateFlow<DashboardActivityState> = _state.asStateFlow()
     private val _studyOrganisation = MutableStateFlow(readStudyOrganisation())
     val studyOrganisation: StateFlow<StudyOrganisationState> = _studyOrganisation.asStateFlow()
+    private val _libraryOrganisation = MutableStateFlow(StudyOrganisationState(
+        sortMode = runCatching { StudySortMode.valueOf(preferences.getString("library_sort_mode", null).orEmpty()) }.getOrDefault(StudySortMode.Manual).takeUnless { it == StudySortMode.Modified } ?: StudySortMode.Manual,
+        openedAt = preferences.all.mapNotNull { (key, value) -> if (key.startsWith("library_opened:") && value is Long) key.removePrefix("library_opened:") to value else null }.toMap() +
+            _state.value.recents.filter { it.kind == DashboardActivityKind.Library }.associate { it.destinationId to it.openedAt },
+    ))
+    val libraryOrganisation: StateFlow<StudyOrganisationState> = _libraryOrganisation.asStateFlow()
+
+    suspend fun setLibrarySortMode(mode: StudySortMode) = withContext(Dispatchers.IO) {
+        require(mode != StudySortMode.Modified)
+        mutex.withLock {
+            check(preferences.edit().putString("library_sort_mode", mode.name).commit())
+            _libraryOrganisation.value = _libraryOrganisation.value.copy(sortMode = mode)
+        }
+    }
+
+    suspend fun recordLibraryFolderOpened(id: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (folderDao.getAll().any { it.id == id && (it.mode == "library" || it.mode == "personal_library") }) storeLibraryOpened(id, System.currentTimeMillis())
+        }
+    }
+
+    private fun storeLibraryOpened(id: String, time: Long) {
+        preferences.edit().putLong("library_opened:$id", time).apply()
+        _libraryOrganisation.value = _libraryOrganisation.value.copy(openedAt = _libraryOrganisation.value.openedAt + (id to time))
+    }
 
     suspend fun setStudySortMode(mode: StudySortMode) = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -130,6 +155,7 @@ class DashboardActivityRepository @Inject constructor(
         val folders = folderDao.getAll().associateBy { it.id }
         val path = buildFolderPath(attachment.libraryFolderId, folders)
         val progress = pdfReadingProgressDao.getByAttachmentId(attachmentId)
+        storeLibraryOpened(attachmentId, System.currentTimeMillis())
         store(
             DashboardActivityItem(
                 kind = DashboardActivityKind.Library,

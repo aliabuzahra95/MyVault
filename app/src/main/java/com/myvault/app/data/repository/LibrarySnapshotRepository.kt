@@ -125,6 +125,9 @@ private fun JSONObject.toFolderEntity(): FolderEntity = FolderEntity(
 )
 
 private fun LibraryFolderItem.toJson(): JSONObject = JSONObject()
+    .put("orderIndex", orderIndex)
+    .put("createdAt", createdAt)
+    .put("description", description)
     .put("id", id)
     .put("name", name)
     .put("count", count)
@@ -135,6 +138,9 @@ private fun LibraryFolderItem.toJson(): JSONObject = JSONObject()
     .put("colorKey", colorKey)
 
 private fun JSONObject.toLibraryFolderItem(): LibraryFolderItem = LibraryFolderItem(
+    orderIndex = optInt("orderIndex", 0),
+    createdAt = optLong("createdAt", 0),
+    description = nullableString("description"),
     id = optString("id"),
     name = optString("name"),
     count = optInt("count", 0),
@@ -146,6 +152,8 @@ private fun JSONObject.toLibraryFolderItem(): LibraryFolderItem = LibraryFolderI
 )
 
 private fun LibraryFileItem.toSnapshotJson(): JSONObject = JSONObject()
+    .put("orderIndex", orderIndex)
+    .put("createdAt", createdAt)
     .put("id", id)
     .put("name", name)
     .put("kind", kind)
@@ -161,6 +169,8 @@ private fun LibraryFileItem.toSnapshotJson(): JSONObject = JSONObject()
     .put("annotationNoteCount", annotationNoteCount)
 
 private fun JSONObject.toLibraryFileItem(): LibraryFileItem = LibraryFileItem(
+    orderIndex = optInt("orderIndex", Int.MAX_VALUE),
+    createdAt = optLong("createdAt", 0),
     id = optString("id"),
     name = optString("name"),
     kind = optString("kind"),

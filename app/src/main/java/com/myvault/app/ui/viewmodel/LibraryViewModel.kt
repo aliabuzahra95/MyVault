@@ -13,6 +13,10 @@ import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.local.entity.isCurrentPdfAnnotation
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.AttachmentRepository
+import com.myvault.app.data.repository.DashboardActivityRepository
+import com.myvault.app.ui.model.StudyOrganisationState
+import com.myvault.app.ui.model.StudySortMode
+import kotlinx.coroutines.flow.stateIn
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.KnowledgeRepository
 import com.myvault.app.data.repository.KnowledgeTagChip
@@ -60,6 +64,9 @@ data class LibraryFolderItem(
     val annotations: List<LibraryAnnotationItem> = emptyList(),
     val children: List<LibraryFolderItem> = emptyList(),
     val colorKey: String? = null,
+    val orderIndex: Int = 0,
+    val createdAt: Long = 0,
+    val description: String? = null,
 )
 
 data class LibraryFileItem(
@@ -77,6 +84,8 @@ data class LibraryFileItem(
     val pinned: Boolean = false,
     val highlightCount: Int = 0,
     val annotationNoteCount: Int = 0,
+    val orderIndex: Int = Int.MAX_VALUE,
+    val createdAt: Long = 0,
 )
 
 data class LibraryAnnotationItem(
@@ -98,6 +107,7 @@ data class LibraryStudyNoteItem(
 )
 
 data class LibraryUiState(
+    val organisation: StudyOrganisationState = StudyOrganisationState(),
     val currentFolder: FolderEntity? = null,
     val folders: List<LibraryFolderItem> = emptyList(),
     val files: List<LibraryFileItem> = emptyList(),
@@ -134,6 +144,7 @@ class LibraryViewModel @Inject constructor(
     private val knowledgeRepository: KnowledgeRepository,
     private val vaultPreferences: VaultPreferences,
     private val librarySnapshotRepository: LibrarySnapshotRepository,
+    private val dashboardActivityRepository: DashboardActivityRepository,
 ) : ViewModel() {
     private val folderId: String? = savedStateHandle["libraryFolderId"]
     private val initialLibraryMode: String = savedStateHandle["libraryMode"] ?: FOLDER_MODE_LIBRARY
@@ -191,7 +202,9 @@ class LibraryViewModel @Inject constructor(
             LibraryUiState()
         },
     )
-    val uiState: StateFlow<LibraryUiState> = _uiState
+    val uiState: StateFlow<LibraryUiState> = combine(_uiState, dashboardActivityRepository.libraryOrganisation) { state, organisation ->
+        state.copy(organisation = organisation)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), _uiState.value.copy(organisation = dashboardActivityRepository.libraryOrganisation.value))
 
     private val liveUiState = combine(
         libraryDataLayer,
@@ -382,6 +395,20 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { folderRepository.renameFolder(folderId, name) }
     }
 
+    fun updateFolderDetails(id: String, name: String, description: String?) {
+        viewModelScope.launch { folderRepository.updateFolderDetails(id, name, description) }
+    }
+
+    fun setSortMode(mode: StudySortMode) {
+        viewModelScope.launch { dashboardActivityRepository.setLibrarySortMode(mode) }
+    }
+
+    suspend fun reorderSiblings(ids: List<String>): Boolean = try {
+        folderRepository.reorderLibrarySiblings(ids, libraryMode)
+        true
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+      catch (_: Exception) { false }
+
     fun updateFolderColor(folderId: String, colorKey: String?) {
         viewModelScope.launch { folderRepository.updateFolderColor(folderId, colorKey) }
     }
@@ -400,6 +427,7 @@ class LibraryViewModel @Inject constructor(
 
     fun setFolderExpanded(folderId: String, expanded: Boolean) {
         viewModelScope.launch {
+            if (expanded) dashboardActivityRepository.recordLibraryFolderOpened(folderId)
             val folderIds = vaultPreferences.userPreferences.first().expandedFolderIds.toMutableSet()
             if (expanded) folderIds += folderId else folderIds -= folderId
             vaultPreferences.setExpandedFolderIds(folderIds)
@@ -632,6 +660,9 @@ private fun FolderEntity.toLibraryFolderItem(
         annotations = annotationsByFolder[id].orEmpty(),
         children = children,
         colorKey = colorKey,
+        orderIndex = orderIndex,
+        createdAt = createdAt,
+        description = description,
     )
 }
 
@@ -642,6 +673,8 @@ private fun AttachmentEntity.toLibraryFileItem(
     LibraryFileItem(
         id = id,
         name = fileName,
+        orderIndex = orderIndex ?: Int.MAX_VALUE,
+        createdAt = createdAt,
         kind = kindLabel(),
         size = sizeLabel(),
         meta = if (progress != null) {
