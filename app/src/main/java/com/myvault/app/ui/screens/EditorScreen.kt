@@ -781,6 +781,7 @@ fun EditorScreen(
                         Modifier
                             .weight(1f)
                             .fillMaxWidth()
+                            .verticalScroll(bodyEditorScrollState)
                             .padding(horizontal = VaultSpacing.screen, vertical = 2.dp)
                     },
                 ) {
@@ -799,8 +800,7 @@ fun EditorScreen(
                         } else {
                             Modifier
                                 .fillMaxWidth()
-                                .weight(1f)
-                                .verticalScroll(bodyEditorScrollState)
+                                .heightIn(min = 52.dp)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -2290,10 +2290,9 @@ private fun EditorAttachmentPreviewSection(
             EditorAttachmentHydrationPlaceholder(count = attachmentCount)
         } else {
             attachments.forEach { attachment ->
-                NoteInlineAttachment(
+                AttachmentSheetRow(
                     attachment = attachment,
                     onClick = { onAttachmentClick(attachment.id) },
-                    compact = true,
                 )
             }
         }

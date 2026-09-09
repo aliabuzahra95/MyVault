@@ -61,6 +61,63 @@ class NoteUxDeviceTest {
         android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("screencap -p /data/local/tmp/note-ux-$name.png")).use { it.readBytes() }
     }
 
+    @Test fun editingUsesBottomCardsAndReturnsWithoutLosingText() {
+        val imageFile = File(context.cacheDir,"note-edit-card-fixture.png")
+        val bitmap=Bitmap.createBitmap(900,600,Bitmap.Config.RGB_565)
+        Canvas(bitmap).drawColor(android.graphics.Color.rgb(160,190,175))
+        imageFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle()
+        var savedBody = "Start of note\n\n" + (1..30).joinToString("\n\n") { "Paragraph $it. Preserved English and Arabic: النص محفوظ" }
+        val note=NoteEntity("editor-card-test",null,title="Attachment editing",bodyPlainText=savedBody,isPinned=false,isFavourite=false,createdAt=1,updatedAt=1)
+        val images=listOf("Image A.png","Image B.png").mapIndexed { index,name -> AttachmentEntity("edit-image-$index",note.id,fileName=name,mimeType="image/png",sizeBytes=imageFile.length(),localPath=imageFile.path,remoteUrl=null,createdAt=index.toLong()) }
+        val pdf=images.first().copy(id="edit-pdf",fileName="Reference.pdf",mimeType="application/pdf")
+        val attachments=images+pdf
+        var page by mutableStateOf("editor")
+        var viewed: AttachmentEntity? by mutableStateOf(null)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> activity.setContent { VaultTheme(mode=VaultThemeMode.Light) {
+                val state=NoteUiState(note=note.copy(bodyPlainText=savedBody),richText=VaultRichTextDocument(savedBody,emptyList()),attachments=attachments,attachmentCount=3)
+                when(page) {
+                    "viewer" -> AttachmentViewerScreen(viewed!!,onBackClick={page="editor"})
+                    "reading" -> ReadingScreen(state,onBackClick={},onEditClick={page="editor"},onAttachmentClick={})
+                    else -> EditorScreen(state,NoteFormattingUiState(),onBackClick={page="reading"},onMenuClick={},onTitleChange={},
+                        onContentChange={body,_,_->savedBody=body},onRunFormattingTool={_,_,_,_,_->},onClearFormattingResult={},onAttachDocument={},
+                        onAttachmentClick={id->viewed=attachments.single { it.id==id };page="viewer"})
+                }
+            } } }
+            fun editable(): AccessibilityNodeInfo {
+                repeat(80) {
+                    nodes(automation.rootInActiveWindow).firstOrNull { it.isEditable && it.text?.startsWith("Start of note")==true }?.let { return it }
+                    SystemClock.sleep(50)
+                }
+                error("Missing editable note body")
+            }
+            val typed=savedBody+"\n\nTyped at the bottom."
+            editable().performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            assertTrue(editable().performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,android.os.Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,typed) }))
+            SystemClock.sleep(700)
+            assertEquals(typed,savedBody)
+            screenshot("editor-keyboard-text")
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("input keyevent 4")).use { it.readBytes() }
+            repeat(18) {
+                nodes(automation.rootInActiveWindow).filter { it.isScrollable }.forEach { it.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) }
+                SystemClock.sleep(80)
+            }
+            find("Image A.png");find("Image B.png");find("Reference.pdf")
+            screenshot("editor-bottom-cards")
+            tap("Image A.png")
+            assertEquals("edit-image-0",viewed?.id)
+            tap("Back")
+            SystemClock.sleep(600)
+            assertEquals(typed,savedBody)
+            scenario.onActivity { page="reading" }
+            repeat(18) {
+                nodes(automation.rootInActiveWindow).filter { it.isScrollable }.forEach { it.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) };SystemClock.sleep(80)
+            }
+            screenshot("reading-images-return")
+            assertEquals(listOf("edit-image-0","edit-image-1","edit-pdf"),attachments.map { it.id })
+        }
+    }
+
     @Test fun compactMenusImagesAndFormattingPreview() {
         val imageFile = File(context.cacheDir, "note-ux-fixture.png")
         val bitmap = Bitmap.createBitmap(2000, 1200, Bitmap.Config.RGB_565)

@@ -18,7 +18,12 @@ class NoteUxContractTest {
                 assertTrue("$screen missing $label", menu.contains(label))
             }
             assertTrue(menu.lastIndexOf("Delete note") > menu.lastIndexOf("Structure & Format"))
-            assertTrue(source.contains("NoteInlineAttachment("))
+            if (screen == "ReadingScreen") assertTrue(source.contains("NoteInlineAttachment("))
+            else {
+                assertFalse(source.contains("NoteInlineAttachment("))
+                assertTrue(source.contains("AttachmentSheetRow("))
+                assertTrue(source.indexOf("EditorAttachmentPreviewSection(") > source.indexOf("value = safeBodyValue"))
+            }
         }
     }
 
