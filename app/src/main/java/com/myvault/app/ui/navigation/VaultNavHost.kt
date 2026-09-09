@@ -633,6 +633,8 @@ fun VaultNavHost(
                 studyContent = {
                     HomeScreen(
                         uiState = studyState,
+                        onStudySortModeChange = homeViewModel::setStudySortMode,
+                        onStudyReorder = homeViewModel::reorderStudySiblings,
                         onCorpusSearchActiveChange = { corpusSearchActive = it },
                         onSearchClick = {},
                         workspaceTitle = preferences.workspace.workspaceLabel(),

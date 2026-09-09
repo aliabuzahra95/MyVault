@@ -21,6 +21,7 @@ import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.normalizeFolderColorKey
 import com.myvault.app.ui.components.VaultTreeItem
 import com.myvault.app.ui.components.VaultTreeItemType
+import com.myvault.app.ui.model.studySiblings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.io.File
@@ -44,6 +45,27 @@ class FolderRepository @Inject constructor(
     private val sourceBacklinkDao: SourceBacklinkDao,
     private val knowledgeTagDao: KnowledgeTagDao,
 ) {
+    suspend fun reorderStudySiblings(orderedIds: List<String>) = database.withTransaction {
+        require(orderedIds.isNotEmpty() && orderedIds.distinct().size == orderedIds.size) { "Invalid Study order" }
+        val folders = folderDao.getAll()
+        val notes = noteDao.getAll()
+        val tree = buildTree(folders, notes, emptyList(), emptyList(), FOLDER_MODE_STUDY)
+        val siblings = requireNotNull(tree.studySiblings(orderedIds.first())) { "Study item no longer exists" }
+            .sortedWith(compareBy<VaultTreeItem> { it.orderIndex }.thenBy { it.id })
+        val byId = siblings.associateBy { it.id }
+        require(orderedIds.all { it in byId }) { "Items moved or were deleted; reopen Organize" }
+        // Preserve hidden siblings and concurrently added items in their existing slots.
+        val selected = orderedIds.toSet()
+        val replacement = orderedIds.iterator()
+        siblings.map { if (it.id in selected) byId.getValue(replacement.next()) else it }
+            .forEachIndexed { index, item ->
+                if (item.orderIndex != index) {
+                    if (item.type == VaultTreeItemType.Folder) folderDao.updateManualOrder(item.id, index)
+                    else noteDao.updateManualOrder(item.id, index)
+                }
+            }
+    }
+
     fun observeWorkspaceTree() = combine(
         folderDao.observeAll(),
         noteDao.observeAll(),

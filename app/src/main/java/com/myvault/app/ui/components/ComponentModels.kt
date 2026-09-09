@@ -27,6 +27,7 @@ data class VaultTreeItem(
     val colorKey: String? = null,
     val preview: String = "",
     val children: List<VaultTreeItem> = emptyList(),
+    val createdAt: Long = 0L,
 )
 
 enum class VaultTreeItemType {

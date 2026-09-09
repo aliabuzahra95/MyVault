@@ -79,6 +79,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.rounded.Check
+import com.myvault.app.ui.model.StudySortMode
+import com.myvault.app.ui.model.studySorted
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -152,6 +155,8 @@ import com.myvault.app.ui.viewmodel.HomeUiState
 @Composable
 fun HomeScreen(
     uiState: HomeUiState,
+    onStudySortModeChange: (StudySortMode) -> Unit = {},
+    onStudyReorder: suspend (List<String>) -> Boolean = { false },
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier,
     workspaceTitle: String = "My Vault",
@@ -260,10 +265,22 @@ fun HomeScreen(
             FloatingAction("Import File", Icons.Rounded.AttachFile),
         )
     }
-    val sortedWorkspace = remember(uiState.workspace, sortMode) {
-        uiState.workspace.sortForMode(sortMode)
+    val isStudy = currentFolderMode == FOLDER_MODE_STUDY
+    val sortedWorkspace = remember(uiState.workspace, sortMode, uiState.studyOrganisation, organizeMode) {
+        if (isStudy) uiState.workspace.studySorted(
+            if (organizeMode) StudySortMode.Manual else uiState.studyOrganisation.sortMode,
+            uiState.studyOrganisation.openedAt,
+        ) else uiState.workspace.sortForMode(sortMode)
     }
-    val displayedWorkspace = if (organizeMode) uiState.workspace else sortedWorkspace
+    val displayedWorkspace = if (organizeMode && !isStudy) uiState.workspace else sortedWorkspace
+    fun beginStudyOrganize() {
+        selectedItemIds.clear()
+        manageSelectionMode = false
+        studySearchOpen = false
+        onSearchQueryChange("")
+        onStudySortModeChange(StudySortMode.Manual)
+        organizeMode = true
+    }
     val rootFolders = displayedWorkspace.filter { it.type == VaultTreeItemType.Folder }
     val listState = rememberLazyListState()
     val folderExpansionPrefix = remember(currentFolderMode) { "home:$currentFolderMode:" }
@@ -314,6 +331,8 @@ fun HomeScreen(
             },
             organizeMode = organizeMode,
             onDoneOrganizing = { organizeMode = false },
+            studyOrganisationEnabled = isStudy,
+            onReorder = onStudyReorder,
             listState = listState,
         )
         if (manageSelectionMode) {
@@ -401,7 +420,31 @@ fun HomeScreen(
         )
     }
 
-    if (folderActionsOpen && selectedFolder != null) {
+    if (isStudy && folderActionsOpen && selectedFolder != null) {
+        val folder = selectedFolder!!
+        PremiumActionDialog(folder.name, showDescriptions = false, onDismiss = { folderActionsOpen = false }, actions = listOf(
+            PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd) { folderActionsOpen = false; onNewNoteClick(folder.id) },
+            PremiumAction("New subfolder", Icons.Rounded.CreateNewFolder) {
+                folderActionsOpen = false
+                newFolderName = ""
+                folderDescriptionInput = ""
+                folderDialogMode = FolderDialogMode.CreateSubfolder
+            },
+            PremiumAction("Rename / Edit description", Icons.Rounded.DriveFileRenameOutline) {
+                folderActionsOpen = false
+                newFolderName = folder.name
+                folderDescriptionInput = folder.description.orEmpty()
+                folderDialogMode = FolderDialogMode.Rename
+            },
+            PremiumAction("Change colour", Icons.Rounded.Palette) { folderActionsOpen = false; folderColorSheetOpen = true },
+            PremiumAction("Sort / Organize", Icons.Rounded.SwapVert) { folderActionsOpen = false; sortMenuOpen = true },
+            PremiumAction("Move", Icons.Rounded.Folder) { folderActionsOpen = false; moveFolderDialogOpen = true },
+            PremiumAction("Move to Personal workspace", Icons.Rounded.LocalOffer) { folderActionsOpen = false; onMoveFolderToModeClick(folder.id, FOLDER_MODE_PERSONAL) },
+            PremiumAction("Delete", Icons.Rounded.Delete, destructive = true, section = "") { folderActionsOpen = false; deleteFolderDialogOpen = true },
+        ))
+    }
+
+    if (!isStudy && folderActionsOpen && selectedFolder != null) {
         val folder = selectedFolder
         val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
         val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
@@ -481,7 +524,7 @@ fun HomeScreen(
             selectedColorKey = folder?.colorKey,
             onBack = {
                 folderColorSheetOpen = false
-                folderMoreActionsOpen = true
+                if (isStudy) folderActionsOpen = true else folderMoreActionsOpen = true
             },
             onDismiss = { folderColorSheetOpen = false },
             onSelect = { colorKey ->
@@ -538,7 +581,22 @@ fun HomeScreen(
         )
     }
 
-    if (noteActionsOpen && selectedNote != null) {
+    if (isStudy && noteActionsOpen && selectedNote != null) {
+        val note = selectedNote!!
+        PremiumActionDialog(note.name, showDescriptions = false, onDismiss = { noteActionsOpen = false }, actions = listOf(
+            PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) { noteActionsOpen = false; noteTitleInput = note.name; renameNoteDialogOpen = true },
+            PremiumAction("Create sub-note", Icons.AutoMirrored.Rounded.NoteAdd) { noteActionsOpen = false; onCreateSubNoteClick(note.id) },
+            PremiumAction(if (note.pinned) "Unpin" else "Pin", Icons.Rounded.PushPin) { noteActionsOpen = false; onSetNotePinnedClick(note.id, !note.pinned) },
+            PremiumAction(if (note.favourite) "Unfavourite" else "Favourite", Icons.Rounded.Star) { noteActionsOpen = false; onSetNoteFavouriteClick(note.id, !note.favourite) },
+            PremiumAction(if (note.folderPinned) "Unpin within folder" else "Pin within folder", Icons.Rounded.PushPin) { noteActionsOpen = false; onSetNoteFolderPinnedClick(note.id, !note.folderPinned) },
+            PremiumAction("Sort / Organize", Icons.Rounded.SwapVert) { noteActionsOpen = false; sortMenuOpen = true },
+            PremiumAction("Move", Icons.Rounded.Folder) { noteActionsOpen = false; moveNoteDialogOpen = true },
+            PremiumAction("Move to Personal workspace", Icons.Rounded.LocalOffer) { noteActionsOpen = false; onMoveNoteToModeClick(note.id, FOLDER_MODE_PERSONAL) },
+            PremiumAction("Delete", Icons.Rounded.Delete, destructive = true, section = "") { noteActionsOpen = false; deleteNoteDialogOpen = true },
+        ))
+    }
+
+    if (!isStudy && noteActionsOpen && selectedNote != null) {
         val note = selectedNote
         val oppositeMode = if (currentFolderMode == FOLDER_MODE_PERSONAL) FOLDER_MODE_STUDY else FOLDER_MODE_PERSONAL
         val oppositeModeLabel = if (oppositeMode == FOLDER_MODE_PERSONAL) "Personal Workspace" else "Islamic Corpus"
@@ -723,7 +781,18 @@ fun HomeScreen(
         )
     }
 
-    if (sortMenuOpen) {
+    if (sortMenuOpen && isStudy) {
+        PremiumActionDialog("Sort / Organize", showDescriptions = false, onDismiss = { sortMenuOpen = false }, actions =
+            StudySortMode.entries.map { mode ->
+                PremiumAction(mode.label, if (mode == uiState.studyOrganisation.sortMode) Icons.Rounded.Check else Icons.Rounded.SortByAlpha) {
+                    sortMenuOpen = false
+                    onStudySortModeChange(mode)
+                    if (mode == StudySortMode.Manual) beginStudyOrganize() else organizeMode = false
+                }
+            },
+        )
+    }
+    if (sortMenuOpen && !isStudy) {
         PremiumActionDialog(
             title = "Sort workspace",
             onDismiss = { sortMenuOpen = false },
@@ -953,6 +1022,8 @@ private fun StudyMobileWebContent(
     onMore: (VaultTreeItem) -> Unit,
     organizeMode: Boolean,
     onDoneOrganizing: () -> Unit,
+    studyOrganisationEnabled: Boolean,
+    onReorder: suspend (List<String>) -> Boolean,
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
@@ -968,6 +1039,28 @@ private fun StudyMobileWebContent(
     }
     val matchingNotes = remember(allNotes, searchQuery) {
         if (!searching) emptyList() else allNotes.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    if (organizeMode && studyOrganisationEnabled) {
+        StudyOrganizeList(
+            workspace = displayedWorkspace,
+            listState = listState,
+            expanded = isFolderExpanded,
+            onToggle = onToggleFolder,
+            onPersist = onReorder,
+            onDone = onDoneOrganizing,
+            showFullTitle = uiState.showFullNoteTitles,
+            header = {
+                CorpusHeader("Study", "${allFolders.size} folders · ${allNotes.size} notes", false, "", "", {}, {}, {}, reserveNavigationSpace = true)
+            },
+            pinned = {
+                if (pinnedNotes.isNotEmpty()) CorpusPinnedStrip(
+                    items = pinnedNotes.map { CorpusPinnedItem(it.id, it.name, uiState.workspace.parentFolderName(it.id)) },
+                    onClick = onOpenNote, onLongPress = {}, modifier = Modifier.padding(bottom = 10.dp),
+                )
+            },
+        )
+        return
     }
 
     LazyColumn(
@@ -996,6 +1089,7 @@ private fun StudyMobileWebContent(
                 onSearchClose = onSearchClose,
                 reserveNavigationSpace = true,
             )
+            uiState.studyOrganisationError?.let { Text(it, color = colors.textSecondary, fontSize = 12.sp) }
             if (organizeMode) {
                 Row(
                     modifier = Modifier
@@ -1269,6 +1363,7 @@ internal fun PremiumActionDialog(
     title: String,
     actions: List<PremiumAction>,
     onDismiss: () -> Unit,
+    showDescriptions: Boolean = true,
 ) {
     val groups = actions.fold(mutableListOf<CorpusActionGroup>()) { result, action ->
         val mapped = CorpusAction(action.label, action.icon, action.destructive, onClick = action.onClick)
@@ -1284,6 +1379,7 @@ internal fun PremiumActionDialog(
         title = title,
         onDismiss = onDismiss,
         groups = groups,
+        showDescriptions = showDescriptions,
     )
 }
 

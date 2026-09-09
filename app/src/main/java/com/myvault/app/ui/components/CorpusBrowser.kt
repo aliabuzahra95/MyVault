@@ -648,6 +648,7 @@ fun CorpusActionSheet(
     title: String,
     groups: List<CorpusActionGroup>,
     onDismiss: () -> Unit,
+    showDescriptions: Boolean = true,
 ) {
     val colors = VaultThemeTokens.colors
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -710,7 +711,7 @@ fun CorpusActionSheet(
             }
             groups.forEachIndexed { index, group ->
                 if (index > 0) Spacer(Modifier.height(8.dp))
-                group.label?.takeUnless { index == 0 }?.let {
+                group.label?.takeUnless { index == 0 || it.isBlank() }?.let {
                     Text(
                         text = it,
                         modifier = Modifier.padding(start = 18.dp, top = 8.dp, bottom = 3.dp),
@@ -738,7 +739,7 @@ fun CorpusActionSheet(
                                 fontSize = 13.5.sp,
                                 fontWeight = if (action.selected) FontWeight.W700 else FontWeight.W600,
                             )
-                            Text(
+                            if (showDescriptions) Text(
                                 text = action.description ?: action.defaultDescription(title),
                                 modifier = Modifier.padding(top = 2.dp),
                                 color = colors.textMuted,

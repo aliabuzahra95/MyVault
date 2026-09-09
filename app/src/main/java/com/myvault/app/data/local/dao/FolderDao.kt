@@ -45,6 +45,9 @@ interface FolderDao {
     @Query("UPDATE folders SET orderIndex = :orderIndex, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateOrderIndex(id: String, orderIndex: Int, updatedAt: Long)
 
+    @Query("UPDATE folders SET orderIndex = :orderIndex WHERE id = :id AND deletedAt IS NULL")
+    suspend fun updateManualOrder(id: String, orderIndex: Int)
+
     @Query("UPDATE folders SET colorKey = :colorKey, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateColorKey(id: String, colorKey: String?, updatedAt: Long)
 

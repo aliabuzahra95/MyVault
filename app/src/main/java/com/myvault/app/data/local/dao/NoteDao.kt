@@ -66,6 +66,9 @@ interface NoteDao {
     @Query("UPDATE notes SET orderIndex = :orderIndex, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateOrderIndex(id: String, orderIndex: Int, updatedAt: Long)
 
+    @Query("UPDATE notes SET orderIndex = :orderIndex WHERE id = :id AND deletedAt IS NULL")
+    suspend fun updateManualOrder(id: String, orderIndex: Int)
+
     @Query("UPDATE notes SET isFavourite = :isFavourite, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateFavourite(id: String, isFavourite: Boolean, updatedAt: Long)
 

@@ -8,6 +8,12 @@ import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.FolderRepository
 import com.myvault.app.data.repository.FolderStickyNoteRepository
 import com.myvault.app.data.repository.HomeSnapshotRepository
+import com.myvault.app.data.repository.DashboardActivityRepository
+import com.myvault.app.ui.model.StudyOrganisationState
+import com.myvault.app.ui.model.StudySortMode
+import com.myvault.app.ui.model.studySiblings
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SearchRepository
 import com.myvault.app.data.preferences.VaultPreferences
@@ -58,6 +64,8 @@ data class HomeUiState(
     val quranReflectionSummary: QuranReflectionSummary = QuranReflectionSummary(),
     val quranReflectionItems: List<QuranReflectionItem> = emptyList(),
     val quranContinue: HomeQuranContinue? = null,
+    val studyOrganisation: StudyOrganisationState = StudyOrganisationState(),
+    val studyOrganisationError: String? = null,
 )
 
 data class HomeQuranContinue(
@@ -87,8 +95,10 @@ class HomeViewModel @Inject constructor(
     private val quranReflectionRepository: QuranReflectionRepository,
     private val quranCatalogRepository: QuranCatalogRepository,
     private val homeSnapshotRepository: HomeSnapshotRepository,
+    private val dashboardActivityRepository: DashboardActivityRepository,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
+    private val studyOrganisationError = MutableStateFlow<String?>(null)
     private val debouncedSearchQuery = searchQuery
         .debounce(300)
         .distinctUntilChanged()
@@ -150,6 +160,8 @@ class HomeViewModel @Inject constructor(
             quranContinue = quranContinue,
         )
     }
+        .combine(dashboardActivityRepository.studyOrganisation) { state, organisation -> state.copy(studyOrganisation = organisation) }
+        .combine(studyOrganisationError) { state, error -> state.copy(studyOrganisationError = error) }
         .onEach { state -> homeSnapshotRepository.save(FOLDER_MODE_STUDY, state) }
         .stateIn(
             viewModelScope,
@@ -249,6 +261,27 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { folderRepository.moveFolderWithinSiblings(folderId, direction) }
     }
 
+    suspend fun reorderStudySiblings(ids: List<String>): Boolean = try {
+        folderRepository.reorderStudySiblings(ids)
+        withTimeoutOrNull(5_000) {
+            uiState.first { state ->
+                state.workspace.studySiblings(ids.first()).orEmpty().filter { it.id in ids }
+                    .sortedBy { it.orderIndex }.map { it.id } == ids
+            }
+        }
+        true
+    } catch (cancelled: CancellationException) { throw cancelled }
+      catch (_: Exception) { false }
+
+    fun setStudySortMode(mode: StudySortMode) {
+        viewModelScope.launch {
+            studyOrganisationError.value = null
+            try { dashboardActivityRepository.setStudySortMode(mode) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { studyOrganisationError.value = "Sort preference could not be saved. Please try again." }
+        }
+    }
+
     fun moveFolderToMode(folderId: String, mode: String) {
         viewModelScope.launch { folderRepository.moveFolderToMode(folderId, mode) }
     }
@@ -259,6 +292,9 @@ class HomeViewModel @Inject constructor(
 
     fun setFolderExpanded(folderId: String, expanded: Boolean) {
         viewModelScope.launch {
+            if (expanded && folderId.startsWith("home:study:")) {
+                dashboardActivityRepository.recordStudyFolderOpened(folderId.removePrefix("home:study:"))
+            }
             val folderIds = vaultPreferences.userPreferences.first().expandedFolderIds.toMutableSet()
             if (expanded) {
                 folderIds += folderId

@@ -16,6 +16,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import com.myvault.app.ui.model.StudyOrganisationState
+import com.myvault.app.ui.model.StudySortMode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class DashboardActivityKind { Note, Library, Course }
 
@@ -51,6 +55,39 @@ class DashboardActivityRepository @Inject constructor(
     private val mutex = Mutex()
     private val _state = MutableStateFlow(readState())
     val state: StateFlow<DashboardActivityState> = _state.asStateFlow()
+    private val _studyOrganisation = MutableStateFlow(readStudyOrganisation())
+    val studyOrganisation: StateFlow<StudyOrganisationState> = _studyOrganisation.asStateFlow()
+
+    suspend fun setStudySortMode(mode: StudySortMode) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(preferences.edit().putString("study_sort_mode", mode.name).commit()) { "Could not save Study sort" }
+            _studyOrganisation.value = _studyOrganisation.value.copy(sortMode = mode)
+        }
+    }
+
+    suspend fun recordStudyFolderOpened(folderId: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (folderDao.getAll().any { it.id == folderId && it.mode == "study" }) {
+                storeStudyOpened(folderId, System.currentTimeMillis())
+            }
+        }
+    }
+
+    private fun storeStudyOpened(id: String, time: Long) {
+        preferences.edit().putLong("study_opened:$id", time).apply()
+        _studyOrganisation.value = _studyOrganisation.value.copy(openedAt = _studyOrganisation.value.openedAt + (id to time))
+    }
+
+    private fun readStudyOrganisation(): StudyOrganisationState {
+        val retained = _state.value.recents.filter { it.kind == DashboardActivityKind.Note }.associate { it.destinationId to it.openedAt }
+        val stored = preferences.all.entries.mapNotNull { (key, value) ->
+            if (key.startsWith("study_opened:") && value is Long) key.removePrefix("study_opened:") to value else null
+        }.toMap()
+        return StudyOrganisationState(
+            sortMode = runCatching { StudySortMode.valueOf(preferences.getString("study_sort_mode", null).orEmpty()) }.getOrDefault(StudySortMode.Manual),
+            openedAt = retained + stored,
+        )
+    }
 
     suspend fun recordNoteOpened(noteId: String) = mutex.withLock {
         val note = noteDao.getById(noteId) ?: return@withLock
@@ -83,6 +120,7 @@ class DashboardActivityRepository @Inject constructor(
             )
         }
         store(item)
+        if (folder == null || folder.mode == "study") storeStudyOpened(note.id, item.openedAt)
     }
 
     suspend fun recordLibraryOpened(attachmentId: String) = mutex.withLock {

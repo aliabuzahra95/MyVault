@@ -143,6 +143,7 @@ private fun VaultTreeItem.toJson(): JSONObject = JSONObject()
     .put("name", name)
     .put("description", description)
     .put("orderIndex", orderIndex)
+    .put("createdAt", createdAt)
     .put("type", type.name)
     .put("count", count)
     .put("edited", edited)
@@ -161,6 +162,7 @@ private fun JSONObject.toVaultTreeItem(): VaultTreeItem = VaultTreeItem(
     name = optString("name"),
     description = optString("description").ifBlank { null },
     orderIndex = optInt("orderIndex", 0),
+    createdAt = optLong("createdAt", 0L),
     type = runCatching { VaultTreeItemType.valueOf(optString("type")) }.getOrDefault(VaultTreeItemType.Note),
     count = optInt("count", 0),
     edited = optString("edited").ifBlank { null },
