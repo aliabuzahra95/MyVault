@@ -2,8 +2,9 @@
 
 ## Status
 
-IN PROGRESS: Samsung reconnected and acceptance resumed. The 18:14 AEST device
-disconnection is recorded below. No RC PASS or final RC tag has been issued.
+WAITING FOR HUMAN AUTHENTICATION: Samsung reconnected and acceptance resumed.
+Enabling the existing app lock opened the real fingerprint/PIN prompt; user must
+authenticate on device. No RC PASS or final RC tag has been issued.
 Portrait only; rotation is excluded throughout.
 
 ## Starting checkpoint
@@ -55,7 +56,7 @@ clear, production uninstall, schema/manifest/format change, or rotation.
 | Settings | Appearance, reading, security, storage, account | PARTIAL: Light/OLED/Dark Dashboard checks pass; restored original Dark; security pending |
 | Widgets | Qur'an, Note Viewer, Quick Note, resize, per-instance state | PARTIAL: all three added on actual launcher; Study/Course exact routes and refresh pass; resize/multiple-instance/lock pending |
 | Incoming Share | Cold/warm, text/HTML/file where supported, duplicate intent | PARTIAL: plain/HTML import routes pass; adjacent HTML list formatting fails |
-| App lock | Real unlock and pending destinations/actions | PENDING |
+| App lock | Real unlock and pending destinations/actions | BLOCKED: existing security lock enabled; fingerprint/PIN prompt awaiting user |
 | Recently Deleted | Disposable note/folder/file restore and safe purge | PARTIAL: nested note restore preserves body/location/pin/favourite; folder/file/purge pending |
 | Audio | Focus, playback, pause/resume, background, source switching | PENDING |
 | Offline | Local usability, truthful failures, recovery | PENDING |
@@ -304,10 +305,22 @@ header is clear of status content and tapping Back returns to the launcher.
   1; highlight survives Back/reopen. Native selected-text Note saves marker above.
   All filter shows its body; four upward flings leave sheet expanded. These checks
   do not replace large-document or real annotation deletion/restore acceptance.
+- Widget fixes/log checkpoint `a9d6ffa` pushed to `frozen-design-master-port` after
+  successful diff check. Current installed release is f0a4b9e0 as recorded above.
+- App lock gate: original preference Off, timer 1 hour. Toggled the existing
+  Security lock switch once; Samsung displays `Unlock My Vault`, `Scan your
+  fingerprint`, `Use PIN`. No credential was entered or authentication bypassed.
+  Asked user to authenticate physically. Timer was not changed. Restore original
+  Off preference after completing the authorized lock tests; this cannot be done
+  from inside the app until authentication succeeds. No pending widget action
+  has yet been launched during this locked state.
 
 ## Resume checklist
 
 Verify Samsung RFCY70CMWZR and installed bytes still match f0a4b9e0.
+First complete real user fingerprint/PIN authentication, then test locked widget
+destinations/actions. Preserve original security timer and return lock to Off
+after testing. Never request the actual PIN in conversation or simulate success.
 Continue actual widget resize/long scroll/
 multiple-instance and locked pending destinations. Continue every outstanding
 matrix row, especially annotation mutations/bounce, large PDF, Memorise, offline,
