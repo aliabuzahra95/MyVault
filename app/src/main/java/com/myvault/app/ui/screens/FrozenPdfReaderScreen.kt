@@ -186,7 +186,7 @@ internal fun FrozenPdfReaderScreen(
     var pageIndex by remember(attachment.id) {
         mutableIntStateOf(initialPageIndex?.coerceAtLeast(0) ?: progress?.pageIndex?.coerceAtLeast(0) ?: 0)
     }
-    var savedPageApplied by remember(attachment.id) { mutableStateOf(initialPageIndex == null || initialPageIndex <= 0) }
+    var savedPageApplied by remember(attachment.id) { mutableStateOf(false) }
     var viewportTick by remember(attachment.id) { mutableLongStateOf(0L) }
     var gestureActive by remember(attachment.id) { mutableStateOf(false) }
     var error by remember(attachment.id) { mutableStateOf<String?>(null) }
@@ -404,8 +404,8 @@ internal fun FrozenPdfReaderScreen(
                             override fun onFirstContentLoad() {
                                 pdfReady = true
                                 pageCount = view.pdfDocument?.pageCount ?: pageCount
-                                if (pageCount > 0) {
-                                    pageIndex = view.firstVisiblePage.coerceIn(0, pageCount - 1)
+                                if (pageCount > 0 && savedPageApplied) {
+                                    pageIndex = pageIndex.coerceIn(0, pageCount - 1)
                                     onProgressChanged(pageIndex, pageCount)
                                 }
                                 onFirstLoaded()
@@ -422,9 +422,16 @@ internal fun FrozenPdfReaderScreen(
                             ) {
                                 val count = view.pdfDocument?.pageCount ?: pageCount
                                 if (count <= 0) return
-                                val safe = firstVisiblePage.coerceIn(0, count - 1)
+                                val safe = selectPdfReadingPage(
+                                    pages = (0 until pageLocations.size()).map { index ->
+                                        val bounds = pageLocations.valueAt(index)
+                                        VisibleReadingPage(pageLocations.keyAt(index), bounds.top, bounds.bottom)
+                                    },
+                                    viewportHeight = view.height.toFloat(),
+                                    fallback = firstVisiblePage,
+                                ).coerceIn(0, count - 1)
                                 pageCount = count
-                                if (safe != pageIndex) {
+                                if (savedPageApplied && safe != pageIndex) {
                                     pageIndex = safe
                                     onProgressChanged(safe, count)
                                 }

@@ -68,7 +68,8 @@ clear, production uninstall, schema/manifest/format change, or rotation.
 - Study folder chain: `RC-20260909-A / RC-20260909-B / RC-20260909-C`.
 - Nested note: `RC-20260909-Nested-note`, text markers A1909 and B1909.
   Pinned/favourited, deleted, then restored individually. Text, nested location,
-  pin and favourite survived. Active at this checkpoint.
+  pin and favourite survived. Deleted again for the RC-01 retest; currently in
+  Recently Deleted, not permanently removed.
 - Shared notes: `RC-20260909-Shared-plain` and `RC-20260909-Shared-HTML`.
   Imported through real ACTION_SEND into the existing Personal Inbox. No existing
   Inbox content changed. Arabic/English text and basic emphasis visually checked.
@@ -77,6 +78,14 @@ clear, production uninstall, schema/manifest/format change, or rotation.
 - Baseline Study counts: 20 folders / 75 notes. After nested fixtures:
   23 folders / 76 notes. Shared Personal notes do not increase Study count.
   Baseline Courses: 5; disposable course makes 6.
+- Actual launcher Quick Note created `RC-20260909-Quick-note`, marker QUICK1909,
+  at Study root. Current Study count is 23 folders / 76 notes with the nested
+  fixture deleted. One disposable Quick Note widget remains on the launcher.
+- Personal Inbox long-note fixture: `RC-20260909-Long-mixed`, 150 mixed
+  Arabic/English paragraphs, 22,583 original characters, original UTF-8 SHA-256
+  `32ab55844dc0bc3e027c19ca6aeebeea2ce54f223bcb7ea061fb3a7eff680497`.
+  Added text LONG-EDIT1909 survived immediate background/reopen. Removing only
+  that added text from the observed editor value exactly reproduces the original.
 
 ## Findings
 
@@ -89,7 +98,7 @@ correctly drops the deleted note after its live query updates.
 
 Cause: Dashboard history is persisted display metadata, not reconciled with
 current active rows, and its open callback unconditionally routes the stored ID.
-Fix in progress: resolve history against active entities and validate a selected
+Completed fix: resolve history against active entities and validate a selected
 target again before routing. No persisted history, schema, restore or backup
 format changes. Five focused tests cover deletion/restoration, missing parent,
 renaming/Personal context, course moves and deleted PDFs/exact page retention.
@@ -120,11 +129,15 @@ lists with a paragraph before sharing. Not evidence of broad data loss.
 Read-only reproduction with `Al_Tabari_Creed_English.PDF` (43 pages, 9 highlights,
 5 notes): Go to page 20 -> Dashboard says page 20 -> reopen says 19 -> reopen
 again says 18. Canonical PDF content and annotations were not edited. Initial
-saved position was page 11 and will be returned there after testing.
+saved position was page 11 and was returned there after testing.
 The AndroidX API explicitly includes partially visible pages in firstVisiblePage;
 the current screen treats it as the reading page. Screenshots show the requested
-page centred with a preceding-page fragment visible. Fix pending, scoped to
-reading-position reporting only, not annotation geometry or stored format.
+page centred with a preceding-page fragment visible. Completed fix selects the
+page occupying the greatest visible height, with centre-distance tie-breaking,
+and prevents initial-load callbacks overwriting the pending saved destination.
+Scoped to reading-position reporting, not annotation geometry or stored format.
+Four consecutive physical reopen cycles remained on page 20; original page 11
+restored afterwards. Existing annotation counts remained 9 highlights / 5 notes.
 
 ## Execution log
 
@@ -159,6 +172,27 @@ reading-position reporting only, not annotation geometry or stored format.
 - 17:45 onward: read-only PDF jump/reopen exposed RC-04; annotation previews
   render and existing 9-highlight/5-note counts remain unchanged. Full PDF
   annotation/bounce/performance acceptance is still pending.
+
+## Completed stages
+
+- `5846da9`: Dashboard active-target resolution and five regression tests,
+  committed and pushed to `frozen-design-master-port`.
+- PDF position stage: installed signed release SHA-256
+  `9737e1d1e5a447804689d2fa6ad07b91d4b3db7e0303b63b667bda573f686c1f`;
+  installed bytes and unchanged CN=Ali signing certificate verified. Four real
+  Samsung reopen tests PASS. Five new focused tests PASS; full 349 debug and
+  349 release tests PASS; lint 0 errors / 283 warnings; debug and release/R8 PASS.
+  Logs: `/tmp/rc-pdf-position-build.log`, `/tmp/rc-pdf-full-gates.log`.
+- Actual Samsung widget picker: Quick Note registered with accurate preview;
+  adding and tapping it opens a new Study-root note editor without a chooser.
+  Only one note was created in the observed sequence. Rapid-tap, lock and resize
+  acceptance remain pending, not inferred from this result.
+- Long-note test initially expected the added text at the end. Samsung keyboard
+  input left the cursor in the middle instead. Exact text comparison confirms
+  all original content plus exactly one addition survived. This was a harness
+  cursor assumption, not a demonstrated autosave defect.
+- Host UI driver now refuses a dump unless Android confirms a fresh snapshot,
+  avoiding accidental use of stale accessibility data after an idle timeout.
 
 ## Final gate
 

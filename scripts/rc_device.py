@@ -15,7 +15,9 @@ def adb(*args):
 
 
 def nodes():
-    adb("shell", "uiautomator", "dump", "/data/local/tmp/rc-ui.xml")
+    result = adb("shell", "uiautomator", "dump", "/data/local/tmp/rc-ui.xml")
+    if "dumped to" not in result:
+        raise RuntimeError("No fresh UI snapshot; refusing stale accessibility data")
     root = ET.fromstring(adb("exec-out", "cat", "/data/local/tmp/rc-ui.xml"))
     if root.attrib.get("rotation") != "0":
         raise RuntimeError("Portrait-only acceptance: unexpected rotation")
