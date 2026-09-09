@@ -2,7 +2,8 @@
 
 ## Status
 
-IN PROGRESS. No RC PASS or final RC tag has been issued.
+BLOCKED at physical-device gate, 2026-09-09 18:14 AEST: Samsung disconnected;
+`adb devices -l` returns no devices. No RC PASS or final RC tag has been issued.
 Portrait only; rotation is excluded throughout.
 
 ## Starting checkpoint
@@ -43,19 +44,19 @@ clear, production uninstall, schema/manifest/format change, or rotation.
 | Startup | Cold, warm, resume, process restart, lock | PARTIAL: three cold/warm cycles pass; lock pending |
 | Navigation | Dashboard, drawer, all roots, rapid switching, Back | PARTIAL: 24 switches and three root Back cycles pass |
 | Study | Nested folders, creation/move, pin/favourite, delete/restore | PARTIAL: A/B/C hierarchy, pin/favourite and note delete/restore pass |
-| Editor | Long/short, rich text, Arabic/English, autosave, background | PARTIAL: short-note autosave/background/process restart pass |
+| Editor | Long/short, rich text, Arabic/English, autosave, background | PARTIAL: short-note process restart and 150-paragraph mixed-text background autosave pass |
 | Library | Nested folders, PDFs, pins, metadata, expansion | PENDING |
-| PDF | Scroll/progress, highlight/note, Activity, previews, jumps, bounce | PENDING |
-| Courses | List, Continue, folders/notes, sticky notes, concepts | PENDING |
-| Qur'an | Surahs, exact ayah, translation, Tafsir, audio | PENDING |
+| PDF | Scroll/progress, highlight/note, Activity, previews, jumps, bounce | PARTIAL: saved-page fix passes four reopens; Activity previews observed; annotation mutation/bounce pending |
+| Courses | List, Continue, folders/notes, sticky notes, concepts | PARTIAL: fixture note, full sticky, concept, Continue and exact Back route pass |
+| Qur'an | Surahs, exact ayah, translation, Tafsir, audio | PARTIAL: widget opens exact 91:1; contextual toolbar appears; Tafsir/audio pending |
 | Memorise | Full Surah, resume, statuses, long Surah | PENDING |
 | Search | Notes, Courses, Library, Qur'an, exact routes | PENDING |
 | Dashboard | Four independent Continue slots, global Recents, reflections | PARTIAL: deleted target fix retested; course/Personal exact routes pass |
 | Settings | Appearance, reading, security, storage, account | PENDING |
-| Widgets | Qur'an, Note Viewer, Quick Note, resize, per-instance state | PENDING |
+| Widgets | Qur'an, Note Viewer, Quick Note, resize, per-instance state | PARTIAL: all three added on actual launcher; Study/Course exact routes and refresh pass; resize/multiple-instance/lock pending |
 | Incoming Share | Cold/warm, text/HTML/file where supported, duplicate intent | PARTIAL: plain/HTML import routes pass; adjacent HTML list formatting fails |
 | App lock | Real unlock and pending destinations/actions | PENDING |
-| Recently Deleted | Disposable note/folder/file restore and safe purge | PENDING |
+| Recently Deleted | Disposable note/folder/file restore and safe purge | PARTIAL: nested note restore preserves body/location/pin/favourite; folder/file/purge pending |
 | Audio | Focus, playback, pause/resume, background, source switching | PENDING |
 | Offline | Local usability, truthful failures, recovery | PENDING |
 | Performance | Startup, large PDF/note/trees, memory, widget updates | PENDING |
@@ -86,6 +87,16 @@ clear, production uninstall, schema/manifest/format change, or rotation.
   `32ab55844dc0bc3e027c19ca6aeebeea2ce54f223bcb7ea061fb3a7eff680497`.
   Added text LONG-EDIT1909 survived immediate background/reopen. Removing only
   that added text from the observed editor value exactly reproduces the original.
+- Three disposable launcher widgets remain: Quick Note; MyVault Note currently
+  showing `RC-20260909-Course-note` with dark appearance/text size 3; Qur'an Reader
+  showing Ash-Shams with translation/Tajweed on, dark appearance and size 4.
+  Qur'an widget was placed by Samsung on another launcher page. Existing launcher
+  icons/widgets were not intentionally moved or deleted. No fixture cleanup was
+  attempted after device disconnection.
+- Quick-note body additionally contains WIDGET-REFRESH1909 from the exact-editor
+  refresh test. Existing non-fixture note bodies were not edited.
+- App Qur'an reading position is now 91:1 after the exact-widget-open test;
+  original app position was 2:163. Return it after remaining tests if appropriate.
 
 ## Findings
 
@@ -139,6 +150,23 @@ Scoped to reading-position reporting, not annotation geometry or stored format.
 Four consecutive physical reopen cycles remained on page 20; original page 11
 restored afterwards. Existing annotation counts remained 9 highlights / 5 notes.
 
+### RC-05: widget appearance labels are not toggle targets (P3)
+
+In Note widget settings, tapping the word Dark twice leaves Light selected.
+Tapping the adjacent radio circle selects Dark; widget surface changes and the
+selection survives reopen. `WidgetAppearanceControl` attaches its click action
+only to RadioButton, leaving the neighbouring Text inert. No state loss observed.
+Small usability issue, not a release blocker; no change made during this stage.
+
+### RC-06: widget configuration completion returns to prior app screen (P2)
+
+With a MyVault activity already in its task, Note widget settings -> Done returns
+to that prior note rather than the launcher. Qur'an widget Search -> Search
+similarly returns to the existing Course screen; Home shows correctly filtered
+widget results. Settings and search state are retained. Workaround: press Home.
+Observed repeatedly on the real launcher. Task/Activity return behaviour needs a
+narrow investigation and physical retest; no navigation changes made yet.
+
 ## Execution log
 
 - 17:07-17:10 AEST: repository/device/checkpoint/baseline verified. Initial
@@ -177,7 +205,8 @@ restored afterwards. Existing annotation counts remained 9 highlights / 5 notes.
 
 - `5846da9`: Dashboard active-target resolution and five regression tests,
   committed and pushed to `frozen-design-master-port`.
-- PDF position stage: installed signed release SHA-256
+- `b09e5a0`: PDF position stage, committed and pushed to the correct branch.
+  Installed signed release SHA-256
   `9737e1d1e5a447804689d2fa6ad07b91d4b3db7e0303b63b667bda573f686c1f`;
   installed bytes and unchanged CN=Ali signing certificate verified. Four real
   Samsung reopen tests PASS. Five new focused tests PASS; full 349 debug and
@@ -193,6 +222,34 @@ restored afterwards. Existing annotation counts remained 9 highlights / 5 notes.
   cursor assumption, not a demonstrated autosave defect.
 - Host UI driver now refuses a dump unless Android confirms a fresh snapshot,
   avoiding accidental use of stale accessibility data after an idle timeout.
+- 18:04-18:14 AEST: actual launcher Note Viewer selected the disposable Study
+  Quick-note, showed its body, opened that exact editor, and refreshed after
+  WIDGET-REFRESH1909. Text size 3 survived settings reopen. Dark appearance worked
+  using its radio control; independent Quick Note remained light. Changed Note
+  Viewer selection via searchable picker to the Course fixture: exact editor
+  opened and Back returned to `RC-20260909-Course`. Screenshots inspected in light
+  and dark. No clipped short body; long-body widget scrolling still pending.
+- Qur'an widget added from actual picker. Search `91` yielded exactly Ash-Shams;
+  selection returned reader mode. Translation on, Tajweed on, size 4 and dark
+  surface visibly render. Tapping ayah 91:1 opens app Ash-Shams, Ayah 1 of 15.
+  Contextual Listen/Tafsir/Reflect toolbar observed. Tafsir acceptance not reached:
+  the toolbar was absent by the next delayed harness tap, then the device
+  disconnected before a combined action retry. Do not count that as a Tafsir pass
+  or a demonstrated app defect. Screenshots remain local under
+  `artifacts/rc-torture-20260909/` and are not committed.
+- 18:14 AEST: ADB reports serial RFCY70CMWZR unavailable; explicit device listing
+  is empty. Mandatory physical acceptance cannot continue. App lock is still
+  Off; no biometric/security settings have been changed. No Drive operation was
+  performed, no production data cleared, and no final RC tag created.
+
+## Resume checklist
+
+Reconnect Samsung RFCY70CMWZR and verify installed bytes still match 9737e1d.
+Resume RC-06 widget task-return investigation, actual widget resize/long scroll/
+multiple-instance and locked pending destinations. Continue every outstanding
+matrix row, especially annotation mutations/bounce, large PDF, Memorise, offline,
+audio, Share re-delivery, and final fixture consistency. Builds passing does not
+replace these gates. Retest any subsequent fix physically before RC acceptance.
 
 ## Final gate
 
