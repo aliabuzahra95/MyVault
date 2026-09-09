@@ -125,12 +125,14 @@ class AttachmentRepository @Inject constructor(
         } ?: error("Unable to open selected file")
 
         val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
+        database.withTransaction {
         attachmentDao.upsertAll(
             listOf(
                 AttachmentEntity(
                     id = id,
                     noteId = "",
                     libraryFolderId = folderId,
+                    orderIndex = nextLibraryOrder(folderId),
                     fileName = fileName,
                     mimeType = mimeType,
                     sizeBytes = sizeBytes,
@@ -140,6 +142,7 @@ class AttachmentRepository @Inject constructor(
                 ),
             ),
         )
+        }
         id
     }
 
@@ -217,7 +220,10 @@ class AttachmentRepository @Inject constructor(
     suspend fun moveLibraryAttachment(attachmentId: String, folderId: String?) = withContext(Dispatchers.IO) {
         database.withTransaction {
             val oldFolderId = attachmentDao.getByIdIncludingDeleted(attachmentId)?.libraryFolderId
+            if (oldFolderId == folderId) return@withTransaction
+            val order = nextLibraryOrder(folderId)
             attachmentDao.updateLibraryFolder(attachmentId, folderId)
+            attachmentDao.updateManualOrder(attachmentId, order)
             val now = System.currentTimeMillis()
             pdfAnnotationDao.updateSourceFolderForAttachment(attachmentId, folderId, now)
             pdfAnnotationDao.updateDisplayFolderForAttachmentIfMatching(attachmentId, oldFolderId, folderId, now)
@@ -227,6 +233,11 @@ class AttachmentRepository @Inject constructor(
     suspend fun setPinned(attachmentId: String, pinned: Boolean) = withContext(Dispatchers.IO) {
         attachmentDao.updatePinned(attachmentId, pinned)
     }
+
+    private suspend fun nextLibraryOrder(parent: String?): Int = maxOf(
+        folderDao.getAll().filter { it.parentId == parent && (it.mode == "library" || it.mode == "personal_library") }.maxOfOrNull { it.orderIndex } ?: -1,
+        attachmentDao.getAll().filter { it.libraryFolderId == parent && (it.noteId.isBlank() || it.libraryFolderId != null) }.mapNotNull { it.orderIndex }.maxOrNull() ?: -1,
+    ) + 1
 }
 
 data class LibraryImportResult(

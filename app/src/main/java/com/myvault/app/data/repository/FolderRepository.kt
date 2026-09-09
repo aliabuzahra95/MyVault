@@ -45,6 +45,34 @@ class FolderRepository @Inject constructor(
     private val sourceBacklinkDao: SourceBacklinkDao,
     private val knowledgeTagDao: KnowledgeTagDao,
 ) {
+    suspend fun reorderLibrarySiblings(orderedIds: List<String>, mode: String = FOLDER_MODE_LIBRARY) = database.withTransaction {
+        require(mode == FOLDER_MODE_LIBRARY || mode == FOLDER_MODE_PERSONAL_LIBRARY)
+        require(orderedIds.isNotEmpty() && orderedIds.distinct().size == orderedIds.size)
+        val folders = folderDao.getAll().filter { it.mode == mode }
+        val folderIds = folders.map { it.id }.toSet()
+        val files = attachmentDao.getAll().filter {
+            (it.noteId.isBlank() || it.libraryFolderId != null) &&
+                (it.libraryFolderId in folderIds || (mode == FOLDER_MODE_LIBRARY && it.libraryFolderId == null))
+        }
+        val first = orderedIds.first()
+        require(folders.any { it.id == first } || files.any { it.id == first }) { "Item no longer exists" }
+        val parent = folders.firstOrNull { it.id == first }?.parentId ?: files.firstOrNull { it.id == first }?.libraryFolderId
+        val siblings = (folders.filter { it.parentId == parent }.map { Triple(it.id, it.orderIndex, true) } +
+            files.filter { it.libraryFolderId == parent }.map { Triple(it.id, it.orderIndex ?: Int.MAX_VALUE, false) })
+            .sortedWith(compareBy<Triple<String, Int, Boolean>> { it.second }.thenBy { it.first })
+        val byId = siblings.associateBy { it.first }
+        require(orderedIds.all { it in byId }) { "Items moved or were deleted; reopen Organize" }
+        val selected = orderedIds.toSet()
+        val replacement = orderedIds.iterator()
+        siblings.map { if (it.first in selected) byId.getValue(replacement.next()) else it }
+            .forEachIndexed { index, item ->
+                if (item.second != index) {
+                    if (item.third) folderDao.updateManualOrder(item.first, index)
+                    else attachmentDao.updateManualOrder(item.first, index)
+                }
+            }
+    }
+
     suspend fun reorderStudySiblings(orderedIds: List<String>) = database.withTransaction {
         require(orderedIds.isNotEmpty() && orderedIds.distinct().size == orderedIds.size) { "Invalid Study order" }
         val folders = folderDao.getAll()
@@ -123,7 +151,10 @@ class FolderRepository @Inject constructor(
         val noteMax = noteDao.getAll()
             .filter { it.folderId == parentId && it.parentNoteId == null }
             .maxOfOrNull { it.orderIndex } ?: -1
-        val orderIndex = maxOf(folderMax, noteMax) + 1
+        val fileMax = if (folderMode == FOLDER_MODE_LIBRARY || folderMode == FOLDER_MODE_PERSONAL_LIBRARY) {
+            attachmentDao.getAll().filter { it.libraryFolderId == parentId && (it.noteId.isBlank() || it.libraryFolderId != null) }.mapNotNull { it.orderIndex }.maxOrNull() ?: -1
+        } else -1
+        val orderIndex = maxOf(folderMax, noteMax, fileMax) + 1
 
         folderDao.upsertAll(
             listOf(
@@ -188,10 +219,15 @@ class FolderRepository @Inject constructor(
         val noteMax = noteDao.getAll()
             .filter { it.folderId == parentId && it.parentNoteId == null }
             .maxOfOrNull { it.orderIndex } ?: -1
-        val orderIndex = maxOf(folderMax, noteMax) + 1
+        val fileMax = if (folder.mode == FOLDER_MODE_LIBRARY || folder.mode == FOLDER_MODE_PERSONAL_LIBRARY) {
+            attachmentDao.getAll().filter { it.libraryFolderId == parentId && (it.noteId.isBlank() || it.libraryFolderId != null) }.mapNotNull { it.orderIndex }.maxOrNull() ?: -1
+        } else -1
+        val orderIndex = maxOf(folderMax, noteMax, fileMax) + 1
         folderDao.updateParentAndOrder(folderId, parentId, orderIndex, System.currentTimeMillis())
-        normalizeOrderIndexes(oldParentId)
-        normalizeOrderIndexes(parentId)
+        if (folder.mode != FOLDER_MODE_LIBRARY && folder.mode != FOLDER_MODE_PERSONAL_LIBRARY) {
+            normalizeOrderIndexes(oldParentId)
+            normalizeOrderIndexes(parentId)
+        }
     }
 
     suspend fun moveFolderWithinSiblings(folderId: String, direction: Int) {

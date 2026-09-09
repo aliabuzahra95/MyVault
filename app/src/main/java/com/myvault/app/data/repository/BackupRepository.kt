@@ -20,6 +20,8 @@ import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.optionalLibraryOrder
+import com.myvault.app.data.local.withSeededLibraryOrder
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.CourseConceptCardEntity
 import com.myvault.app.data.local.entity.CourseEntity
@@ -595,6 +597,7 @@ class BackupRepository @Inject constructor(
                 .filter {
                     it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredLibraryFolderIds
                 }
+            val orderedAttachments = attachments.withSeededLibraryOrder(folders)
             val restoredAttachmentIds = attachments.map { it.id }.toSet()
             val pdfReadingProgress = entries.optionalJsonArray("pdf_reading_progress.json")
                 .mapJson { it.toPdfReadingProgressEntity() }
@@ -654,7 +657,7 @@ class BackupRepository @Inject constructor(
                 if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
                 if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
                 if (noteVersions.isNotEmpty()) noteVersionDao.upsertAll(noteVersions)
-                if (attachments.isNotEmpty()) attachmentDao.upsertAll(attachments)
+                if (orderedAttachments.isNotEmpty()) attachmentDao.upsertAll(orderedAttachments)
                 val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
                     emptyList()
                 } else {
@@ -724,6 +727,7 @@ class BackupRepository @Inject constructor(
             isPinned = optBoolean("isPinned", false),
             createdAt = getLong("createdAt"),
             deletedAt = optNullableLong("deletedAt"),
+            orderIndex = optionalLibraryOrder(opt("orderIndex")),
         )
     }
 
@@ -1459,6 +1463,7 @@ private fun AttachmentEntity.toJson(): JSONObject =
         .put("isPinned", isPinned)
         .put("createdAt", createdAt)
         .put("deletedAt", deletedAt)
+        .put("orderIndex", orderIndex)
 
 internal fun JSONObject.toBackupFolderEntity(): FolderEntity =
     FolderEntity(

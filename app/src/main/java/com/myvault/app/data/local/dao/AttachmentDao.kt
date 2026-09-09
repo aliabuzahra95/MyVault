@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AttachmentDao {
+    @Query("UPDATE attachments SET orderIndex = :orderIndex WHERE id = :id")
+    suspend fun updateManualOrder(id: String, orderIndex: Int)
+
     @Query("SELECT * FROM attachments WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<AttachmentEntity>>
 
