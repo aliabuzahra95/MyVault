@@ -6,12 +6,17 @@ import com.myvault.app.data.local.dao.CourseDao
 import com.myvault.app.data.local.dao.FolderDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
+import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.CourseEntity
+import com.myvault.app.data.local.entity.FolderEntity
+import com.myvault.app.data.local.entity.NoteEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -55,6 +60,21 @@ class DashboardActivityRepository @Inject constructor(
     private val mutex = Mutex()
     private val _state = MutableStateFlow(readState())
     val state: StateFlow<DashboardActivityState> = _state.asStateFlow()
+    // History records what was opened; current rows decide what can still open.
+    val availableState = combine(
+        state, noteDao.observeAll(), folderDao.observeAll(),
+        attachmentDao.observeAll(), courseDao.observeCourses(),
+    ) { history, notes, folders, attachments, courses ->
+        resolveDashboardActivityState(history, notes, folders, attachments, courses)
+    }
+
+    suspend fun resolveActivity(item: DashboardActivityItem): DashboardActivityItem? =
+        withContext(Dispatchers.IO) {
+            resolveDashboardActivityState(
+                DashboardActivityState(recents = listOf(item)),
+                noteDao.getAll(), folderDao.getAll(), attachmentDao.getAll(), courseDao.getAllCourses(),
+            ).recents.singleOrNull()
+        }
     private val _studyOrganisation = MutableStateFlow(readStudyOrganisation())
     val studyOrganisation: StateFlow<StudyOrganisationState> = _studyOrganisation.asStateFlow()
     private val _libraryOrganisation = MutableStateFlow(StudyOrganisationState(
@@ -259,6 +279,52 @@ class DashboardActivityRepository @Inject constructor(
         const val COURSE_MODE_PREFIX = "course:"
         const val MAX_RECENTS = 24
     }
+}
+
+internal fun resolveDashboardActivityState(
+    history: DashboardActivityState,
+    notes: List<NoteEntity>,
+    folders: List<FolderEntity>,
+    attachments: List<AttachmentEntity>,
+    courses: List<CourseEntity>,
+): DashboardActivityState {
+    val notesById = notes.filter { it.deletedAt == null }.associateBy { it.id }
+    val foldersById = folders.filter { it.deletedAt == null }.associateBy { it.id }
+    val attachmentsById = attachments.filter { it.deletedAt == null }.associateBy { it.id }
+    val coursesById = courses.associateBy { it.id }
+    fun resolve(item: DashboardActivityItem): DashboardActivityItem? {
+        if (item.kind == DashboardActivityKind.Library) {
+            val attachment = attachmentsById[item.destinationId] ?: return null
+            if (attachment.noteId.isNotBlank() && attachment.libraryFolderId == null) return null
+            val folder = attachment.libraryFolderId?.let { foldersById[it] ?: return null }
+            return item.copy(
+                title = attachment.fileName.removeSuffix(".pdf").removeSuffix(".PDF").ifBlank { "Document" },
+                context = buildSearchLocation(attachment.libraryFolderId, folder?.mode ?: "library", foldersById),
+                folderId = attachment.libraryFolderId,
+            )
+        }
+        val note = notesById[item.destinationId] ?: return null
+        val folder = note.folderId?.let { foldersById[it] ?: return null }
+        val courseId = folder?.mode?.takeIf { it.startsWith("course:") }?.removePrefix("course:")
+        if (courseId != null && courseId !in coursesById) return null
+        return item.copy(
+            kind = if (courseId == null) DashboardActivityKind.Note else DashboardActivityKind.Course,
+            title = note.title.ifBlank { "Untitled note" },
+            context = buildSearchLocation(note.folderId, folder?.mode, foldersById),
+            folderId = note.folderId,
+            courseId = courseId,
+        )
+    }
+    val resolved = (history.recents + listOfNotNull(history.lastNote, history.lastLibrary, history.lastCourse))
+        .mapNotNull(::resolve)
+        .sortedByDescending { it.openedAt }
+        .distinctBy { it.kind to it.destinationId }
+    return DashboardActivityState(
+        lastNote = resolved.firstOrNull { it.kind == DashboardActivityKind.Note },
+        lastLibrary = resolved.firstOrNull { it.kind == DashboardActivityKind.Library },
+        lastCourse = resolved.firstOrNull { it.kind == DashboardActivityKind.Course },
+        recents = resolved.take(24),
+    )
 }
 
 internal fun updateDashboardActivityState(

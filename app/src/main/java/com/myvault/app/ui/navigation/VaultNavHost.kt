@@ -1111,14 +1111,17 @@ fun VaultNavHost(
                     navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
                 onOpenActivity = { activity ->
-                    when (activity.kind) {
-                        DashboardActivityKind.Note -> openNote(activity.destinationId)
-                        DashboardActivityKind.Library -> navController.navigate(
-                            VaultDestination.AttachmentViewer.route(activity.destinationId, activity.pageIndex ?: -1),
-                        )
-                        DashboardActivityKind.Course -> {
-                            activity.courseId?.let { revealCourseLocation(it, activity.folderId) }
-                            openNote(activity.destinationId)
+                    dashboardActivityViewModel.openActivity(activity) { current ->
+                        when (current?.kind) {
+                            null -> Toast.makeText(context, "This item is no longer available", Toast.LENGTH_SHORT).show()
+                            DashboardActivityKind.Note -> openNote(current.destinationId)
+                            DashboardActivityKind.Library -> navController.navigate(
+                                VaultDestination.AttachmentViewer.route(current.destinationId, current.pageIndex ?: -1),
+                            )
+                            DashboardActivityKind.Course -> {
+                                current.courseId?.let { revealCourseLocation(it, current.folderId) }
+                                openNote(current.destinationId)
+                            }
                         }
                     }
                 },
