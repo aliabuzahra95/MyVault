@@ -59,6 +59,7 @@
         </activity>
         <activity
             android:name=".widget.quran.QuranWidgetSearchActivity"
+            android:taskAffinity=""
             android:excludeFromRecents="true"
             android:exported="false"
             android:noHistory="true"
@@ -66,9 +67,13 @@
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible" />
         <activity
             android:name=".widget.WidgetAppearanceActivity"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
             android:exported="true" />
         <activity
             android:name=".widget.note.NoteWidgetConfigActivity"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
             android:exported="true"
             android:theme="@style/Theme.MyVault" />
         <service android:name=".data.quran.audio.QuranPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />

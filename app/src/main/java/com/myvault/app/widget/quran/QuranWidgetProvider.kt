@@ -584,6 +584,7 @@ class QuranWidgetProvider : AppWidgetProvider() {
             context,
             requestCode(appWidgetId, 12),
             Intent(context, QuranWidgetSearchActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                 data = Uri.parse("myvault://quran-widget/$appWidgetId/search")
             },

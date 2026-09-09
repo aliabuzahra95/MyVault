@@ -8,10 +8,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.myvault.app.ui.theme.VaultTheme
 import com.myvault.app.ui.theme.VaultThemeMode
@@ -40,13 +43,16 @@ internal fun WidgetAppearanceControl(id: Int) {
     val dark = rememberWidgetDark(id)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text("Appearance", style = MaterialTheme.typography.titleSmall)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf(false to "Light", true to "Dark").forEach { (value, label) ->
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(selected = dark == value, onClick = {
+                Row(
+                    modifier = Modifier.selectable(selected = dark == value, role = Role.RadioButton) {
                         WidgetAppearanceStore(context).setDark(id, value)
                         scope.launch { refreshWidgetAppearance(context, id) }
-                    })
+                    },
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = dark == value, onClick = null, modifier = Modifier.size(48.dp))
                     Text(label)
                 }
             }
@@ -66,7 +72,7 @@ class WidgetAppearanceActivity : ComponentActivity() {
             val dark = rememberWidgetDark(id)
             VaultTheme(mode = if (dark) VaultThemeMode.Dark else VaultThemeMode.Light, materialYouEnabled = false) {
                 Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.padding(24.dp)) {
+                    Column(Modifier.safeDrawingPadding().padding(24.dp)) {
                         Text("Quick Note settings", style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(16.dp))
                         WidgetAppearanceControl(id)

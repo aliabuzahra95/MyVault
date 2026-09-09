@@ -2,8 +2,8 @@
 
 ## Status
 
-BLOCKED at physical-device gate, 2026-09-09 18:14 AEST: Samsung disconnected;
-`adb devices -l` returns no devices. No RC PASS or final RC tag has been issued.
+IN PROGRESS: Samsung reconnected and acceptance resumed. The 18:14 AEST device
+disconnection is recorded below. No RC PASS or final RC tag has been issued.
 Portrait only; rotation is excluded throughout.
 
 ## Starting checkpoint
@@ -46,13 +46,13 @@ clear, production uninstall, schema/manifest/format change, or rotation.
 | Study | Nested folders, creation/move, pin/favourite, delete/restore | PARTIAL: A/B/C hierarchy, pin/favourite and note delete/restore pass |
 | Editor | Long/short, rich text, Arabic/English, autosave, background | PARTIAL: short-note process restart and 150-paragraph mixed-text background autosave pass |
 | Library | Nested folders, PDFs, pins, metadata, expansion | PENDING |
-| PDF | Scroll/progress, highlight/note, Activity, previews, jumps, bounce | PARTIAL: saved-page fix passes four reopens; Activity previews observed; annotation mutation/bounce pending |
+| PDF | Scroll/progress, highlight/note, Activity, previews, jumps, bounce | PARTIAL: four reopens pass; disposable one-shot highlight/note, exact jump and expanded-sheet flings pass; large-file/destructive coverage pending |
 | Courses | List, Continue, folders/notes, sticky notes, concepts | PARTIAL: fixture note, full sticky, concept, Continue and exact Back route pass |
-| Qur'an | Surahs, exact ayah, translation, Tafsir, audio | PARTIAL: widget opens exact 91:1; contextual toolbar appears; Tafsir/audio pending |
-| Memorise | Full Surah, resume, statuses, long Surah | PENDING |
+| Qur'an | Surahs, exact ayah, translation, Tafsir, audio | PARTIAL: exact 91:1, Tafsir source switching and sheet resume pass; audio pending |
+| Memorise | Full Surah, resume, statuses, long Surah | PARTIAL: Al-A'laa whole Surah to 87:19 and scroll resume pass; recording/status mutation pending |
 | Search | Notes, Courses, Library, Qur'an, exact routes | PENDING |
 | Dashboard | Four independent Continue slots, global Recents, reflections | PARTIAL: deleted target fix retested; course/Personal exact routes pass |
-| Settings | Appearance, reading, security, storage, account | PENDING |
+| Settings | Appearance, reading, security, storage, account | PARTIAL: Light/OLED/Dark Dashboard checks pass; restored original Dark; security pending |
 | Widgets | Qur'an, Note Viewer, Quick Note, resize, per-instance state | PARTIAL: all three added on actual launcher; Study/Course exact routes and refresh pass; resize/multiple-instance/lock pending |
 | Incoming Share | Cold/warm, text/HTML/file where supported, duplicate intent | PARTIAL: plain/HTML import routes pass; adjacent HTML list formatting fails |
 | App lock | Real unlock and pending destinations/actions | PENDING |
@@ -96,7 +96,13 @@ clear, production uninstall, schema/manifest/format change, or rotation.
 - Quick-note body additionally contains WIDGET-REFRESH1909 from the exact-editor
   refresh test. Existing non-fixture note bodies were not edited.
 - App Qur'an reading position is now 91:1 after the exact-widget-open test;
-  original app position was 2:163. Return it after remaining tests if appropriate.
+  original app position was 2:163. On resumed Dashboard, Continue still displays
+  2:163: the exact widget destination did not overwrite that saved Continue value.
+- `RC-20260909-PDF-fixture.pdf`: 2-page disposable existing test document copied
+  to device Downloads, then imported through Library Upload file. Created one
+  drawn rectangle plus one selected-text highlight note with body
+  `RC-PDF-NOTE1909 disposable annotation.` Counts: 2 highlights / 1 note.
+  Fixture file and imported attachment remain for subsequent deletion/restore.
 
 ## Findings
 
@@ -157,6 +163,8 @@ Tapping the adjacent radio circle selects Dark; widget surface changes and the
 selection survives reopen. `WidgetAppearanceControl` attaches its click action
 only to RadioButton, leaving the neighbouring Text inert. No state loss observed.
 Small usability issue, not a release blocker; no change made during this stage.
+Fixed on resumed stage: one accessible selectable radio row handles both label
+and circle. Actual Samsung Light/Dark label taps change appearance and persist.
 
 ### RC-06: widget configuration completion returns to prior app screen (P2)
 
@@ -166,6 +174,19 @@ similarly returns to the existing Course screen; Home shows correctly filtered
 widget results. Settings and search state are retained. Workaround: press Home.
 Observed repeatedly on the real launcher. Task/Activity return behaviour needs a
 narrow investigation and physical retest; no navigation changes made yet.
+Fixed on resumed stage: only the three widget utility activities have empty task
+affinity and are excluded from Recents; widget Surah search explicitly starts a
+new task. MainActivity, Share and exact-content intents are unchanged. Samsung
+Note settings Done/system Back and Surah Search now return to the launcher;
+`Shams` produces exactly the expected 91 result in the existing widget picker.
+
+### RC-07: Note widget settings Back under status bar (P2)
+
+Actual screenshot shows the title and Back arrow overlapping Samsung status
+content. Tapping the visible Back target did not close settings; system Back
+worked. Added status-bar padding to this settings header and safe drawing padding
+to the compact Quick Note appearance screen. Final signed Samsung build retest:
+header is clear of status content and tapping Back returns to the launcher.
 
 ## Execution log
 
@@ -242,10 +263,52 @@ narrow investigation and physical retest; no navigation changes made yet.
   Off; no biometric/security settings have been changed. No Drive operation was
   performed, no production data cleared, and no final RC tag created.
 
+## Resumed widget/PDF stage, 18:20-18:45 AEST
+
+- Reconnected Samsung installed bytes matched previous 9737e1d candidate; tracked
+  tree clean. RC-05/06 narrow fixes built and installed as signed release 266c484a.
+  RC-07 inset correction then built and installed in place as
+  `/tmp/myvault-rc-widget-insets-signed.apk`, installed SHA-256
+  `f0a4b9e07a9cbc2fbc8ecec4b2ba3cc9a24f485d574ec2a44153f05579b31e12`.
+  Signing certificate remains CN=Ali, SHA-256 5d33f907db32d404352fc160fbd0e7b27d648a50f97c648536211d68cf5e80a3.
+- Final full gates: 349 debug + 349 release unit tests, no failures/skips; lint
+  0 errors / 283 warnings; debug and release/R8 builds PASS; diff check required
+  before checkpoint. Logs `/tmp/rc-widget-task-gates.log` and
+  `/tmp/rc-widget-inset-gates.log`.
+- Added two instrumentation checks for merged widget activity task isolation and
+  unchanged main activity affinity. Debug runner cannot attach to R8 release:
+  it crashed before tests with missing un-obfuscated Kotlin Intrinsics. This is
+  test-harness incompatibility, not counted as an app workflow crash or a pass.
+  Both tests subsequently PASS on the existing API 36.1 emulator with matched
+  debug app/test APKs. Samsung stayed on signed release throughout physical tests.
+  Emulator was shut down after these checks; no Samsung app data clear/uninstall.
+- Actual Samsung Note settings label, Done, system Back, on-screen Back, and
+  Qur'an widget search-return fixes retested as detailed in RC-05/06/07. Widget
+  note selection, manual dark mode and text-size level survived app updates.
+- Tafsir 91:1 source switching loaded Ibn Kathir (9,425 text characters), Tabari
+  (759), Qurtubi (1,224); Mukhtasar was selectable but its short body was not
+  measured by the >150-character probe. Sheet survives Home/manual reopen.
+  A naive error-keyword probe matched the word failed inside actual Tafsir prose;
+  that is not an application failure. No content/translation assets changed.
+- Light, OLED and Dark Dashboard screenshots inspected. Original Dark restored.
+  Four Continue cards remain readable; no content clipping. Light status icons
+  have weak contrast against the pale app surface (nonblocking existing polish).
+- Memorise continuous Al-A'laa opens full 19-ayah view. Declined microphone prompt
+  with Not now; no recording made. Scrolled to 87:19; Home/manual reopen preserves
+  full-Surah view and bottom position. Counts remain 64 memorised / 21 in progress.
+- Search opened the exact disposable Course note. Library search found the new
+  PDF and opened it. Initial asynchronous No results settled into the correct
+  result; not recorded as a search failure.
+- Disposable PDF: one-shot rectangle creates exactly one highlight, next drag
+  scrolls normally. Raster preview appears in Activity; source jump goes to page
+  1; highlight survives Back/reopen. Native selected-text Note saves marker above.
+  All filter shows its body; four upward flings leave sheet expanded. These checks
+  do not replace large-document or real annotation deletion/restore acceptance.
+
 ## Resume checklist
 
-Reconnect Samsung RFCY70CMWZR and verify installed bytes still match 9737e1d.
-Resume RC-06 widget task-return investigation, actual widget resize/long scroll/
+Verify Samsung RFCY70CMWZR and installed bytes still match f0a4b9e0.
+Continue actual widget resize/long scroll/
 multiple-instance and locked pending destinations. Continue every outstanding
 matrix row, especially annotation mutations/bounce, large PDF, Memorise, offline,
 audio, Share re-delivery, and final fixture consistency. Builds passing does not
