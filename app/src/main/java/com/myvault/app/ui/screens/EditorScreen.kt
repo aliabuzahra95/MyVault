@@ -81,6 +81,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -131,6 +133,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 
 @OptIn(FlowPreview::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -144,6 +148,8 @@ fun EditorScreen(
     onContentChange: (text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) -> Unit,
     onRunFormattingTool: (action: NoteFormattingAction, provider: NoteFormattingProvider, model: NoteFormattingModel, title: String, body: String) -> Unit,
     onClearFormattingResult: () -> Unit,
+    onListenNote: (String, String) -> Unit = { _, _ -> },
+    onPreserveFormattingOriginal: suspend (String, String, List<VaultStyleMark>, List<VaultNoteLink>) -> Unit = { _, _, _, _ -> },
     onFormattingProviderSelected: (NoteFormattingProvider) -> Unit = {},
     onFormattingModelSelected: (NoteFormattingModel) -> Unit = {},
     onAzureListenFromHere: (title: String, body: String, startOffset: Int) -> Unit = { _, _, _ -> },
@@ -166,6 +172,7 @@ fun EditorScreen(
     onRestoreVersion: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
     autoFocusBody: Boolean = false,
+    openFormattingInitially: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
@@ -203,7 +210,8 @@ fun EditorScreen(
     var removeTagDialogOpen by remember { mutableStateOf(false) }
     var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
     var tagDraft by remember { mutableStateOf("") }
-    var intelligentStructureOpen by remember { mutableStateOf(false) }
+    var intelligentStructureOpen by rememberSaveable { mutableStateOf(openFormattingInitially) }
+    var applyingFormatting by remember { mutableStateOf(false) }
     var replaceAiDialogOpen by remember { mutableStateOf(false) }
     var structureOnlyNotice by remember { mutableStateOf<String?>(null) }
     var deleteDialogOpen by remember { mutableStateOf(false) }
@@ -557,18 +565,26 @@ fun EditorScreen(
         bodyFocusRequester.requestFocus()
     }
 
-    fun replaceBodyWithAiResult(result: String, action: NoteFormattingAction?) {
+    suspend fun replaceBodyWithAiResult(result: String, action: NoteFormattingAction?) {
+        val sourceSnapshot = currentHistorySnapshot()
         traceStructureOnlyEditorStage(context, "04-before-editor-insert-html", result, action)
         val imported = if (action.isEditorOutputMode()) {
-            parseRichImport(html = result, plainText = null).document
+            withContext(Dispatchers.Default) { parseRichImport(html = result, plainText = null).document }
         } else {
             VaultRichTextDocument(text = result.trim(), styleMarks = emptyList(), noteLinks = emptyList())
         }
         traceStructureOnlyEditorStage(context, "05-after-editor-import-text", imported.text, action)
+        check(currentHistorySnapshot().hasSameEditorContentAs(sourceSnapshot)) {
+            "The note changed while preparing the preview. Nothing was applied."
+        }
+        check(com.myvault.app.data.formatting.FormattingTextContract.preservesText(bodyValue.text, imported.text)) {
+            "The editor import changed wording. Your note is unchanged."
+        }
+        val preservedLinks = remapFormattingNoteLinks(bodyValue.text, imported.text, noteLinks)
         bodyValue = sanitizeVaultTextFieldValue(TextFieldValue(imported.text, selection = TextRange(imported.text.length)))
         traceStructureOnlyEditorStage(context, "06-editor-applied-text", bodyValue.text, action)
         styleMarks = sanitizeVaultStyleMarks(imported.styleMarks, imported.text.length)
-        noteLinks = emptyList()
+        noteLinks = preservedLinks
         pendingInlineStyles = emptySet()
         bodyFocusRequester.requestFocus()
     }
@@ -1016,6 +1032,10 @@ fun EditorScreen(
                 NoteSheetSection(
                     label = "Note",
                     actions = listOf(
+                        NoteSheetAction("Listen", Icons.Rounded.PlayArrow, onClick = {
+                            moreMenuOpen = false
+                            onListenNote(title.text, bodyValue.text)
+                        }),
                         NoteSheetAction(
                             label = if (isPinned) "Unpin" else "Pin",
                             icon = Icons.Rounded.PushPin,
@@ -1041,17 +1061,9 @@ fun EditorScreen(
                     ),
                 ),
                 NoteSheetSection(
-                    label = "Content",
+                    label = "History",
                     actions = listOf(
-                        NoteSheetAction("Knowledge & references", Icons.Rounded.Link, subtitle = "Tags, backlinks and PDF sources", onClick = {
-                            moreMenuOpen = false
-                            knowledgeOpen = true
-                        }),
-                        NoteSheetAction("Attachments", Icons.Rounded.AttachFile, subtitle = "Files and images linked to this note", onClick = {
-                            moreMenuOpen = false
-                            attachmentsOpen = true
-                        }),
-                        NoteSheetAction("Version history", Icons.Rounded.History, subtitle = "Restore an earlier saved snapshot", onClick = {
+                        NoteSheetAction("Version history", Icons.Rounded.History, onClick = {
                             moreMenuOpen = false
                             versionHistoryOpen = true
                         }),
@@ -1069,6 +1081,7 @@ fun EditorScreen(
                             icon = Icons.Rounded.AutoAwesome,
                             onClick = {
                                 moreMenuOpen = false
+                                keyboardController?.hide()
                                 intelligentStructureOpen = true
                             },
                         ),
@@ -1509,7 +1522,13 @@ fun EditorScreen(
                 intelligentStructureOpen = false
                 onClearFormattingResult()
             },
-            onReplace = { replaceAiDialogOpen = true },
+            onReplace = {
+                if (formattingState.sourceBody != bodyValue.text) {
+                    structureOnlyNotice = "The note changed after this preview. Generate a new preview first."
+                } else {
+                    replaceAiDialogOpen = true
+                }
+            },
             onClearResult = onClearFormattingResult,
         )
     }
@@ -1518,14 +1537,35 @@ fun EditorScreen(
         AlertDialog(
             onDismissRequest = { replaceAiDialogOpen = false },
             title = { Text("Replace note body?") },
-            text = { Text("This will replace the current body text with the AI result. Your title will stay the same.") },
+            text = { Text("Your original will be saved in Version history before applying this preview. Your title stays the same.") },
             confirmButton = {
                 Button(
+                    enabled = !applyingFormatting,
                     onClick = {
-                        replaceAiDialogOpen = false
-                        replaceBodyWithAiResult(formattingState.result, formattingState.action)
-                        intelligentStructureOpen = false
-                        onClearFormattingResult()
+                        val original = currentHistorySnapshot()
+                        if (formattingState.sourceBody != bodyValue.text) {
+                            replaceAiDialogOpen = false
+                            structureOnlyNotice = "The note changed after this preview. Generate a new preview first."
+                        } else {
+                            applyingFormatting = true
+                            editorScope.launch {
+                                try {
+                                    onPreserveFormattingOriginal(title.text, bodyValue.text, styleMarks, noteLinks)
+                                    check(currentHistorySnapshot().hasSameEditorContentAs(original)) {
+                                        "The note changed while saving its original. Generate a new preview first."
+                                    }
+                                    replaceBodyWithAiResult(formattingState.result, formattingState.action)
+                                    intelligentStructureOpen = false
+                                    onClearFormattingResult()
+                                } catch (error: Exception) {
+                                    if (error is kotlinx.coroutines.CancellationException) throw error
+                                    structureOnlyNotice = error.message ?: "Unable to preserve the original. Nothing was applied."
+                                } finally {
+                                    applyingFormatting = false
+                                    replaceAiDialogOpen = false
+                                }
+                            }
+                        }
                     },
                 ) {
                     Text("Replace")
@@ -1657,7 +1697,6 @@ private fun EditorHistorySnapshot.hasSameEditorContentAs(other: EditorHistorySna
 private fun String.toSafeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "note" }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun IntelligentStructureSheet(
     formattingState: NoteFormattingUiState,
@@ -1672,187 +1711,80 @@ private fun IntelligentStructureSheet(
     onClearResult: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val editorOutputReady = formattingState.result.isNotBlank() && formattingState.action.isEditorOutputMode()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.elevated,
-        contentColor = colors.text,
-        tonalElevation = 0.dp,
-        dragHandle = {
-            Surface(
-                modifier = Modifier
-                    .padding(top = 10.dp, bottom = 6.dp)
-                    .size(width = 42.dp, height = 4.dp),
-                color = colors.borderStrong,
-                shape = VaultShapes.pill,
-                content = {},
-            )
-        },
-    ) {
+    var mode by remember { mutableStateOf(formattingState.action ?: NoteFormattingAction.StructureOnly) }
+    VaultModal(title = "Structure & Format", onDismiss = onDismiss) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.82f)
-                .padding(horizontal = VaultSpacing.screen)
-                .padding(bottom = VaultSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            Modifier.fillMaxWidth().heightIn(max = 620.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp), tint = colors.accent)
-                    Column {
-                        Text(
-                            text = "Intelligent Structure",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W800),
-                            color = colors.text,
-                        )
-                        Text(
-                            text = "Restructure, format, headings, colour coding",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textMuted,
-                        )
-                    }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(NoteFormattingAction.StructureOnly, NoteFormattingAction.IntelligentStructure).forEach { action ->
+                    CompactChip(
+                        label = if (action == NoteFormattingAction.StructureOnly) "Structure only" else "Intelligent",
+                        active = mode == action,
+                        enabled = !formattingState.loading,
+                        onClick = { mode = action },
+                    )
                 }
-                TextButton(onClick = onDismiss) { Text("Close") }
             }
-
+            Text(
+                if (mode == NoteFormattingAction.StructureOnly) "Format with your exact wording."
+                else "Build a stronger hierarchy while keeping your exact wording.",
+                style = MaterialTheme.typography.bodySmall, color = colors.textSecondary,
+            )
+            Text("Provider", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
                 NoteFormattingProvider.entries.forEach { provider ->
-                    CompactChip(
-                        label = provider.displayName,
-                        active = formattingState.provider == provider,
-                        enabled = !formattingState.loading,
-                        onClick = { onProviderSelected(provider) },
-                    )
-                }
-                Box(modifier = Modifier.height(14.dp).width(1.dp).background(colors.borderStrong))
-                NoteFormattingModel.entries.forEach { model ->
-                    val label = when (model) {
-                        NoteFormattingModel.Fast -> formattingState.provider.noteFormattingModelLabel(fast = true)
-                        NoteFormattingModel.Smart -> formattingState.provider.noteFormattingModelLabel(fast = false)
-                    }
-                    CompactChip(
-                        label = label,
-                        active = formattingState.model == model,
-                        enabled = !formattingState.loading,
-                        onClick = { onModelSelected(model) },
-                    )
+                    CompactChip(provider.displayName, formattingState.provider == provider,
+                        !formattingState.loading) { onProviderSelected(provider) }
                 }
             }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                ) {
-                    Text(
-                        text = "Choose Structure Only for lossless formatting: stronger hierarchy, spacing, headings and lists without changing your wording. Choose Intelligent Structure when you want AI to rewrite and reorganise more freely.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textSecondary,
-                    )
-                    if (structureOnlyNotice != null) {
-                        Text(
-                            text = structureOnlyNotice,
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W600),
-                            color = colors.accent,
-                        )
-                    }
-                    Button(
-                        onClick = { onRun(NoteFormattingAction.StructureOnly) },
-                        enabled = !formattingState.loading,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (formattingState.loading && formattingState.action == NoteFormattingAction.StructureOnly) formattingState.progressLabel ?: "Structuring..." else "Run Structure Only")
-                    }
-                    OutlinedButton(
-                        onClick = { onRun(NoteFormattingAction.IntelligentStructure) },
-                        enabled = !formattingState.loading,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (formattingState.loading && formattingState.action == NoteFormattingAction.IntelligentStructure) formattingState.progressLabel ?: "Structuring..." else "Run Intelligent Structure")
+            if (formattingState.provider != NoteFormattingProvider.Kimi ||
+                BuildConfig.NOTE_FORMATTING_KIMI_FAST_MODEL != BuildConfig.NOTE_FORMATTING_KIMI_SMART_MODEL) {
+                Text("Quality", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NoteFormattingModel.entries.forEach { model ->
+                        CompactChip(if (model == NoteFormattingModel.Fast) "Fast" else "Full",
+                            formattingState.model == model, !formattingState.loading) { onModelSelected(model) }
                     }
                 }
             }
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                color = colors.surface,
-                shape = VaultShapes.lg,
-                border = BorderStroke(1.dp, colors.border),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                ) {
-                    when {
-                        formattingState.loading -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Text(formattingState.progressLabel ?: "Structuring note...", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-                            }
-                        }
-                        editorOutputReady -> {
-                            FormattingEditorOutputPreview(
-                                action = formattingState.action,
-                                result = formattingState.result,
-                                onCopy = onCopy,
-                                onInsertBelow = onInsertBelow,
-                                onReplace = onReplace,
-                                onDismiss = onClearResult,
-                            )
-                        }
-                        formattingState.error != null -> {
-                            Text(
-                                text = formattingState.error,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                                color = colors.warning,
-                            )
-                        }
-                        else -> {
-                            Text(
-                                text = "Run Structure Only to preserve the note's exact wording, or Intelligent Structure for stronger AI restructuring.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.textMuted,
-                            )
-                        }
-                    }
+            structureOnlyNotice?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning)
+            }
+            if (formattingState.loading) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(formattingState.progressLabel ?: "Preparing note...",
+                        style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
                 }
+            } else {
+                Button(onClick = { onRun(mode) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (formattingState.error != null) "Retry" else "Generate preview")
+                }
+            }
+            formattingState.error?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.warning)
+            }
+            if (!formattingState.loading && formattingState.result.isNotBlank()) {
+                FormattingEditorOutputPreview(
+                    action = formattingState.action, result = formattingState.result,
+                    onCopy = onCopy, onInsertBelow = onInsertBelow, onReplace = onReplace, onDismiss = onClearResult,
+                )
             }
         }
     }
 }
-
 @Composable
 private fun CompactChip(label: String, active: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val colors = VaultThemeTokens.colors
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.height(28.dp),
+        modifier = Modifier.height(40.dp),
         color = if (active) colors.accentSoft else colors.elevated,
         shape = VaultShapes.pill,
         border = BorderStroke(1.dp, if (active) colors.accentBorder else colors.border)
@@ -1874,8 +1806,8 @@ private fun FormattingEditorOutputPreview(
     onDismiss: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val previewDocument = remember(action, result) {
-        parseRichImport(html = result, plainText = null).document
+    val previewDocument by produceState(VaultRichTextDocument("", emptyList()), action, result) {
+        value = withContext(Dispatchers.Default) { parseRichImport(html = result, plainText = null).document }
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1915,7 +1847,7 @@ private fun FormattingEditorOutputPreview(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 180.dp, max = 360.dp),
+                    .heightIn(max = 360.dp),
                 color = colors.surface,
                 shape = VaultShapes.md,
                 border = BorderStroke(1.dp, colors.border),
@@ -1935,11 +1867,13 @@ private fun FormattingEditorOutputPreview(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                TextButton(onClick = onReplace) { Text("Replace note") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Button(onClick = onReplace) { Text("Apply") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = onInsertBelow) { Text("Insert below") }
                 TextButton(onClick = onCopy) { Text("Copy") }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
             }
         }
     }
@@ -2356,9 +2290,10 @@ private fun EditorAttachmentPreviewSection(
             EditorAttachmentHydrationPlaceholder(count = attachmentCount)
         } else {
             attachments.forEach { attachment ->
-                AttachmentSheetRow(
+                NoteInlineAttachment(
                     attachment = attachment,
                     onClick = { onAttachmentClick(attachment.id) },
+                    compact = true,
                 )
             }
         }
@@ -2402,13 +2337,6 @@ private fun EditorAttachmentHydrationPlaceholder(count: Int) {
         }
     }
 }
-
-private fun NoteFormattingProvider.noteFormattingModelLabel(fast: Boolean): String =
-    when (this) {
-        NoteFormattingProvider.ChatGPT -> if (fast) "GPT Mini" else "GPT Full"
-        NoteFormattingProvider.Kimi -> if (fast) "Kimi Fast" else "Kimi Smart"
-        NoteFormattingProvider.Gemini -> if (fast) "Gemini Flash" else "Gemini Pro"
-    }
 
 private fun TextFieldValue.activeMentionRange(): TextRange? {
     if (!selection.collapsed) return null

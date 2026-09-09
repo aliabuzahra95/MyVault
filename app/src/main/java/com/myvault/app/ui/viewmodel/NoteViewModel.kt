@@ -286,6 +286,10 @@ class NoteViewModel @Inject constructor(
         viewModelScope.launch { noteRepository.saveRichText(noteId, text, styleMarks.toJsonArrayString(), noteLinks.toNoteLinksJsonArrayString()) }
     }
 
+    suspend fun preserveFormattingOriginal(title: String, text: String, styleMarks: List<VaultStyleMark>, noteLinks: List<VaultNoteLink>) {
+        noteRepository.preserveFormattingOriginal(noteId, title, text, styleMarks.toJsonArrayString(), noteLinks.toNoteLinksJsonArrayString())
+    }
+
     fun restoreVersion(versionId: String) {
         viewModelScope.launch { noteRepository.restoreVersion(noteId, versionId) }
     }
@@ -379,7 +383,7 @@ class NoteViewModel @Inject constructor(
     ) {
         formattingJob?.cancel()
         formattingJob = viewModelScope.launch {
-            val effectiveModel = model.fastForRetainedFormattingAction()
+            val effectiveModel = model
             _formattingState.update {
                 it.copy(
                     loading = true,
@@ -389,6 +393,7 @@ class NoteViewModel @Inject constructor(
                     result = "",
                     error = null,
                     progressLabel = formattingLoadingLabel(action, body),
+                    sourceBody = body,
                 )
             }
 
@@ -418,6 +423,7 @@ class NoteViewModel @Inject constructor(
                     )
                 }
             }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 _formattingState.update {
                     it.copy(
                         loading = false,
@@ -442,7 +448,18 @@ class NoteViewModel @Inject constructor(
     }
 
     fun clearFormattingResult() {
-        _formattingState.update { it.copy(result = "", error = null, action = null, progressLabel = null) }
+        _formattingState.update { it.copy(result = "", error = null, action = null, progressLabel = null, sourceBody = null) }
+    }
+
+    override fun onCleared() {
+        val ownedRunningJob = formattingJob?.isActive == true
+        formattingJob?.cancel()
+        if (ownedRunningJob) {
+            _formattingState.update {
+                if (it.loading) it.copy(loading = false, progressLabel = null, error = "Formatting was interrupted. Try again.") else it
+            }
+        }
+        super.onCleared()
     }
 
 }
@@ -455,9 +472,6 @@ private fun formattingLoadingLabel(action: NoteFormattingAction, body: String): 
     } else {
         "Formatting note..."
     }
-
-private fun NoteFormattingModel.fastForRetainedFormattingAction(): NoteFormattingModel =
-    if (this == NoteFormattingModel.Smart) NoteFormattingModel.Fast else this
 
 private fun NoteTableEntity.toUiState(): NoteTableUiState =
     NoteTableUiState(

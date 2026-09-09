@@ -12,6 +12,7 @@ data class NoteFormattingUiState(
     val result: String = "",
     val error: String? = null,
     val progressLabel: String? = null,
+    val sourceBody: String? = null,
 )
 
 @Singleton

@@ -128,6 +128,7 @@ fun ReadingScreen(
     azureNarrationProgress: AzureNarrationProgress? = null,
     onBackClick: () -> Unit,
     onEditClick: () -> Unit,
+    onFormatClick: () -> Unit = onEditClick,
     onMenuClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     onAttachmentClick: (String) -> Unit = {},
@@ -322,7 +323,7 @@ fun ReadingScreen(
                     item { AttachmentHydrationPlaceholder(count = uiState.attachmentCount) }
                 }
                 items(uiState.attachments, key = { it.id }) { attachment ->
-                    AttachmentSheetRow(
+                    NoteInlineAttachment(
                         attachment = attachment,
                         onClick = { onAttachmentClick(attachment.id) },
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
@@ -344,11 +345,11 @@ fun ReadingScreen(
                             moreMenuOpen = false
                             listenModeOpen = true
                         }),
-                        NoteSheetAction(if (isPinned) "Unpin note" else "Pin note", Icons.Rounded.PushPin, subtitle = "Show in compact Pinned strip", onClick = {
+                        NoteSheetAction(if (isPinned) "Unpin note" else "Pin note", Icons.Rounded.PushPin, selected = isPinned, onClick = {
                             onPinnedChange(!isPinned)
                             moreMenuOpen = false
                         }),
-                        NoteSheetAction(if (isFavourite) "Remove favourite" else "Favourite", Icons.Rounded.Star, subtitle = "Add to existing favourites", onClick = {
+                        NoteSheetAction(if (isFavourite) "Remove favourite" else "Favourite", Icons.Rounded.Star, selected = isFavourite, onClick = {
                             onFavouriteChange(!isFavourite)
                             moreMenuOpen = false
                         }),
@@ -359,17 +360,9 @@ fun ReadingScreen(
                     ),
                 ),
                 NoteSheetSection(
-                    label = "Content",
+                    label = "History",
                     actions = listOf(
-                        NoteSheetAction("Knowledge & references", Icons.Rounded.Link, subtitle = "Tags, backlinks and PDF sources", onClick = {
-                            moreMenuOpen = false
-                            knowledgeOpen = true
-                        }),
-                        NoteSheetAction("Attachments", Icons.Rounded.AttachFile, subtitle = "Files and images linked to this note", onClick = {
-                            moreMenuOpen = false
-                            attachmentsOpen = true
-                        }),
-                        NoteSheetAction("Version history", Icons.Rounded.History, subtitle = "Restore an earlier saved snapshot", onClick = {
+                        NoteSheetAction("Version history", Icons.Rounded.History, onClick = {
                             moreMenuOpen = false
                             versionHistoryOpen = true
                         }),
@@ -381,6 +374,10 @@ fun ReadingScreen(
                         NoteSheetAction("Export", Icons.Rounded.FileDownload, subtitle = "TXT or PDF", onClick = {
                             moreMenuOpen = false
                             exportOpen = true
+                        }),
+                        NoteSheetAction("Structure & Format", Icons.Rounded.AutoAwesome, onClick = {
+                            moreMenuOpen = false
+                            onFormatClick()
                         }),
                     ),
                 ),

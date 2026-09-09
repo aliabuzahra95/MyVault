@@ -2,6 +2,9 @@ package com.myvault.app.data.formatting
 
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Provider-neutral generation boundary for retained editor formatting. */
 fun interface NoteFormattingGenerator {
@@ -31,7 +34,13 @@ class NoteFormattingRepository @Inject constructor(
             if (editorHtml.isBlank()) {
                 throw NoteFormattingException("The formatting provider returned an empty note.")
             }
+            if (request.action == NoteFormattingAction.StructureOnly || request.action == NoteFormattingAction.IntelligentStructure) {
+                onProgress("Validating wording...")
+                withContext(Dispatchers.Default) { FormattingTextContract.requirePreserved(request.body, editorHtml) }
+            }
             NoteFormattingResult(editorHtml = editorHtml)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: NoteFormattingException) {
             throw error
         } catch (error: Throwable) {

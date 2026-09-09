@@ -497,6 +497,8 @@ fun VaultNavHost(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
+                VaultDestination.QuranReflections.route,
+                VaultDestination.AttachmentViewer.route,
             ) || (currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) ||
                 (currentRoute == VaultDestination.Knowledge.route &&
                     rootModes.getOrNull(selectedRootIndex) in setOf(
@@ -515,6 +517,8 @@ fun VaultNavHost(
                 VaultDestination.Settings.route,
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
+                VaultDestination.QuranReflections.route,
+                VaultDestination.AttachmentViewer.route,
             ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
                 !corpusSearchActive &&
                 !(currentRoute == VaultDestination.Knowledge.route && rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Quran, VaultRootMode.Memorise)),
@@ -1293,6 +1297,14 @@ fun VaultNavHost(
                 onContentChange = viewModel::saveRichText,
                 onRunFormattingTool = viewModel::runFormattingTool,
                 onClearFormattingResult = viewModel::clearFormattingResult,
+                onPreserveFormattingOriginal = viewModel::preserveFormattingOriginal,
+                onListenNote = { title, body ->
+                    when (preferences.narrationProvider) {
+                        com.myvault.app.data.narration.NarrationProvider.Azure.storedValue -> viewModel.startAzureNarration(title, body)
+                        com.myvault.app.data.narration.NarrationProvider.OpenAi.storedValue -> viewModel.startNarration(title, body)
+                        else -> viewModel.startDeviceNarration(title, body)
+                    }
+                },
                 onFormattingProviderSelected = viewModel::setFormattingProvider,
                 onFormattingModelSelected = viewModel::setFormattingModel,
                 onAzureListenFromHere = viewModel::startAzureNarrationFromSelection,
@@ -1324,6 +1336,7 @@ fun VaultNavHost(
                 onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
                 autoFocusBody = backStackEntry.arguments?.getBoolean("quickFocus") == true,
+                openFormattingInitially = backStackEntry.savedStateHandle.get<Boolean>("openFormatting") == true,
             )
         }
         composable(
@@ -1342,6 +1355,12 @@ fun VaultNavHost(
                 narrationState = narrationState,
                 azureNarrationProgress = azureNarrationProgress,
                 onBackClick = { navController.popBackStack() },
+                onFormatClick = {
+                    uiState.note?.id?.let { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId))
+                        navController.currentBackStackEntry?.savedStateHandle?.set("openFormatting", true)
+                    }
+                },
                 onEditClick = {
                     uiState.note?.id?.let { noteId ->
                         navController.navigate(VaultDestination.Editor.route(noteId))

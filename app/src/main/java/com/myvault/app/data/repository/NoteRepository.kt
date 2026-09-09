@@ -566,10 +566,20 @@ class NoteRepository @Inject constructor(
             .joinToString(separator = "\n")
     }
 
-    private suspend fun captureVersionIfNeeded(noteId: String) {
+    suspend fun preserveFormattingOriginal(noteId: String, title: String, text: String, styleMarksJson: String, noteLinksJson: String) {
+        database.withTransaction {
+            val original = noteDao.getById(noteId)
+            check(original != null && original.deletedAt == null) { "Note is unavailable" }
+            noteDao.updateTitle(noteId, title, System.currentTimeMillis())
+            saveRichText(noteId, text, styleMarksJson, noteLinksJson)
+            captureVersionIfNeeded(noteId, force = true)
+        }
+    }
+
+    private suspend fun captureVersionIfNeeded(noteId: String, force: Boolean = false) {
         val note = noteDao.getById(noteId) ?: return
         val latest = noteVersionDao.latestForNote(noteId)
-        if (latest != null && System.currentTimeMillis() - latest.createdAt < VersionSnapshotIntervalMs) return
+        if (!force && latest != null && System.currentTimeMillis() - latest.createdAt < VersionSnapshotIntervalMs) return
 
         val blocks = blockDao.getForNote(noteId)
         val richTextBlock = blocks.firstOrNull { it.type == "rich_text" }
@@ -577,7 +587,7 @@ class NoteRepository @Inject constructor(
         val plainText = currentBodyPlainText(noteId)
         if (plainText.isBlank() && richHtmlBlock?.content.isNullOrBlank()) return
 
-        if (latest?.bodyPlainText == plainText && latest.title == note.title) return
+        if (!force && latest?.bodyPlainText == plainText && latest.title == note.title) return
 
         noteVersionDao.upsertAll(
             listOf(

@@ -16,7 +16,7 @@ class NoteFormattingRepositoryTest {
                 received = request
                 onProgress("Planning structure...")
                 onProgress("Formatting note...")
-                "  <h2>Purification</h2><p>Original wording.</p>  "
+                "  <p>Original wording.</p>  "
             },
         )
         val request = request()
@@ -24,8 +24,8 @@ class NoteFormattingRepositoryTest {
         val result = repository.format(request, progress::add)
 
         assertEquals(request, received)
-        assertEquals(listOf("Planning structure...", "Formatting note..."), progress)
-        assertEquals("<h2>Purification</h2><p>Original wording.</p>", result.editorHtml)
+        assertEquals(listOf("Planning structure...", "Formatting note...", "Validating wording..."), progress)
+        assertEquals("<p>Original wording.</p>", result.editorHtml)
     }
 
     @Test
@@ -34,7 +34,7 @@ class NoteFormattingRepositoryTest {
         val repository = NoteFormattingRepository(
             generator = NoteFormattingGenerator { request, _ ->
                 received += request
-                "<p>${request.action}:${request.provider}</p>"
+                "<p>${request.body}</p>"
             },
         )
 

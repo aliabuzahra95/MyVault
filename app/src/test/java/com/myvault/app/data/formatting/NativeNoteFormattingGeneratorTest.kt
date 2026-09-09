@@ -5,6 +5,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class NativeNoteFormattingGeneratorTest {
@@ -32,17 +33,13 @@ class NativeNoteFormattingGeneratorTest {
     }
 
     @Test
-    fun structureOnlyStillRestoresContentRejectedByTheProvider() = runBlocking {
+    fun structureOnlyReportsRejectedProviderContentWithoutSilentFallback() {
         val original = "Purification is required.\n\nالماء طهور\n\nFinal retained sentence."
         val generator = generator { _, _, _, _ -> "<p>Purification is required.</p>" }
 
-        val result = generator.generate(
-            request(action = NoteFormattingAction.StructureOnly, body = original),
-        ) {}
-
-        assertTrue(result.contains("Purification is required."))
-        assertTrue(result.contains("الماء طهور"))
-        assertTrue(result.contains("Final retained sentence."))
+        assertThrows(NoteFormattingException::class.java) {
+            runBlocking { generator.generate(request(action = NoteFormattingAction.StructureOnly, body = original)) {} }
+        }
     }
 
     @Test
@@ -55,7 +52,7 @@ class NativeNoteFormattingGeneratorTest {
             if (question == "Create internal structural plan.") {
                 "One coherent plan"
             } else {
-                "<h2>Structured Part</h2><p>${requestBody.replace("\n\n", "</p><p>")}</p>"
+                "<p>${requestBody.replace("\n\n", "</p><p>")}</p>"
             }
         }
 
@@ -68,24 +65,49 @@ class NativeNoteFormattingGeneratorTest {
         assertEquals("Create internal structural plan.", calls.first().question)
         assertTrue(calls.drop(1).all { it.body.length <= 25_000 })
         assertEquals("Creating structure plan...", progress.first())
-        assertTrue(progress.last().startsWith("Processing part"))
-        assertTrue(result.contains("<h2>"))
+        assertEquals("Validating wording...", progress.last())
+        assertTrue(result.contains("<p>"))
         assertTrue(result.contains("Paragraph 1199 keeps a distinct study point."))
         assertFalse(result.contains("```"))
     }
 
     @Test
-    fun intelligentStructureStillRestoresContentRejectedByTheProvider() = runBlocking {
+    fun intelligentStructureReportsRejectedProviderContentWithoutSilentFallback() {
         val original = "Original detailed sentence.\n\nSecond sentence must remain."
         val generator = generator { _, _, _, _ -> "<p>Short summary.</p>" }
 
-        val result = generator.generate(
-            request(action = NoteFormattingAction.IntelligentStructure, body = original),
-        ) {}
+        assertThrows(NoteFormattingException::class.java) {
+            runBlocking { generator.generate(request(action = NoteFormattingAction.IntelligentStructure, body = original)) {} }
+        }
+    }
 
-        assertTrue(result.contains("Original detailed sentence."))
-        assertTrue(result.contains("Second sentence must remain."))
-        assertFalse(result.contains("Short summary."))
+    @Test
+    fun validatedNumberedListsDoNotPassThroughHeuristicRepair() = runBlocking {
+        val html = "<ol><li>First statement.</li><li>Second statement.</li></ol>"
+        val generator = generator { _, _, _, _ -> html }
+        assertEquals(html, generator.generate(request(body = "1. First statement.\n2. Second statement.")) {})
+    }
+
+    @Test
+    fun invalidOutputGetsOnlyOneBoundedRetryFromTheOriginal() = runBlocking {
+        var calls = 0
+        val generator = generator { _, _, body, _ ->
+            calls++
+            if (calls == 1) "<p>Wrong summary.</p>" else "<p>$body</p>"
+        }
+        assertEquals("<p>Original wording.</p>", generator.generate(request()) {})
+        assertEquals(2, calls)
+        calls = 0
+        val alwaysWrong = generator { _, _, _, _ -> calls++; "<p>Wrong.</p>" }
+        assertThrows(NoteFormattingException::class.java) { runBlocking { alwaysWrong.generate(request()) {} } }
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun rateLimitErrorsDoNotExposeProviderAccountIdentifiers() {
+        val message = IllegalStateException("Your account org-private request reached organization max RPM: 3").toFormattingFriendlyMessage()
+        assertTrue(message.contains("Wait a minute"))
+        assertFalse(message.contains("org-private"))
     }
 
     @Test

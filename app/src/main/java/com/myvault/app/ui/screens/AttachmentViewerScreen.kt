@@ -1,5 +1,8 @@
 package com.myvault.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material3.IconButton
+
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
@@ -697,19 +700,25 @@ fun AttachmentViewerScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            ScreenTopBar(onBackClick = onBackClick) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = colors.text) }
+                if (attachment != null) {
+                    AttachmentViewerHeader(attachment, Modifier.weight(1f))
+                } else {
+                    Text("Attachment", modifier = Modifier.weight(1f), color = colors.text)
+                }
                 if (attachment != null) {
                     if (attachment.mimeType != "application/pdf") {
-                        IconBtn(Icons.AutoMirrored.Rounded.OpenInNew, "Open externally") {
+                        IconButton(onClick = {
                             openAttachment(context, attachment)
-                        }
+                        }) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, "Open externally", tint = colors.textSecondary) }
                     }
-                    IconBtn(Icons.Rounded.FileDownload, "Save to device") {
+                    IconButton(onClick = {
                         exportLauncher.launch(attachment.fileName.ifBlank { "myvault-file" })
-                    }
-                    IconBtn(Icons.Rounded.Delete, "Delete attachment") {
+                    }) { Icon(Icons.Rounded.FileDownload, "Save to device", tint = colors.textSecondary) }
+                    IconButton(onClick = {
                         deleteConfirmOpen = true
-                    }
+                    }) { Icon(Icons.Rounded.Delete, "Delete attachment", tint = colors.warning) }
                 }
             }
 
@@ -717,9 +726,6 @@ fun AttachmentViewerScreen(
                 AttachmentViewerEmpty("Attachment not found")
             } else {
                 val isPdf = attachment.mimeType == "application/pdf"
-                if (!isPdf) {
-                    AttachmentViewerHeader(attachment)
-                }
                 when {
                     isPdf -> PdfAttachmentViewer(
                         attachment = attachment,
@@ -779,17 +785,17 @@ fun AttachmentViewerScreen(
 }
 
 @Composable
-private fun AttachmentViewerHeader(attachment: AttachmentEntity) {
+private fun AttachmentViewerHeader(attachment: AttachmentEntity, modifier: Modifier = Modifier) {
     val colors = VaultThemeTokens.colors
     Column(
-        modifier = Modifier.padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
+        modifier = modifier.padding(horizontal = 4.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = attachment.fileName,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W700),
+            text = attachment.displayFileName(),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700),
             color = colors.text,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
@@ -968,6 +974,7 @@ private fun ImageAttachmentViewer(attachment: AttachmentEntity) {
                 contentDescription = attachment.fileName,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
+                alignment = Alignment.TopCenter,
             )
             error != null -> AttachmentViewerEmpty(error ?: "Unable to load image")
             else -> AttachmentViewerEmpty("Loading image...")
@@ -3218,11 +3225,11 @@ private fun renderPdfFirstPagePreview(file: File): Bitmap? {
     }
 }
 
-private suspend fun loadImageBitmap(path: String): Result<ImageBitmap> = withContext(Dispatchers.IO) {
+internal suspend fun loadImageBitmap(path: String, maxSize: Int = 1800): Result<ImageBitmap> = withContext(Dispatchers.IO) {
     runCatching {
         val file = File(path)
         require(file.exists() && file.isFile) { "Image file is missing" }
-        decodeScaledBitmap(file, maxSize = 1800)?.asImageBitmap()
+        decodeScaledBitmap(file, maxSize = maxSize)?.asImageBitmap()
             ?: error("Unable to decode image")
     }
 }

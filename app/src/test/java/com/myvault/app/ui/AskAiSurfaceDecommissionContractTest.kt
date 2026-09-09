@@ -67,8 +67,9 @@ class AskAiSurfaceDecommissionContractTest {
         val reading = source("ui/screens/ReadingScreen.kt")
 
         assertTrue(editor.contains("Structure & Format"))
-        assertTrue(editor.contains("Run Structure Only"))
-        assertTrue(editor.contains("Run Intelligent Structure"))
+        assertTrue(editor.contains("NoteFormattingAction.StructureOnly"))
+        assertTrue(editor.contains("NoteFormattingAction.IntelligentStructure"))
+        assertTrue(editor.contains("Generate preview"))
         assertFalse(editor.contains("fun AskAiSheet("))
         assertFalse(editor.contains("SelectedTextAiSheet("))
         assertFalse(editor.contains("Ask AI about selection"))

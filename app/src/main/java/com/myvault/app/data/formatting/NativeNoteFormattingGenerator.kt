@@ -8,6 +8,8 @@ import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.ResponseStoppedException
 import com.google.firebase.ai.type.generationConfig
+import com.google.firebase.ai.type.content
+import kotlinx.coroutines.CancellationException
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.supabase.SupabaseConfig
 import com.myvault.app.data.supabase.SupabaseSession
@@ -68,31 +70,52 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
         ) {
             generateInChunks(request, onProgress)
         } else {
-            generateOnce(request)
+            generateOnce(request, onProgress = onProgress)
         }
-        val preserved = NoteFormattingOutputEngine.prepareOutput(
+        if (request.action in StructuredFormattingActions) {
+            onProgress("Validating wording...")
+            withContext(Dispatchers.Default) { FormattingTextContract.requirePreserved(request.body, generated) }
+        }
+        // Validated structural HTML must not pass through the old heuristic text-repair fallback.
+        val preserved = if (request.action in StructuredFormattingActions) {
+            generated.trim().removePrefix("```html").removePrefix("```").removeSuffix("```").trim()
+        } else NoteFormattingOutputEngine.prepareOutput(
             action = request.action,
             generated = generated,
             originalBody = request.body,
         )
-        trace.record(request, "03-cleaned-html-after-sanitizer", preserved)
+        withContext(Dispatchers.IO) { trace.record(request, "03-cleaned-html-after-sanitizer", preserved) }
         return preserved
     }
 
     private suspend fun generateOnce(
         request: NoteFormattingRequest,
         question: String = "",
+        onProgress: (String) -> Unit = {},
     ): String {
-        val prompt = NoteFormattingPromptBuilder.build(request, question)
-        trace.record(request, "01-final-prompt", prompt.toTraceText())
-        val raw = gateway.generate(
-            request = request,
-            prompt = prompt,
-            requestBody = request.body,
-            requestQuestion = question,
-        )
-        trace.record(request, "02-raw-ai-response", raw)
-        return raw
+        for (attempt in 0..1) {
+            val instruction = if (attempt == 0) question else """
+                $question
+                The previous output failed validation. Retry from the original source only.
+                Keep all wording and repeated occurrences in exactly the same order.
+                Use minimal h2, p, blockquote and ul markup; no colours or new labels.
+                Escape literal ampersands as &amp; and close every tag.
+            """.trimIndent()
+            val prompt = NoteFormattingPromptBuilder.build(request, instruction)
+            withContext(Dispatchers.IO) { trace.record(request, "01-final-prompt", prompt.toTraceText()) }
+            val raw = gateway.generate(request, prompt, request.body, instruction)
+            withContext(Dispatchers.IO) { trace.record(request, "02-raw-ai-response", raw) }
+            if (request.action !in StructuredFormattingActions) return raw
+            try {
+                onProgress("Validating wording...")
+                withContext(Dispatchers.Default) { FormattingTextContract.requirePreserved(request.body, raw) }
+                return raw
+            } catch (error: NoteFormattingException) {
+                if (attempt == 1) throw error
+                onProgress("Retrying unchanged wording...")
+            }
+        }
+        error("Unable to validate formatting. Your note is unchanged.")
     }
 
     private suspend fun generateInChunks(
@@ -133,7 +156,7 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
 
                 Preserve every original word in this chunk and every repeated occurrence exactly as written.
                 Do not delete, summarise, shorten, paraphrase, rewrite, simplify, merge away, deduplicate, replace, or correct any source wording.
-                Structural headings and connective labels may be added only as additive presentation; they must never replace source text.
+                Do not add headings or connective labels. Promote existing text to headings without duplication.
                 Maintain consistent heading hierarchy, formatting style, and colour usage with earlier chunks.
                 Avoid repeated Introduction, Overview, Main Topic, or duplicate top-level headings.
                 Do not include a generic <h1> for every chunk.
@@ -147,10 +170,11 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
                 body = chunk,
             )
             val processed = runCatching {
-                generateOnce(chunkRequest, chunkQuestion)
+                generateOnce(chunkRequest, chunkQuestion, onProgress)
             }.getOrElse { error ->
+                if (error is CancellationException) throw error
                 error(
-                    "Intelligent Structure failed while processing part ${index + 1} of ${chunks.size}. " +
+                    "Formatting failed while processing part ${index + 1} of ${chunks.size}. " +
                         "Your note was not changed. ${error.message.orEmpty()}".trim(),
                 )
             }
@@ -208,19 +232,16 @@ internal class DefaultNoteFormattingProviderGateway @Inject constructor(
         var lastFailure: Throwable? = null
         val response = model.safeGeminiModelNames().firstNotNullOfOrNull { modelName ->
             val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
-                .generativeModel(modelName = modelName, generationConfig = config)
+                .generativeModel(modelName = modelName, generationConfig = config,
+                    systemInstruction = content { text(prompt.systemInstruction) })
             runCatching { generativeModel.generateContent(prompt.prompt) }
-                .onFailure { lastFailure = it }
+                .onFailure { if (it is CancellationException) throw it else lastFailure = it }
                 .getOrNull()
         } ?: run {
             val error = lastFailure ?: error("Gemini request failed before a response was returned.")
             if (error is ResponseStoppedException || error.message?.contains("MAX_TOKENS") == true) {
-                val partial = (error as? ResponseStoppedException)?.response?.text?.trim().orEmpty()
-                if (partial.isNotBlank()) {
-                    return partial + "\n\n[Gemini stopped because the answer reached its output limit. The useful partial answer above was kept.]"
-                }
                 throw IllegalStateException(
-                    "Gemini reached its answer length limit before returning text. Try the fast model, shorten the request, or ask for a smaller section.",
+                    "Gemini reached its output limit. No partial result was applied. Try again with another quality or provider.",
                 )
             }
             throw IllegalStateException(error.toFormattingFriendlyMessage())
@@ -274,10 +295,11 @@ internal class DefaultNoteFormattingProviderGateway @Inject constructor(
                 error(json.optString("error").ifBlank { "ChatGPT request failed. HTTP ${connection.responseCode}." })
             }
             json.optString("text").trim().ifBlank { error("ChatGPT did not return any text. Please try again.") }
-        }.getOrElse { error ->
-            throw IllegalStateException(error.toFormattingFriendlyMessage())
         }.also {
             connection.disconnect()
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            throw IllegalStateException(error.toFormattingFriendlyMessage())
         }
     }
 
@@ -309,10 +331,11 @@ internal class DefaultNoteFormattingProviderGateway @Inject constructor(
                 error(json.kimiFormattingErrorMessage().ifBlank { "Kimi request failed. HTTP ${connection.responseCode}." })
             }
             json.extractKimiFormattingText().ifBlank { error("Kimi did not return any text. Please try again.") }
-        }.getOrElse { error ->
-            throw IllegalStateException(error.toFormattingFriendlyMessage())
         }.also {
             connection.disconnect()
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            throw IllegalStateException(error.toFormattingFriendlyMessage())
         }
     }
 
@@ -444,7 +467,6 @@ private fun NoteFormattingAction.defaultFormattingRequest(): String = when (this
 }
 
 private fun List<String>.mergeFormattingChunks(): String {
-    val seenTopHeadings = linkedSetOf<String>()
     return mapIndexed { index, chunk ->
         var cleaned = chunk.trim()
             .replace(Regex("(?i)^```html\\s*"), "")
@@ -453,13 +475,7 @@ private fun List<String>.mergeFormattingChunks(): String {
             .trim()
         cleaned = Regex("<h1[^>]*>(.*?)</h1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
             .replace(cleaned) { match ->
-                val heading = match.groupValues[1].stripFormattingHtml().normaliseFormattingHeading()
-                when {
-                    heading.isBlank() -> ""
-                    index == 0 && seenTopHeadings.add(heading) -> match.value
-                    seenTopHeadings.add(heading) -> "<h2>${match.groupValues[1]}</h2>"
-                    else -> ""
-                }
+                if (index == 0) match.value else "<h2>${match.groupValues[1]}</h2>"
             }
         cleaned
     }
@@ -477,9 +493,6 @@ private fun String.extractFormattingHeadings(): List<String> =
         .toList()
 
 private fun String.stripFormattingHtml(): String = replace(Regex("<[^>]+>"), "")
-
-private fun String.normaliseFormattingHeading(): String =
-    stripFormattingHtml().lowercase().replace(Regex("[^a-z0-9\\p{L}]+"), " ").trim()
 
 private fun NoteFormattingPrompt.toTraceText(): String = buildString {
     append("SYSTEM:\n")
@@ -503,9 +516,11 @@ private fun JSONObject.extractKimiFormattingText(): String {
 private fun JSONObject.kimiFormattingErrorMessage(): String =
     optJSONObject("error")?.optString("message").orEmpty().ifBlank { optString("message") }
 
-private fun Throwable.toFormattingFriendlyMessage(): String {
+internal fun Throwable.toFormattingFriendlyMessage(): String {
     val message = message.orEmpty()
     return when {
+        message.contains("max RPM", ignoreCase = true) || message.contains("rate limit", ignoreCase = true) ||
+            message.contains("HTTP 429", ignoreCase = true) -> "The provider's request limit was reached. Wait a minute, then retry. Your note is unchanged."
         this is UnknownHostException -> "Network connection lost. Please check your internet and try again."
         this is SocketException -> "The connection dropped while waiting for the AI. Please try again."
         this is SocketTimeoutException -> "The AI took too long to respond. Please try again."

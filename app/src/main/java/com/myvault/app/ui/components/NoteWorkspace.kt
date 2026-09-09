@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -104,10 +107,11 @@ fun NoteActionSheet(
 ) {
     val colors = VaultThemeTokens.colors
     VaultModal(title = title, onDismiss = onDismiss, modifier = modifier) {
+        Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState())) {
         sections.forEach { section ->
             Text(
                 text = section.label.uppercase(),
-                modifier = Modifier.padding(top = VaultSpacing.xs, start = 2.dp),
+                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp, start = 8.dp),
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.W800),
                 color = colors.textMuted,
             )
@@ -116,6 +120,7 @@ fun NoteActionSheet(
                     NoteModalActionRow(action)
                 }
             }
+        }
         }
     }
 }
@@ -133,7 +138,7 @@ fun NoteModalActionRow(
         shape = VaultShapes.sm,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {

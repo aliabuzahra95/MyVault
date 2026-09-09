@@ -67,7 +67,7 @@ fun QuranReflectionsHubScreen(
                     Column {
                         Text(
                             text = "Qur'an Reflections",
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.W900),
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W700),
                             color = colors.text,
                         )
                         Text(
