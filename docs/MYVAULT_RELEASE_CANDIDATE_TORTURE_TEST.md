@@ -318,19 +318,27 @@ header is clear of status content and tapping Back returns to the launcher.
   widget. The old Course editor remained behind the locked overlay; no new-note
   editor appeared before authentication. The overlay said Authentication cancelled.
   Tapped Unlock once to display the real Samsung fingerprint / Use PIN prompt.
-  User authentication is now required to verify creation and exact routing.
-  Quick Note locked continuation and duplicate prevention remain PENDING.
-  No credential was entered or authentication bypassed. Restore the original
-  timer of 1 hour and lock Off after the remaining lock checks. The temporary
-  setting is still On / 30 seconds at this checkpoint.
+  Following the user's physical unlock, the actual Untitled note editor appeared
+  directly, with no location picker or Dashboard detour. Renamed this disposable
+  note `RC-20260909-Locked-quick-note` and entered
+  `Created after real Samsung authentication. LOCKED-QUICK1909.`
+  Screenshot `quick-note-after-real-unlock.png` records the initial editor.
+  Locked Quick Note editor continuation PASS; duplicate prevention and independent
+  persisted-count verification remain PENDING. No credential was entered or
+  authentication bypassed.
+- User needed to leave for work. Restored Auto-lock timer to 1 hour and Security
+  lock to Off through the normal Settings UI. Fresh accessibility inspection
+  confirmed timer text `1 hour` and the actual switch checked=false. Screenshot
+  `security-original-settings-restored.png`. Told user the Samsung can be
+  unplugged. No further device interactions planned until it is available again.
 
 ## Resume checklist
 
 Verify Samsung RFCY70CMWZR and installed bytes still match f0a4b9e0.
-First complete real user fingerprint/PIN authentication for the pending Quick
-Note action, then verify exactly one new Study-root note and its editor. Test
-remaining locked widget destinations/actions. Restore timer to 1 hour and lock Off
-after testing. Never request the actual PIN in conversation or simulate success.
+Security preferences are restored to their original Off / 1 hour. Verify the
+saved locked-Quick-Note fixture, exactly one new Study-root note, and remaining
+locked widget destinations/actions when the Samsung is available again. Never
+request the actual PIN in conversation or simulate authentication success.
 Continue actual widget resize/long scroll/
 multiple-instance and locked pending destinations. Continue every outstanding
 matrix row, especially annotation mutations/bounce, large PDF, Memorise, offline,
