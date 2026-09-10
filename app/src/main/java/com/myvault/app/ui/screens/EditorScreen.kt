@@ -88,6 +88,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
@@ -137,7 +145,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 
-@OptIn(FlowPreview::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(FlowPreview::class, androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun EditorScreen(
     uiState: NoteUiState,
@@ -172,6 +180,7 @@ fun EditorScreen(
     onRestoreVersion: (String) -> Unit = {},
     bodyFontSizeSp: Float = 15f,
     autoFocusBody: Boolean = false,
+    readingAnchor: NoteViewportAnchor? = null,
     openFormattingInitially: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
@@ -180,7 +189,6 @@ fun EditorScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val editorScope = rememberCoroutineScope()
     val bodyFocusRequester = remember { FocusRequester() }
-    val bodyBringIntoViewRequester = remember { BringIntoViewRequester() }
     val noteId = uiState.note?.id
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var bodyValue by remember { mutableStateOf(TextFieldValue("")) }
@@ -222,9 +230,29 @@ fun EditorScreen(
     var restoringHistory by remember(noteId) { mutableStateOf(false) }
     val isPinned = uiState.note?.isPinned == true
     val isFavourite = uiState.note?.isFavourite == true
-    val hasTables = uiState.tables.isNotEmpty()
     val bodyEditorScrollState = rememberScrollState()
-    val tableEditorScrollState = rememberScrollState()
+    val caretScrollSpec = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                if (bodyFocused) 0f else super.calculateScrollDistance(offset, size, containerSize)
+        }
+    }
+    var readingAnchorApplied by rememberSaveable(noteId) { mutableStateOf(false) }
+    val currentBodyValue by rememberUpdatedState(sanitizeVaultTextFieldValue(bodyValue))
+    val currentBodyFocused by rememberUpdatedState(bodyFocused)
+    val currentBodyLayout by rememberUpdatedState(bodyTextLayoutResult)
+    val prepareTappedSelection = Modifier.pointerInput(noteId) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            // Seed the native field before its focus callback can reveal an old selection.
+            // Gestures remain unconsumed for scrolling, long-press and native RTL selection.
+            val layout = currentBodyLayout
+            if (!currentBodyFocused && layout?.layoutInput?.text?.text == currentBodyValue.text) {
+                val offset = layout.getOffsetForPosition(down.position).coerceIn(0, currentBodyValue.text.length)
+                bodyValue = currentBodyValue.copy(selection = TextRange(offset), composition = null)
+            }
+        }
+    }
     val breadcrumbItems = remember(uiState.folderPath, title.text) {
         listOf("My Vault") + uiState.folderPath + listOf(title.text.ifBlank { "Note" })
     }
@@ -258,6 +286,14 @@ fun EditorScreen(
     val safeBodyValue = sanitizeVaultTextFieldValue(bodyValue)
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
+    val currentImeBottom by rememberUpdatedState(imeBottom)
+    if (BuildConfig.DEBUG) {
+        LaunchedEffect(noteId) {
+            snapshotFlow {
+                "scroll=${bodyEditorScrollState.value} cursor=${bodyValue.selection.end} focused=$bodyFocused ime=$currentImeBottom"
+            }.collect { android.util.Log.d("NoteViewport", it) }
+        }
+    }
     val selectedBodyText = remember(safeBodyValue.text, safeBodyValue.selection) {
         safeBodyValue.selectedTextOrNull()
     }
@@ -271,9 +307,11 @@ fun EditorScreen(
         safeBodyValue.text.length,
         bodyTextLayoutResult,
         imeBottom,
+        bodyEditorScrollState.viewportSize,
     ) {
         if (!bodyFocused || safeBodyValue.text.isEmpty()) return@LaunchedEffect
         val textLayout = bodyTextLayoutResult ?: return@LaunchedEffect
+        if (textLayout.layoutInput.text.text != safeBodyValue.text) return@LaunchedEffect
         val selection = safeBodyValue.selection
         val selectionStart = minOf(selection.start, selection.end).coerceIn(0, safeBodyValue.text.lastIndex)
         val selectionEnd = maxOf(selection.start, selection.end).coerceIn(selectionStart + 1, safeBodyValue.text.length)
@@ -305,14 +343,16 @@ fun EditorScreen(
         val bottomPadding = with(density) {
             if (selection.collapsed) 30.dp.toPx() else 52.dp.toPx()
         }
-        bodyBringIntoViewRequester.bringIntoView(
-            Rect(
+        val requestedRect = Rect(
                 left = targetRect.left,
                 top = (targetRect.top - topPadding).coerceAtLeast(0f),
                 right = targetRect.right.coerceAtLeast(targetRect.left + 1f),
                 bottom = targetRect.bottom + bottomPadding,
-            ),
-        )
+            )
+        // One owner for body scrolling: never honor the native field's stale focus rectangle.
+        val delta = noteCaretScrollDelta(requestedRect.top, requestedRect.bottom,
+            bodyEditorScrollState.value, bodyEditorScrollState.viewportSize)
+        if (delta != 0) bodyEditorScrollState.scrollTo(bodyEditorScrollState.value + delta)
     }
     val activeTools = buildSet {
         addAll(activeVaultToolsForSelection(safeBodyValue, styleMarks, pendingInlineStyles))
@@ -770,35 +810,31 @@ fun EditorScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                CompositionLocalProvider(LocalBringIntoViewSpec provides caretScrollSpec) {
                 Column(
-                    modifier = if (hasTables) {
-                        Modifier
+                    modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .verticalScroll(tableEditorScrollState)
-                            .padding(horizontal = VaultSpacing.screen, vertical = 2.dp)
-                    } else {
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                val anchor = readingAnchor
+                                val textLayout = bodyTextLayoutResult
+                                if (!readingAnchorApplied && editorReady && anchor != null &&
+                                    anchor.matches(noteId, safeBodyValue.text) && textLayout?.layoutInput?.text?.text == safeBodyValue.text
+                                ) {
+                                    val line = textLayout.getLineForOffset(anchor.offset)
+                                    val target = noteAnchorScroll(textLayout.getLineTop(line), textLayout.getLineBottom(line), anchor.lineFraction)
+                                    // The scroll extent is measured, but no frame has been placed yet.
+                                    bodyEditorScrollState.dispatchRawDelta((target - bodyEditorScrollState.value).toFloat())
+                                    readingAnchorApplied = true
+                                }
+                                layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+                            }
                             .verticalScroll(bodyEditorScrollState)
-                            .padding(horizontal = VaultSpacing.screen, vertical = 2.dp)
-                    },
+                            .padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
                 ) {
                     Box(
-                        modifier = if (hasTables) {
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp, max = 220.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) {
-                                    bodyFocusRequester.requestFocus()
-                                    keyboardController?.show()
-                                }
-                        } else {
-                            Modifier
+                        modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 52.dp)
                                 .clickable(
@@ -807,26 +843,16 @@ fun EditorScreen(
                                 ) {
                                     bodyFocusRequester.requestFocus()
                                     keyboardController?.show()
-                                }
-                        },
+                                },
                     ) {
                         BasicTextField(
                             value = safeBodyValue,
                             onValueChange = ::updateBody,
-                            modifier = if (hasTables) {
-                                Modifier
+                            modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 52.dp, max = 220.dp)
-                                    .bringIntoViewRequester(bodyBringIntoViewRequester)
+                                    .then(prepareTappedSelection)
                                     .focusRequester(bodyFocusRequester)
-                                    .onFocusChanged { bodyFocused = it.isFocused }
-                            } else {
-                                Modifier
-                                    .fillMaxWidth()
-                                    .bringIntoViewRequester(bodyBringIntoViewRequester)
-                                    .focusRequester(bodyFocusRequester)
-                                    .onFocusChanged { bodyFocused = it.isFocused }
-                            },
+                                    .onFocusChanged { bodyFocused = it.isFocused },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colors.text,
                                 fontSize = bodyFontSizeSp.sp,
@@ -840,15 +866,9 @@ fun EditorScreen(
                             onTextLayout = { bodyTextLayoutResult = it },
                             decorationBox = { innerTextField ->
                                 Box(
-                                    modifier = if (hasTables) {
-                                        Modifier
-                                            .fillMaxSize()
-                                            .padding(bottom = bodyBottomComfortPadding)
-                                    } else {
-                                        Modifier
+                                    modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(bottom = bodyBottomComfortPadding)
-                                    },
+                                            .padding(bottom = bodyBottomComfortPadding),
                                 ) {
                                     if (bodyValue.text.isBlank()) {
                                         Text(
@@ -922,6 +942,7 @@ fun EditorScreen(
                             onAttachmentClick = onAttachmentClick,
                         )
                     }
+                }
                 }
             }
 

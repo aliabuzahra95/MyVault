@@ -91,6 +91,7 @@ import com.myvault.app.ui.screens.AttachmentViewerScreen
 import com.myvault.app.ui.screens.AttachmentsScreen
 import com.myvault.app.ui.screens.CoursesScreen
 import com.myvault.app.ui.screens.EditorScreen
+import com.myvault.app.ui.screens.NoteViewportAnchor
 import com.myvault.app.ui.screens.FolderViewScreen
 import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
@@ -1348,6 +1349,7 @@ fun VaultNavHost(
                 onRestoreVersion = viewModel::restoreVersion,
                 bodyFontSizeSp = preferences.noteFontSize.toNoteBodyFontSizeSp(),
                 autoFocusBody = backStackEntry.arguments?.getBoolean("quickFocus") == true,
+                readingAnchor = backStackEntry.savedStateHandle.get<NoteViewportAnchor>("readingAnchor"),
                 openFormattingInitially = backStackEntry.savedStateHandle.get<Boolean>("openFormatting") == true,
             )
         }
@@ -1376,6 +1378,12 @@ fun VaultNavHost(
                 onEditClick = {
                     uiState.note?.id?.let { noteId ->
                         navController.navigate(VaultDestination.Editor.route(noteId))
+                    }
+                },
+                onEditAtAnchor = { anchor ->
+                    uiState.note?.id?.let { noteId ->
+                        navController.navigate(VaultDestination.Editor.route(noteId))
+                        navController.currentBackStackEntry?.savedStateHandle?.set("readingAnchor", anchor)
                     }
                 },
                 onMenuClick = onOpenNavigation,
