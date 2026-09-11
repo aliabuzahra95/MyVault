@@ -72,4 +72,65 @@ class ReflectionListIndexTest {
         assertTrue(results.all { it.verseKey == "8:53" })
         assertEquals(results.size, results.map { it.noteId }.toSet().size)
     }
+
+    @Test fun quranGroupsUseNumericIdentityAndPreserveStableRecords() {
+        val groups = groupReflections(index.select("", null, ReflectionSort.QuranOrder))
+        assertEquals(listOf(2, 8, 22), groups.keys.toList())
+        assertEquals(listOf(11, 12), groups.getValue(22).map { it.ayahNumber })
+        assertSame(b, groups.getValue(22).first())
+    }
+
+    @Test fun dateGroupsFollowFirstOccurrenceAndSortWithinEachSurah() {
+        val newest = groupReflections(index.select("", null, ReflectionSort.Newest))
+        assertEquals(listOf(22, 8, 2), newest.keys.toList())
+        assertEquals(listOf("c", "b"), newest.getValue(22).map { it.noteId })
+        val oldest = groupReflections(index.select("", null, ReflectionSort.Oldest))
+        assertEquals(listOf(2, 22, 8), oldest.keys.toList())
+        assertEquals(listOf("b", "c"), oldest.getValue(22).map { it.noteId })
+    }
+
+    @Test fun filterSortAndClearFilterKeepConsistentGroupsAndSummaries() {
+        val hajj = quranCatalog.first { it.num == 22 }
+        val filtered = index.select("", 22, ReflectionSort.Newest)
+        assertEquals(listOf(22), groupReflections(filtered).keys.toList())
+        assertEquals("2 reflections in Al-Hajj", reflectionSummary(filtered, hajj))
+        val cleared = index.select("", null, ReflectionSort.QuranOrder)
+        assertEquals("4 reflections · 3 Surahs", reflectionSummary(cleared, null))
+        assertEquals("1 reflection · 1 Surah", reflectionSummary(index.select("faith", null, ReflectionSort.Oldest), null))
+        assertEquals("0 reflections · 0 Surahs", reflectionSummary(emptyList(), null))
+        assertEquals("0 reflections in Al-Hajj", reflectionSummary(emptyList(), hajj))
+    }
+
+    @Test fun surahSheetUsesCompleteCatalogIncludingSurahsWithoutReflections() {
+        assertSame(quranCatalog, searchReflectionSurahs("", quranCatalog))
+        assertEquals(114, searchReflectionSurahs(" ", quranCatalog).size)
+        assertEquals(listOf(114), searchReflectionSurahs("114", quranCatalog).map { it.num })
+        assertEquals(listOf(2), searchReflectionSurahs("٢", quranCatalog).map { it.num })
+        assertTrue(index.select("", 114, ReflectionSort.QuranOrder).isEmpty())
+    }
+
+    @Test fun surahSheetSearchAcceptsTransliterationArabicAndNumberWithoutRewritingNames() {
+        listOf("Baqara", "AL BAQARA", "البقرة", "البَقَرَةِ", "2").forEach { query ->
+            val result = searchReflectionSurahs(query, quranCatalog).single()
+            assertEquals(2, result.num)
+            assertSame(quranCatalog[1], result)
+        }
+        assertEquals(listOf(8), searchReflectionSurahs("Anfal", quranCatalog).map { it.num })
+        assertTrue(searchReflectionSurahs("not a surah", quranCatalog).isEmpty())
+        assertTrue(searchReflectionSurahs("115", quranCatalog).isEmpty())
+    }
+
+    @Test fun emptyCopyDistinguishesCollectionSearchAndSelectedSurah() {
+        val hajj = quranCatalog.first { it.num == 22 }
+        assertEquals("No reflections yet", reflectionEmptyTitle(false, "", null))
+        assertEquals("No reflections found", reflectionEmptyTitle(true, "unmatched", hajj))
+        assertEquals("No reflections in Al-Hajj", reflectionEmptyTitle(true, "", hajj))
+    }
+
+    @Test fun legacyZeroTimestampsAndSameTimeTiesKeepExistingIdFallback() {
+        val legacy = ReflectionListIndex(listOf(a.copy(noteId = "z", updatedAt = 0), a.copy(noteId = "a", updatedAt = 0)), quranCatalog)
+        ReflectionSort.entries.forEach { order ->
+            assertEquals(listOf("a", "z"), legacy.select("", null, order).map { it.noteId })
+        }
+    }
 }

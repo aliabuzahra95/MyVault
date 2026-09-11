@@ -1160,7 +1160,7 @@ fun VaultNavHost(
                     navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
                 },
                 onViewAllReflections = {
-                    navController.navigate(VaultDestination.QuranReflections.route)
+                    navController.navigate(VaultDestination.Reflections.route) { launchSingleTop = true }
                 },
             )
         }

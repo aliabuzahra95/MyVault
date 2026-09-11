@@ -6,7 +6,7 @@ import java.text.Normalizer
 import java.util.Locale
 
 internal enum class ReflectionSort(val label: String) {
-    Newest("Newest"), Oldest("Oldest"), QuranOrder("Qur'an order")
+    Newest("Newest first"), Oldest("Oldest first"), QuranOrder("Qur’an order")
 }
 
 /** Presentation-only index; records and canonical names are never rewritten. */
@@ -39,7 +39,7 @@ internal class ReflectionListIndex(reflections: List<QuranReflectionItem>, catal
 
     private data class Entry(val item: QuranReflectionItem, val text: String)
 
-    private companion object {
+    companion object {
         val Marks = Regex("[\\p{M}ـ]")
         val Separators = Regex("[^\\p{L}\\p{N}]+")
         val LongVowels = Regex("([aeiou])\\1+")
@@ -50,6 +50,39 @@ internal class ReflectionListIndex(reflections: List<QuranReflectionItem>, catal
             .map { c -> if (c.isDigit()) Character.digit(c, 10).digitToChar() else c }.joinToString("")
             .replace(LongVowels, "$1").replace(Separators, " ").trim()
     }
+}
+
+/** Group the existing sorted results in first-occurrence order, as in the approved mockup.
+ * Date sorting orders groups by their newest/oldest member and preserves that order within groups.
+ * The original records, timestamps, IDs and select comparator are not changed.
+ */
+internal fun groupReflections(results: List<QuranReflectionItem>): Map<Int, List<QuranReflectionItem>> =
+    results.groupBy { it.surahNumber }
+
+internal fun reflectionSummary(results: List<QuranReflectionItem>, selectedSurah: SurahInfo?): String {
+    val count = results.size
+    val noun = if (count == 1) "reflection" else "reflections"
+    return if (selectedSurah != null) "$count $noun in ${selectedSurah.name}" else {
+        val surahs = results.map { it.surahNumber }.distinct().size
+        "$count $noun · $surahs ${if (surahs == 1) "Surah" else "Surahs"}"
+    }
+}
+
+internal fun searchReflectionSurahs(query: String, catalog: List<SurahInfo>): List<SurahInfo> {
+    val normalized = ReflectionListIndex.normalize(query)
+    if (normalized.isEmpty()) return catalog
+    normalized.toIntOrNull()?.let { number -> return catalog.filter { it.num == number } }
+    val tokens = normalized.split(' ').filter(String::isNotEmpty)
+    return catalog.filter { surah ->
+        val names = ReflectionListIndex.normalize("${surah.name} ${surah.arabic}")
+        tokens.all(names::contains)
+    }
+}
+
+internal fun reflectionEmptyTitle(hasReflections: Boolean, query: String, selectedSurah: SurahInfo?): String = when {
+    !hasReflections -> "No reflections yet"
+    query.isBlank() && selectedSurah != null -> "No reflections in ${selectedSurah.name}"
+    else -> "No reflections found"
 }
 
 internal fun exactReflectionTarget(

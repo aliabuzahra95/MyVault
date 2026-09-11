@@ -12,12 +12,12 @@ class ReflectionsPortContractTest {
     private fun source(path: String) = String(Files.readAllBytes(root.resolve("app/src/main/java/com/myvault/app/$path")))
     private fun hash(path: String) = MessageDigest.getInstance("SHA-256").digest(source(path).toByteArray()).joinToString("") { "%02x".format(it) }
 
-    @Test fun dashboardAndLegacyHubAreByteIdenticalToApprovedStartingPoint() {
+    @Test fun dashboardPreviewAndLegacyHubRemainIntactWithDedicatedViewAllRoute() {
         assertEquals("b9b1922964e0c6891457e70cf2ee1b10d3b75671ca5ca1f1cb4ec62912fc1f6c", hash("ui/screens/StageNineDestinationScreens.kt"))
         assertEquals("54c967a164e867276a3ed5fc0c5ea1ac0e97c8998f3a2bcfc40fc158af986b5b", hash("ui/screens/QuranReflectionsHubScreen.kt"))
         val dashboard = source("ui/navigation/VaultNavHost.kt").substringAfter("composable(VaultDestination.Dashboard.route) {").substringBefore("route = VaultDestination.LibraryFolder.route")
-        assertTrue(dashboard.contains("navController.navigate(VaultDestination.QuranReflections.route)"))
-        assertFalse(dashboard.contains("VaultDestination.Reflections.route"))
+        assertTrue(dashboard.contains("onViewAllReflections = {\n                    navController.navigate(VaultDestination.Reflections.route) { launchSingleTop = true }"))
+        assertTrue(dashboard.contains("pendingQuranVerseKey = reflection.verseKey"))
     }
 
     @Test fun dedicatedRouteReusesExistingRepositoryViewAndPreservesExactIdentity() {
