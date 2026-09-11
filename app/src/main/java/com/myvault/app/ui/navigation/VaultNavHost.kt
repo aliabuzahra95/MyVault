@@ -102,6 +102,7 @@ import com.myvault.app.ui.screens.FrozenFavouritesScreen
 import com.myvault.app.ui.screens.PdfActivityFeedScreen
 import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.QuranReflectionsHubScreen
+import com.myvault.app.ui.screens.ReflectionsScreen
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
@@ -153,6 +154,8 @@ fun VaultNavHost(
     var selectedIslamicRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Study.name) }
     var selectedPersonalRootMode by rememberSaveable { mutableStateOf(VaultRootMode.Personal.name) }
     var pendingQuranVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingReflectionNoteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingReflectionVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseVerseKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingMemoriseAutoRecord by rememberSaveable { mutableStateOf(false) }
     var pendingCourseId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -424,6 +427,11 @@ fun VaultNavHost(
 
     LaunchedEffect(currentRoute) {
         narrationViewModel.saveProgress()
+        if (currentRoute != VaultDestination.Knowledge.route && pendingReflectionNoteId != null) {
+            if (pendingQuranVerseKey == pendingReflectionVerseKey) pendingQuranVerseKey = null
+            pendingReflectionNoteId = null
+            pendingReflectionVerseKey = null
+        }
     }
 
     LaunchedEffect(pendingQuranVerseKey, currentRoute, preferences.workspace) {
@@ -443,7 +451,7 @@ fun VaultNavHost(
             accountEmail = preferences.googleDriveAccountEmail,
             onWorkspaceSelected = ::switchWorkspace,
             items = shellNavigationItems,
-            selectedIndex = selectedRootIndex,
+            selectedIndex = if (currentRoute == VaultDestination.Reflections.route) -1 else selectedRootIndex,
             selectedExplorerNodeId = selectedExplorerNodeId,
             onItemSelected = { index -> selectRootMode(rootModes[index]) },
             onDashboardSelected = {
@@ -478,6 +486,8 @@ fun VaultNavHost(
             },
             attachmentsSelected = currentRoute == VaultDestination.Attachments.route,
             favouritesSelected = currentRoute == VaultDestination.Favourites.route,
+            reflectionsSelected = currentRoute == VaultDestination.Reflections.route,
+            onReflectionsSelected = { navController.navigateToVaultRoot(VaultDestination.Reflections.route) },
             explorerSections = shellExplorerSections,
             persistedExpandedExplorerKeys = preferences.explorerExpandedKeys,
             onPersistExpandedExplorerKeys = shellViewModel::setExplorerExpandedKeys,
@@ -499,6 +509,7 @@ fun VaultNavHost(
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
                 VaultDestination.QuranReflections.route,
+                VaultDestination.Reflections.route,
                 VaultDestination.AttachmentViewer.route,
             ) || (currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) ||
                 (currentRoute == VaultDestination.Knowledge.route &&
@@ -519,6 +530,7 @@ fun VaultNavHost(
                 VaultDestination.Editor.route,
                 VaultDestination.Reading.route,
                 VaultDestination.QuranReflections.route,
+                VaultDestination.Reflections.route,
                 VaultDestination.AttachmentViewer.route,
             ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
                 !corpusSearchActive &&
@@ -568,7 +580,8 @@ fun VaultNavHost(
                             selectedIslamicRootMode = mode.name
                         }
                     },
-                    rootBackHandlerEnabled = currentRoute == VaultDestination.Knowledge.route,
+                    rootBackHandlerEnabled = currentRoute == VaultDestination.Knowledge.route &&
+                        navController.previousBackStackEntry?.destination?.route != VaultDestination.Reflections.route,
                     coursesContent = {
                     CoursesScreen(
                         uiState = coursesState,
@@ -807,6 +820,12 @@ fun VaultNavHost(
                         onPendingScrollHandled = {
                             quranViewModel.consumePendingScrollVerse()
                             pendingQuranVerseKey = null
+                        },
+                        requestedReflectionNoteId = pendingReflectionNoteId,
+                        requestedReflectionVerseKey = pendingReflectionVerseKey,
+                        onRequestedReflectionHandled = {
+                            pendingReflectionNoteId = null
+                            pendingReflectionVerseKey = null
                         },
                         showNavigationHeader = false,
                     )
@@ -1484,6 +1503,27 @@ fun VaultNavHost(
                 favourites = favourites,
                 onMenuClick = onOpenNavigation,
                 onOpenNote = ::openNote,
+            )
+        }
+        composable(VaultDestination.Reflections.route) {
+            val viewModel: QuranReflectionsViewModel = hiltViewModel()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            ReflectionsScreen(
+                reflections = uiState.reflections,
+                onOpenNavigation = onOpenNavigation,
+                onOpenQuran = {
+                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
+                    navController.navigate(VaultDestination.Knowledge.route) { launchSingleTop = true }
+                },
+                onReflectionClick = { reflection ->
+                    pendingQuranVerseKey = reflection.verseKey
+                    pendingReflectionNoteId = reflection.noteId
+                    pendingReflectionVerseKey = reflection.verseKey
+                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
+                    selectedIslamicRootMode = VaultRootMode.Quran.name
+                    navController.navigate(VaultDestination.Knowledge.route) { launchSingleTop = true }
+                },
             )
         }
         composable(VaultDestination.QuranReflections.route) {

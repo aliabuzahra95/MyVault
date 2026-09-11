@@ -23,6 +23,7 @@ sealed class VaultDestination(val route: String, val label: String) {
     data object Search : VaultDestination("search", "Search")
     data object Favourites : VaultDestination("favourites", "Favourites")
     data object QuranReflections : VaultDestination("quran-reflections", "Qur'an Reflections")
+    data object Reflections : VaultDestination("reflections", "Reflections")
     data object Attachments : VaultDestination("attachments/{mode}", "Attachments") {
         fun route(mode: String) = "attachments/$mode"
     }

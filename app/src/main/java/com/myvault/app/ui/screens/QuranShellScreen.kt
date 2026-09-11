@@ -74,6 +74,9 @@ fun QuranShellScreen(
     onMemoriseFromHere: (QuranAyah) -> Unit,
     onPendingScrollHandled: () -> Unit,
     showNavigationHeader: Boolean = true,
+    requestedReflectionNoteId: String? = null,
+    requestedReflectionVerseKey: String? = null,
+    onRequestedReflectionHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -151,6 +154,9 @@ fun QuranShellScreen(
                 onDownloadSurahAudio = onDownloadSurahAudio,
                 onMemoriseFromHere = onMemoriseFromHere,
                 onPendingScrollHandled = onPendingScrollHandled,
+                requestedReflectionNoteId = requestedReflectionNoteId,
+                requestedReflectionVerseKey = requestedReflectionVerseKey,
+                onRequestedReflectionHandled = onRequestedReflectionHandled,
                 modifier = Modifier.fillMaxSize(),
             )
         }

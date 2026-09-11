@@ -89,6 +89,9 @@ internal fun QuranReaderSurface(
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
     onMemoriseFromHere: (QuranAyah) -> Unit,
     onPendingScrollHandled: () -> Unit,
+    requestedReflectionNoteId: String? = null,
+    requestedReflectionVerseKey: String? = null,
+    onRequestedReflectionHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
@@ -105,6 +108,16 @@ internal fun QuranReaderSurface(
     var moreTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
     var reflectionTargetKey by rememberSaveable { mutableStateOf<String?>(null) }
     var reflectionEditTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(requestedReflectionNoteId, requestedReflectionVerseKey, uiState.reflectionsByVerse, uiState.ayahs, uiState.loading) {
+        if (uiState.loading) return@LaunchedEffect
+        val target = exactReflectionTarget(requestedReflectionNoteId, requestedReflectionVerseKey, uiState.reflectionsByVerse)
+            ?: return@LaunchedEffect
+        if (uiState.ayahs.none { it.verseKey == target.verseKey }) return@LaunchedEffect
+        reflectionEditTargetId = target.noteId
+        reflectionTargetKey = target.verseKey
+        selectedVerseKey = target.verseKey
+        onRequestedReflectionHandled()
+    }
     var selectedWordId by rememberSaveable { mutableStateOf<String?>(null) }
     var savedMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var followRecitation by remember { mutableStateOf(false) }

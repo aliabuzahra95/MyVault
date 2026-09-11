@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
@@ -139,6 +140,8 @@ fun VaultMobileWebShell(
     selectedApplicationDestination: VaultMobileWebApplicationDestination? = null,
     attachmentsSelected: Boolean = false,
     favouritesSelected: Boolean = false,
+    reflectionsSelected: Boolean = false,
+    onReflectionsSelected: () -> Unit = {},
     explorerSections: List<VaultMobileWebExplorerSection> = emptyList(),
     persistedExpandedExplorerKeys: Set<String> = emptySet(),
     onPersistExpandedExplorerKeys: (Set<String>) -> Unit = {},
@@ -339,6 +342,14 @@ fun VaultMobileWebShell(
                                             }
                                         }
                                     }
+                                }
+                                if (workspaceLabel != "Personal" && item.label == "Qur'an") {
+                                    DrawerNavigationRow(
+                                        label = "Reflections",
+                                        icon = Icons.Outlined.ChatBubbleOutline,
+                                        selected = reflectionsSelected,
+                                        onClick = { closeDrawerThen(onReflectionsSelected) },
+                                    )
                                 }
                                 val showWorkspaceTools = if (workspaceLabel == "Personal") {
                                     item.label == "Library"

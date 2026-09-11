@@ -28,11 +28,23 @@ class RootNavigationTest {
                     composable(VaultDestination.Knowledge.route) { }
                     composable(VaultDestination.Search.route) { }
                     composable(VaultDestination.Settings.route) { }
+                    composable(VaultDestination.Reflections.route) { }
                     composable(VaultDestination.Reading.route) { }
                     composable(VaultDestination.Editor.route) { }
                 }
             }
         }
+    }
+
+    @Test
+    fun reflectionsIsAnIndependentRootAndReaderReturnsToIt() = onMain {
+        navController.navigateToVaultRoot(VaultDestination.Reflections.route)
+        navController.navigateToVaultRoot(VaultDestination.Reflections.route)
+        assertEquals(VaultDestination.Dashboard.route, navController.previousBackStackEntry?.destination?.route)
+        navController.navigate(VaultDestination.Knowledge.route) { launchSingleTop = true }
+        assertEquals(VaultDestination.Reflections.route, navController.previousBackStackEntry?.destination?.route)
+        navController.popBackStack()
+        assertEquals(VaultDestination.Reflections.route, navController.currentDestination?.route)
     }
 
     @Test
