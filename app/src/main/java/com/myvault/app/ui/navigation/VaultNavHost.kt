@@ -103,6 +103,8 @@ import com.myvault.app.ui.screens.PdfActivityFeedScreen
 import com.myvault.app.ui.screens.QuranShellScreen
 import com.myvault.app.ui.screens.QuranReflectionsHubScreen
 import com.myvault.app.ui.screens.ReflectionsScreen
+import com.myvault.app.ui.components.drawerAccountKey
+import com.myvault.app.ui.components.resolveDrawerIdentity
 import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
@@ -184,6 +186,7 @@ fun VaultNavHost(
     }
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
+    val drawerIdentity by shellViewModel.drawerIdentity.collectAsStateWithLifecycle()
     val driveRestoreState by shellViewModel.driveRestoreState.collectAsStateWithLifecycle()
     var previousBackupActive by remember { mutableStateOf(false) }
     val homeViewModel: HomeViewModel = hiltViewModel()
@@ -394,6 +397,7 @@ fun VaultNavHost(
     DisposableEffect(lifecycleOwner, narrationViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) narrationViewModel.saveProgress()
+            if (event == Lifecycle.Event.ON_RESUME) shellViewModel.refreshDrawerProfile()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -449,6 +453,10 @@ fun VaultNavHost(
             workspaceLabel = preferences.workspace.workspaceLabel(),
             workspaceKey = preferences.workspace,
             accountEmail = preferences.googleDriveAccountEmail,
+            profile = drawerIdentity.takeIf { it.accountKey == drawerAccountKey(preferences.googleDriveAccountEmail) }
+                ?: resolveDrawerIdentity(preferences.googleDriveAccountEmail, emptyMap(), null),
+            onDrawerOpened = shellViewModel::refreshDrawerProfile,
+            onSaveDisplayName = shellViewModel::setDrawerDisplayName,
             onWorkspaceSelected = ::switchWorkspace,
             items = shellNavigationItems,
             selectedIndex = if (currentRoute == VaultDestination.Reflections.route) -1 else selectedRootIndex,

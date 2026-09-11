@@ -77,13 +77,13 @@ class VaultMobileWebNavigationContractTest {
     }
 
     @Test
-    fun `application destinations precede the ordered knowledge destinations`() {
+    fun `dashboard precedes the ordered destinations without redundant headings`() {
         val component = source("ui/components/VaultMobileWebShell.kt")
 
-        val applicationIndex = component.indexOf("DrawerSectionLabel(\"Application\")")
-        val knowledgeIndex = component.indexOf("DrawerSectionLabel(if (workspaceLabel == \"Personal\") \"Workspace\" else \"Knowledge\")")
-        assertTrue(applicationIndex >= 0)
-        assertTrue(knowledgeIndex > applicationIndex)
+        assertFalse(component.contains("DrawerSectionLabel"))
+        val dashboardIndex = component.indexOf("label = \"Dashboard\"")
+        assertTrue(dashboardIndex >= 0)
+        assertTrue(component.indexOf("val orderedItems") > dashboardIndex)
         assertTrue(component.contains("listOf(\"Qur'an\", \"Memorise\", \"Study\", \"Library\", \"Courses\")"))
     }
 

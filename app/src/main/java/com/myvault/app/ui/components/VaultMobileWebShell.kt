@@ -1,5 +1,6 @@
 package com.myvault.app.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -37,7 +38,6 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.PersonOutline
@@ -45,12 +45,14 @@ import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
@@ -60,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,6 +70,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -136,6 +141,9 @@ fun VaultMobileWebShell(
     onSettingsSelected: () -> Unit,
     onBackupSelected: () -> Unit,
     onThemeSelected: () -> Unit,
+    profile: DrawerIdentity = resolveDrawerIdentity(accountEmail, emptyMap(), null),
+    onDrawerOpened: () -> Unit = {},
+    onSaveDisplayName: (String, String, (Boolean) -> Unit) -> Unit = { _, _, complete -> complete(false) },
     backupRunning: Boolean = false,
     selectedApplicationDestination: VaultMobileWebApplicationDestination? = null,
     attachmentsSelected: Boolean = false,
@@ -168,6 +176,14 @@ fun VaultMobileWebShell(
         )
     }
     var workspaceChooserOpen by rememberSaveable { mutableStateOf(false) }
+    var profileOpen by rememberSaveable(profile.accountKey) { mutableStateOf(false) }
+    var profileName by rememberSaveable(profile.accountKey) { mutableStateOf("") }
+    var profileSaving by remember(profile.accountKey) { mutableStateOf(false) }
+    var profileError by remember(profile.accountKey) { mutableStateOf(false) }
+
+    LaunchedEffect(drawerState.currentValue) {
+        if (drawerState.currentValue == DrawerValue.Open) onDrawerOpened()
+    }
 
     fun persistExpandedKeys(updatedKeys: List<String>) {
         expandedExplorerKeys = updatedKeys.distinct()
@@ -245,18 +261,18 @@ fun VaultMobileWebShell(
                             .statusBarsPadding(),
                     ) {
                         DrawerProfileHeader(
-                            accountEmail = accountEmail,
+                            profile = profile,
                             workspaceLabel = workspaceLabel,
                             onWorkspaceSelected = { closeDrawerThen { workspaceChooserOpen = true } },
-                            onClose = { scope.launch { drawerState.close() } },
+                            onEditName = { profileName = profile.displayName; profileError = false; profileOpen = true },
+                            onSearch = { closeDrawerThen(onSearchSelected) },
                         )
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 12.dp),
+                                .padding(end = 12.dp),
                         ) {
-                            DrawerSectionLabel("Application")
                             DrawerNavigationRow(
                                 label = "Dashboard",
                                 icon = Icons.Outlined.Home,
@@ -264,19 +280,11 @@ fun VaultMobileWebShell(
                                 onClick = { closeDrawerThen(onDashboardSelected) },
                             )
                             DrawerNavigationRow(
-                                label = "Search",
-                                icon = Icons.Outlined.Search,
-                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Search,
-                                onClick = { closeDrawerThen(onSearchSelected) },
+                                label = "Favourites",
+                                icon = Icons.Outlined.StarOutline,
+                                selected = favouritesSelected,
+                                onClick = { closeDrawerThen(onFavouritesSelected) },
                             )
-                            DrawerNavigationRow(
-                                label = "Settings",
-                                icon = Icons.Outlined.Settings,
-                                selected = selectedApplicationDestination == VaultMobileWebApplicationDestination.Settings,
-                                onClick = { closeDrawerThen(onSettingsSelected) },
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            DrawerSectionLabel(if (workspaceLabel == "Personal") "Workspace" else "Knowledge")
                             val orderedItems = if (workspaceLabel == "Personal") {
                                 items.withIndex().toList()
                             } else {
@@ -351,25 +359,6 @@ fun VaultMobileWebShell(
                                         onClick = { closeDrawerThen(onReflectionsSelected) },
                                     )
                                 }
-                                val showWorkspaceTools = if (workspaceLabel == "Personal") {
-                                    item.label == "Library"
-                                } else {
-                                    item.label == "Courses"
-                                }
-                                if (showWorkspaceTools) {
-                                    DrawerNavigationRow(
-                                        label = "Favourites",
-                                        icon = Icons.Outlined.StarOutline,
-                                        selected = favouritesSelected,
-                                        onClick = { closeDrawerThen(onFavouritesSelected) },
-                                    )
-                                    DrawerNavigationRow(
-                                        label = "Workspace Attachments",
-                                        icon = Icons.Outlined.AttachFile,
-                                        selected = attachmentsSelected,
-                                        onClick = { closeDrawerThen(onAttachmentsSelected) },
-                                    )
-                                }
                             }
                         }
                         DrawerUtilityRow(
@@ -442,6 +431,39 @@ fun VaultMobileWebShell(
         }
     }
 
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+
+    if (profileOpen) {
+        val validName = validDrawerName(profileName)
+        AlertDialog(
+            onDismissRequest = { if (!profileSaving) profileOpen = false },
+            title = { Text("Display name") },
+            containerColor = colors.surface,
+            text = {
+                OutlinedTextField(
+                    value = profileName,
+                    onValueChange = { profileName = it; profileError = false },
+                    label = { Text("Display name") },
+                    singleLine = true,
+                    enabled = !profileSaving,
+                    isError = !validName || profileError,
+                    supportingText = if (!validName || profileError) ({ Text(if (!validName) "Use $DRAWER_NAME_MAX_LENGTH characters or fewer" else "Could not save. Please try again.") }) else null,
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = validName && !profileSaving, onClick = {
+                    profileSaving = true
+                    onSaveDisplayName(profile.accountKey, profileName) { success ->
+                        profileSaving = false
+                        if (success) profileOpen = false else profileError = true
+                    }
+                }) { Text(if (profileSaving) "Saving..." else "Save") }
+            },
+            dismissButton = { TextButton(enabled = !profileSaving, onClick = { profileOpen = false }) { Text("Cancel") } },
+        )
+    }
     if (workspaceChooserOpen) {
         VaultActionModal(
             title = "Switch workspace",
@@ -521,7 +543,7 @@ private fun DrawerExplorerSectionRow(
             modifier = Modifier
                 .weight(1f)
                 .clickable(onClick = onOpen),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, null, modifier = Modifier.size(18.dp), tint = if (selected) colors.accent else colors.textSecondary)
@@ -571,7 +593,7 @@ private fun DrawerExplorerNode(
     val expanded = nodeKey in expandedKeys
     val selected = node.id == selectedNodeId
     val folderColor = folderSemanticColor(node.colorKey, colors.textSecondary)
-    val indent = (8 + depth.coerceAtMost(3) * 8).dp
+    val indent = (16 + depth.coerceAtMost(3) * 8).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -680,22 +702,13 @@ private fun DrawerExplorerNode(
 
 @Composable
 private fun DrawerProfileHeader(
-    accountEmail: String,
+    profile: DrawerIdentity,
     workspaceLabel: String,
     onWorkspaceSelected: () -> Unit,
-    onClose: () -> Unit,
+    onEditName: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
-    val accountLabel = accountEmail
-        .substringBefore("@")
-        .trim()
-        .ifBlank { "Your account" }
-    val initials = accountLabel
-        .split(" ", ".", "_", "-")
-        .filter { it.isNotBlank() }
-        .take(2)
-        .joinToString("") { it.first().uppercase() }
-        .ifBlank { "MV" }
 
     Row(
         modifier = Modifier
@@ -707,25 +720,14 @@ private fun DrawerProfileHeader(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .clickable(onClick = onWorkspaceSelected),
+                .clickable(onClick = onEditName)
+                .semantics { contentDescription = "Edit MyVault display name" },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(colors.accentSoft, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
+            DrawerProfilePhoto(profile)
+            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                 Text(
-                    text = initials,
-                    color = colors.accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.W700,
-                )
-            }
-            Column(modifier = Modifier.padding(start = 10.dp)) {
-                Text(
-                    text = accountLabel,
+                    text = profile.displayName,
                     color = colors.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.W700,
@@ -734,6 +736,8 @@ private fun DrawerProfileHeader(
                 )
                 Text(
                     text = workspaceLabel.uppercase(),
+                    modifier = Modifier.clickable(onClick = onWorkspaceSelected)
+                        .semantics { contentDescription = "Change workspace" },
                     color = colors.textMuted,
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.W700,
@@ -742,29 +746,17 @@ private fun DrawerProfileHeader(
             }
         }
         Surface(
-            onClick = onClose,
+            onClick = onSearch,
             modifier = Modifier.size(40.dp),
             shape = VaultShapes.sm,
             color = Color.Transparent,
             contentColor = colors.textSecondary,
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close navigation", modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.Search, contentDescription = "Global Search", modifier = Modifier.size(20.dp))
             }
         }
     }
-}
-
-@Composable
-private fun DrawerSectionLabel(label: String) {
-    val colors = VaultThemeTokens.colors
-    Text(
-        text = label.uppercase(),
-        modifier = Modifier.padding(start = 8.dp, top = 6.dp, bottom = 4.dp),
-        color = colors.textMuted,
-        fontSize = 9.5.sp,
-        fontWeight = FontWeight.W800,
-    )
 }
 
 @Composable
@@ -779,18 +771,20 @@ private fun DrawerNavigationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 36.dp)
+            .heightIn(min = 37.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Reserve the same leading column as expandable top-level destinations.
+        Spacer(modifier = Modifier.width(27.dp))
         Icon(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
             tint = if (selected) colors.accent else colors.textSecondary,
         )
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = label,
             modifier = Modifier.weight(1f),
