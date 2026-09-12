@@ -1,6 +1,7 @@
 package com.myvault.app.ui.quran
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -77,6 +78,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -183,8 +185,9 @@ internal fun FrozenQuranAyah(
     isBookmarked: Boolean,
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
+    anotherAyahSelected: Boolean,
     onSelect: () -> Unit,
-    onDoubleClick: () -> Unit,
+    onSaveReadingPosition: () -> Unit,
     onListen: () -> Unit,
     onToggleTafsir: () -> Unit,
     onReflect: () -> Unit,
@@ -195,6 +198,7 @@ internal fun FrozenQuranAyah(
     onWordClick: (QuranWord) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
+    val toolbarOffset = with(LocalDensity.current) { 8.dp.roundToPx() }
     var expandedFootnoteId by rememberSaveable(
         ayah.surahNumber,
         ayah.ayahNumber,
@@ -220,8 +224,7 @@ internal fun FrozenQuranAyah(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onSelect,
-                onDoubleClick = onDoubleClick,
-                onLongClick = onSelect,
+                onLongClick = onSaveReadingPosition,
             )
             .padding(horizontal = 9.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -295,8 +298,12 @@ internal fun FrozenQuranAyah(
 
         AnimatedVisibility(
             visible = selected,
-            enter = fadeIn(tween(105)) + slideInVertically(tween(125, easing = FastOutSlowInEasing)) { it / 8 },
-            exit = fadeOut(tween(75)) + slideOutVertically(tween(90, easing = FastOutSlowInEasing)) { it / 8 },
+            enter = fadeIn(tween(125)) + slideInVertically(tween(145, easing = FastOutSlowInEasing)) { toolbarOffset },
+            exit = if (anotherAyahSelected) {
+                ExitTransition.None
+            } else {
+                fadeOut(tween(100)) + slideOutVertically(tween(115, easing = FastOutSlowInEasing)) { toolbarOffset }
+            },
         ) {
             LazyRow(
                 modifier = Modifier

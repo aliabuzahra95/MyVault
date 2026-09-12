@@ -224,8 +224,9 @@ internal fun QuranReaderSurface(
                             isBookmarked = ayah.verseKey in uiState.bookmarkedVerseKeys,
                             isAudioPlaying = uiState.playingVerseKey == ayah.verseKey && uiState.miniPlayer?.isPlaying == true,
                             isAudioLoading = uiState.audioLoadingVerseKey == ayah.verseKey,
+                            anotherAyahSelected = selectedVerseKey != null && selectedVerseKey != ayah.verseKey,
                             onSelect = { selectedVerseKey = ayah.verseKey.takeUnless { it == selectedVerseKey } },
-                            onDoubleClick = {
+                            onSaveReadingPosition = {
                                 onLastReadAyahChanged(uiState.selectedSurah.num, ayah.ayahNumber)
                                 savedMessage = "Reading position saved"
                             },
