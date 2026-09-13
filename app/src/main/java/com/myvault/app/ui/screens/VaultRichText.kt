@@ -277,6 +277,55 @@ internal fun activeVaultToolsForSelection(
     }
 }
 
+internal fun activeVaultParagraphToolForSelection(
+    value: TextFieldValue,
+    marks: List<VaultStyleMark>,
+    pendingStyles: Set<VaultInlineStyle>,
+): EditorTool? {
+    val safeValue = sanitizeVaultTextFieldValue(value)
+    val safeMarks = sanitizeVaultStyleMarks(marks, safeValue.text.length)
+    val range = normalizedSelection(safeValue.selection, safeValue.text.length)
+    if (range.collapsed) {
+        pendingStyles.firstOrNull { it in headingStyles() }
+            ?.toParagraphEditorTool()
+            ?.let { return it }
+    }
+
+    val paragraphRanges = paragraphContentRanges(safeValue.text, range)
+    if (paragraphRanges.isEmpty()) return EditorTool.Paragraph
+    val detected = paragraphRanges.map { paragraphRange ->
+        paragraphToolForRange(paragraphRange, safeMarks) ?: return null
+    }.distinct()
+    return detected.singleOrNull()
+}
+
+internal fun applyVaultParagraphStyleFromToolbar(
+    value: TextFieldValue,
+    marks: List<VaultStyleMark>,
+    pendingStyles: Set<VaultInlineStyle>,
+    tool: EditorTool,
+): VaultToolbarStyleUpdate {
+    require(tool in paragraphEditorTools()) { "Unsupported paragraph tool: $tool" }
+    val safeValue = sanitizeVaultTextFieldValue(value)
+    val safeMarks = sanitizeVaultStyleMarks(marks, safeValue.text.length)
+    val target = paragraphTargetRange(safeValue.text, normalizedSelection(safeValue.selection, safeValue.text.length))
+    val selectedHeading = tool.toVaultHeadingStyle()
+    var updatedMarks = safeMarks
+    headingStyles().forEach { heading ->
+        updatedMarks = removeStyleFromRange(updatedMarks, target, heading)
+    }
+    if (!target.collapsed && selectedHeading != null) {
+        updatedMarks += VaultStyleMark(target.start, target.end, selectedHeading)
+    }
+    val updatedPending = pendingStyles.filterNotTo(linkedSetOf()) { it in headingStyles() }.apply {
+        if (target.collapsed && selectedHeading != null) add(selectedHeading)
+    }
+    return VaultToolbarStyleUpdate(
+        marks = sanitizeVaultStyleMarks(updatedMarks, safeValue.text.length),
+        pendingStyles = updatedPending,
+    )
+}
+
 internal fun clearVaultHeadingFromToolbar(
     value: TextFieldValue,
     marks: List<VaultStyleMark>,
@@ -603,6 +652,65 @@ private fun String.lineStartBefore(offset: Int): Int {
     val previousBreak = lastIndexOf('\n', startIndex = safeStartIndex)
     return if (previousBreak == -1) 0 else (previousBreak + 1).coerceAtMost(length)
 }
+
+private fun paragraphTargetRange(text: String, selection: TextRange): TextRange {
+    if (text.isEmpty()) return TextRange(0)
+    val start = text.lineStartBefore(selection.start)
+    val endAnchor = if (selection.collapsed) selection.end else (selection.end - 1).coerceAtLeast(selection.start)
+    val nextBreak = text.indexOf('\n', startIndex = endAnchor.coerceIn(0, text.length))
+    val end = if (nextBreak == -1) text.length else nextBreak
+    return TextRange(start.coerceIn(0, text.length), end.coerceIn(start, text.length))
+}
+
+private fun paragraphContentRanges(text: String, selection: TextRange): List<TextRange> {
+    val target = paragraphTargetRange(text, selection)
+    if (target.collapsed) return emptyList()
+    val ranges = mutableListOf<TextRange>()
+    var lineStart = target.start
+    while (lineStart <= target.end) {
+        val nextBreak = text.indexOf('\n', startIndex = lineStart).let { if (it == -1 || it > target.end) target.end else it }
+        var contentStart = lineStart
+        var contentEnd = nextBreak
+        while (contentStart < contentEnd && text[contentStart].isWhitespace()) contentStart++
+        while (contentEnd > contentStart && text[contentEnd - 1].isWhitespace()) contentEnd--
+        if (contentStart < contentEnd) ranges += TextRange(contentStart, contentEnd)
+        if (nextBreak >= target.end) break
+        lineStart = nextBreak + 1
+    }
+    return ranges
+}
+
+private fun paragraphToolForRange(range: TextRange, marks: List<VaultStyleMark>): EditorTool? {
+    val fullyApplied = headingStyles().filter { selectionFullyStyled(range, marks, it) }
+    if (fullyApplied.size == 1) return fullyApplied.single().toParagraphEditorTool()
+    if (fullyApplied.size > 1) return null
+    val hasPartialHeading = marks.any { mark ->
+        mark.style in headingStyles() && mark.start < range.end && mark.end > range.start
+    }
+    return if (hasPartialHeading) null else EditorTool.Paragraph
+}
+
+private fun paragraphEditorTools(): Set<EditorTool> =
+    setOf(EditorTool.Paragraph, EditorTool.Heading, EditorTool.Heading2, EditorTool.Heading3, EditorTool.Heading4)
+
+private fun EditorTool.toVaultHeadingStyle(): VaultInlineStyle? =
+    when (this) {
+        EditorTool.Paragraph -> null
+        EditorTool.Heading -> VaultInlineStyle.Heading
+        EditorTool.Heading2 -> VaultInlineStyle.Heading2
+        EditorTool.Heading3 -> VaultInlineStyle.Heading3
+        EditorTool.Heading4 -> VaultInlineStyle.Heading4
+        else -> error("Unsupported paragraph tool: $this")
+    }
+
+private fun VaultInlineStyle.toParagraphEditorTool(): EditorTool =
+    when (this) {
+        VaultInlineStyle.Heading -> EditorTool.Heading
+        VaultInlineStyle.Heading2 -> EditorTool.Heading2
+        VaultInlineStyle.Heading3 -> EditorTool.Heading3
+        VaultInlineStyle.Heading4 -> EditorTool.Heading4
+        else -> error("Unsupported paragraph style: $this")
+    }
 
 private fun stylesForInsertedText(
     oldValue: TextFieldValue,

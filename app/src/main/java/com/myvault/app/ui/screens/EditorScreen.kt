@@ -7,6 +7,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -26,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,6 +81,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -96,6 +102,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
@@ -113,6 +120,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
@@ -207,6 +215,7 @@ fun EditorScreen(
     var tableDeleteRequest by remember { mutableStateOf<String?>(null) }
     var moreMenuOpen by remember { mutableStateOf(false) }
     var paragraphStyleOpen by remember { mutableStateOf(false) }
+    var formattingToolbarHeightPx by remember { mutableIntStateOf(0) }
     var moreFormattingOpen by remember { mutableStateOf(false) }
     var exportOpen by remember { mutableStateOf(false) }
     var noteInfoOpen by remember { mutableStateOf(false) }
@@ -298,7 +307,10 @@ fun EditorScreen(
         safeBodyValue.selectedTextOrNull()
     }
     val selectedTextChipText = selectedBodyText
-    val bodyBottomComfortPadding = if (selectedTextChipText != null) 64.dp else 10.dp
+    // Keep room for the inline paragraph strip before it opens so toggling it never resizes or scrolls the editor.
+    val paragraphStripComfortPadding = 48.dp
+    val bodyBottomComfortPadding =
+        (if (selectedTextChipText != null) 64.dp else 10.dp) + paragraphStripComfortPadding
 
     LaunchedEffect(
         bodyFocused,
@@ -341,7 +353,7 @@ fun EditorScreen(
         }
         val topPadding = with(density) { 14.dp.toPx() }
         val bottomPadding = with(density) {
-            if (selection.collapsed) 30.dp.toPx() else 52.dp.toPx()
+            (if (selection.collapsed) 30.dp else 52.dp).toPx() + paragraphStripComfortPadding.toPx()
         }
         val requestedRect = Rect(
                 left = targetRect.left,
@@ -356,6 +368,7 @@ fun EditorScreen(
     }
     val activeTools = buildSet {
         addAll(activeVaultToolsForSelection(safeBodyValue, styleMarks, pendingInlineStyles))
+        if (paragraphStyleOpen) add(EditorTool.Paragraph)
         if (safeBodyValue.currentLineStartsWith("• ")) add(EditorTool.BulletList)
         if (safeBodyValue.currentLineMatches(Regex("^\\d+\\.\\s.*"))) add(EditorTool.NumberedList)
     }
@@ -660,7 +673,10 @@ fun EditorScreen(
                 return
             }
             EditorTool.Paragraph -> {
-                paragraphStyleOpen = true
+                paragraphStyleOpen = !paragraphStyleOpen
+                colorToolbarOpen = false
+                bodyFocusRequester.requestFocus()
+                keyboardController?.show()
                 return
             }
             EditorTool.Bold -> {
@@ -683,6 +699,7 @@ fun EditorScreen(
             }
             EditorTool.TextColor -> {
                 colorToolbarOpen = !colorToolbarOpen
+                paragraphStyleOpen = false
                 return
             }
             EditorTool.Heading -> {
@@ -738,6 +755,20 @@ fun EditorScreen(
         bodyFocusRequester.requestFocus()
     }
 
+    fun applyParagraphTool(tool: EditorTool) {
+        val value = sanitizeVaultTextFieldValue(bodyValue)
+        val update = applyVaultParagraphStyleFromToolbar(value, styleMarks, pendingInlineStyles, tool)
+        styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
+        pendingInlineStyles = update.pendingStyles
+        bodyFocusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    val paragraphTools = remember {
+        listOf(EditorTool.Paragraph, EditorTool.Heading, EditorTool.Heading2, EditorTool.Heading3, EditorTool.Heading4)
+    }
+    val activeParagraphTool = activeVaultParagraphToolForSelection(safeBodyValue, styleMarks, pendingInlineStyles)
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.bg,
@@ -759,15 +790,30 @@ fun EditorScreen(
                         },
                     )
                 }
-                EditorToolbar(
-                    tools = supportedTools,
-                    activeTools = activeTools,
-                    disabledTools = buildSet {
-                        if (!canUndo) add(EditorTool.Undo)
-                        if (!canRedo) add(EditorTool.Redo)
-                    },
-                    onToolClick = ::applyTool,
-                )
+                Box {
+                    EditorToolbar(
+                        modifier = Modifier.onSizeChanged { formattingToolbarHeightPx = it.height },
+                        tools = supportedTools,
+                        activeTools = activeTools,
+                        disabledTools = buildSet {
+                            if (!canUndo) add(EditorTool.Undo)
+                            if (!canRedo) add(EditorTool.Redo)
+                        },
+                        onToolClick = ::applyTool,
+                    )
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = paragraphStyleOpen,
+                        modifier = Modifier.offset { IntOffset(0, -formattingToolbarHeightPx) },
+                        enter = fadeIn(tween(140)) + slideInVertically(tween(140)) { it / 3 },
+                        exit = fadeOut(tween(120)) + slideOutVertically(tween(120)) { it / 3 },
+                    ) {
+                        EditorToolbar(
+                            tools = paragraphTools,
+                            activeTools = activeParagraphTool?.let(::setOf).orEmpty(),
+                            onToolClick = ::applyParagraphTool,
+                        )
+                    }
+                }
             }
         },
     ) { innerPadding ->
@@ -1426,37 +1472,6 @@ fun EditorScreen(
             },
             containerColor = colors.elevated,
             tonalElevation = 0.dp,
-        )
-    }
-
-    if (paragraphStyleOpen) {
-        fun applyParagraphTool(tool: EditorTool) {
-            if (tool == EditorTool.Paragraph) {
-                val value = sanitizeVaultTextFieldValue(bodyValue)
-                val update = clearVaultHeadingFromToolbar(value, styleMarks, pendingInlineStyles)
-                styleMarks = sanitizeVaultStyleMarks(update.marks, value.text.length)
-                pendingInlineStyles = update.pendingStyles
-                bodyFocusRequester.requestFocus()
-            } else {
-                applyTool(tool)
-            }
-            paragraphStyleOpen = false
-        }
-        NoteActionSheet(
-            title = "Text style",
-            onDismiss = { paragraphStyleOpen = false },
-            sections = listOf(
-                NoteSheetSection(
-                    label = "Format",
-                    actions = listOf(
-                        NoteSheetAction("Paragraph", Icons.Rounded.Notes, onClick = { applyParagraphTool(EditorTool.Paragraph) }),
-                        NoteSheetAction("Heading 1", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading) }),
-                        NoteSheetAction("Heading 2", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading2) }),
-                        NoteSheetAction("Heading 3", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading3) }),
-                        NoteSheetAction("Heading 4", Icons.Rounded.Title, onClick = { applyParagraphTool(EditorTool.Heading4) }),
-                    ),
-                ),
-            ),
         )
     }
 
