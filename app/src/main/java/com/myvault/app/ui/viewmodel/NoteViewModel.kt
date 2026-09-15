@@ -11,6 +11,7 @@ import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.NoteTableEntity
 import com.myvault.app.data.local.entity.NoteVersionEntity
 import com.myvault.app.data.formatting.NoteFormattingAction
+import com.myvault.app.data.formatting.LongNoteFormattingThresholdCharacters
 import com.myvault.app.data.formatting.NoteFormattingModel
 import com.myvault.app.data.formatting.NoteFormattingProvider
 import com.myvault.app.data.formatting.NoteFormattingRepository
@@ -464,11 +465,9 @@ class NoteViewModel @Inject constructor(
 
 }
 
-private const val FormattingChunkProgressThreshold = 7_000
-
 private fun formattingLoadingLabel(action: NoteFormattingAction, body: String): String =
     if (action == NoteFormattingAction.IntelligentStructure || action == NoteFormattingAction.StructureOnly) {
-        if (body.length > FormattingChunkProgressThreshold) "Structuring part 1..." else "Structuring note..."
+        if (body.length > LongNoteFormattingThresholdCharacters) "Structuring part 1..." else "Structuring note..."
     } else {
         "Formatting note..."
     }

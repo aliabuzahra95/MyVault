@@ -7,7 +7,9 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.ResponseStoppedException
+import com.google.firebase.ai.type.Schema
 import com.google.firebase.ai.type.generationConfig
+import com.google.firebase.ai.type.thinkingConfig
 import com.google.firebase.ai.type.content
 import kotlinx.coroutines.CancellationException
 import com.myvault.app.BuildConfig
@@ -16,8 +18,11 @@ import com.myvault.app.data.supabase.SupabaseSession
 import com.myvault.app.data.supabase.SupabaseSessionStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -27,6 +32,7 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,7 +72,7 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
     ): String {
         val generated = if (
             request.action in StructuredFormattingActions &&
-            request.body.length > FormattingChunkSize
+            request.body.length > LongNoteFormattingThresholdCharacters
         ) {
             generateInChunks(request, onProgress)
         } else {
@@ -84,7 +90,13 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
             generated = generated,
             originalBody = request.body,
         )
-        withContext(Dispatchers.IO) { trace.record(request, "03-cleaned-html-after-sanitizer", preserved) }
+        withContext(Dispatchers.IO) {
+            trace.record(
+                request,
+                "output-validated",
+                "provider=${request.provider.name} mode=${request.action.name} quality=${request.model.name} outputChars=${preserved.length}",
+            )
+        }
         return preserved
     }
 
@@ -102,9 +114,22 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
                 Escape literal ampersands as &amp; and close every tag.
             """.trimIndent()
             val prompt = NoteFormattingPromptBuilder.build(request, instruction)
-            withContext(Dispatchers.IO) { trace.record(request, "01-final-prompt", prompt.toTraceText()) }
+            withContext(Dispatchers.IO) {
+                trace.record(
+                    request,
+                    "request-start",
+                    "provider=${request.provider.name} mode=${request.action.name} quality=${request.model.name} attempt=${attempt + 1} sourceChars=${request.body.length} maxOutputTokens=${prompt.maxOutputTokens}",
+                )
+            }
+            val startedAt = System.currentTimeMillis()
             val raw = gateway.generate(request, prompt, request.body, instruction)
-            withContext(Dispatchers.IO) { trace.record(request, "02-raw-ai-response", raw) }
+            withContext(Dispatchers.IO) {
+                trace.record(
+                    request,
+                    "response-received",
+                    "provider=${request.provider.name} mode=${request.action.name} quality=${request.model.name} attempt=${attempt + 1} elapsedMs=${System.currentTimeMillis() - startedAt} responseChars=${raw.length}",
+                )
+            }
             if (request.action !in StructuredFormattingActions) return raw
             try {
                 onProgress("Validating wording...")
@@ -122,65 +147,141 @@ internal class NativeNoteFormattingGenerator @Inject constructor(
         request: NoteFormattingRequest,
         onProgress: (String) -> Unit,
     ): String {
-        val chunks = NoteFormattingOutputEngine.chunkSource(request.body)
-        onProgress("Creating structure plan...")
-        val planPrompt = NoteFormattingPromptBuilder.buildPlan(request)
-        val structuralPlan = gateway.generate(
-            request = request,
-            prompt = planPrompt,
-            requestBody = request.body.take(FormattingChunkSize),
-            requestQuestion = "Create internal structural plan.",
+        val jobId = UUID.randomUUID().toString().take(8)
+        val chunks = LongNoteStructurePipeline.plan(request.body)
+        traceDiagnostic(
+            request,
+            jobId,
+            "job-start",
+            "noteChars=${request.body.length} blocks=${chunks.sumOf { it.blocks.size }} chunks=${chunks.size}",
         )
-        val processedChunks = mutableListOf<String>()
+        val processedOperations = mutableListOf<NoteStructureOperation>()
         chunks.forEachIndexed { index, chunk ->
-            onProgress("Processing part ${index + 1} of ${chunks.size}...")
-            val previousContext = processedChunks
-                .takeLast(1)
-                .joinToString("\n")
-                .extractFormattingHeadings()
-                .take(8)
-                .joinToString("\n")
-            val chunkQuestion = """
-                Long-note chunk ${index + 1} of ${chunks.size}.
-                This is part of one larger note. The final result must feel like one coherent note after all chunks are merged.
-
-                Overall structural plan:
-                <plan>
-                $structuralPlan
-                </plan>
-
-                Previous chunk heading context:
-                <previous_headings>
-                ${previousContext.ifBlank { "No previous headings yet." }}
-                </previous_headings>
-
-                Preserve every original word in this chunk and every repeated occurrence exactly as written.
-                Do not delete, summarise, shorten, paraphrase, rewrite, simplify, merge away, deduplicate, replace, or correct any source wording.
-                Do not add headings or connective labels. Promote existing text to headings without duplication.
-                Maintain consistent heading hierarchy, formatting style, and colour usage with earlier chunks.
-                Avoid repeated Introduction, Overview, Main Topic, or duplicate top-level headings.
-                Do not include a generic <h1> for every chunk.
-                If this chunk continues a prior section, continue that structure instead of restarting.
-                Use extracted phrases/concepts already present in this chunk for headings.
-                Use lists for grouped concepts or ordered argument flow, but keep related sentences together instead of inflating whitespace.
-                User request: ${request.action.defaultFormattingRequest()}
-            """.trimIndent()
-            val chunkRequest = request.copy(
-                title = "${request.title} - part ${index + 1} of ${chunks.size}",
-                body = chunk,
+            onProgress("Structuring part ${index + 1} of ${chunks.size}...")
+            processedOperations += processLongNoteChunk(
+                request = request,
+                chunk = chunk,
+                partNumber = index + 1,
+                totalParts = chunks.size,
+                jobId = jobId,
+                onProgress = onProgress,
             )
-            val processed = runCatching {
-                generateOnce(chunkRequest, chunkQuestion, onProgress)
-            }.getOrElse { error ->
-                if (error is CancellationException) throw error
-                error(
-                    "Formatting failed while processing part ${index + 1} of ${chunks.size}. " +
-                        "Your note was not changed. ${error.message.orEmpty()}".trim(),
+        }
+        val merged = LongNoteStructurePipeline.render(processedOperations)
+        traceDiagnostic(request, jobId, "merge", "operations=${processedOperations.size} htmlChars=${merged.length}")
+        try {
+            withContext(Dispatchers.Default) { FormattingTextContract.requirePreserved(request.body, merged) }
+        } catch (error: NoteFormattingException) {
+            traceDiagnostic(request, jobId, "final-validation-failed", "category=final_validation")
+            throw NoteFormattingException("The complete result could not be safely validated. Your note is unchanged.", error)
+        }
+        traceDiagnostic(request, jobId, "job-complete", "status=validated")
+        return merged
+    }
+
+    private suspend fun processLongNoteChunk(
+        request: NoteFormattingRequest,
+        chunk: NoteStructureChunk,
+        partNumber: Int,
+        totalParts: Int,
+        jobId: String,
+        onProgress: (String) -> Unit,
+        splitDepth: Int = 0,
+    ): List<NoteStructureOperation> {
+        var lastError: Throwable? = null
+        repeat(LongNoteAttemptsPerChunk) { attempt ->
+            if (attempt > 0) {
+                onProgress("Retrying part $partNumber of $totalParts...")
+                delay(400)
+            }
+            val prompt = LongNoteStructurePipeline.promptFor(request, chunk)
+            val chunkBody = chunk.blocks.joinToString("\n\n") { it.text }
+            val startedAt = System.currentTimeMillis()
+            traceDiagnostic(
+                request,
+                jobId,
+                "chunk-request",
+                "part=$partNumber/$totalParts attempt=${attempt + 1} depth=$splitDepth chars=${chunk.characterCount} blocks=${chunk.blocks.size} maxOutputTokens=${prompt.maxOutputTokens}",
+            )
+            try {
+                val raw = withTimeout(LongNoteAttemptTimeoutMs) {
+                    gateway.generate(
+                        request = request.copy(body = chunkBody),
+                        prompt = prompt,
+                        requestBody = chunkBody,
+                        requestQuestion = "Classify immutable source blocks for part $partNumber of $totalParts.",
+                    )
+                }
+                val elapsed = System.currentTimeMillis() - startedAt
+                val operations = LongNoteStructurePipeline.parseOperations(raw, chunk)
+                traceDiagnostic(
+                    request,
+                    jobId,
+                    "chunk-success",
+                    "part=$partNumber/$totalParts attempt=${attempt + 1} elapsedMs=$elapsed responseChars=${raw.length} operations=${operations.size}",
+                )
+                return operations
+            } catch (error: TimeoutCancellationException) {
+                lastError = error
+                traceDiagnostic(request, jobId, "chunk-failed", "part=$partNumber/$totalParts attempt=${attempt + 1} category=overall_timeout")
+            } catch (error: CancellationException) {
+                traceDiagnostic(request, jobId, "job-cancelled", "part=$partNumber/$totalParts")
+                throw error
+            } catch (error: Throwable) {
+                lastError = error
+                traceDiagnostic(
+                    request,
+                    jobId,
+                    "chunk-failed",
+                    "part=$partNumber/$totalParts attempt=${attempt + 1} category=${error.formattingFailureCategory()} detail=${error.safeFormattingFailureDetail()}",
                 )
             }
-            processedChunks += processed
         }
-        return processedChunks.mergeFormattingChunks()
+
+        if (splitDepth < LongNoteMaximumSplitDepth) {
+            val smallerChunks = LongNoteStructurePipeline.splitForRetry(chunk)
+            if (smallerChunks.size > 1) {
+                onProgress("Retrying part $partNumber of $totalParts in smaller sections...")
+                traceDiagnostic(
+                    request,
+                    jobId,
+                    "chunk-rechunked",
+                    "part=$partNumber/$totalParts children=${smallerChunks.size} originalChars=${chunk.characterCount}",
+                )
+                return smallerChunks.flatMap { smaller ->
+                    processLongNoteChunk(
+                        request = request,
+                        chunk = smaller,
+                        partNumber = partNumber,
+                        totalParts = totalParts,
+                        jobId = jobId,
+                        onProgress = onProgress,
+                        splitDepth = splitDepth + 1,
+                    )
+                }
+            }
+        }
+
+        val category = lastError.formattingFailureCategory()
+        val message = when (category) {
+            "transport_timeout", "overall_timeout" -> "Part $partNumber took too long to complete. Your note is unchanged."
+            "transport" -> "Part $partNumber could not be completed because the connection was interrupted. Your note is unchanged."
+            else -> "The AI could not safely structure part $partNumber. Your note is unchanged."
+        }
+        throw NoteFormattingException(message, lastError)
+    }
+
+    private fun traceDiagnostic(
+        request: NoteFormattingRequest,
+        jobId: String,
+        stage: String,
+        diagnostics: String,
+    ) {
+        trace.record(
+            request,
+            stage,
+            "job=$jobId provider=${request.provider.name} mode=${request.action.name} quality=${request.model.name} $diagnostics",
+        )
     }
 }
 
@@ -189,14 +290,13 @@ internal class DefaultNoteFormattingTrace @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) : NoteFormattingTrace {
     override fun record(request: NoteFormattingRequest, stage: String, content: String) {
-        if (request.action != NoteFormattingAction.StructureOnly || !BuildConfig.DEBUG) return
-        val listSummary = "ul=${content.contains("<ul", ignoreCase = true)} ol=${content.contains("<ol", ignoreCase = true)} li=${content.contains("<li", ignoreCase = true)}"
-        Log.d("MyVaultStructureOnly", "$stage chars=${content.length} $listSummary")
+        if (!BuildConfig.DEBUG) return
+        Log.d("MyVaultNoteFormatting", "$stage $content")
         runCatching {
-            val dir = File(context.filesDir, "ai_debug/structure_only").apply { mkdirs() }
-            File(dir, "$stage.html").writeText(content, Charsets.UTF_8)
+            val dir = File(context.filesDir, "ai_debug/note_formatting").apply { mkdirs() }
+            File(dir, "pipeline.log").appendText("${System.currentTimeMillis()} $stage $content\n", Charsets.UTF_8)
         }.onFailure { error ->
-            Log.w("MyVaultStructureOnly", "Unable to save $stage trace: ${error.message}")
+            Log.w("MyVaultNoteFormatting", "Unable to save diagnostic trace: ${error.javaClass.simpleName}")
         }
     }
 }
@@ -224,10 +324,16 @@ internal class DefaultNoteFormattingProviderGateway @Inject constructor(
         prompt: NoteFormattingPrompt,
     ): String {
         ensureFirebaseReady()
+        val structuredResponseSchema = blockOperationResponseSchema(prompt)
         val config = generationConfig {
             temperature = prompt.temperature
             topP = 0.9f
             maxOutputTokens = prompt.maxOutputTokens
+            if (structuredResponseSchema != null) {
+                responseMimeType = "application/json"
+                responseSchema = structuredResponseSchema
+                thinkingConfig = thinkingConfig { thinkingBudget = 0 }
+            }
         }
         var lastFailure: Throwable? = null
         val response = model.safeGeminiModelNames().firstNotNullOfOrNull { modelName ->
@@ -441,6 +547,26 @@ private fun NoteFormattingModel.safeGeminiModelNames(): List<String> = when (thi
     NoteFormattingModel.Smart -> listOf("gemini-2.5-pro", "gemini-2.5-flash")
 }
 
+internal fun blockOperationResponseSchema(prompt: NoteFormattingPrompt): Schema? {
+    if (!prompt.systemInstruction.contains("document structure classifier", ignoreCase = true)) return null
+    val operation = Schema.obj(
+        properties = mapOf(
+            "id" to Schema.string("One supplied immutable block ID."),
+            "style" to Schema.enumeration(NoteStructureStyle.entries.map { it.wireName }, "Presentation style for the block."),
+        ),
+        description = "One structural classification operation.",
+    )
+    return Schema.obj(
+        properties = mapOf(
+            "blocks" to Schema.array(
+                items = operation,
+                description = "Every supplied block exactly once and in source order.",
+            ),
+        ),
+        description = "Lossless note structure operations.",
+    )
+}
+
 private fun String.scopedForFormattingFunctionPayload(action: NoteFormattingAction): String {
     val maxChars = when (action) {
         NoteFormattingAction.StructureOnly -> Int.MAX_VALUE
@@ -531,7 +657,31 @@ internal fun Throwable.toFormattingFriendlyMessage(): String {
     }
 }
 
-private const val FormattingChunkSize = 12_000
+private fun Throwable?.formattingFailureCategory(): String = when {
+    this is TimeoutCancellationException -> "overall_timeout"
+    this is SocketTimeoutException -> "transport_timeout"
+    this is UnknownHostException || this is SocketException || this is ConnectException -> "transport"
+    this is NoteFormattingException && message?.contains("JSON", ignoreCase = true) == true -> "parser"
+    this is NoteFormattingException && listOf("block", "structural", "style", "operation").any {
+        message?.contains(it, ignoreCase = true) == true
+    } -> "validation"
+    this?.message?.contains("MAX_TOKENS", ignoreCase = true) == true ||
+        this?.message?.contains("output limit", ignoreCase = true) == true -> "truncated_output"
+    else -> "provider_or_validation"
+}
+
+private fun Throwable.safeFormattingFailureDetail(): String {
+    val errorChain = generateSequence(this) { it.cause }.take(3).toList()
+    val classes = errorChain.joinToString(",") { it.javaClass.simpleName }
+    val messages = errorChain.joinToString(" ") { it.message.orEmpty() }
+    val markers = listOf("response_schema", "schema", "json", "invalid_argument", "400", "401", "403", "404", "429", "quota", "permission", "api key", "not found")
+        .filter { messages.contains(it, ignoreCase = true) }
+    return "classes=$classes markers=${markers.joinToString(",").ifBlank { "none" }}"
+}
+
+private const val LongNoteAttemptsPerChunk = 2
+private const val LongNoteMaximumSplitDepth = 1
+private const val LongNoteAttemptTimeoutMs = 105_000L
 private val StructuredFormattingActions = setOf(
     NoteFormattingAction.StructureOnly,
     NoteFormattingAction.IntelligentStructure,

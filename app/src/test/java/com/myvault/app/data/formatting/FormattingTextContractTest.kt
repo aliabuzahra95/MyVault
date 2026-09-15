@@ -58,6 +58,16 @@ class FormattingTextContractTest {
         }
     }
 
+    @Test fun harmlessProviderEnvelopeAndBomAreSafelyRemoved() {
+        FormattingTextContract.requirePreserved(
+            "Exact wording.",
+            "\uFEFFHere is the formatted note:\n```html\n<p>Exact wording.</p>\n```\nFormatting complete.",
+        )
+        assertThrows(NoteFormattingException::class.java) {
+            FormattingTextContract.requirePreserved("Exact wording.", "<p>Exact wording.</p><script>bad()</script>")
+        }
+    }
+
     @Test fun cancellationIsNotTurnedIntoUserFacingFailure() {
         val repository = NoteFormattingRepository(NoteFormattingGenerator { _, _ -> throw CancellationException() })
         assertThrows(CancellationException::class.java) {

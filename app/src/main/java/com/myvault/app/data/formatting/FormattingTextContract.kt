@@ -31,14 +31,15 @@ object FormattingTextContract {
     }
 
     internal fun htmlText(html: String): String {
-        require(!html.contains("<!", ignoreCase = true) && !html.contains("<?"))
-        val body = html.trim().removePrefix("```html").removePrefix("```").removeSuffix("```").trim()
+        val body = html.sanitizedHtmlEnvelope()
+        require(!body.contains("<!", ignoreCase = true) && !body.contains("<?"))
+        val xmlBody = body
             .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "<br/>")
             .replace("&nbsp;", "&#160;")
         val text = StringBuilder()
         val listCounters = mutableListOf<Int?>()
         val parser = SAXParserFactory.newInstance().apply { isNamespaceAware = false }.newSAXParser()
-        parser.parse(InputSource(StringReader("<document>$body</document>")), object : DefaultHandler() {
+        parser.parse(InputSource(StringReader("<document>$xmlBody</document>")), object : DefaultHandler() {
             override fun resolveEntity(publicId: String?, systemId: String?): InputSource =
                 throw IllegalArgumentException("External entities are not allowed")
 
@@ -70,5 +71,20 @@ object FormattingTextContract {
             override fun characters(ch: CharArray, start: Int, length: Int) { text.append(ch, start, length) }
         })
         return text.toString()
+    }
+
+    private fun String.sanitizedHtmlEnvelope(): String {
+        val clean = trim().removePrefix("\uFEFF").trim()
+            .replace(Regex("(?is)^```(?:html)?\\s*"), "")
+            .replace(Regex("(?is)\\s*```$"), "")
+            .trim()
+        val firstTag = Regex("(?i)<(?:h[1-3]|p|ul|ol|blockquote)\\b").find(clean)?.range?.first
+            ?: return clean
+        val lastTag = Regex("(?i)</(?:h[1-3]|p|ul|ol|blockquote)\\s*>").findAll(clean).lastOrNull()?.range?.last
+            ?: return clean
+        val prefix = clean.substring(0, firstTag)
+        val suffix = clean.substring(lastTag + 1)
+        if (prefix.any { it == '<' || it == '>' } || suffix.any { it == '<' || it == '>' }) return clean
+        return clean.substring(firstTag, lastTag + 1).trim()
     }
 }
