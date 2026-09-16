@@ -60,30 +60,7 @@ internal class VaultRichTextVisualTransformation(
     private val colors: VaultColors,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val styled = buildAnnotatedString {
-            append(text.text)
-            sanitizeVaultStyleMarks(marks, text.length).forEach { mark ->
-                if (mark.start < mark.end && mark.start < text.length) {
-                    addStyle(
-                        style = mark.style.toSpanStyle(colors),
-                        start = mark.start,
-                        end = mark.end,
-                    )
-                }
-            }
-            sanitizeVaultNoteLinks(noteLinks, text.length).forEach { link ->
-                if (link.start < link.end && link.start < text.length) {
-                    addStyle(
-                        style = SpanStyle(
-                            color = colors.accent,
-                            textDecoration = TextDecoration.Underline,
-                        ),
-                        start = link.start,
-                        end = link.end,
-                    )
-                }
-            }
-        }
+        val styled = buildVaultAnnotatedString(text.text, marks, noteLinks, colors)
         return TransformedText(styled, OffsetMapping.Identity)
     }
 }

@@ -89,6 +89,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1026,7 +1028,12 @@ private fun RichNoteBody(
                 modifier = Modifier
                     .fillMaxWidth()
                     .bringIntoViewRequester(bringIntoViewRequester),
-                style = MaterialTheme.typography.bodyLarge.copy(color = colors.text, fontSize = bodyFontSizeSp.sp),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    color = colors.text,
+                    fontSize = bodyFontSizeSp.sp,
+                    textAlign = TextAlign.Start,
+                    textDirection = TextDirection.Content,
+                ),
                 onTextLayout = { textLayout = it; onLayout(it) },
                 onClick = { offset ->
                     annotated.getStringAnnotations("noteLink", offset, offset).firstOrNull()?.let {
