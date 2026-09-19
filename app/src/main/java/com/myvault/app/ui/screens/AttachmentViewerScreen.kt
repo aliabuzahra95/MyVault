@@ -650,6 +650,13 @@ fun AttachmentViewerScreen(
         attachment?.let { onOwnHeaderChanged(it.mimeType == "application/pdf") }
     }
 
+    val exportPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        uri?.let(onExportAttachment)
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        uri?.let(onExportAttachment)
+    }
+
     if (attachment?.mimeType == "application/pdf") {
         FrozenPdfReaderScreen(
             attachment = attachment,
@@ -661,6 +668,9 @@ fun AttachmentViewerScreen(
             annotationTags = pdfAnnotationTags,
             initialPageIndex = initialPageIndex,
             onMenuClick = onMenuClick,
+            onDownloadPdf = {
+                exportPdfLauncher.launch(attachment.fileName.ifBlank { "myvault.pdf" })
+            },
             onProgressChanged = onPdfProgressChanged,
             onFirstLoaded = onPdfFirstLoaded,
             onAddDrawHighlight = onAddPdfHighlight,
@@ -687,9 +697,6 @@ fun AttachmentViewerScreen(
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
     var deleteConfirmOpen by remember { mutableStateOf(false) }
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        uri?.let(onExportAttachment)
-    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

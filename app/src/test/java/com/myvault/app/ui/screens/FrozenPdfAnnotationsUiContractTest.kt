@@ -7,6 +7,7 @@ import org.junit.Test
 
 class FrozenPdfAnnotationsUiContractTest {
     private val reader = File("src/main/java/com/myvault/app/ui/screens/FrozenPdfReaderScreen.kt").readText()
+    private val viewer = File("src/main/java/com/myvault/app/ui/screens/AttachmentViewerScreen.kt").readText()
     private val renderer = File("src/main/java/com/myvault/app/ui/screens/PdfAnnotationPreviewRenderer.kt").readText()
 
     @Test
@@ -59,5 +60,15 @@ class FrozenPdfAnnotationsUiContractTest {
     fun highlightFilteringDoesNotHideAHighlightThatAlsoHasANote() {
         assertTrue(reader.contains("PdfActivityFilter.Highlights -> annotation.isPdfHighlightActivity()"))
         assertTrue(reader.contains("PdfActivityFilter.Notes -> annotation.isPdfNoteActivity()"))
+    }
+
+    @Test
+    fun pdfOverflowMenuCanSaveThePdfToTheDevice() {
+        assertTrue(reader.contains("FrozenDropdownItem(\"Download PDF\", Icons.Rounded.FileDownload, onDownload)"))
+        assertTrue(reader.contains("onDownloadPdf()"))
+        assertTrue(viewer.contains("ActivityResultContracts.CreateDocument(\"application/pdf\")"))
+        assertTrue(viewer.contains("uri?.let(onExportAttachment)"))
+        assertTrue(viewer.contains("onDownloadPdf = {"))
+        assertTrue(viewer.contains("exportPdfLauncher.launch(attachment.fileName.ifBlank { \"myvault.pdf\" })"))
     }
 }

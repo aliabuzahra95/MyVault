@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.History
@@ -157,6 +158,7 @@ internal fun FrozenPdfReaderScreen(
     annotationTags: Map<String, List<KnowledgeTagChip>>,
     initialPageIndex: Int?,
     onMenuClick: () -> Unit,
+    onDownloadPdf: () -> Unit = {},
     onProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit,
     onFirstLoaded: () -> Unit,
     onAddDrawHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String, onSaved: (Boolean) -> Unit) -> Unit,
@@ -461,6 +463,10 @@ internal fun FrozenPdfReaderScreen(
                 onActivity = {
                     overflowOpen = false
                     activityOpen = true
+                },
+                onDownload = {
+                    overflowOpen = false
+                    onDownloadPdf()
                 },
                 onListen = {
                     overflowOpen = false
@@ -834,6 +840,7 @@ private fun FrozenPdfHeader(
     overflowOpen: Boolean,
     onOverflowOpenChange: (Boolean) -> Unit,
     onActivity: () -> Unit,
+    onDownload: () -> Unit,
     onListen: () -> Unit,
     onGoToPage: () -> Unit,
     onImmersive: () -> Unit,
@@ -892,6 +899,7 @@ private fun FrozenPdfHeader(
                         color = colors.textMuted,
                     )
                     FrozenDropdownItem("PDF Activity", Icons.Rounded.History, onActivity)
+                    FrozenDropdownItem("Download PDF", Icons.Rounded.FileDownload, onDownload)
                     FrozenDropdownItem("Listen", Icons.Rounded.Headphones, onListen)
                     FrozenDropdownItem("Go to page", Icons.Rounded.StickyNote2, onGoToPage)
                     FrozenDropdownItem("Immersive mode", Icons.Rounded.Fullscreen, onImmersive)
