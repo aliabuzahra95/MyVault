@@ -26,6 +26,16 @@ fun parseRichImport(html: String?, plainText: String?): RichImportResult {
     }
 
     val text = plainText.orEmpty()
+    val htmlSource = htmlSourceFromPlainTextForRichImport(text)
+    if (htmlSource != null) {
+        return runCatching { htmlSource.parseHtmlImport() }.getOrElse {
+            RichImportResult(
+                document = VaultRichTextDocument(text = text, styleMarks = emptyList()),
+                formattingPreserved = false,
+            )
+        }
+    }
+
     return if (text.looksLikeMarkdown()) {
         text.parseMarkdownImport()
     } else {
@@ -185,6 +195,37 @@ private fun String.looksLikeMarkdown(): Boolean =
         contains(Regex("(^|\\n)-\\s+")) ||
         contains(Regex("(^|\\n)\\d+\\.\\s+")) ||
         contains(Regex("\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|__[^_]+__|\\[[^]]+\\]\\([^)]+\\)"))
+
+internal fun htmlSourceFromPlainTextForRichImport(plainText: String): String? =
+    plainText.htmlSourceFromPlainText()
+
+private fun String.htmlSourceFromPlainText(): String? {
+    val source = stripCompleteHtmlCodeFence() ?: this
+    val trimmed = source.trim()
+    return trimmed.takeIf { it.looksLikeSupportedHtmlSource() }
+}
+
+private fun String.stripCompleteHtmlCodeFence(): String? {
+    val match = Regex(
+        "^\\s*```(?:html)?[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n```\\s*$",
+        RegexOption.IGNORE_CASE,
+    ).matchEntire(this) ?: return null
+    return match.groupValues[1]
+}
+
+private fun String.looksLikeSupportedHtmlSource(): Boolean {
+    if (isBlank()) return false
+    val openTags = Regex(
+        "<\\s*(h[1-6]|p|strong|b|em|i|u|blockquote|span|font|ul|ol|li|a)\\b[^>]*>",
+        RegexOption.IGNORE_CASE,
+    ).findAll(this).map { it.groupValues[1].lowercase() }.toSet()
+    val closeTags = Regex(
+        "</\\s*(h[1-6]|p|strong|b|em|i|u|blockquote|span|font|ul|ol|li|a)\\s*>",
+        RegexOption.IGNORE_CASE,
+    ).findAll(this).map { it.groupValues[1].lowercase() }.toSet()
+    val lineBreakTag = Regex("<\\s*br\\s*/?\\s*>", RegexOption.IGNORE_CASE)
+    return openTags.any { it in closeTags } || lineBreakTag.containsMatchIn(this)
+}
 
 private fun String.headingRangesFromHtml(html: String): List<Pair<IntRange, VaultInlineStyle>> {
     val headingTexts = Regex("<h([1-6])[^>]*>(.*?)</h\\1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))

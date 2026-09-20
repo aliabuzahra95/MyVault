@@ -101,6 +101,71 @@ class VaultRichTextFormattedPasteTest {
     }
 
     @Test
+    fun plainTextHtmlSourceIsRecognisedBeforeMarkdownFallback() {
+        val source = """
+            <h2>Evidence</h2>
+            <p><span data-color="red">قُلْ هُوَ اللَّهُ أَحَدٌ</span></p>
+            <p><strong>Explanation:</strong> Allah is One.</p>
+        """.trimIndent()
+
+        assertEquals(source, htmlSourceFromPlainTextForRichImport(source))
+    }
+
+    @Test
+    fun fencedPlainTextHtmlSourceIsUnwrappedForHtmlImport() {
+        val importedSource = htmlSourceFromPlainTextForRichImport(
+            """
+                ```html
+                <h3>Point</h3>
+                <p><b>Bold line</b></p>
+                ```
+            """.trimIndent(),
+        )
+
+        assertEquals("<h3>Point</h3>\n<p><b>Bold line</b></p>", importedSource)
+    }
+
+    @Test
+    fun unrecognisedAngleBracketsStayPlainText() {
+        assertEquals(null, htmlSourceFromPlainTextForRichImport("Use x < y and y > z literally."))
+    }
+
+    @Test
+    fun plainTextHtmlInsertionRoundTripPreservesSurroundingFormatting() {
+        val htmlSource = "<p><span data-color=\"red\">قال الله</span> <strong>clear</strong></p>"
+        val imported = VaultRichTextDocument(
+            text = "قال الله clear\n",
+            styleMarks = listOf(
+                VaultStyleMark(0, 8, VaultInlineStyle.ColorRed),
+                VaultStyleMark(9, 14, VaultInlineStyle.Bold),
+            ),
+        )
+
+        assertEquals(htmlSource, htmlSourceFromPlainTextForRichImport(htmlSource))
+        val result = insertVaultRichTextDocumentAtSelection(
+            value = TextFieldValue("Before\nAfter", selection = TextRange(7)),
+            marks = listOf(VaultStyleMark(0, 6, VaultInlineStyle.Heading2)),
+            noteLinks = emptyList(),
+            inserted = imported,
+        )
+
+        val restored = parseVaultRichTextDocument(
+            VaultRichTextDocument(
+                text = result.value.text,
+                styleMarks = result.styleMarks,
+                noteLinks = result.noteLinks,
+            ).toStorageJson(),
+        )
+
+        assertNotNull(restored)
+        assertEquals("Before\nقال الله clear\nAfter", restored?.text)
+        assertEquals(result.styleMarks, restored?.styleMarks)
+        assertHasMark(restored?.styleMarks.orEmpty(), VaultInlineStyle.Heading2, 0, 6)
+        assertHasMark(restored?.styleMarks.orEmpty(), VaultInlineStyle.ColorRed, 7, 15)
+        assertHasMark(restored?.styleMarks.orEmpty(), VaultInlineStyle.Bold, 16, 21)
+    }
+
+    @Test
     fun insertedFormattingSurvivesStorageRoundTrip() {
         val result = insertVaultRichTextDocumentAtSelection(
             value = TextFieldValue("Before\nAfter", selection = TextRange(7)),
