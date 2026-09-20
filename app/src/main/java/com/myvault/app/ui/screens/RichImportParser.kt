@@ -65,8 +65,8 @@ private fun String.parseHtmlImport(): RichImportResult {
         marks += VaultStyleMark(spanned.getSpanStart(span), spanned.getSpanEnd(span), VaultInlineStyle.ColorBlue)
         marks += VaultStyleMark(spanned.getSpanStart(span), spanned.getSpanEnd(span), VaultInlineStyle.Underline)
     }
-    text.headingRangesFromHtml(this).forEach { range ->
-        marks += VaultStyleMark(range.first, range.endExclusive(), VaultInlineStyle.Heading)
+    text.headingRangesFromHtml(this).forEach { (range, style) ->
+        marks += VaultStyleMark(range.first, range.endExclusive(), style)
     }
     text.quoteRangesFromHtml(this).forEach { range ->
         marks += VaultStyleMark(range.first, range.endExclusive(), VaultInlineStyle.Quote)
@@ -186,18 +186,27 @@ private fun String.looksLikeMarkdown(): Boolean =
         contains(Regex("(^|\\n)\\d+\\.\\s+")) ||
         contains(Regex("\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|__[^_]+__|\\[[^]]+\\]\\([^)]+\\)"))
 
-private fun String.headingRangesFromHtml(html: String): List<IntRange> {
-    val headingTexts = Regex("<h[1-6][^>]*>(.*?)</h[1-6]>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+private fun String.headingRangesFromHtml(html: String): List<Pair<IntRange, VaultInlineStyle>> {
+    val headingTexts = Regex("<h([1-6])[^>]*>(.*?)</h\\1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         .findAll(html)
-        .map { HtmlCompat.fromHtml(it.groupValues[1], HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim() }
-        .filter { it.isNotBlank() }
+        .mapNotNull { match ->
+            val text = HtmlCompat.fromHtml(match.groupValues[2], HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+            if (text.isBlank()) return@mapNotNull null
+            val style = when (match.groupValues[1].toIntOrNull()) {
+                1 -> VaultInlineStyle.Heading
+                2 -> VaultInlineStyle.Heading2
+                3 -> VaultInlineStyle.Heading3
+                else -> VaultInlineStyle.Heading4
+            }
+            text to style
+        }
         .toList()
     var searchStart = 0
-    return headingTexts.mapNotNull { heading ->
+    return headingTexts.mapNotNull { (heading, style) ->
         val start = indexOf(heading, searchStart)
         if (start >= 0) {
             searchStart = start + heading.length
-            start until searchStart
+            (start until searchStart) to style
         } else {
             null
         }
@@ -212,13 +221,13 @@ private fun String.quoteRangesFromHtml(html: String): List<IntRange> =
 
 private fun String.colorRangesFromHtml(html: String): List<Pair<IntRange, VaultInlineStyle>> {
     val regex = Regex(
-        "<span[^>]*data-color\\s*=\\s*['\"]?([a-zA-Z]+)['\"]?[^>]*>(.*?)</span>",
+        "<(span|font)\\b([^>]*)>(.*?)</\\1>",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
     )
     var searchStart = 0
     return regex.findAll(html).mapNotNull { match ->
-        val style = match.groupValues.getOrNull(1)?.toVaultColorStyle() ?: return@mapNotNull null
-        val spanText = HtmlCompat.fromHtml(match.groupValues[2], HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+        val style = match.groupValues.getOrNull(2)?.extractVaultColorStyle() ?: return@mapNotNull null
+        val spanText = HtmlCompat.fromHtml(match.groupValues[3], HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
         if (spanText.isBlank()) return@mapNotNull null
         val start = indexOf(spanText, searchStart)
         if (start < 0) return@mapNotNull null
@@ -226,6 +235,28 @@ private fun String.colorRangesFromHtml(html: String): List<Pair<IntRange, VaultI
         searchStart = end
         (start until end) to style
     }.toList()
+}
+
+private fun String.extractVaultColorStyle(): VaultInlineStyle? {
+    Regex("data-color\\s*=\\s*['\"]?([^'\"\\s>]+)", RegexOption.IGNORE_CASE)
+        .find(this)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toVaultColorStyle()
+        ?.let { return it }
+    Regex("(?<!-)\\bcolor\\s*=\\s*['\"]?([^'\"\\s>]+)", RegexOption.IGNORE_CASE)
+        .find(this)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toVaultColorStyle()
+        ?.let { return it }
+    Regex("(?<!-)color\\s*:\\s*([^;\"']+)", RegexOption.IGNORE_CASE)
+        .find(this)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toVaultColorStyle()
+        ?.let { return it }
+    return null
 }
 
 private fun String.rangesForHtmlTagContent(html: String, regex: Regex): List<IntRange> {
@@ -246,14 +277,14 @@ private fun String.rangesForHtmlTagContent(html: String, regex: Regex): List<Int
 }
 
 private fun String.toVaultColorStyle(): VaultInlineStyle? =
-    when (lowercase()) {
-        "red" -> VaultInlineStyle.ColorRed
-        "orange" -> VaultInlineStyle.ColorOrange
-        "green" -> VaultInlineStyle.ColorGreen
-        "blue" -> VaultInlineStyle.ColorBlue
-        "purple" -> VaultInlineStyle.ColorPurple
-        "pink" -> VaultInlineStyle.ColorPink
-        "slate", "gray", "grey" -> VaultInlineStyle.ColorSlate
+    when (lowercase().trim().replace(" ", "")) {
+        "red", "#f00", "#ff0000", "rgb(255,0,0)" -> VaultInlineStyle.ColorRed
+        "orange", "#f97316", "rgb(249,115,22)" -> VaultInlineStyle.ColorOrange
+        "green", "#2f9e66", "rgb(47,158,102)" -> VaultInlineStyle.ColorGreen
+        "blue", "#2f80ed", "rgb(47,128,237)" -> VaultInlineStyle.ColorBlue
+        "purple", "#8b5cf6", "rgb(139,92,246)" -> VaultInlineStyle.ColorPurple
+        "pink", "#db2777", "rgb(219,39,119)" -> VaultInlineStyle.ColorPink
+        "slate", "gray", "grey", "#64748b", "rgb(100,116,139)" -> VaultInlineStyle.ColorSlate
         else -> null
     }
 

@@ -338,6 +338,62 @@ internal data class VaultTextTransform(
     val value: TextFieldValue,
 )
 
+internal data class VaultRichTextInsertResult(
+    val value: TextFieldValue,
+    val styleMarks: List<VaultStyleMark>,
+    val noteLinks: List<VaultNoteLink>,
+)
+
+internal fun insertVaultRichTextDocumentAtSelection(
+    value: TextFieldValue,
+    marks: List<VaultStyleMark>,
+    noteLinks: List<VaultNoteLink>,
+    inserted: VaultRichTextDocument,
+): VaultRichTextInsertResult {
+    val safeValue = sanitizeVaultTextFieldValue(value)
+    val selection = normalizedSelection(safeValue.selection, safeValue.text.length)
+    val insertText = inserted.text
+    val insertLength = insertText.length
+    val replacedLength = selection.end - selection.start
+    val delta = insertLength - replacedLength
+    val newText = buildString {
+        append(safeValue.text.substring(0, selection.start))
+        append(insertText)
+        append(safeValue.text.substring(selection.end))
+    }
+    val insertedMarks = sanitizeVaultStyleMarks(inserted.styleMarks, insertLength)
+        .map { it.shift(selection.start) }
+    val insertedLinks = sanitizeVaultNoteLinks(inserted.noteLinks, insertLength)
+        .map { it.shift(selection.start) }
+    return VaultRichTextInsertResult(
+        value = sanitizeVaultTextFieldValue(
+            safeValue.copy(
+                text = newText,
+                selection = TextRange(selection.start + insertLength),
+                composition = null,
+            ),
+        ),
+        styleMarks = sanitizeVaultStyleMarks(
+            carryMarksThroughReplacement(
+                marks = sanitizeVaultStyleMarks(marks, safeValue.text.length),
+                range = selection,
+                insertedLength = insertLength,
+                delta = delta,
+            ) + insertedMarks,
+            newText.length,
+        ),
+        noteLinks = sanitizeVaultNoteLinks(
+            carryLinksThroughReplacement(
+                links = sanitizeVaultNoteLinks(noteLinks, safeValue.text.length),
+                range = selection,
+                insertedLength = insertLength,
+                delta = delta,
+            ) + insertedLinks,
+            newText.length,
+        ),
+    )
+}
+
 internal fun applyBulletListTransform(value: TextFieldValue): VaultTextTransform =
     transformLines(value) { _, line ->
         when {
@@ -752,6 +808,46 @@ private fun normalizedSelection(selection: TextRange, textLength: Int = Int.MAX_
 }
 
 private fun VaultStyleMark.shift(delta: Int): VaultStyleMark = copy(start = start + delta, end = end + delta)
+
+private fun VaultNoteLink.shift(delta: Int): VaultNoteLink = copy(start = start + delta, end = end + delta)
+
+private fun carryMarksThroughReplacement(
+    marks: List<VaultStyleMark>,
+    range: TextRange,
+    insertedLength: Int,
+    delta: Int,
+): List<VaultStyleMark> =
+    marks.flatMap { mark ->
+        when {
+            mark.end <= range.start -> listOf(mark)
+            mark.start >= range.end -> listOf(mark.shift(delta))
+            else -> buildList {
+                if (mark.start < range.start) add(mark.copy(end = range.start))
+                if (mark.end > range.end) {
+                    add(mark.copy(start = range.start + insertedLength, end = mark.end + delta))
+                }
+            }
+        }
+    }
+
+private fun carryLinksThroughReplacement(
+    links: List<VaultNoteLink>,
+    range: TextRange,
+    insertedLength: Int,
+    delta: Int,
+): List<VaultNoteLink> =
+    links.flatMap { link ->
+        when {
+            link.end <= range.start -> listOf(link)
+            link.start >= range.end -> listOf(link.shift(delta))
+            else -> buildList {
+                if (link.start < range.start) add(link.copy(end = range.start))
+                if (link.end > range.end) {
+                    add(link.copy(start = range.start + insertedLength, end = link.end + delta))
+                }
+            }
+        }
+    }
 
 private fun togglePendingStyle(
     pendingStyles: Set<VaultInlineStyle>,

@@ -1,8 +1,11 @@
 package com.myvault.app.ui.screens
 
 import android.content.Context
+import android.content.ClipboardManager as AndroidClipboardManager
 import android.net.Uri
+import android.text.Spanned
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -42,6 +45,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.Icons
@@ -122,6 +126,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import androidx.core.text.HtmlCompat
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.repository.SourceReferenceCard
@@ -590,6 +595,34 @@ fun EditorScreen(
         noteLinks = sanitizeVaultNoteLinks(handleVaultNoteLinkChange(transform.oldValueForMarks, transform.value, noteLinks), transform.value.text.length)
         bodyValue = sanitizeVaultTextFieldValue(transform.value)
         pendingInlineStyles = emptySet()
+    }
+
+    fun pasteFormattedFromClipboard() {
+        val imported = context.readVaultFormattedClipboardImport()
+        if (imported == null || imported.document.text.isEmpty()) {
+            Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+            bodyFocusRequester.requestFocus()
+            return
+        }
+        val inserted = insertVaultRichTextDocumentAtSelection(
+            value = bodyValue,
+            marks = styleMarks,
+            noteLinks = noteLinks,
+            inserted = imported.document,
+        )
+        bodyValue = inserted.value
+        styleMarks = inserted.styleMarks
+        noteLinks = inserted.noteLinks
+        pendingInlineStyles = emptySet()
+        colorToolbarOpen = false
+        paragraphStyleOpen = false
+        Toast.makeText(
+            context,
+            if (imported.formattingPreserved) "Formatted paste inserted" else "Pasted as plain text",
+            Toast.LENGTH_SHORT,
+        ).show()
+        bodyFocusRequester.requestFocus()
+        keyboardController?.show()
     }
 
     fun insertAiResultBelow(result: String, action: NoteFormattingAction?) {
@@ -1483,6 +1516,10 @@ fun EditorScreen(
                 NoteSheetSection(
                     label = "Insert",
                     actions = listOf(
+                        NoteSheetAction("Paste formatted", Icons.AutoMirrored.Rounded.Notes, onClick = {
+                            moreFormattingOpen = false
+                            pasteFormattedFromClipboard()
+                        }),
                         NoteSheetAction("Table", Icons.Rounded.TableChart, onClick = {
                             moreFormattingOpen = false
                             tableDialogOpen = true
@@ -1492,7 +1529,7 @@ fun EditorScreen(
                             linkUrl = ""
                             linkDialogOpen = true
                         }),
-                        NoteSheetAction("Link to note", Icons.Rounded.Notes, onClick = {
+                        NoteSheetAction("Link to note", Icons.AutoMirrored.Rounded.Notes, onClick = {
                             moreFormattingOpen = false
                             val value = sanitizeVaultTextFieldValue(bodyValue)
                             val selection = value.selection
@@ -1640,6 +1677,38 @@ fun EditorScreen(
         )
     }
 }
+
+private fun Context.readVaultFormattedClipboardImport(): RichImportResult? =
+    runCatching {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? AndroidClipboardManager ?: return@runCatching null
+        val clip = clipboard.primaryClip ?: return@runCatching null
+        var fallbackText: String? = null
+        for (index in 0 until clip.itemCount) {
+            val item = clip.getItemAt(index)
+            val html = item.htmlText?.takeIf { it.isNotBlank() }
+            if (html != null) {
+                return@runCatching parseRichImport(
+                    html = html,
+                    plainText = item.coerceToText(this)?.toString(),
+                )
+            }
+            val styledHtml = (item.text as? Spanned)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { HtmlCompat.toHtml(it, HtmlCompat.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE) }
+                ?.takeIf { it.isNotBlank() }
+            if (styledHtml != null) {
+                return@runCatching parseRichImport(
+                    html = styledHtml,
+                    plainText = item.text?.toString(),
+                )
+            }
+            if (fallbackText == null) {
+                fallbackText = item.text?.toString()?.takeIf { it.isNotBlank() }
+                    ?: item.coerceToText(this)?.toString()?.takeIf { it.isNotBlank() }
+            }
+        }
+        fallbackText?.let { parseRichImport(html = null, plainText = it) }
+    }.getOrNull()
 
 private const val EditorHistoryLimit = 48
 
