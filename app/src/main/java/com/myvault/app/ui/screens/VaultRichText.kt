@@ -394,6 +394,63 @@ internal fun insertVaultRichTextDocumentAtSelection(
     )
 }
 
+internal fun insertVaultRichTextDocumentForDirectPaste(
+    oldValue: TextFieldValue,
+    newValue: TextFieldValue,
+    marks: List<VaultStyleMark>,
+    noteLinks: List<VaultNoteLink>,
+    imported: RichImportResult,
+    clipboardText: String?,
+): VaultRichTextInsertResult? {
+    val safeOldValue = sanitizeVaultTextFieldValue(oldValue)
+    val safeNewValue = sanitizeVaultTextFieldValue(newValue)
+    if (imported.document.text.isEmpty()) return null
+
+    val insertedText = directPasteInsertedText(safeOldValue, safeNewValue) ?: return null
+    val comparableInserted = insertedText.toPasteComparableText()
+    val comparableClipboard = clipboardText?.toPasteComparableText()
+    val comparableImported = imported.document.text.toPasteComparableText()
+    val matchesClipboard = comparableClipboard != null && comparableInserted == comparableClipboard
+    val matchesImportedText = comparableInserted == comparableImported
+    if (!matchesClipboard && !matchesImportedText) return null
+
+    val importChangesVisibleText = comparableClipboard != null && comparableClipboard != comparableImported
+    if (!imported.formattingPreserved && !importChangesVisibleText) return null
+
+    return insertVaultRichTextDocumentAtSelection(
+        value = safeOldValue,
+        marks = marks,
+        noteLinks = noteLinks,
+        inserted = imported.document,
+    )
+}
+
+internal fun shouldAttemptVaultSmartDirectPaste(
+    oldValue: TextFieldValue,
+    newValue: TextFieldValue,
+): Boolean =
+    directPasteInsertedText(
+        sanitizeVaultTextFieldValue(oldValue),
+        sanitizeVaultTextFieldValue(newValue),
+    )?.length ?: 0 > 1
+
+private fun directPasteInsertedText(oldValue: TextFieldValue, newValue: TextFieldValue): String? {
+    val oldText = oldValue.text
+    val newText = newValue.text
+    if (oldText == newText) return null
+
+    val selection = normalizedSelection(oldValue.selection, oldText.length)
+    val prefix = oldText.commonPrefixWith(newText).length
+    val suffix = oldText.substring(prefix).commonSuffixWith(newText.substring(prefix)).length
+    val oldEnd = oldText.length - suffix
+    val newEnd = newText.length - suffix
+    if (prefix != selection.start || oldEnd != selection.end || newEnd <= prefix) return null
+    return newText.substring(prefix, newEnd)
+}
+
+private fun String.toPasteComparableText(): String =
+    replace("\r\n", "\n").replace('\r', '\n')
+
 internal fun applyBulletListTransform(value: TextFieldValue): VaultTextTransform =
     transformLines(value) { _, line ->
         when {

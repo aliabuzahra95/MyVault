@@ -561,6 +561,27 @@ fun EditorScreen(
             return
         }
 
+        if (shouldAttemptVaultSmartDirectPaste(previousValue, safeUpdatedValue)) {
+            context.readVaultFormattedClipboardImport()?.let { clipboardImport ->
+                insertVaultRichTextDocumentForDirectPaste(
+                    oldValue = previousValue,
+                    newValue = safeUpdatedValue,
+                    marks = styleMarks,
+                    noteLinks = noteLinks,
+                    imported = clipboardImport.result,
+                    clipboardText = clipboardImport.pasteText,
+                )?.let { inserted ->
+                    bodyValue = inserted.value
+                    styleMarks = inserted.styleMarks
+                    noteLinks = inserted.noteLinks
+                    pendingInlineStyles = emptySet()
+                    colorToolbarOpen = false
+                    paragraphStyleOpen = false
+                    return
+                }
+            }
+        }
+
         val continuedValue = sanitizeVaultTextFieldValue(continueListOnNewline(previousValue, safeUpdatedValue))
         styleMarks = sanitizeVaultStyleMarks(handleVaultRichTextChange(
             oldValue = previousValue,
@@ -599,7 +620,7 @@ fun EditorScreen(
 
     fun pasteFormattedFromClipboard() {
         val imported = context.readVaultFormattedClipboardImport()
-        if (imported == null || imported.document.text.isEmpty()) {
+        if (imported == null || imported.result.document.text.isEmpty()) {
             Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
             bodyFocusRequester.requestFocus()
             return
@@ -608,7 +629,7 @@ fun EditorScreen(
             value = bodyValue,
             marks = styleMarks,
             noteLinks = noteLinks,
-            inserted = imported.document,
+            inserted = imported.result.document,
         )
         bodyValue = inserted.value
         styleMarks = inserted.styleMarks
@@ -618,7 +639,7 @@ fun EditorScreen(
         paragraphStyleOpen = false
         Toast.makeText(
             context,
-            if (imported.formattingPreserved) "Formatted paste inserted" else "Pasted as plain text",
+            if (imported.result.formattingPreserved) "Formatted paste inserted" else "Pasted as plain text",
             Toast.LENGTH_SHORT,
         ).show()
         bodyFocusRequester.requestFocus()
@@ -1678,7 +1699,12 @@ fun EditorScreen(
     }
 }
 
-private fun Context.readVaultFormattedClipboardImport(): RichImportResult? =
+private data class VaultFormattedClipboardImport(
+    val result: RichImportResult,
+    val pasteText: String?,
+)
+
+private fun Context.readVaultFormattedClipboardImport(): VaultFormattedClipboardImport? =
     runCatching {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? AndroidClipboardManager ?: return@runCatching null
         val clip = clipboard.primaryClip ?: return@runCatching null
@@ -1687,19 +1713,28 @@ private fun Context.readVaultFormattedClipboardImport(): RichImportResult? =
             val item = clip.getItemAt(index)
             val html = item.htmlText?.takeIf { it.isNotBlank() }
             if (html != null) {
-                return@runCatching parseRichImport(
-                    html = html,
-                    plainText = item.coerceToText(this)?.toString(),
+                val pasteText = item.coerceToText(this)?.toString()
+                return@runCatching VaultFormattedClipboardImport(
+                    result = parseRichImport(
+                        html = html,
+                        plainText = pasteText,
+                    ),
+                    pasteText = pasteText,
                 )
             }
-            val styledHtml = (item.text as? Spanned)
+            val styledText = item.text as? Spanned
+            val styledHtml = styledText
                 ?.takeIf { it.isNotBlank() }
                 ?.let { HtmlCompat.toHtml(it, HtmlCompat.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE) }
                 ?.takeIf { it.isNotBlank() }
             if (styledHtml != null) {
-                return@runCatching parseRichImport(
-                    html = styledHtml,
-                    plainText = item.text?.toString(),
+                val pasteText = styledText.toString()
+                return@runCatching VaultFormattedClipboardImport(
+                    result = parseRichImport(
+                        html = styledHtml,
+                        plainText = pasteText,
+                    ),
+                    pasteText = pasteText,
                 )
             }
             if (fallbackText == null) {
@@ -1707,7 +1742,12 @@ private fun Context.readVaultFormattedClipboardImport(): RichImportResult? =
                     ?: item.coerceToText(this)?.toString()?.takeIf { it.isNotBlank() }
             }
         }
-        fallbackText?.let { parseRichImport(html = null, plainText = it) }
+        fallbackText?.let {
+            VaultFormattedClipboardImport(
+                result = parseRichImport(html = null, plainText = it),
+                pasteText = it,
+            )
+        }
     }.getOrNull()
 
 private const val EditorHistoryLimit = 48

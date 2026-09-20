@@ -166,6 +166,112 @@ class VaultRichTextFormattedPasteTest {
     }
 
     @Test
+    fun smartDirectPasteImportsPlainTextHtmlSource() {
+        val clipboardHtml = "<h2>Evidence</h2><p><span data-color=\"red\">قال الله</span></p>"
+        val imported = RichImportResult(
+            document = VaultRichTextDocument(
+                text = "Evidence\nقال الله",
+                styleMarks = listOf(
+                    VaultStyleMark(0, 8, VaultInlineStyle.Heading2),
+                    VaultStyleMark(9, 17, VaultInlineStyle.ColorRed),
+                ),
+            ),
+            formattingPreserved = true,
+        )
+
+        val result = insertVaultRichTextDocumentForDirectPaste(
+            oldValue = TextFieldValue("", selection = TextRange(0)),
+            newValue = TextFieldValue(clipboardHtml, selection = TextRange(clipboardHtml.length)),
+            marks = emptyList(),
+            noteLinks = emptyList(),
+            imported = imported,
+            clipboardText = clipboardHtml,
+        )
+
+        assertNotNull(result)
+        assertEquals("Evidence\nقال الله", result?.value?.text)
+        assertHasMark(result?.styleMarks.orEmpty(), VaultInlineStyle.Heading2, 0, 8)
+        assertHasMark(result?.styleMarks.orEmpty(), VaultInlineStyle.ColorRed, 9, 17)
+    }
+
+    @Test
+    fun smartDirectPastePreservesStyledClipboardText() {
+        val imported = RichImportResult(
+            document = VaultRichTextDocument(
+                text = "Styled",
+                styleMarks = listOf(VaultStyleMark(0, 6, VaultInlineStyle.Underline)),
+            ),
+            formattingPreserved = true,
+        )
+
+        val result = insertVaultRichTextDocumentForDirectPaste(
+            oldValue = TextFieldValue("", selection = TextRange(0)),
+            newValue = TextFieldValue("Styled", selection = TextRange(6)),
+            marks = emptyList(),
+            noteLinks = emptyList(),
+            imported = imported,
+            clipboardText = "Styled",
+        )
+
+        assertNotNull(result)
+        assertEquals("Styled", result?.value?.text)
+        assertHasMark(result?.styleMarks.orEmpty(), VaultInlineStyle.Underline, 0, 6)
+    }
+
+    @Test
+    fun smartDirectPasteCanUseMarkdownFallback() {
+        val clipboardMarkdown = "# Title\n**Bold**"
+        val imported = parseRichImport(html = null, plainText = clipboardMarkdown)
+
+        val result = insertVaultRichTextDocumentForDirectPaste(
+            oldValue = TextFieldValue("", selection = TextRange(0)),
+            newValue = TextFieldValue(clipboardMarkdown, selection = TextRange(clipboardMarkdown.length)),
+            marks = emptyList(),
+            noteLinks = emptyList(),
+            imported = imported,
+            clipboardText = clipboardMarkdown,
+        )
+
+        assertNotNull(result)
+        assertEquals("Title\nBold", result?.value?.text)
+        assertHasMark(result?.styleMarks.orEmpty(), VaultInlineStyle.Heading, 0, 5)
+        assertHasMark(result?.styleMarks.orEmpty(), VaultInlineStyle.Bold, 6, 10)
+    }
+
+    @Test
+    fun smartDirectPasteLeavesPlainTextToOrdinaryPath() {
+        val result = insertVaultRichTextDocumentForDirectPaste(
+            oldValue = TextFieldValue("", selection = TextRange(0)),
+            newValue = TextFieldValue("plain text", selection = TextRange(10)),
+            marks = emptyList(),
+            noteLinks = emptyList(),
+            imported = RichImportResult(
+                document = VaultRichTextDocument(text = "plain text", styleMarks = emptyList()),
+                formattingPreserved = false,
+            ),
+            clipboardText = "plain text",
+        )
+
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun smartDirectPasteGuardSkipsSingleCharacterTyping() {
+        assertFalse(
+            shouldAttemptVaultSmartDirectPaste(
+                oldValue = TextFieldValue("abc", selection = TextRange(3)),
+                newValue = TextFieldValue("abcd", selection = TextRange(4)),
+            ),
+        )
+        assertTrue(
+            shouldAttemptVaultSmartDirectPaste(
+                oldValue = TextFieldValue("abc", selection = TextRange(3)),
+                newValue = TextFieldValue("abc pasted", selection = TextRange(10)),
+            ),
+        )
+    }
+
+    @Test
     fun insertedFormattingSurvivesStorageRoundTrip() {
         val result = insertVaultRichTextDocumentAtSelection(
             value = TextFieldValue("Before\nAfter", selection = TextRange(7)),
