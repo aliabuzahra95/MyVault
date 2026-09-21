@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -911,138 +912,150 @@ fun EditorScreen(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 CompositionLocalProvider(LocalBringIntoViewSpec provides caretScrollSpec) {
-                Column(
-                    modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .layout { measurable, constraints ->
-                                val placeable = measurable.measure(constraints)
-                                val anchor = readingAnchor
-                                val textLayout = bodyTextLayoutResult
-                                if (!readingAnchorApplied && editorReady && anchor != null &&
-                                    anchor.matches(noteId, safeBodyValue.text) && textLayout?.layoutInput?.text?.text == safeBodyValue.text
-                                ) {
-                                    val line = textLayout.getLineForOffset(anchor.offset)
-                                    val target = noteAnchorScroll(textLayout.getLineTop(line), textLayout.getLineBottom(line), anchor.lineFraction)
-                                    // The scroll extent is measured, but no frame has been placed yet.
-                                    bodyEditorScrollState.dispatchRawDelta((target - bodyEditorScrollState.value).toFloat())
-                                    readingAnchorApplied = true
-                                }
-                                layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
-                            }
-                            .verticalScroll(bodyEditorScrollState)
-                            .padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
-                ) {
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) {
-                                    bodyFocusRequester.requestFocus()
-                                    keyboardController?.show()
-                                },
+                            .weight(1f)
+                            .fillMaxWidth(),
                     ) {
-                        BasicTextField(
-                            value = safeBodyValue,
-                            onValueChange = ::updateBody,
-                            modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(prepareTappedSelection)
-                                    .focusRequester(bodyFocusRequester)
-                                    .onFocusChanged { bodyFocused = it.isFocused },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = colors.text,
-                                fontSize = bodyFontSizeSp.sp,
-                                textDirection = TextDirection.Content,
-                            ),
-                            cursorBrush = SolidColor(colors.accent),
-                            visualTransformation = remember(styleMarks, noteLinks, colors) {
-                                VaultRichTextVisualTransformation(styleMarks, noteLinks, colors)
-                            },
-                            maxLines = Int.MAX_VALUE,
-                            onTextLayout = { bodyTextLayoutResult = it },
-                            decorationBox = { innerTextField ->
-                                Box(
-                                    modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(bottom = bodyBottomComfortPadding),
-                                ) {
-                                    if (bodyValue.text.isBlank()) {
-                                        Text(
-                                            "Start writing...",
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = colors.textMuted,
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            },
-                        )
+                        val bodyCanOccupyViewport = mentionResults.isEmpty() &&
+                            uiState.tables.isEmpty() &&
+                            uiState.attachments.isEmpty() &&
+                            !uiState.attachmentsLoading
+                        val bodyMinimumHeight = if (bodyCanOccupyViewport) maxHeight.coerceAtLeast(52.dp) else 52.dp
 
-                    }
-
-                    if (mentionResults.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(VaultSpacing.xs))
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = colors.elevated,
-                            shape = VaultShapes.md,
-                            border = BorderStroke(1.dp, colors.border),
-                        ) {
-                            Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                                mentionResults.forEach { note ->
-                                    Surface(
-                                        onClick = { insertNoteLink(note.id, note.title) },
-                                        color = Color.Transparent,
-                                    ) {
-                                        Text(
-                                            text = note.title,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 9.dp),
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
-                                            color = colors.text,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (uiState.tables.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(VaultSpacing.sm))
                         Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 180.dp, max = 420.dp)
-                                .padding(bottom = VaultSpacing.md),
-                            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                        ) {
-                            uiState.tables.forEach { table ->
-                                key(table.id) {
-                                    EditableNoteTableBlock(
-                                        table = table,
-                                        onCellChange = onUpdateTableCell,
-                                        onDelete = { tableDeleteRequest = table.id },
-                                    )
+                                .fillMaxSize()
+                                .layout { measurable, constraints ->
+                                    val placeable = measurable.measure(constraints)
+                                    val anchor = readingAnchor
+                                    val textLayout = bodyTextLayoutResult
+                                    if (!readingAnchorApplied && editorReady && anchor != null &&
+                                        anchor.matches(noteId, safeBodyValue.text) && textLayout?.layoutInput?.text?.text == safeBodyValue.text
+                                    ) {
+                                        val line = textLayout.getLineForOffset(anchor.offset)
+                                        val target = noteAnchorScroll(textLayout.getLineTop(line), textLayout.getLineBottom(line), anchor.lineFraction)
+                                        // The scroll extent is measured, but no frame has been placed yet.
+                                        bodyEditorScrollState.dispatchRawDelta((target - bodyEditorScrollState.value).toFloat())
+                                        readingAnchorApplied = true
+                                    }
+                                    layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
                                 }
+                                .verticalScroll(bodyEditorScrollState)
+                                .padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = bodyMinimumHeight)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        bodyFocusRequester.requestFocus()
+                                        keyboardController?.show()
+                                    },
+                            ) {
+                                BasicTextField(
+                                    value = safeBodyValue,
+                                    onValueChange = ::updateBody,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .then(prepareTappedSelection)
+                                        .focusRequester(bodyFocusRequester)
+                                        .onFocusChanged { bodyFocused = it.isFocused },
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = colors.text,
+                                        fontSize = bodyFontSizeSp.sp,
+                                        textDirection = TextDirection.Content,
+                                    ),
+                                    cursorBrush = SolidColor(colors.accent),
+                                    visualTransformation = remember(styleMarks, noteLinks, colors) {
+                                        VaultRichTextVisualTransformation(styleMarks, noteLinks, colors)
+                                    },
+                                    maxLines = Int.MAX_VALUE,
+                                    onTextLayout = { bodyTextLayoutResult = it },
+                                    decorationBox = { innerTextField ->
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = bodyMinimumHeight)
+                                                .padding(bottom = bodyBottomComfortPadding),
+                                        ) {
+                                            if (bodyValue.text.isBlank()) {
+                                                Text(
+                                                    "Start writing...",
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = colors.textMuted,
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
+                                    },
+                                )
+
+                            }
+
+                            if (mentionResults.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(VaultSpacing.xs))
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = colors.elevated,
+                                    shape = VaultShapes.md,
+                                    border = BorderStroke(1.dp, colors.border),
+                                ) {
+                                    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                        mentionResults.forEach { note ->
+                                            Surface(
+                                                onClick = { insertNoteLink(note.id, note.title) },
+                                                color = Color.Transparent,
+                                            ) {
+                                                Text(
+                                                    text = note.title,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600),
+                                                    color = colors.text,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (uiState.tables.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(VaultSpacing.sm))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 180.dp, max = 420.dp)
+                                        .padding(bottom = VaultSpacing.md),
+                                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                                ) {
+                                    uiState.tables.forEach { table ->
+                                        key(table.id) {
+                                            EditableNoteTableBlock(
+                                                table = table,
+                                                onCellChange = onUpdateTableCell,
+                                                onDelete = { tableDeleteRequest = table.id },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (uiState.attachmentsLoading || uiState.attachments.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(VaultSpacing.md))
+                                EditorAttachmentPreviewSection(
+                                    attachments = uiState.attachments,
+                                    loading = uiState.attachmentsLoading,
+                                    attachmentCount = uiState.attachmentCount,
+                                    onAttachmentClick = onAttachmentClick,
+                                )
                             }
                         }
                     }
-
-                    if (uiState.attachmentsLoading || uiState.attachments.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(VaultSpacing.md))
-                        EditorAttachmentPreviewSection(
-                            attachments = uiState.attachments,
-                            loading = uiState.attachmentsLoading,
-                            attachmentCount = uiState.attachmentCount,
-                            onAttachmentClick = onAttachmentClick,
-                        )
-                    }
-                }
                 }
             }
 
