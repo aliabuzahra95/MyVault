@@ -245,6 +245,7 @@ fun HomeScreen(
     var managePinnedNotesOpen by remember { mutableStateOf(false) }
     var manageFavouriteNotesOpen by remember { mutableStateOf(false) }
     var manageSelectionMode by remember { mutableStateOf(false) }
+    var moveOnlySelectionMode by remember { mutableStateOf(false) }
     var organizeMode by remember { mutableStateOf(false) }
     var moveSelectedNotesOpen by remember { mutableStateOf(false) }
     var deleteSelectedOpen by remember { mutableStateOf(false) }
@@ -255,6 +256,30 @@ fun HomeScreen(
     }
     val selectedNotes = selectedItems.filter { it.type == VaultTreeItemType.Note }
     val selectedFolders = selectedItems.filter { it.type == VaultTreeItemType.Folder }
+    fun clearSelectionMode() {
+        selectedItemIds.clear()
+        manageSelectionMode = false
+        moveOnlySelectionMode = false
+    }
+    fun toggleSelectedItem(item: VaultTreeItem) {
+        if (moveOnlySelectionMode && item.type != VaultTreeItemType.Note) return
+        selectedItemIds.toggle(item.id)
+        if (selectedItemIds.isEmpty()) clearSelectionMode()
+    }
+    fun toggleSelectedNote(note: VaultTreeItem) {
+        if (note.type != VaultTreeItemType.Note) return
+        selectedItemIds.toggle(note.id)
+        if (selectedItemIds.isEmpty()) clearSelectionMode()
+    }
+    fun beginNoteSelection(note: VaultTreeItem) {
+        if (note.type != VaultTreeItemType.Note) return
+        selectedItemIds.clear()
+        selectedItemIds[note.id] = true
+        manageSelectionMode = true
+        moveOnlySelectionMode = true
+        noteActionsOpen = false
+        folderActionsOpen = false
+    }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onImportFileClick)
     }
@@ -276,6 +301,7 @@ fun HomeScreen(
     fun beginStudyOrganize() {
         selectedItemIds.clear()
         manageSelectionMode = false
+        moveOnlySelectionMode = false
         studySearchOpen = false
         onSearchQueryChange("")
         onStudySortModeChange(StudySortMode.Manual)
@@ -290,6 +316,9 @@ fun HomeScreen(
     BackHandler(enabled = currentFolderMode == FOLDER_MODE_STUDY && studySearchOpen) {
         studySearchOpen = false
         onSearchQueryChange("")
+    }
+    BackHandler(enabled = manageSelectionMode) {
+        clearSelectionMode()
     }
 
     Box(
@@ -320,7 +349,7 @@ fun HomeScreen(
             onOpenNote = onNoteClick,
             onMore = { item ->
                 if (manageSelectionMode) {
-                    selectedItemIds.toggle(item.id)
+                    toggleSelectedItem(item)
                 } else if (item.type == VaultTreeItemType.Folder) {
                     selectedFolder = item
                     folderActionsOpen = true
@@ -329,6 +358,10 @@ fun HomeScreen(
                     noteActionsOpen = true
                 }
             },
+            selectionMode = manageSelectionMode,
+            selectedItemIds = selectedItemIds.keys,
+            onToggleNoteSelection = ::toggleSelectedNote,
+            onBeginNoteSelection = ::beginNoteSelection,
             organizeMode = organizeMode,
             onDoneOrganizing = { organizeMode = false },
             studyOrganisationEnabled = isStudy,
@@ -339,20 +372,18 @@ fun HomeScreen(
             SelectionManageBar(
                 selectedCount = selectedItems.size,
                 selectedNoteCount = selectedNotes.size,
+                showExtendedActions = !moveOnlySelectionMode,
                 onMoveNotes = { moveSelectedNotesOpen = true },
                 onPinNotes = {
                     selectedNotes.forEach { onSetNotePinnedClick(it.id, true) }
-                    selectedItemIds.clear()
+                    clearSelectionMode()
                 },
                 onFavouriteNotes = {
                     selectedNotes.forEach { onSetNoteFavouriteClick(it.id, true) }
-                    selectedItemIds.clear()
+                    clearSelectionMode()
                 },
                 onDelete = { deleteSelectedOpen = true },
-                onDone = {
-                    selectedItemIds.clear()
-                    manageSelectionMode = false
-                },
+                onDone = ::clearSelectionMode,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = if (fabBottomPadding < 18.dp) 18.dp else fabBottomPadding),
@@ -821,6 +852,7 @@ fun HomeScreen(
                 PremiumAction("Select items", Icons.Rounded.CheckCircle) {
                     selectedItemIds.clear()
                     manageSelectionMode = true
+                    moveOnlySelectionMode = false
                     manageMenuOpen = false
                 },
                 PremiumAction("Organise folders", Icons.Rounded.SwapVert) {
@@ -867,7 +899,7 @@ fun HomeScreen(
                 targets.map { (targetId, label) ->
                     PremiumAction(label = label, icon = Icons.Rounded.Folder) {
                         selectedNotes.forEach { onMoveNoteClick(it.id, targetId) }
-                        selectedItemIds.clear()
+                        clearSelectionMode()
                         moveSelectedNotesOpen = false
                     }
                 }
@@ -888,9 +920,8 @@ fun HomeScreen(
             onConfirm = {
                 selectedNotes.forEach { onDeleteNoteClick(it.id) }
                 selectedFolders.forEach { onDeleteFolderClick(it.id) }
-                selectedItemIds.clear()
+                clearSelectionMode()
                 deleteSelectedOpen = false
-                manageSelectionMode = false
             },
         )
     }
@@ -1020,6 +1051,10 @@ private fun StudyMobileWebContent(
     onCreateInside: (VaultTreeItem) -> Unit,
     onOpenNote: (String) -> Unit,
     onMore: (VaultTreeItem) -> Unit,
+    selectionMode: Boolean,
+    selectedItemIds: Set<String>,
+    onToggleNoteSelection: (VaultTreeItem) -> Unit,
+    onBeginNoteSelection: (VaultTreeItem) -> Unit,
     organizeMode: Boolean,
     onDoneOrganizing: () -> Unit,
     studyOrganisationEnabled: Boolean,
@@ -1109,8 +1144,11 @@ private fun StudyMobileWebContent(
                     items = pinnedNotes.map { note ->
                         CorpusPinnedItem(note.id, note.name, uiState.workspace.parentFolderName(note.id))
                     },
-                    onClick = onOpenNote,
-                    onLongPress = { id -> allNotes.firstOrNull { it.id == id }?.let(onMore) },
+                    onClick = { id ->
+                        val note = allNotes.firstOrNull { it.id == id }
+                        if (selectionMode && note != null) onToggleNoteSelection(note) else onOpenNote(id)
+                    },
+                    onLongPress = { id -> allNotes.firstOrNull { it.id == id }?.let(onBeginNoteSelection) },
                     modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
@@ -1147,8 +1185,10 @@ private fun StudyMobileWebContent(
                         CorpusLeafRow(
                             title = note.name,
                             icon = Icons.Outlined.Description,
-                            onClick = { onOpenNote(note.id) },
-                            onLongPress = { onMore(note) },
+                            onClick = { if (selectionMode) onToggleNoteSelection(note) else onOpenNote(note.id) },
+                            onLongPress = { onBeginNoteSelection(note) },
+                            selected = note.id in selectedItemIds,
+                            selectionMode = selectionMode,
                             pinned = note.pinned,
                             attachmentCount = note.attachmentCount,
                             showFullTitle = uiState.showFullNoteTitles,
@@ -1175,6 +1215,10 @@ private fun StudyMobileWebContent(
                             onCreateInside = onCreateInside,
                             onOpenNote = onOpenNote,
                             onMore = onMore,
+                            selectionMode = selectionMode,
+                            selectedItemIds = selectedItemIds,
+                            onToggleNoteSelection = onToggleNoteSelection,
+                            onBeginNoteSelection = onBeginNoteSelection,
                             showFullTitle = uiState.showFullNoteTitles,
                             depth = 0,
                         )
@@ -1194,6 +1238,10 @@ private fun StudyCorpusItem(
     onCreateInside: (VaultTreeItem) -> Unit,
     onOpenNote: (String) -> Unit,
     onMore: (VaultTreeItem) -> Unit,
+    selectionMode: Boolean,
+    selectedItemIds: Set<String>,
+    onToggleNoteSelection: (VaultTreeItem) -> Unit,
+    onBeginNoteSelection: (VaultTreeItem) -> Unit,
     showFullTitle: Boolean,
     depth: Int,
 ) {
@@ -1219,6 +1267,10 @@ private fun StudyCorpusItem(
                     onCreateInside = onCreateInside,
                     onOpenNote = onOpenNote,
                     onMore = onMore,
+                    selectionMode = selectionMode,
+                    selectedItemIds = selectedItemIds,
+                    onToggleNoteSelection = onToggleNoteSelection,
+                    onBeginNoteSelection = onBeginNoteSelection,
                     showFullTitle = showFullTitle,
                     depth = depth + 1,
                 )
@@ -1228,8 +1280,10 @@ private fun StudyCorpusItem(
         CorpusLeafRow(
             title = item.name,
             icon = Icons.Outlined.Description,
-            onClick = { onOpenNote(item.id) },
-            onLongPress = { onMore(item) },
+            onClick = { if (selectionMode) onToggleNoteSelection(item) else onOpenNote(item.id) },
+            onLongPress = { onBeginNoteSelection(item) },
+            selected = item.id in selectedItemIds,
+            selectionMode = selectionMode,
             pinned = item.pinned,
             attachmentCount = item.attachmentCount,
             showFullTitle = showFullTitle,
@@ -1280,6 +1334,7 @@ private enum class WorkspaceSortMode {
 private fun SelectionManageBar(
     selectedCount: Int,
     selectedNoteCount: Int,
+    showExtendedActions: Boolean,
     onMoveNotes: () -> Unit,
     onPinNotes: () -> Unit,
     onFavouriteNotes: () -> Unit,
@@ -1308,22 +1363,27 @@ private fun SelectionManageBar(
                     color = colors.text,
                     modifier = Modifier.weight(1f),
                 )
+                TextButton(
+                    enabled = selectedNoteCount > 0,
+                    onClick = onMoveNotes,
+                ) {
+                    Text("Move")
+                }
                 TextButton(onClick = onDone) {
-                    Text("Done")
+                    Text("X")
                 }
             }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
-                item {
-                    SelectionActionPill("Move notes", enabled = selectedNoteCount > 0, onClick = onMoveNotes)
-                }
-                item {
-                    SelectionActionPill("Pin", enabled = selectedNoteCount > 0, onClick = onPinNotes)
-                }
-                item {
-                    SelectionActionPill("Favourite", enabled = selectedNoteCount > 0, onClick = onFavouriteNotes)
-                }
-                item {
-                    SelectionActionPill("Delete", enabled = selectedCount > 0, destructive = true, onClick = onDelete)
+            if (showExtendedActions) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                    item {
+                        SelectionActionPill("Pin", enabled = selectedNoteCount > 0, onClick = onPinNotes)
+                    }
+                    item {
+                        SelectionActionPill("Favourite", enabled = selectedNoteCount > 0, onClick = onFavouriteNotes)
+                    }
+                    item {
+                        SelectionActionPill("Delete", enabled = selectedCount > 0, destructive = true, onClick = onDelete)
+                    }
                 }
             }
         }

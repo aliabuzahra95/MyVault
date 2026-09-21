@@ -87,6 +87,7 @@ fun FolderTreeRow(
     onCreateInside: ((VaultTreeItem) -> Unit)? = null,
     onMore: ((VaultTreeItem) -> Unit)? = null,
     selectionMode: Boolean = false,
+    selectable: (VaultTreeItem) -> Boolean = { true },
     isSelected: (String) -> Boolean = { false },
     onSelectionToggle: (VaultTreeItem) -> Unit = {},
     organizeMode: Boolean = false,
@@ -115,8 +116,10 @@ fun FolderTreeRow(
             onClick = {
                 if (organizeMode && movable) {
                     Unit
-                } else if (selectionMode) {
+                } else if (selectionMode && selectable(item)) {
                     onSelectionToggle(item)
+                } else if (selectionMode) {
+                    Unit
                 } else if (isFolder) {
                     onOpenFolder(item)
                 } else {
@@ -128,6 +131,7 @@ fun FolderTreeRow(
             onCreateInside = onCreateInside,
             onMore = onMore,
             selectionMode = selectionMode,
+            selectable = selectable(item),
             selected = isSelected(item.id),
             organizeMode = organizeMode,
             organizeAllItems = organizeAllItems,
@@ -170,6 +174,7 @@ fun FolderTreeRow(
                             onCreateInside = onCreateInside,
                             onMore = onMore,
                             selectionMode = selectionMode,
+                            selectable = selectable,
                             isSelected = isSelected,
                             onSelectionToggle = onSelectionToggle,
                             organizeMode = organizeMode,
@@ -206,6 +211,7 @@ fun FolderTreeRow(
                             onCreateInside = onCreateInside,
                             onMore = onMore,
                             selectionMode = selectionMode,
+                            selectable = selectable,
                             isSelected = isSelected,
                             onSelectionToggle = onSelectionToggle,
                             organizeMode = organizeMode,
@@ -239,6 +245,7 @@ private fun FolderTreeSingleRow(
     onCreateInside: ((VaultTreeItem) -> Unit)?,
     onMore: ((VaultTreeItem) -> Unit)?,
     selectionMode: Boolean,
+    selectable: Boolean,
     selected: Boolean,
     organizeMode: Boolean,
     organizeAllItems: Boolean,
@@ -364,7 +371,7 @@ private fun FolderTreeSingleRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (selectionMode) {
+            if (selectionMode && selectable) {
                 Icon(
                     imageVector = if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                     contentDescription = null,

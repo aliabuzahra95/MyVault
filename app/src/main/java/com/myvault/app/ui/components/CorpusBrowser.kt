@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -525,16 +527,29 @@ fun CorpusLeafRow(
     attachmentCount: Int = 0,
     showFullTitle: Boolean = false,
     depth: Int = 0,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 35.dp)
+            .clip(VaultShapes.sm)
+            .background(if (selected) colors.accentSoft.copy(alpha = 0.55f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongPress)
             .padding(start = (depth.coerceIn(0, 2) * 8 + 1).dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selectionMode) {
+            Icon(
+                if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                contentDescription = if (selected) "Selected" else "Not selected",
+                modifier = Modifier.size(15.dp),
+                tint = if (selected) colors.accent else colors.textMuted,
+            )
+            Spacer(Modifier.width(5.dp))
+        }
         Icon(icon, null, modifier = Modifier.size(21.dp), tint = colors.textMuted)
         Column(
             modifier = Modifier

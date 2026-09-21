@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Done
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -143,8 +145,31 @@ fun FolderViewScreen(
     var moveNoteDialogOpen by remember { mutableStateOf(false) }
     var deleteNoteDialogOpen by remember { mutableStateOf(false) }
     var noteTitleDraft by remember { mutableStateOf("") }
+    var moveSelectedNotesOpen by remember { mutableStateOf(false) }
+    val selectedNoteIds = remember { mutableStateMapOf<String, Boolean>() }
+    val selectedNotes = remember(uiState.contents, selectedNoteIds.keys.toList()) {
+        uiState.contents.selectedNoteItems(selectedNoteIds)
+    }
+    val noteSelectionMode = selectedNotes.isNotEmpty()
+    val noteSelectionEnabled = !coursePresentation
+    fun clearNoteSelection() {
+        selectedNoteIds.clear()
+    }
+    fun toggleNoteSelection(item: VaultTreeItem) {
+        if (!noteSelectionEnabled || item.type != VaultTreeItemType.Note) return
+        selectedNoteIds.toggle(item.id)
+    }
+    fun beginNoteSelection(item: VaultTreeItem) {
+        if (!noteSelectionEnabled || item.type != VaultTreeItemType.Note) return
+        selectedNoteIds.clear()
+        selectedNoteIds[item.id] = true
+        noteActionsOpen = false
+    }
     BackHandler(enabled = fabExpanded) {
         fabExpanded = false
+    }
+    BackHandler(enabled = noteSelectionMode) {
+        clearNoteSelection()
     }
     val createActions = remember {
         listOf(
@@ -184,7 +209,24 @@ fun FolderViewScreen(
                 if (showNavigationHeader) {
                     item {
                         ScreenTopBar(onBackClick = onBackClick) {
-                            if (organizeMode) {
+                            if (noteSelectionMode) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        text = "${selectedNotes.size} selected",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700),
+                                        color = colors.text,
+                                    )
+                                    TextButton(onClick = { moveSelectedNotesOpen = true }) {
+                                        Text("Move")
+                                    }
+                                    TextButton(onClick = ::clearNoteSelection) {
+                                        Icon(Icons.Rounded.Close, "Cancel selection", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            } else if (organizeMode) {
                                 TextButton(onClick = { organizeMode = false }) {
                                     Icon(Icons.Rounded.Done, null, modifier = Modifier.size(15.dp))
                                     Text("Done")
@@ -266,12 +308,20 @@ fun FolderViewScreen(
                                             treeFolderActionsOpen = true
                                         }
                                         VaultTreeItemType.Note -> {
-                                            selectedNote = item
-                                            noteActionsOpen = true
+                                            if (noteSelectionEnabled) {
+                                                beginNoteSelection(item)
+                                            } else {
+                                                selectedNote = item
+                                                noteActionsOpen = true
+                                            }
                                         }
                                     }
                                 },
                                 onCreateInside = null,
+                                selectionMode = noteSelectionMode,
+                                selectable = { it.type == VaultTreeItemType.Note },
+                                isSelected = { selectedNoteIds[it] == true },
+                                onSelectionToggle = ::toggleNoteSelection,
                                 organizeMode = organizeMode,
                                 organizeAllItems = true,
                                 notePreviewLines = notePreviewLines,
@@ -638,6 +688,21 @@ fun FolderViewScreen(
             },
         )
     }
+    if (moveSelectedNotesOpen) {
+        PremiumActionDialog(
+            title = "Move ${selectedNotes.size} note${if (selectedNotes.size == 1) "" else "s"}",
+            onDismiss = { moveSelectedNotesOpen = false },
+            actions = listOf(PremiumAction("My Vault", Icons.Rounded.Folder) {
+                selectedNotes.forEach { onMoveNoteClick(it.id, null) }
+                clearNoteSelection()
+                moveSelectedNotesOpen = false
+            }) + uiState.workspace.folderPathActions { folderId ->
+                selectedNotes.forEach { onMoveNoteClick(it.id, folderId) }
+                clearNoteSelection()
+                moveSelectedNotesOpen = false
+            },
+        )
+    }
     if (renameNoteDialogOpen && selectedNote != null) {
         VaultFormModal(
             title = "Rename note",
@@ -829,6 +894,24 @@ private fun VaultTreeItem.findItem(id: String): VaultTreeItem? {
 private fun List<VaultTreeItem>.findItem(id: String): VaultTreeItem? {
     forEach { item -> item.findItem(id)?.let { return it } }
     return null
+}
+
+private fun List<VaultTreeItem>.selectedNoteItems(selectedItemIds: Map<String, Boolean>): List<VaultTreeItem> {
+    val selected = mutableListOf<VaultTreeItem>()
+    forEach { it.collectSelectedNotes(selectedItemIds, selected) }
+    return selected
+}
+
+private fun VaultTreeItem.collectSelectedNotes(
+    selectedItemIds: Map<String, Boolean>,
+    selected: MutableList<VaultTreeItem>,
+) {
+    if (type == VaultTreeItemType.Note && selectedItemIds[id] == true) selected += this
+    children.forEach { it.collectSelectedNotes(selectedItemIds, selected) }
+}
+
+private fun MutableMap<String, Boolean>.toggle(id: String) {
+    if (this[id] == true) remove(id) else this[id] = true
 }
 
 private fun VaultTreeItem.collectFolderIds(): Set<String> =
