@@ -12,13 +12,14 @@ class StudyBulkNoteMoveContractTest {
         .first { Files.exists(it.resolve("app/src/main/java/com/myvault/app/ui/screens/HomeScreen.kt")) }
 
     @Test
-    fun `study tree long press enters note selection and bulk move reuses note move callback`() {
+    fun `study tree note popup offers multi select and bulk move reuses note move callback`() {
         val home = source("ui/screens/HomeScreen.kt")
 
         assertTrue(home.contains("fun beginNoteSelection(note: VaultTreeItem)"))
         assertTrue(home.contains("moveOnlySelectionMode = true"))
         assertTrue(home.contains("onClick = { if (selectionMode) onToggleNoteSelection(item) else onOpenNote(item.id) }"))
-        assertTrue(home.contains("onLongPress = { onBeginNoteSelection(item) }"))
+        assertTrue(home.contains("onLongPress = { onMore(item) }"))
+        assertTrue(home.contains("PremiumAction(\"Select multiple\", Icons.Rounded.CheckCircle) { beginNoteSelection(note) }"))
         assertTrue(home.contains("title = \"Move ${'$'}{selectedNotes.size} note${'$'}{if (selectedNotes.size == 1) \"\" else \"s\"}\""))
         assertTrue(home.contains("selectedNotes.forEach { onMoveNoteClick(it.id, targetId) }"))
         assertTrue(home.contains("BackHandler(enabled = manageSelectionMode)"))
@@ -31,7 +32,8 @@ class StudyBulkNoteMoveContractTest {
 
         assertTrue(folder.contains("val noteSelectionEnabled = !coursePresentation"))
         assertTrue(folder.contains("BackHandler(enabled = noteSelectionMode)"))
-        assertTrue(folder.contains("beginNoteSelection(item)"))
+        assertTrue(folder.contains("PremiumAction(\"Select multiple\", Icons.Rounded.CheckCircle)"))
+        assertTrue(folder.contains("note?.let { beginNoteSelection(it) }"))
         assertTrue(folder.contains("selectedNote = item"))
         assertTrue(folder.contains("noteActionsOpen = true"))
         assertTrue(folder.contains("selectionMode = noteSelectionMode"))

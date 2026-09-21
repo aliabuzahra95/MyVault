@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
@@ -308,12 +309,8 @@ fun FolderViewScreen(
                                             treeFolderActionsOpen = true
                                         }
                                         VaultTreeItemType.Note -> {
-                                            if (noteSelectionEnabled) {
-                                                beginNoteSelection(item)
-                                            } else {
-                                                selectedNote = item
-                                                noteActionsOpen = true
-                                            }
+                                            selectedNote = item
+                                            noteActionsOpen = true
                                         }
                                     }
                                 },
@@ -648,6 +645,9 @@ fun FolderViewScreen(
                     noteActionsOpen = false
                     moveNoteDialogOpen = true
                 },
+                if (noteSelectionEnabled) PremiumAction("Select multiple", Icons.Rounded.CheckCircle) {
+                    note?.let { beginNoteSelection(it) }
+                } else null,
                 PremiumAction("Create Sub-note", Icons.Rounded.NoteAdd) {
                     note?.let { onCreateSubNoteClick(it.id) }
                     noteActionsOpen = false
@@ -672,7 +672,7 @@ fun FolderViewScreen(
                     noteActionsOpen = false
                     deleteNoteDialogOpen = true
                 },
-            ),
+            ).filterNotNull(),
         )
     }
     if (moveNoteDialogOpen && selectedNote != null) {

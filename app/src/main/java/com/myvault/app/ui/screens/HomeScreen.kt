@@ -621,6 +621,7 @@ fun HomeScreen(
             PremiumAction(if (note.favourite) "Unfavourite" else "Favourite", Icons.Rounded.Star) { noteActionsOpen = false; onSetNoteFavouriteClick(note.id, !note.favourite) },
             PremiumAction(if (note.folderPinned) "Unpin within folder" else "Pin within folder", Icons.Rounded.PushPin) { noteActionsOpen = false; onSetNoteFolderPinnedClick(note.id, !note.folderPinned) },
             PremiumAction("Sort / Organize", Icons.Rounded.SwapVert) { noteActionsOpen = false; sortMenuOpen = true },
+            PremiumAction("Select multiple", Icons.Rounded.CheckCircle) { beginNoteSelection(note) },
             PremiumAction("Move", Icons.Rounded.Folder) { noteActionsOpen = false; moveNoteDialogOpen = true },
             PremiumAction("Move to Personal workspace", Icons.Rounded.LocalOffer) { noteActionsOpen = false; onMoveNoteToModeClick(note.id, FOLDER_MODE_PERSONAL) },
             PremiumAction("Delete", Icons.Rounded.Delete, destructive = true, section = "") { noteActionsOpen = false; deleteNoteDialogOpen = true },
@@ -1148,7 +1149,7 @@ private fun StudyMobileWebContent(
                         val note = allNotes.firstOrNull { it.id == id }
                         if (selectionMode && note != null) onToggleNoteSelection(note) else onOpenNote(id)
                     },
-                    onLongPress = { id -> allNotes.firstOrNull { it.id == id }?.let(onBeginNoteSelection) },
+                    onLongPress = { id -> allNotes.firstOrNull { it.id == id }?.let(onMore) },
                     modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
@@ -1186,7 +1187,7 @@ private fun StudyMobileWebContent(
                             title = note.name,
                             icon = Icons.Outlined.Description,
                             onClick = { if (selectionMode) onToggleNoteSelection(note) else onOpenNote(note.id) },
-                            onLongPress = { onBeginNoteSelection(note) },
+                            onLongPress = { onMore(note) },
                             selected = note.id in selectedItemIds,
                             selectionMode = selectionMode,
                             pinned = note.pinned,
@@ -1281,7 +1282,7 @@ private fun StudyCorpusItem(
             title = item.name,
             icon = Icons.Outlined.Description,
             onClick = { if (selectionMode) onToggleNoteSelection(item) else onOpenNote(item.id) },
-            onLongPress = { onBeginNoteSelection(item) },
+            onLongPress = { onMore(item) },
             selected = item.id in selectedItemIds,
             selectionMode = selectionMode,
             pinned = item.pinned,
