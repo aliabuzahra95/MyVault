@@ -1569,6 +1569,9 @@ fun VaultNavHost(
             val pdfNotepad by viewModel.pdfNotepad.collectAsStateWithLifecycle()
             val pdfReferences by viewModel.pdfReferences.collectAsStateWithLifecycle()
             val pdfAnnotationTags by viewModel.annotationTags.collectAsStateWithLifecycle()
+            val libraryPdfs by viewModel.libraryPdfs.collectAsStateWithLifecycle()
+            val secondaryPdfAttachment by viewModel.secondaryPdfAttachment.collectAsStateWithLifecycle()
+            val secondaryPdfProgress by viewModel.secondaryPdfProgress.collectAsStateWithLifecycle()
             val documentText by viewModel.documentText.collectAsStateWithLifecycle()
             val azureNarrationProgress by viewModel.azureNarrationProgress.collectAsStateWithLifecycle()
             LaunchedEffect(attachment?.id) {
@@ -1583,6 +1586,9 @@ fun VaultNavHost(
                 pdfNotepad = pdfNotepad,
                 pdfReferences = pdfReferences,
                 pdfAnnotationTags = pdfAnnotationTags,
+                libraryPdfs = libraryPdfs,
+                secondaryPdfAttachment = secondaryPdfAttachment,
+                secondaryPdfProgress = secondaryPdfProgress,
                 documentText = documentText.text,
                 documentTextLoading = documentText.isLoading,
                 documentTextError = documentText.error,
@@ -1620,6 +1626,9 @@ fun VaultNavHost(
                 onOpenStudyNote = { noteId ->
                     navController.navigate(VaultDestination.Reading.route(noteId))
                 },
+                onSelectSecondaryPdf = viewModel::selectSecondaryPdf,
+                onClearSecondaryPdf = viewModel::clearSecondaryPdf,
+                onSecondaryPdfProgressChanged = viewModel::updateSecondaryPdfProgress,
                 onStartDevicePdfNarration = viewModel::startDeviceNarration,
                 onStartOpenAiPdfNarration = viewModel::startOpenAiNarration,
                 onStartAzurePdfNarration = viewModel::startAzureNarration,

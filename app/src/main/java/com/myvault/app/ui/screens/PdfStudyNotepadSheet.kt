@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +67,68 @@ internal fun PdfStudyNotepadSheet(
 ) {
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.surface,
+        dragHandle = null,
+    ) {
+        PdfStudyNotepadContent(
+            state = state,
+            notes = notes,
+            onSelectNote = onSelectNote,
+            onCreateNote = onCreateNote,
+            onOpenNote = onOpenNote,
+            onSave = onSave,
+            onDismiss = onDismiss,
+            showDragHandle = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f),
+        )
+    }
+}
+
+@Composable
+internal fun PdfStudyNotepadPane(
+    state: PdfNotepadUiState,
+    notes: List<NoteEntity>,
+    onSelectNote: (String) -> Unit,
+    onCreateNote: () -> Unit,
+    onOpenNote: (String) -> Unit,
+    onSave: (String, VaultRichTextDocument, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(modifier = modifier, color = VaultThemeTokens.colors.surface) {
+        PdfStudyNotepadContent(
+            state = state,
+            notes = notes,
+            onSelectNote = onSelectNote,
+            onCreateNote = onCreateNote,
+            onOpenNote = onOpenNote,
+            onSave = onSave,
+            onDismiss = onDismiss,
+            showDragHandle = false,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+private fun PdfStudyNotepadContent(
+    state: PdfNotepadUiState,
+    notes: List<NoteEntity>,
+    onSelectNote: (String) -> Unit,
+    onCreateNote: () -> Unit,
+    onOpenNote: (String) -> Unit,
+    onSave: (String, VaultRichTextDocument, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    showDragHandle: Boolean,
+    modifier: Modifier,
+) {
+    val colors = VaultThemeTokens.colors
     val note = state.note
     var value by remember(note?.id) {
         mutableStateOf(TextFieldValue(state.document.text, TextRange(state.document.text.length)))
@@ -100,18 +163,18 @@ internal fun PdfStudyNotepadSheet(
         saveCurrent(false)
     }
 
-    ModalBottomSheet(
-        onDismissRequest = ::dismissSafely,
-        sheetState = sheetState,
-        containerColor = colors.surface,
-        dragHandle = null,
+    val latestDocument by androidx.compose.runtime.rememberUpdatedState(currentDocument())
+    val latestNoteId by androidx.compose.runtime.rememberUpdatedState(note?.id)
+    DisposableEffect(note?.id) {
+        onDispose {
+            latestNoteId?.let { onSave(it, latestDocument, true) }
+        }
+    }
+
+    Column(
+        modifier = modifier.padding(horizontal = VaultSpacing.screen),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.92f)
-                .padding(horizontal = VaultSpacing.screen),
-        ) {
+        if (showDragHandle) {
             Spacer(Modifier.height(8.dp))
             Surface(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -120,7 +183,8 @@ internal fun PdfStudyNotepadSheet(
             ) {
                 Spacer(Modifier.size(width = 42.dp, height = 4.dp))
             }
-            Row(
+        }
+        Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -140,9 +204,9 @@ internal fun PdfStudyNotepadSheet(
                 IconButton(onClick = ::dismissSafely) {
                     Icon(Icons.Rounded.Close, "Close notepad", Modifier.size(20.dp), tint = colors.textSecondary)
                 }
-            }
+        }
 
-            Row(
+        Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -188,9 +252,9 @@ internal fun PdfStudyNotepadSheet(
                 IconButton(onClick = { saveCurrent(true); onCreateNote() }) {
                     Icon(Icons.Rounded.Add, "Create new Study note", tint = colors.accent)
                 }
-            }
+        }
 
-            Row(
+        Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -199,9 +263,9 @@ internal fun PdfStudyNotepadSheet(
                 PdfNotepadFormatButton("U", decoration = TextDecoration.Underline, onClick = { toggleStyle(VaultInlineStyle.Underline) })
                 PdfNotepadFormatButton("H", FontWeight.W800, onClick = { toggleStyle(VaultInlineStyle.Heading2) })
                 PdfNotepadFormatButton("❝", onClick = { toggleStyle(VaultInlineStyle.Quote) })
-            }
+        }
 
-            Surface(
+        Surface(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 shape = VaultShapes.md,
                 color = colors.bg,
@@ -232,13 +296,12 @@ internal fun PdfStudyNotepadSheet(
                         }
                     },
                 )
-            }
-            TextButton(
+        }
+        TextButton(
                 onClick = ::dismissSafely,
                 modifier = Modifier.align(Alignment.End).padding(vertical = 8.dp),
-            ) {
-                Text("Done", color = colors.accent, fontWeight = FontWeight.W700)
-            }
+        ) {
+            Text("Done", color = colors.accent, fontWeight = FontWeight.W700)
         }
     }
 }

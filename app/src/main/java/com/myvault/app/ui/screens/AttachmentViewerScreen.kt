@@ -50,10 +50,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -176,7 +178,7 @@ class VaultPdfViewerFragment : PdfViewerFragment() {
     override fun onPdfViewCreated(pdfView: AndroidxPdfView) {
         super.onPdfViewCreated(pdfView)
         hideMyVaultUnsupportedToolbox()
-        PdfViewerCallbackRegistry.onPdfViewReady?.invoke(pdfView)
+        tag?.let { PdfViewerCallbackRegistry.onPdfViewReady(it, pdfView) }
     }
 
     private fun hideMyVaultUnsupportedToolbox(scheduleFollowUps: Boolean = true) {
@@ -190,13 +192,35 @@ class VaultPdfViewerFragment : PdfViewerFragment() {
 
     override fun onLoadDocumentError(throwable: Throwable) {
         super.onLoadDocumentError(throwable)
-        PdfViewerCallbackRegistry.onPdfLoadError?.invoke(throwable)
+        tag?.let { PdfViewerCallbackRegistry.onPdfLoadError(it, throwable) }
     }
 }
 
 private object PdfViewerCallbackRegistry {
-    var onPdfViewReady: ((AndroidxPdfView) -> Unit)? = null
-    var onPdfLoadError: ((Throwable) -> Unit)? = null
+    private val readyCallbacks = mutableMapOf<String, (AndroidxPdfView) -> Unit>()
+    private val errorCallbacks = mutableMapOf<String, (Throwable) -> Unit>()
+
+    fun register(
+        tag: String,
+        onReady: (AndroidxPdfView) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        readyCallbacks[tag] = onReady
+        errorCallbacks[tag] = onError
+    }
+
+    fun unregister(tag: String) {
+        readyCallbacks.remove(tag)
+        errorCallbacks.remove(tag)
+    }
+
+    fun onPdfViewReady(tag: String, view: AndroidxPdfView) {
+        readyCallbacks[tag]?.invoke(view)
+    }
+
+    fun onPdfLoadError(tag: String, throwable: Throwable) {
+        errorCallbacks[tag]?.invoke(throwable)
+    }
 }
 
 
@@ -611,6 +635,9 @@ fun AttachmentViewerScreen(
     pdfNotepad: PdfNotepadUiState = PdfNotepadUiState(),
     pdfReferences: List<LibraryReferencedNote> = emptyList(),
     pdfAnnotationTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
+    libraryPdfs: List<AttachmentEntity> = emptyList(),
+    secondaryPdfAttachment: AttachmentEntity? = null,
+    secondaryPdfProgress: PdfReadingProgressEntity? = null,
     documentText: String = "",
     documentTextLoading: Boolean = false,
     documentTextError: String? = null,
@@ -642,6 +669,9 @@ fun AttachmentViewerScreen(
     onCreatePdfNotepadNote: () -> Unit = {},
     onSavePdfNotepad: (noteId: String, document: VaultRichTextDocument, immediate: Boolean) -> Unit = { _, _, _ -> },
     onOpenStudyNote: (noteId: String) -> Unit = {},
+    onSelectSecondaryPdf: (String) -> Unit = {},
+    onClearSecondaryPdf: () -> Unit = {},
+    onSecondaryPdfProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit = { _, _ -> },
     onStartDevicePdfNarration: (selection: String?) -> Unit = {},
     onStartOpenAiPdfNarration: (selection: String?) -> Unit = {},
     onStartAzurePdfNarration: (selection: String?) -> Unit = {},
@@ -665,45 +695,118 @@ fun AttachmentViewerScreen(
     }
 
     if (attachment?.mimeType == "application/pdf") {
-        FrozenPdfReaderScreen(
-            attachment = attachment,
-            progress = pdfProgress,
-            annotations = pdfAnnotations,
-            annotationSegments = pdfAnnotationSegments,
-            studyNotes = studyNotes,
-            notepad = pdfNotepad,
-            references = pdfReferences,
-            annotationTags = pdfAnnotationTags,
-            initialPageIndex = initialPageIndex,
-            onMenuClick = onMenuClick,
-            onDownloadPdf = {
-                exportPdfLauncher.launch(attachment.fileName.ifBlank { "myvault.pdf" })
-            },
-            onProgressChanged = onPdfProgressChanged,
-            onFirstLoaded = onPdfFirstLoaded,
-            onAddDrawHighlight = onAddPdfHighlight,
-            onAddSelectedTextAnnotation = onAddPdfSelectedTextAnnotation,
-            onUpdateAnnotationColor = onUpdatePdfHighlightColor,
-            onUpdateAnnotationNote = onUpdatePdfAnnotationNote,
-            onAddPageNote = onAddPdfPageNote,
-            onDeleteAnnotation = onDeletePdfAnnotation,
-            onAddAnnotationTag = onAddPdfAnnotationTag,
-            onRemoveAnnotationTag = onRemovePdfAnnotationTag,
-            onLinkAnnotationToStudyNote = onLinkPdfAnnotationToStudyNote,
-            onCreateStudyNoteFromAnnotation = onCreateStudyNoteFromPdfAnnotation,
-            onClipAnnotationToNote = onClipPdfAnnotationToNote,
-            onPrepareNotepad = onPreparePdfNotepad,
-            onSelectNotepadNote = onSelectPdfNotepadNote,
-            onCreateNotepadNote = onCreatePdfNotepadNote,
-            onSaveNotepad = onSavePdfNotepad,
-            onOpenStudyNote = onOpenStudyNote,
-            onStartDeviceNarration = onStartDevicePdfNarration,
-            onStartOpenAiNarration = onStartOpenAiPdfNarration,
-            onStartAzureNarration = onStartAzurePdfNarration,
-            narrationMiniPlayerVisible = narrationMiniPlayerVisible,
-            narrationMiniPlayerHeight = narrationMiniPlayerHeight,
-            modifier = modifier,
-        )
+        var companionMode by remember(attachment.id) { mutableStateOf(PdfCompanionMode.None) }
+        var companionPickerOpen by remember(attachment.id) { mutableStateOf(false) }
+
+        BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+            val supportsCompanion = supportsPdfCompanionPane(maxWidth.value.toInt())
+            val closeCompanion = {
+                companionMode = PdfCompanionMode.None
+                onClearSecondaryPdf()
+            }
+            val primaryReader: @Composable (Modifier) -> Unit = { readerModifier ->
+                FrozenPdfReaderScreen(
+                    attachment = attachment,
+                    progress = pdfProgress,
+                    annotations = pdfAnnotations,
+                    annotationSegments = pdfAnnotationSegments,
+                    studyNotes = studyNotes,
+                    notepad = pdfNotepad,
+                    references = pdfReferences,
+                    annotationTags = pdfAnnotationTags,
+                    initialPageIndex = initialPageIndex,
+                    onMenuClick = onMenuClick,
+                    onDownloadPdf = {
+                        exportPdfLauncher.launch(attachment.fileName.ifBlank { "myvault.pdf" })
+                    },
+                    onOpenCompanion = if (supportsCompanion) ({ companionPickerOpen = true }) else null,
+                    onProgressChanged = onPdfProgressChanged,
+                    onFirstLoaded = onPdfFirstLoaded,
+                    onAddDrawHighlight = onAddPdfHighlight,
+                    onAddSelectedTextAnnotation = onAddPdfSelectedTextAnnotation,
+                    onUpdateAnnotationColor = onUpdatePdfHighlightColor,
+                    onUpdateAnnotationNote = onUpdatePdfAnnotationNote,
+                    onAddPageNote = onAddPdfPageNote,
+                    onDeleteAnnotation = onDeletePdfAnnotation,
+                    onAddAnnotationTag = onAddPdfAnnotationTag,
+                    onRemoveAnnotationTag = onRemovePdfAnnotationTag,
+                    onLinkAnnotationToStudyNote = onLinkPdfAnnotationToStudyNote,
+                    onCreateStudyNoteFromAnnotation = onCreateStudyNoteFromPdfAnnotation,
+                    onClipAnnotationToNote = onClipPdfAnnotationToNote,
+                    onPrepareNotepad = onPreparePdfNotepad,
+                    onSelectNotepadNote = onSelectPdfNotepadNote,
+                    onCreateNotepadNote = onCreatePdfNotepadNote,
+                    onSaveNotepad = onSavePdfNotepad,
+                    onOpenStudyNote = onOpenStudyNote,
+                    onStartDeviceNarration = onStartDevicePdfNarration,
+                    onStartOpenAiNarration = onStartOpenAiPdfNarration,
+                    onStartAzureNarration = onStartAzurePdfNarration,
+                    narrationMiniPlayerVisible = narrationMiniPlayerVisible,
+                    narrationMiniPlayerHeight = narrationMiniPlayerHeight,
+                    modifier = readerModifier,
+                )
+            }
+
+            if (supportsCompanion && companionMode != PdfCompanionMode.None) {
+                Row(Modifier.fillMaxSize()) {
+                    primaryReader(Modifier.weight(1f))
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(VaultThemeTokens.colors.border))
+                    when (companionMode) {
+                        PdfCompanionMode.Note -> PdfStudyNotepadPane(
+                            state = pdfNotepad,
+                            notes = studyNotes,
+                            onSelectNote = onSelectPdfNotepadNote,
+                            onCreateNote = onCreatePdfNotepadNote,
+                            onOpenNote = onOpenStudyNote,
+                            onSave = onSavePdfNotepad,
+                            onDismiss = closeCompanion,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                        PdfCompanionMode.Pdf -> secondaryPdfAttachment?.let { secondPdf ->
+                            SecondaryPdfReaderPane(
+                                attachment = secondPdf,
+                                progress = secondaryPdfProgress,
+                                onProgressChanged = onSecondaryPdfProgressChanged,
+                                onChangePdf = { companionPickerOpen = true },
+                                onClose = closeCompanion,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        } ?: Surface(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            color = VaultThemeTokens.colors.surface,
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                Text(
+                                    "Opening PDF…",
+                                    modifier = Modifier.align(Alignment.Center),
+                                    color = VaultThemeTokens.colors.textMuted,
+                                )
+                            }
+                        }
+                        PdfCompanionMode.None -> Unit
+                    }
+                }
+            } else {
+                primaryReader(Modifier.fillMaxSize())
+            }
+
+            if (supportsCompanion && companionPickerOpen) {
+                PdfCompanionPickerSheet(
+                    currentAttachmentId = attachment.id,
+                    libraryPdfs = libraryPdfs,
+                    onOpenNote = {
+                        companionPickerOpen = false
+                        onPreparePdfNotepad { companionMode = PdfCompanionMode.Note }
+                    },
+                    onOpenPdf = { id ->
+                        onSelectSecondaryPdf(id)
+                        companionMode = PdfCompanionMode.Pdf
+                        companionPickerOpen = false
+                    },
+                    onDismiss = { companionPickerOpen = false },
+                )
+            }
+        }
         return
     }
 
@@ -1560,7 +1663,7 @@ internal fun AndroidxPdfViewer(
     onError: (Throwable) -> Unit,
 ) {
     val context = LocalContext.current
-    val containerId = R.id.pdf_viewer_fragment_container
+    val containerId = remember(file.absolutePath) { View.generateViewId() }
     val insetColorArgb = VaultThemeTokens.colors.inset.toArgb()
     val latestOnPdfViewReady = rememberUpdatedState(onPdfViewReady)
     val latestOnError = rememberUpdatedState(onError)
@@ -1671,8 +1774,7 @@ internal fun AndroidxPdfViewer(
             releasedRoot.onUnclaimedSingleTap = {}
             val activity = context.findFragmentActivity()
             releasedRoot.releaseNativePdfViewer(activity, fragmentTag)
-            PdfViewerCallbackRegistry.onPdfViewReady = null
-            PdfViewerCallbackRegistry.onPdfLoadError = null
+            PdfViewerCallbackRegistry.unregister(fragmentTag)
         },
     )
 }
@@ -1722,8 +1824,7 @@ private fun FragmentContainerView.attachPdfFragmentWhenReady(
         try {
             if (!isAttachedToWindow || id == View.NO_ID) return
             val manager = activity.supportFragmentManager
-            PdfViewerCallbackRegistry.onPdfViewReady = onPdfViewReady
-            PdfViewerCallbackRegistry.onPdfLoadError = onError
+            PdfViewerCallbackRegistry.register(fragmentTag, onPdfViewReady, onError)
             val existing = manager.findFragmentByTag(fragmentTag) as? VaultPdfViewerFragment
             if (existing != null) {
                 existing.documentUri = uri
@@ -1732,7 +1833,7 @@ private fun FragmentContainerView.attachPdfFragmentWhenReady(
             val fragment = VaultPdfViewerFragment()
             manager.fragments
                 .filterIsInstance<VaultPdfViewerFragment>()
-                .filter { it.id == id || it.tag?.startsWith("myvault_pdf_viewer_") == true }
+                .filter { it.id == id || it.tag == fragmentTag }
                 .forEach { staleFragment ->
                     runCatching {
                         manager

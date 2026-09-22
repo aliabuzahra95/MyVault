@@ -45,7 +45,7 @@ import javax.inject.Inject
 @HiltViewModel
 @OptIn(ExperimentalCoroutinesApi::class)
 class AttachmentViewerViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val attachmentRepository: AttachmentRepository,
     private val pdfReadingProgressRepository: PdfReadingProgressRepository,
     private val pdfAnnotationRepository: PdfAnnotationRepository,
@@ -67,6 +67,9 @@ class AttachmentViewerViewModel @Inject constructor(
     private var pdfSecondaryDataJob: Job? = null
     private val activeNotepadNoteId = MutableStateFlow<String?>(null)
     private val notepadSaveJobs = mutableMapOf<String, Job>()
+    private val secondaryPdfId = savedStateHandle.getStateFlow<String?>(SecondaryPdfIdKey, null)
+    private var secondaryPdfProgressSaveJob: Job? = null
+    private var pendingSecondaryProgress: Triple<String, Int, Int>? = null
 
     init {
         viewModelScope.launch {
@@ -120,6 +123,24 @@ class AttachmentViewerViewModel @Inject constructor(
     val studyNotes: StateFlow<List<NoteEntity>> =
         noteRepository.observeNotesForMode(FOLDER_MODE_STUDY)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val libraryPdfs: StateFlow<List<AttachmentEntity>> =
+        attachmentRepository.observeLibraryFiles()
+            .map { files ->
+                files.filter { file ->
+                    file.deletedAt == null &&
+                        (file.mimeType == "application/pdf" || file.fileName.endsWith(".pdf", ignoreCase = true))
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val secondaryPdfAttachment: StateFlow<AttachmentEntity?> = secondaryPdfId
+        .flatMapLatest { id -> id?.let(attachmentRepository::observeAttachment) ?: flowOf(null) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val secondaryPdfProgress: StateFlow<PdfReadingProgressEntity?> = secondaryPdfId
+        .flatMapLatest { id -> id?.let(pdfReadingProgressRepository::observeForAttachment) ?: flowOf(null) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val pdfNotepad: StateFlow<PdfNotepadUiState> = activeNotepadNoteId
         .flatMapLatest { noteId ->
@@ -203,6 +224,33 @@ class AttachmentViewerViewModel @Inject constructor(
             lastSavedPdfPageCount = countToSave
             pendingPdfPage = null
             pendingPdfPageCount = null
+        }
+    }
+
+    fun selectSecondaryPdf(id: String) {
+        if (id.isBlank() || id == attachmentId) return
+        savedStateHandle[SecondaryPdfIdKey] = id
+    }
+
+    fun clearSecondaryPdf() {
+        secondaryPdfProgressSaveJob?.cancel()
+        pendingSecondaryProgress = null
+        savedStateHandle[SecondaryPdfIdKey] = null
+    }
+
+    fun updateSecondaryPdfProgress(pageIndex: Int, pageCount: Int) {
+        val id = secondaryPdfId.value ?: return
+        if (pageCount <= 0) return
+        val safePage = pageIndex.coerceIn(0, pageCount - 1)
+        val update = Triple(id, safePage, pageCount)
+        if (pendingSecondaryProgress == update) return
+        pendingSecondaryProgress = update
+        secondaryPdfProgressSaveJob?.cancel()
+        secondaryPdfProgressSaveJob = viewModelScope.launch {
+            delay(PdfProgressSaveDebounceMs)
+            val pending = pendingSecondaryProgress ?: return@launch
+            pdfReadingProgressRepository.updateProgress(pending.first, pending.second, pending.third)
+            if (pendingSecondaryProgress == pending) pendingSecondaryProgress = null
         }
     }
 
@@ -512,6 +560,7 @@ class AttachmentViewerViewModel @Inject constructor(
 
 private const val PdfProgressSaveDebounceMs = 450L
 private const val PdfNotepadSaveDebounceMs = 350L
+private const val SecondaryPdfIdKey = "secondaryPdfId"
 
 data class PdfNotepadUiState(
     val note: NoteEntity? = null,

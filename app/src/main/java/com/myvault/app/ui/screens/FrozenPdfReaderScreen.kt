@@ -54,6 +54,7 @@ import androidx.compose.material.icons.rounded.NoteAdd
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.StickyNote2
+import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -164,6 +165,7 @@ internal fun FrozenPdfReaderScreen(
     initialPageIndex: Int?,
     onMenuClick: () -> Unit,
     onDownloadPdf: () -> Unit = {},
+    onOpenCompanion: (() -> Unit)? = null,
     onProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit,
     onFirstLoaded: () -> Unit,
     onAddDrawHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String, onSaved: (Boolean) -> Unit) -> Unit,
@@ -471,6 +473,7 @@ internal fun FrozenPdfReaderScreen(
                 onNotepad = {
                     onPrepareNotepad { sheet = PdfReaderSheet.Notepad }
                 },
+                onOpenCompanion = onOpenCompanion,
                 overflowOpen = overflowOpen,
                 onOverflowOpenChange = { overflowOpen = it },
                 onActivity = {
@@ -881,6 +884,7 @@ private fun FrozenPdfHeader(
     onMenuClick: () -> Unit,
     onPageClick: () -> Unit,
     onNotepad: () -> Unit,
+    onOpenCompanion: (() -> Unit)?,
     overflowOpen: Boolean,
     onOverflowOpenChange: (Boolean) -> Unit,
     onActivity: () -> Unit,
@@ -927,6 +931,11 @@ private fun FrozenPdfHeader(
             }
             IconButton(onClick = onNotepad) {
                 Icon(Icons.Rounded.EditNote, "Open PDF notepad", Modifier.size(19.dp), tint = colors.text)
+            }
+            onOpenCompanion?.let { openCompanion ->
+                IconButton(onClick = openCompanion) {
+                    Icon(Icons.Rounded.ViewColumn, "Open side by side", Modifier.size(19.dp), tint = colors.text)
+                }
             }
             Box {
                 IconButton(onClick = { onOverflowOpenChange(true) }) {
