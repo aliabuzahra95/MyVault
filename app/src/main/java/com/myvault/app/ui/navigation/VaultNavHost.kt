@@ -1565,6 +1565,7 @@ fun VaultNavHost(
             val pdfAnnotations by viewModel.pdfAnnotations.collectAsStateWithLifecycle()
             val pdfAnnotationSegments by viewModel.pdfAnnotationSegments.collectAsStateWithLifecycle()
             val studyNotes by viewModel.studyNotes.collectAsStateWithLifecycle()
+            val pdfNotepad by viewModel.pdfNotepad.collectAsStateWithLifecycle()
             val pdfReferences by viewModel.pdfReferences.collectAsStateWithLifecycle()
             val pdfAnnotationTags by viewModel.annotationTags.collectAsStateWithLifecycle()
             val documentText by viewModel.documentText.collectAsStateWithLifecycle()
@@ -1578,6 +1579,7 @@ fun VaultNavHost(
                 pdfAnnotations = pdfAnnotations,
                 pdfAnnotationSegments = pdfAnnotationSegments,
                 studyNotes = studyNotes,
+                pdfNotepad = pdfNotepad,
                 pdfReferences = pdfReferences,
                 pdfAnnotationTags = pdfAnnotationTags,
                 documentText = documentText.text,
@@ -1609,6 +1611,11 @@ fun VaultNavHost(
                 onRemovePdfAnnotationTag = viewModel::removeAnnotationTag,
                 onLinkPdfAnnotationToStudyNote = viewModel::linkAnnotationToStudyNote,
                 onCreateStudyNoteFromPdfAnnotation = viewModel::createStudyNoteFromAnnotation,
+                onClipPdfAnnotationToNote = viewModel::clipPdfHighlightToNote,
+                onPreparePdfNotepad = viewModel::openPdfNotepad,
+                onSelectPdfNotepadNote = viewModel::selectPdfNotepadNote,
+                onCreatePdfNotepadNote = { viewModel.createPdfNotepadNote() },
+                onSavePdfNotepad = viewModel::savePdfNotepad,
                 onOpenStudyNote = { noteId ->
                     navController.navigate(VaultDestination.Reading.route(noteId))
                 },
@@ -1734,8 +1741,10 @@ fun VaultNavHost(
         ) {
             val viewModel: PdfActivityFeedViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val activityStudyNotes by viewModel.studyNotes.collectAsStateWithLifecycle()
             PdfActivityFeedScreen(
                 uiState = uiState,
+                studyNotes = activityStudyNotes,
                 onBackClick = { navController.popBackStack() },
                 onToggleExpanded = viewModel::toggleExpanded,
                 onSearchQueryChange = viewModel::setSearchQuery,
@@ -1751,6 +1760,7 @@ fun VaultNavHost(
                         onCreated(noteId)
                     }
                 },
+                onClipHighlightToNote = viewModel::clipHighlightToNote,
                 onNavigateToEditor = { noteId ->
                     navController.navigate(VaultDestination.Editor.route(noteId))
                 }

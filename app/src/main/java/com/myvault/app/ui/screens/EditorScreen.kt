@@ -130,6 +130,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.text.HtmlCompat
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.pdfClipSourceOrNull
 import com.myvault.app.data.repository.SourceReferenceCard
 import com.myvault.app.data.repository.toRelativeTime
 import com.myvault.app.ui.components.EditorTool
@@ -1052,6 +1053,7 @@ fun EditorScreen(
                                     loading = uiState.attachmentsLoading,
                                     attachmentCount = uiState.attachmentCount,
                                     onAttachmentClick = onAttachmentClick,
+                                    onSourceReferenceClick = onSourceReferenceClick,
                                 )
                             }
                         }
@@ -2436,6 +2438,7 @@ private fun EditorAttachmentPreviewSection(
     loading: Boolean,
     attachmentCount: Int,
     onAttachmentClick: (String) -> Unit,
+    onSourceReferenceClick: (String, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
@@ -2448,9 +2451,16 @@ private fun EditorAttachmentPreviewSection(
             EditorAttachmentHydrationPlaceholder(count = attachmentCount)
         } else {
             attachments.forEach { attachment ->
-                AttachmentSheetRow(
+                val clipSource = attachment.pdfClipSourceOrNull()
+                NoteInlineAttachment(
                     attachment = attachment,
-                    onClick = { onAttachmentClick(attachment.id) },
+                    onClick = {
+                        if (clipSource != null) {
+                            onSourceReferenceClick(clipSource.attachmentId, clipSource.pageIndex)
+                        } else {
+                            onAttachmentClick(attachment.id)
+                        }
+                    },
                 )
             }
         }

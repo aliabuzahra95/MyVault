@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
@@ -21,6 +22,10 @@ import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.PdfAnnotationRepository
 import com.myvault.app.data.repository.PdfAnnotationSegmentInput
 import com.myvault.app.data.repository.PdfReadingProgressRepository
+import com.myvault.app.ui.screens.VaultRichTextDocument
+import com.myvault.app.ui.screens.parseVaultRichTextDocument
+import com.myvault.app.ui.screens.toJsonArrayString
+import com.myvault.app.ui.screens.toNoteLinksJsonArrayString
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -28,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -46,6 +52,7 @@ class AttachmentViewerViewModel @Inject constructor(
     private val noteRepository: NoteRepository,
     private val knowledgeRepository: KnowledgeRepository,
     private val narrationController: NarrationController,
+    private val pdfHighlightClipCoordinator: PdfHighlightClipCoordinator,
 ) : ViewModel() {
     private val attachmentId: String = savedStateHandle["attachmentId"] ?: ""
     val initialPageIndex: Int = savedStateHandle["page"] ?: -1
@@ -58,6 +65,8 @@ class AttachmentViewerViewModel @Inject constructor(
     private var pdfProgressSaveJob: Job? = null
     private val pdfSecondaryDataEnabled = MutableStateFlow(false)
     private var pdfSecondaryDataJob: Job? = null
+    private val activeNotepadNoteId = MutableStateFlow<String?>(null)
+    private val notepadSaveJobs = mutableMapOf<String, Job>()
 
     init {
         viewModelScope.launch {
@@ -109,9 +118,27 @@ class AttachmentViewerViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val studyNotes: StateFlow<List<NoteEntity>> =
-        noteRepository.observeAllNotes()
-            .map { notes -> notes.filter { it.deletedAt == null } }
+        noteRepository.observeNotesForMode(FOLDER_MODE_STUDY)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val pdfNotepad: StateFlow<PdfNotepadUiState> = activeNotepadNoteId
+        .flatMapLatest { noteId ->
+            if (noteId == null) {
+                flowOf(PdfNotepadUiState())
+            } else {
+                combine(
+                    noteRepository.observeNote(noteId),
+                    noteRepository.observeRawBlocks(noteId),
+                ) { note, blocks ->
+                    val richText = blocks.firstOrNull { it.type == "rich_text" }
+                        ?.content
+                        ?.let(::parseVaultRichTextDocument)
+                        ?: VaultRichTextDocument(note?.bodyPlainText.orEmpty(), emptyList())
+                    PdfNotepadUiState(note = note, document = richText)
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PdfNotepadUiState())
 
     val pdfReferences: StateFlow<List<LibraryReferencedNote>> =
         knowledgeRepository.observeLibraryReferences()
@@ -383,6 +410,56 @@ class AttachmentViewerViewModel @Inject constructor(
         viewModelScope.launch { knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotationId) }
     }
 
+    fun openPdfNotepad(onReady: () -> Unit = {}) {
+        val selectedId = activeNotepadNoteId.value
+        if (selectedId != null && studyNotes.value.any { it.id == selectedId }) {
+            onReady()
+            return
+        }
+        studyNotes.value.firstOrNull()?.let { note ->
+            activeNotepadNoteId.value = note.id
+            onReady()
+            return
+        }
+        createPdfNotepadNote(onReady = { onReady() })
+    }
+
+    fun selectPdfNotepadNote(noteId: String) {
+        if (studyNotes.value.any { it.id == noteId }) activeNotepadNoteId.value = noteId
+    }
+
+    fun createPdfNotepadNote(onReady: (String) -> Unit = {}) {
+        val title = attachment.value?.fileName
+            ?.substringBeforeLast('.')
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "$it notes" }
+            ?: "PDF notes"
+        viewModelScope.launch {
+            val noteId = noteRepository.createRichTextNote(
+                folderId = null,
+                title = title,
+                text = "",
+                styleMarksJson = "[]",
+            )
+            activeNotepadNoteId.value = noteId
+            onReady(noteId)
+        }
+    }
+
+    fun savePdfNotepad(noteId: String, document: VaultRichTextDocument, immediate: Boolean = false) {
+        notepadSaveJobs.remove(noteId)?.cancel()
+        notepadSaveJobs[noteId] = viewModelScope.launch {
+            if (!immediate) delay(PdfNotepadSaveDebounceMs)
+            noteRepository.saveRichText(
+                noteId = noteId,
+                text = document.text,
+                styleMarksJson = document.styleMarks.toJsonArrayString(),
+                noteLinksJson = document.noteLinks.toNoteLinksJsonArrayString(),
+            )
+            notepadSaveJobs.remove(noteId)
+        }
+    }
+
     fun createStudyNoteFromAnnotation(annotationId: String, onCreated: (String) -> Unit = {}) {
         val annotation = pdfAnnotations.value.firstOrNull { it.id == annotationId } ?: return
         val file = attachment.value ?: return
@@ -404,7 +481,8 @@ class AttachmentViewerViewModel @Inject constructor(
                 appendLine()
                 appendLine("Notes:")
             }
-            val noteId = noteRepository.createImportedRichTextNote(
+            val noteId = noteRepository.createRichTextNote(
+                folderId = null,
                 title = title,
                 text = body,
                 styleMarksJson = "[]",
@@ -413,9 +491,32 @@ class AttachmentViewerViewModel @Inject constructor(
             onCreated(noteId)
         }
     }
+
+    fun clipPdfHighlightToNote(
+        annotationId: String,
+        destinationNoteId: String?,
+        onComplete: (noteId: String?, message: String) -> Unit = { _, _ -> },
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                pdfHighlightClipCoordinator.clipToNote(annotationId, destinationNoteId)
+            }.onSuccess { result ->
+                val label = if (result.imageCount == 1) "Highlight clipped to note." else "${result.imageCount} highlight clips added."
+                onComplete(result.noteId, label)
+            }.onFailure { error ->
+                onComplete(null, error.message ?: "Could not clip this highlight.")
+            }
+        }
+    }
 }
 
 private const val PdfProgressSaveDebounceMs = 450L
+private const val PdfNotepadSaveDebounceMs = 350L
+
+data class PdfNotepadUiState(
+    val note: NoteEntity? = null,
+    val document: VaultRichTextDocument = VaultRichTextDocument("", emptyList()),
+)
 
 data class DocumentTextUiState(
     val isSupported: Boolean = false,

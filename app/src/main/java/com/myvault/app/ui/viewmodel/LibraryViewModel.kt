@@ -578,7 +578,12 @@ class LibraryViewModel @Inject constructor(
                 }
                 appendLine("Notes:")
             }
-            val noteId = noteRepository.createImportedRichTextNote(title = title, text = body, styleMarksJson = "[]")
+            val noteId = noteRepository.createRichTextNote(
+                folderId = null,
+                title = title,
+                text = body,
+                styleMarksJson = "[]",
+            )
             knowledgeRepository.createSourceLinkFromAnnotation(noteId, annotation.id)
             onCreated(noteId)
         }

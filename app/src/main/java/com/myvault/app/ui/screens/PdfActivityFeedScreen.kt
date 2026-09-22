@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
+import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.repository.toRelativeTime
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.components.SearchBar
@@ -72,6 +74,7 @@ import com.myvault.app.ui.viewmodel.PdfActivityGroup
 @Composable
 fun PdfActivityFeedScreen(
     uiState: PdfActivityFeedUiState,
+    studyNotes: List<NoteEntity>,
     onBackClick: () -> Unit,
     onToggleExpanded: (String) -> Unit,
     onSearchQueryChange: (String) -> Unit,
@@ -81,6 +84,7 @@ fun PdfActivityFeedScreen(
     onUpdateActivityDetails: (String, String, String) -> Unit,
     onDeleteSelected: () -> Unit,
     onCreateStudyNoteFromSelected: (onCreated: (String) -> Unit) -> Unit,
+    onClipHighlightToNote: (annotationId: String, destinationNoteId: String?, onComplete: (String?, String) -> Unit) -> Unit,
     onNavigateToEditor: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -90,6 +94,7 @@ fun PdfActivityFeedScreen(
 
     var showActionMenuId by remember { mutableStateOf<LibraryAnnotationItem?>(null) }
     var showEditDialogId by remember { mutableStateOf<LibraryAnnotationItem?>(null) }
+    var clipActivity by remember { mutableStateOf<LibraryAnnotationItem?>(null) }
     var deleteSelectedConfirmOpen by remember { mutableStateOf(false) }
 
     var editTitle by remember { mutableStateOf("") }
@@ -293,11 +298,36 @@ fun PdfActivityFeedScreen(
                     showEditDialogId = activity
                     showActionMenuId = null
                 },
+                if (activity.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT) {
+                    VaultModalAction("Clip to Note", Icons.Rounded.ContentCut) {
+                        clipActivity = activity
+                        showActionMenuId = null
+                    }
+                } else null,
                 VaultModalAction("Enter Selection Mode", Icons.Rounded.PlaylistAddCheck) {
                     onToggleSelection(activity.id)
                     showActionMenuId = null
                 }
-            )
+            ).filterNotNull()
+        )
+    }
+
+    clipActivity?.let { activity ->
+        PdfClipDestinationSheet(
+            notes = studyNotes,
+            onCreateNew = {
+                onClipHighlightToNote(activity.id, null) { noteId, _ ->
+                    clipActivity = null
+                    noteId?.let(onNavigateToEditor)
+                }
+            },
+            onSelect = { note ->
+                onClipHighlightToNote(activity.id, note.id) { noteId, _ ->
+                    clipActivity = null
+                    noteId?.let(onNavigateToEditor)
+                }
+            },
+            onDismiss = { clipActivity = null },
         )
     }
 

@@ -31,6 +31,12 @@ class PdfAnnotationRepository @Inject constructor(
 
     fun observeSegmentsForAttachment(attachmentId: String) = segmentDao.observeForAttachment(attachmentId)
 
+    suspend fun getAnnotation(annotationId: String): PdfAnnotationEntity? =
+        annotationDao.getAll().firstOrNull { it.id == annotationId }
+
+    suspend fun getSegments(annotationId: String): List<PdfAnnotationSegmentEntity> =
+        segmentDao.getAll().filter { it.annotationId == annotationId }
+
     suspend fun cleanupGenuinelyInvalidAnnotations() {
         val ids = annotationDao.getGenuinelyInvalidIds()
         if (ids.isEmpty()) return

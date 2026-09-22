@@ -104,6 +104,7 @@ import com.myvault.app.ui.components.NoteWorkspaceHeader
 import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultModal
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.pdfClipSourceOrNull
 import com.myvault.app.data.narration.NarrationConfig
 import com.myvault.app.data.narration.AzureNarrationProgress
 import com.myvault.app.data.narration.NarrationProvider
@@ -346,9 +347,16 @@ fun ReadingScreen(
                     item { AttachmentHydrationPlaceholder(count = uiState.attachmentCount) }
                 }
                 items(uiState.attachments, key = { it.id }) { attachment ->
+                    val clipSource = attachment.pdfClipSourceOrNull()
                     NoteInlineAttachment(
                         attachment = attachment,
-                        onClick = { onAttachmentClick(attachment.id) },
+                        onClick = {
+                            if (clipSource != null) {
+                                onSourceReferenceClick(clipSource.attachmentId, clipSource.pageIndex)
+                            } else {
+                                onAttachmentClick(attachment.id)
+                            }
+                        },
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                     )
                 }

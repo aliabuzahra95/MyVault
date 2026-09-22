@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
+import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.local.entity.FolderEntity
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
@@ -48,12 +49,16 @@ class PdfActivityFeedViewModel @Inject constructor(
     private val pdfAnnotationRepository: PdfAnnotationRepository,
     private val noteRepository: NoteRepository,
     private val knowledgeRepository: KnowledgeRepository,
+    private val pdfHighlightClipCoordinator: PdfHighlightClipCoordinator,
 ) : ViewModel() {
     val libraryMode: String = savedStateHandle["libraryMode"] ?: "library"
     private val isPersonalLibrary = libraryMode == FOLDER_MODE_PERSONAL_LIBRARY
     private val expandedPdfIds = MutableStateFlow<Set<String>>(emptySet())
     private val searchQuery = MutableStateFlow("")
     private val selectedActivityIds = MutableStateFlow<Set<String>>(emptySet())
+
+    val studyNotes = noteRepository.observeNotesForMode(FOLDER_MODE_STUDY)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val filterState = combine(
         expandedPdfIds,
@@ -211,12 +216,29 @@ class PdfActivityFeedViewModel @Inject constructor(
                     appendLine()
                 }
             }
-            val noteId = noteRepository.createImportedRichTextNote(title = title, text = body, styleMarksJson = "[]")
+            val noteId = noteRepository.createRichTextNote(
+                folderId = null,
+                title = title,
+                text = body,
+                styleMarksJson = "[]",
+            )
             activities.forEach { act ->
                 knowledgeRepository.createSourceLinkFromAnnotation(noteId, act.id)
             }
             clearSelection()
             onCreated(noteId)
+        }
+    }
+
+    fun clipHighlightToNote(
+        annotationId: String,
+        destinationNoteId: String?,
+        onComplete: (String?, String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            runCatching { pdfHighlightClipCoordinator.clipToNote(annotationId, destinationNoteId) }
+                .onSuccess { result -> onComplete(result.noteId, "Highlight clipped to note.") }
+                .onFailure { onComplete(null, it.message ?: "Could not clip this highlight.") }
         }
     }
 

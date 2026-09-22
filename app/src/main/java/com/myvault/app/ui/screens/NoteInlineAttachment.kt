@@ -3,11 +3,14 @@ package com.myvault.app.ui.screens
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -17,6 +20,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.pdfClipSourceOrNull
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
 
@@ -40,17 +44,28 @@ internal fun NoteInlineAttachment(attachment: AttachmentEntity, onClick: () -> U
         AttachmentSheetRow(attachment, onClick, modifier)
         return
     }
+    val clipSource = attachment.pdfClipSourceOrNull()
     Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = VaultShapes.sm,
         color = VaultThemeTokens.colors.inset) {
-        BoxWithConstraints {
-            if (bitmap == null) {
-                Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        Column {
+            BoxWithConstraints {
+                if (bitmap == null) {
+                    Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    val imageHeight = (maxWidth * bitmap.height.toFloat() / bitmap.width).coerceAtMost(if (compact) 140.dp else 600.dp)
+                    Image(bitmap, attachment.fileName.ifBlank { "Image attachment" },
+                        Modifier.fillMaxWidth().height(imageHeight), contentScale = ContentScale.Fit)
                 }
-            } else {
-                val imageHeight = (maxWidth * bitmap.height.toFloat() / bitmap.width).coerceAtMost(if (compact) 140.dp else 600.dp)
-                Image(bitmap, attachment.fileName.ifBlank { "Image attachment" },
-                    Modifier.fillMaxWidth().height(imageHeight), contentScale = ContentScale.Fit)
+            }
+            if (clipSource != null) {
+                Text(
+                    text = "Source: ${attachment.fileName.substringBeforeLast('.')} · Tap to open page ${clipSource.pageIndex + 1}",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    color = VaultThemeTokens.colors.textSecondary,
+                    style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                )
             }
         }
     }

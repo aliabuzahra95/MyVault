@@ -154,6 +154,7 @@ import com.myvault.app.data.repository.DocumentTextExtractor
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.data.repository.LibraryReferencedNote
 import com.myvault.app.data.repository.PdfAnnotationSegmentInput
+import com.myvault.app.ui.viewmodel.PdfNotepadUiState
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
@@ -607,6 +608,7 @@ fun AttachmentViewerScreen(
     pdfAnnotations: List<PdfAnnotationEntity> = emptyList(),
     pdfAnnotationSegments: List<PdfAnnotationSegmentEntity> = emptyList(),
     studyNotes: List<NoteEntity> = emptyList(),
+    pdfNotepad: PdfNotepadUiState = PdfNotepadUiState(),
     pdfReferences: List<LibraryReferencedNote> = emptyList(),
     pdfAnnotationTags: Map<String, List<KnowledgeTagChip>> = emptyMap(),
     documentText: String = "",
@@ -634,6 +636,11 @@ fun AttachmentViewerScreen(
     onRemovePdfAnnotationTag: (annotationId: String, tagId: String) -> Unit = { _, _ -> },
     onLinkPdfAnnotationToStudyNote: (annotationId: String, noteId: String) -> Unit = { _, _ -> },
     onCreateStudyNoteFromPdfAnnotation: (annotationId: String, onCreated: (String) -> Unit) -> Unit = { _, _ -> },
+    onClipPdfAnnotationToNote: (annotationId: String, destinationNoteId: String?, onComplete: (String?, String) -> Unit) -> Unit = { _, _, _ -> },
+    onPreparePdfNotepad: (onReady: () -> Unit) -> Unit = {},
+    onSelectPdfNotepadNote: (noteId: String) -> Unit = {},
+    onCreatePdfNotepadNote: () -> Unit = {},
+    onSavePdfNotepad: (noteId: String, document: VaultRichTextDocument, immediate: Boolean) -> Unit = { _, _, _ -> },
     onOpenStudyNote: (noteId: String) -> Unit = {},
     onStartDevicePdfNarration: (selection: String?) -> Unit = {},
     onStartOpenAiPdfNarration: (selection: String?) -> Unit = {},
@@ -664,6 +671,7 @@ fun AttachmentViewerScreen(
             annotations = pdfAnnotations,
             annotationSegments = pdfAnnotationSegments,
             studyNotes = studyNotes,
+            notepad = pdfNotepad,
             references = pdfReferences,
             annotationTags = pdfAnnotationTags,
             initialPageIndex = initialPageIndex,
@@ -683,6 +691,11 @@ fun AttachmentViewerScreen(
             onRemoveAnnotationTag = onRemovePdfAnnotationTag,
             onLinkAnnotationToStudyNote = onLinkPdfAnnotationToStudyNote,
             onCreateStudyNoteFromAnnotation = onCreateStudyNoteFromPdfAnnotation,
+            onClipAnnotationToNote = onClipPdfAnnotationToNote,
+            onPrepareNotepad = onPreparePdfNotepad,
+            onSelectNotepadNote = onSelectPdfNotepadNote,
+            onCreateNotepadNote = onCreatePdfNotepadNote,
+            onSaveNotepad = onSavePdfNotepad,
             onOpenStudyNote = onOpenStudyNote,
             onStartDeviceNarration = onStartDevicePdfNarration,
             onStartOpenAiNarration = onStartOpenAiPdfNarration,

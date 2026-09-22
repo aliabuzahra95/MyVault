@@ -43,6 +43,23 @@ class PdfAnnotationPreviewRendererTest {
     }
 
     @Test
+    fun durableClipPlanKeepsReadableWidthAndFullParagraphHeight() {
+        val plan = requireNotNull(
+            buildPdfPreviewPlan(
+                pageWidth = 600,
+                pageHeight = 900,
+                segments = listOf(segment(0, 55f, 120f, 545f, 620f)),
+                targetWidthPx = 1_440,
+                maxHeightPx = 3_200,
+            ),
+        )
+
+        assertEquals(1_440, plan.outputWidth)
+        assertFalse(plan.partial)
+        assertTrue(plan.outputHeight > 1_000)
+    }
+
+    @Test
     fun cacheIdentityChangesForColourGeometryAndFileVersion() {
         val file = File("preview-fixture.pdf")
         val annotation = annotation()

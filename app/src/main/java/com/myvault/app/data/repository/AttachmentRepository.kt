@@ -60,6 +60,9 @@ class AttachmentRepository @Inject constructor(
 
     fun observeAttachment(id: String) = attachmentDao.observeById(id)
 
+    suspend fun getAttachment(id: String): AttachmentEntity? =
+        attachmentDao.getByIdIncludingDeleted(id)?.takeIf { it.deletedAt == null }
+
     fun observeForNote(noteId: String) = attachmentDao.observeForNote(noteId)
 
     fun observeCountForNote(noteId: String) = attachmentDao.observeCountForNote(noteId)
@@ -105,6 +108,34 @@ class AttachmentRepository @Inject constructor(
                     sizeBytes = sizeBytes,
                     localPath = localFile.absolutePath,
                     remoteUrl = null,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            ),
+        )
+        id
+    }
+
+    suspend fun attachGeneratedImage(
+        noteId: String,
+        fileName: String,
+        bytes: ByteArray,
+        sourceUrl: String?,
+    ): String = withContext(Dispatchers.IO) {
+        val id = UUID.randomUUID().toString()
+        val safeName = fileName.sanitizeFileName().ifBlank { "pdf-clip-$id.png" }
+        val attachmentsDir = File(context.filesDir, "attachments/$noteId").apply { mkdirs() }
+        val localFile = File(attachmentsDir, "${id}_$safeName")
+        localFile.outputStream().use { it.write(bytes) }
+        attachmentDao.upsertAll(
+            listOf(
+                AttachmentEntity(
+                    id = id,
+                    noteId = noteId,
+                    fileName = safeName,
+                    mimeType = "image/png",
+                    sizeBytes = localFile.length(),
+                    localPath = localFile.absolutePath,
+                    remoteUrl = sourceUrl,
                     createdAt = System.currentTimeMillis(),
                 ),
             ),

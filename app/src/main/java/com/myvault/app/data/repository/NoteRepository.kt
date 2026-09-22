@@ -70,6 +70,12 @@ class NoteRepository @Inject constructor(
 
     fun observeAllNotes() = noteDao.observeAll()
 
+    fun observeNotesForMode(mode: String): Flow<List<NoteEntity>> =
+        combine(noteDao.observeAll(), folderDao.observeAll()) { notes, folders ->
+            val folderModes = folders.associate { it.id to it.mode }
+            notes.filter { note -> noteBelongsToMode(note, folderModes, mode) }
+        }
+
     fun observeBacklinks(noteId: String): Flow<List<NoteLinkRef>> =
         combine(
             noteDao.observeAll()
@@ -169,8 +175,28 @@ class NoteRepository @Inject constructor(
 
     suspend fun createImportedRichTextNote(title: String, text: String, styleMarksJson: String): String {
         val folderId = importFolderId()
+        return createRichTextNote(
+            folderId = folderId,
+            title = title,
+            text = text,
+            styleMarksJson = styleMarksJson,
+        )
+    }
+
+    suspend fun createRichTextNote(
+        folderId: String?,
+        title: String,
+        text: String,
+        styleMarksJson: String,
+        noteLinksJson: String = "[]",
+    ): String {
         val noteId = createNote(folderId = folderId, title = title.ifBlank { text.firstTitleLine() })
-        saveRichText(noteId = noteId, text = text, styleMarksJson = styleMarksJson)
+        saveRichText(
+            noteId = noteId,
+            text = text,
+            styleMarksJson = styleMarksJson,
+            noteLinksJson = noteLinksJson,
+        )
         return noteId
     }
 
@@ -633,6 +659,12 @@ class NoteRepository @Inject constructor(
         EditorBlockType.Paragraph -> "Start writing..."
     }
 }
+
+internal fun noteBelongsToMode(note: NoteEntity, folderModes: Map<String, String>, mode: String): Boolean =
+    note.deletedAt == null && when (val folderId = note.folderId) {
+        null -> mode == FOLDER_MODE_STUDY
+        else -> folderModes[folderId] == mode
+    }
 
 private const val VersionSnapshotIntervalMs = 5 * 60 * 1000L
 private const val MaxVersionsPerNote = 30

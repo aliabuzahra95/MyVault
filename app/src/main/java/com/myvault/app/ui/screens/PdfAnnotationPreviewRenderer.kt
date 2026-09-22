@@ -103,6 +103,27 @@ internal object PdfAnnotationPreviewRenderer {
         rendered
     }
 
+    suspend fun renderDurableClips(
+        file: File,
+        annotation: PdfAnnotationEntity,
+        allSegments: List<PdfAnnotationSegmentEntity>,
+    ): List<PdfAnnotationRasterPreview> = withContext(Dispatchers.IO) {
+        if (!file.isFile) return@withContext emptyList()
+        annotation.resolvedGeometrySegments(allSegments)
+            .groupBy { it.pageIndex }
+            .toSortedMap()
+            .values
+            .mapNotNull { pageSegments ->
+                render(
+                    file = file,
+                    annotation = annotation,
+                    segments = pageSegments,
+                    targetWidthPx = 1_440,
+                    maxHeightPx = 3_200,
+                )
+            }
+    }
+
     fun invalidate(annotationId: String) {
         synchronized(cache) {
             cache.snapshot().keys
@@ -134,13 +155,21 @@ internal object PdfAnnotationPreviewRenderer {
         file: File,
         annotation: PdfAnnotationEntity,
         segments: List<PdfAnnotationSegmentEntity>,
+        targetWidthPx: Int = 960,
+        maxHeightPx: Int = 420,
     ): PdfAnnotationRasterPreview? = runCatching {
         ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
             PdfRenderer(descriptor).use { renderer ->
                 val pageIndex = segments.firstOrNull()?.pageIndex ?: annotation.pageIndex
                 if (pageIndex !in 0 until renderer.pageCount) return null
                 renderer.openPage(pageIndex).use { page ->
-                    val plan = buildPdfPreviewPlan(page.width, page.height, segments) ?: return null
+                    val plan = buildPdfPreviewPlan(
+                        pageWidth = page.width,
+                        pageHeight = page.height,
+                        segments = segments,
+                        targetWidthPx = targetWidthPx,
+                        maxHeightPx = maxHeightPx,
+                    ) ?: return null
                     val bitmap = Bitmap.createBitmap(plan.outputWidth, plan.outputHeight, Bitmap.Config.ARGB_8888)
                     bitmap.eraseColor(android.graphics.Color.WHITE)
                     val matrix = Matrix().apply {

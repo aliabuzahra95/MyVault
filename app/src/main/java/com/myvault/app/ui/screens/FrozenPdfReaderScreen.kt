@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.EditNote
@@ -115,6 +116,7 @@ import com.myvault.app.data.repository.PdfAnnotationSegmentInput
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.ui.viewmodel.PdfNotepadUiState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -131,6 +133,8 @@ private enum class PdfReaderSheet {
     AnnotationColours,
     AnnotationTags,
     StudyLink,
+    ClipToNote,
+    Notepad,
     Listen,
     PageJump,
 }
@@ -154,6 +158,7 @@ internal fun FrozenPdfReaderScreen(
     annotations: List<PdfAnnotationEntity>,
     annotationSegments: List<PdfAnnotationSegmentEntity>,
     studyNotes: List<NoteEntity>,
+    notepad: PdfNotepadUiState,
     references: List<LibraryReferencedNote>,
     annotationTags: Map<String, List<KnowledgeTagChip>>,
     initialPageIndex: Int?,
@@ -171,6 +176,11 @@ internal fun FrozenPdfReaderScreen(
     onRemoveAnnotationTag: (annotationId: String, tagId: String) -> Unit,
     onLinkAnnotationToStudyNote: (annotationId: String, noteId: String) -> Unit,
     onCreateStudyNoteFromAnnotation: (annotationId: String, onCreated: (String) -> Unit) -> Unit,
+    onClipAnnotationToNote: (annotationId: String, destinationNoteId: String?, onComplete: (String?, String) -> Unit) -> Unit,
+    onPrepareNotepad: (onReady: () -> Unit) -> Unit,
+    onSelectNotepadNote: (noteId: String) -> Unit,
+    onCreateNotepadNote: () -> Unit,
+    onSaveNotepad: (noteId: String, document: VaultRichTextDocument, immediate: Boolean) -> Unit,
     onOpenStudyNote: (noteId: String) -> Unit,
     onStartDeviceNarration: (selection: String?) -> Unit,
     onStartOpenAiNarration: (selection: String?) -> Unit,
@@ -457,6 +467,9 @@ internal fun FrozenPdfReaderScreen(
                 onPageClick = {
                     jumpDraft = (pageIndex + 1).toString()
                     sheet = PdfReaderSheet.PageJump
+                },
+                onNotepad = {
+                    onPrepareNotepad { sheet = PdfReaderSheet.Notepad }
                 },
                 overflowOpen = overflowOpen,
                 onOverflowOpenChange = { overflowOpen = it },
@@ -755,6 +768,7 @@ internal fun FrozenPdfReaderScreen(
                     onCreateStudyNoteFromAnnotation(annotation.id, onOpenStudyNote)
                     sheet = PdfReaderSheet.None
                 },
+                onClipToNote = { sheet = PdfReaderSheet.ClipToNote },
                 onDelete = {
                     PdfAnnotationPreviewRenderer.invalidate(annotation.id)
                     onDeleteAnnotation(annotation.id)
@@ -797,6 +811,35 @@ internal fun FrozenPdfReaderScreen(
                 },
             )
         }
+        PdfReaderSheet.ClipToNote -> selectedAnnotation?.let { annotation ->
+            PdfClipDestinationSheet(
+                notes = studyNotes,
+                onCreateNew = {
+                    onClipAnnotationToNote(annotation.id, null) { noteId, message ->
+                        transientMessage = message
+                        sheet = PdfReaderSheet.None
+                        noteId?.let(onOpenStudyNote)
+                    }
+                },
+                onSelect = { note ->
+                    onClipAnnotationToNote(annotation.id, note.id) { noteId, message ->
+                        transientMessage = message
+                        sheet = PdfReaderSheet.None
+                        noteId?.let(onOpenStudyNote)
+                    }
+                },
+                onDismiss = { sheet = PdfReaderSheet.None },
+            )
+        }
+        PdfReaderSheet.Notepad -> PdfStudyNotepadSheet(
+            state = notepad,
+            notes = studyNotes,
+            onSelectNote = onSelectNotepadNote,
+            onCreateNote = onCreateNotepadNote,
+            onOpenNote = onOpenStudyNote,
+            onSave = onSaveNotepad,
+            onDismiss = { sheet = PdfReaderSheet.None },
+        )
         PdfReaderSheet.Listen -> FrozenListenSheet(
             onDismiss = { sheet = PdfReaderSheet.None },
             onDevice = {
@@ -837,6 +880,7 @@ private fun FrozenPdfHeader(
     pageCount: Int,
     onMenuClick: () -> Unit,
     onPageClick: () -> Unit,
+    onNotepad: () -> Unit,
     overflowOpen: Boolean,
     onOverflowOpenChange: (Boolean) -> Unit,
     onActivity: () -> Unit,
@@ -880,6 +924,9 @@ private fun FrozenPdfHeader(
                     fontSize = 10.5.sp,
                     color = colors.textMuted,
                 )
+            }
+            IconButton(onClick = onNotepad) {
+                Icon(Icons.Rounded.EditNote, "Open PDF notepad", Modifier.size(19.dp), tint = colors.text)
             }
             Box {
                 IconButton(onClick = { onOverflowOpenChange(true) }) {
@@ -1551,6 +1598,7 @@ private fun FrozenAnnotationActionsSheet(
     onTags: () -> Unit,
     onLink: () -> Unit,
     onCreateStudyNote: () -> Unit,
+    onClipToNote: () -> Unit,
     onDelete: () -> Unit,
 ) {
     if (annotation.isCompatibilityPreservedPdfTextBox()) return
@@ -1562,6 +1610,9 @@ private fun FrozenAnnotationActionsSheet(
         add(FrozenPdfAction("Tags", Icons.Rounded.Sell, onTags))
         add(FrozenPdfAction("Link to Study note", Icons.Rounded.Link, onLink))
         add(FrozenPdfAction("Create Study note", Icons.Rounded.NoteAdd, onCreateStudyNote))
+        if (annotation.annotationType == PdfAnnotationEntity.TYPE_HIGHLIGHT) {
+            add(FrozenPdfAction("Clip to Note", Icons.Rounded.ContentCut, onClipToNote))
+        }
         add(FrozenPdfAction("Delete", Icons.Rounded.DeleteOutline, onDelete))
     }
     FrozenActionSheet(
