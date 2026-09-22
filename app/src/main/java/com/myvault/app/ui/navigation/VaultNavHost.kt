@@ -461,7 +461,7 @@ fun VaultNavHost(
             items = shellNavigationItems,
             selectedIndex = if (currentRoute == VaultDestination.Reflections.route) -1 else selectedRootIndex,
             selectedExplorerNodeId = selectedExplorerNodeId,
-            noteTitleColor = preferences.noteTitleColor,
+            highContrastTitles = preferences.noteTitleColor == com.myvault.app.data.preferences.NoteTitleColorPreference.HighContrast,
             onItemSelected = { index -> selectRootMode(rootModes[index]) },
             onDashboardSelected = {
                 navController.navigateToVaultRoot(VaultDestination.Dashboard.route)
@@ -1682,7 +1682,7 @@ fun VaultNavHost(
                 onDashboardFontSizeSelected = viewModel::setDashboardFontSize,
                 onNoteFontSizeSelected = viewModel::setNoteFontSize,
                 onNotePreviewSelected = viewModel::setNotePreview,
-                onNoteTitleColorSelected = viewModel::setNoteTitleColor,
+                onHighContrastTitlesChanged = viewModel::setHighContrastTitles,
                 onShowFullNoteTitlesChanged = viewModel::setShowFullNoteTitles,
                 onShowFullFileTitlesChanged = viewModel::setShowFullFileTitles,
                 onDefaultNoteViewSelected = viewModel::setDefaultNoteView,

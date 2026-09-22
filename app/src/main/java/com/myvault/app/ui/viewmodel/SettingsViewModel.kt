@@ -140,8 +140,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferences.setNotePreview(notePreview) }
     }
 
-    fun setNoteTitleColor(color: NoteTitleColorPreference) {
-        viewModelScope.launch { preferences.setNoteTitleColor(color) }
+    fun setHighContrastTitles(enabled: Boolean) {
+        val preference = if (enabled) NoteTitleColorPreference.HighContrast else NoteTitleColorPreference.Standard
+        viewModelScope.launch { preferences.setNoteTitleColor(preference) }
     }
 
     fun setShowFullNoteTitles(show: Boolean) {

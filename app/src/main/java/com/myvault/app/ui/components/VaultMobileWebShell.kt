@@ -74,7 +74,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import com.myvault.app.data.preferences.NoteTitleColorPreference
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -155,7 +154,7 @@ fun VaultMobileWebShell(
     persistedExpandedExplorerKeys: Set<String> = emptySet(),
     onPersistExpandedExplorerKeys: (Set<String>) -> Unit = {},
     selectedExplorerNodeId: String? = null,
-    noteTitleColor: NoteTitleColorPreference = NoteTitleColorPreference.Standard,
+    highContrastTitles: Boolean = false,
     onExplorerNodeSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
     onExplorerAddSelected: (Int, VaultMobileWebExplorerNode?) -> Unit = { _, _ -> },
     onExplorerMoreSelected: (Int, VaultMobileWebExplorerNode) -> Unit = { _, _ -> },
@@ -336,7 +335,7 @@ fun VaultMobileWebShell(
                                                     depth = 0,
                                                     expandedKeys = expandedExplorerKeys,
                                                     selectedNodeId = selectedExplorerNodeId,
-                                                    noteTitleColor = noteTitleColor,
+                                                    highContrastTitles = highContrastTitles,
                                                     onToggle = { key ->
                                                         persistExpandedKeys(expandedExplorerKeys.toggleKey(key))
                                                     },
@@ -585,7 +584,7 @@ private fun DrawerExplorerNode(
     depth: Int,
     expandedKeys: List<String>,
     selectedNodeId: String?,
-    noteTitleColor: NoteTitleColorPreference,
+    highContrastTitles: Boolean,
     onToggle: (String) -> Unit,
     onOpen: (VaultMobileWebExplorerNode) -> Unit,
     onAdd: (VaultMobileWebExplorerNode) -> Unit,
@@ -597,13 +596,7 @@ private fun DrawerExplorerNode(
     val expanded = nodeKey in expandedKeys
     val selected = node.id == selectedNodeId
     val folderColor = folderSemanticColor(node.colorKey, colors.textSecondary)
-    val ordinaryNoteTitleColor = when (noteTitleColor) {
-        NoteTitleColorPreference.Standard -> colors.textSecondary
-        NoteTitleColorPreference.HighContrast -> colors.text
-        NoteTitleColorPreference.Accent -> colors.accent
-        NoteTitleColorPreference.Green -> colors.success
-        NoteTitleColorPreference.Gold -> colors.warning
-    }
+    val ordinaryFileTitleColor = if (highContrastTitles) colors.text else colors.textSecondary
     val indent = (16 + depth.coerceAtMost(3) * 8).dp
     Row(
         modifier = Modifier
@@ -665,8 +658,8 @@ private fun DrawerExplorerNode(
                     folderColor
                 } else if (selected) {
                     colors.text
-                } else if (node.type == VaultMobileWebExplorerNodeType.Note) {
-                    ordinaryNoteTitleColor
+                } else if (node.type == VaultMobileWebExplorerNodeType.Note || node.type == VaultMobileWebExplorerNodeType.Document) {
+                    ordinaryFileTitleColor
                 } else {
                     colors.textSecondary
                 },
@@ -703,7 +696,7 @@ private fun DrawerExplorerNode(
                     depth = depth + 1,
                     expandedKeys = expandedKeys,
                     selectedNodeId = selectedNodeId,
-                    noteTitleColor = noteTitleColor,
+                    highContrastTitles = highContrastTitles,
                     onToggle = onToggle,
                     onOpen = onOpen,
                     onAdd = onAdd,
