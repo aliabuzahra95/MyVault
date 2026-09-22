@@ -11,6 +11,7 @@ import com.myvault.app.data.repository.StorageRepository
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.preferences.AzureSpeechSettings
+import com.myvault.app.data.preferences.NoteTitleColorPreference
 import com.myvault.app.data.sync.DriveSyncResult
 import com.myvault.app.data.sync.DriveAuthorizationResult
 import com.myvault.app.data.sync.DriveRestoreState
@@ -137,6 +138,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setNotePreview(notePreview: String) {
         viewModelScope.launch { preferences.setNotePreview(notePreview) }
+    }
+
+    fun setNoteTitleColor(color: NoteTitleColorPreference) {
+        viewModelScope.launch { preferences.setNoteTitleColor(color) }
     }
 
     fun setShowFullNoteTitles(show: Boolean) {

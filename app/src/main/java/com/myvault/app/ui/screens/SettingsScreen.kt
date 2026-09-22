@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FolderDelete
+import androidx.compose.material.icons.rounded.FormatColorText
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.ManageAccounts
@@ -100,6 +102,7 @@ import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.theme.VaultThemeTokens
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.preferences.AzureSpeechSettings
+import com.myvault.app.data.preferences.NoteTitleColorPreference
 import com.myvault.app.data.narration.AzureNarrationConfig
 import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.sync.DriveConflictMessage
@@ -138,6 +141,7 @@ fun SettingsScreen(
     onDashboardFontSizeSelected: (String) -> Unit = {},
     onNoteFontSizeSelected: (String) -> Unit = {},
     onNotePreviewSelected: (String) -> Unit = {},
+    onNoteTitleColorSelected: (NoteTitleColorPreference) -> Unit = {},
     onShowFullNoteTitlesChanged: (Boolean) -> Unit = {},
     onShowFullFileTitlesChanged: (Boolean) -> Unit = {},
     onDefaultNoteViewSelected: (String) -> Unit = {},
@@ -218,6 +222,7 @@ fun SettingsScreen(
             onDashboardFont = { choiceDialog = "dashboard" },
             onNoteFont = { choiceDialog = "note_font" },
             onNotePreview = { choiceDialog = "preview" },
+            onNoteTitleColor = { choiceDialog = "note_title_color" },
             onFullNotes = { onShowFullNoteTitlesChanged(!preferences.showFullNoteTitles) },
             onFullFiles = { onShowFullFileTitlesChanged(!preferences.showFullFileTitles) },
             onDefaultView = { choiceDialog = "default_view" },
@@ -287,6 +292,7 @@ fun SettingsScreen(
         "dashboard" -> FrozenChoiceDialog("Dashboard font size", listOf(SettingsChoice("small", "Small"), SettingsChoice("medium", "Medium"), SettingsChoice("medium_large", "Medium-Large"), SettingsChoice("large", "Large")), preferences.dashboardFontSize, { choiceDialog = null }) { onDashboardFontSizeSelected(it); choiceDialog = null }
         "note_font" -> FrozenChoiceDialog("Note editor font size", listOf(SettingsChoice("small", "Small"), SettingsChoice("medium", "Medium"), SettingsChoice("large", "Large")), preferences.noteFontSize, { choiceDialog = null }) { onNoteFontSizeSelected(it); choiceDialog = null }
         "preview" -> FrozenChoiceDialog("Note preview", listOf(SettingsChoice("off", "Off"), SettingsChoice("one", "1 line"), SettingsChoice("two", "2 lines")), preferences.notePreview, { choiceDialog = null }) { onNotePreviewSelected(it); choiceDialog = null }
+        "note_title_color" -> NoteTitleColorDialog(preferences.noteTitleColor, { choiceDialog = null }) { onNoteTitleColorSelected(it); choiceDialog = null }
         "default_view" -> FrozenChoiceDialog("Default note view", listOf(SettingsChoice("reading", "Reading"), SettingsChoice("editing", "Editing")), preferences.defaultNoteView, { choiceDialog = null }) { onDefaultNoteViewSelected(it); choiceDialog = null }
         "narration" -> FrozenChoiceDialog("Default Listen provider", NarrationProvider.entries.map { SettingsChoice(it.storedValue, it.label) }, preferences.narrationProvider, { choiceDialog = null }) { onNarrationProviderSelected(it); choiceDialog = null }
         "lock_timer" -> SettingsLongChoiceDialog("Auto-lock timer", listOf(SettingsLongChoice(30_000L, "30 seconds"), SettingsLongChoice(60_000L, "1 minute"), SettingsLongChoice(300_000L, "5 minutes"), SettingsLongChoice(1_800_000L, "30 minutes"), SettingsLongChoice(3_600_000L, "1 hour")), preferences.securityLockTimeoutMs, { choiceDialog = null }) { onSecurityLockTimeoutSelected(it); choiceDialog = null }
@@ -317,6 +323,7 @@ private fun FrozenSettingsMain(
     onDashboardFont: () -> Unit,
     onNoteFont: () -> Unit,
     onNotePreview: () -> Unit,
+    onNoteTitleColor: () -> Unit,
     onFullNotes: () -> Unit,
     onFullFiles: () -> Unit,
     onDefaultView: () -> Unit,
@@ -337,6 +344,7 @@ private fun FrozenSettingsMain(
         frozenSection("APPEARANCE") {
             FrozenSettingsRow(Icons.Rounded.DarkMode, "Theme", value = preferences.theme.displayName(), onClick = { onNavigate(FrozenSettingsDestination.Theme) })
             FrozenSettingsRow(Icons.Rounded.ColorLens, "Accent colour", value = if (preferences.materialYouEnabled) "Dynamic" else preferences.accentColor, onClick = { onNavigate(FrozenSettingsDestination.Theme) })
+            FrozenSettingsRow(Icons.Rounded.FormatColorText, "Note title colour", value = preferences.noteTitleColor.label, onClick = onNoteTitleColor)
             FrozenSettingsRow(Icons.Rounded.Palette, "Material You", subtitle = "Use Android dynamic colour", switchValue = preferences.materialYouEnabled, onSwitch = onMaterialYouChange)
         }
         frozenSection("READING & DISPLAY") {
@@ -792,6 +800,51 @@ private fun FrozenEmptyState(message: String) {
 
 @Composable
 private fun FrozenChoiceDialog(title: String, options: List<SettingsChoice>, selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) = SettingsChoiceDialog(title, options, selected, onDismiss, onSelect)
+
+@Composable
+private fun NoteTitleColorDialog(
+    selected: NoteTitleColorPreference,
+    onDismiss: () -> Unit,
+    onSelect: (NoteTitleColorPreference) -> Unit,
+) {
+    val colors = VaultThemeTokens.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Note title colour") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                NoteTitleColorPreference.entries.forEach { option ->
+                    val swatch = when (option) {
+                        NoteTitleColorPreference.Standard -> colors.textSecondary
+                        NoteTitleColorPreference.HighContrast -> colors.text
+                        NoteTitleColorPreference.Accent -> colors.accent
+                        NoteTitleColorPreference.Green -> colors.success
+                        NoteTitleColorPreference.Gold -> colors.warning
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(option) }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .background(swatch, CircleShape),
+                        )
+                        Text(option.label, modifier = Modifier.weight(1f), color = colors.text)
+                        if (option == selected) {
+                            Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = colors.accent)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
 
 @Composable
 private fun FrozenConfirmDialog(title: String, message: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit, showCancel: Boolean = true) {
