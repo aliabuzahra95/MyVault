@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -28,12 +31,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -54,6 +66,7 @@ import com.myvault.app.ui.components.buildQuranArabicText
 import com.myvault.app.ui.theme.DarkVaultColors
 import com.myvault.app.ui.theme.VaultThemeTokens
 import kotlin.math.ceil
+import kotlinx.coroutines.withTimeoutOrNull
 
 private val QuranWordRenderingUthmaniHafsFamily = FontFamily(
     Font(R.font.uthmani_hafs, weight = FontWeight.Normal),
@@ -72,6 +85,7 @@ internal fun QuranWordFlow(
     val colors = VaultThemeTokens.colors
     val words = ayah.words
     if (words.isEmpty() || !wordDebugEnabled) {
+        var textLayoutResult by remember(ayah.verseKey) { mutableStateOf<TextLayoutResult?>(null) }
         val renderedArabic = remember(ayah.verseKey, ayah.arabicText, ayah.tajweedAnnotations, tajweedEnabled, colors, memorizationConcealAmount) {
             buildSafeArabicText(
                 text = ayah.arabicText,
@@ -84,7 +98,14 @@ internal fun QuranWordFlow(
         }
         Text(
             text = renderedArabic,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .quranWordTapTarget(
+                    words = words,
+                    layoutProvider = { textLayoutResult },
+                    onWordClick = onWordClick,
+                ),
+            onTextLayout = { textLayoutResult = it },
             style = quranArabicTextStyle(arabicTextSize),
             color = colors.text,
             textAlign = TextAlign.Right,
@@ -112,6 +133,81 @@ internal fun QuranWordFlow(
         }
     }
 }
+
+private fun Modifier.quranWordTapTarget(
+    words: List<QuranWord>,
+    layoutProvider: () -> TextLayoutResult?,
+    onWordClick: (QuranWord) -> Unit,
+): Modifier {
+    if (words.isEmpty()) return this
+    return pointerInput(words, onWordClick) {
+        detectQuranWordTap(words, layoutProvider, onWordClick)
+    }
+}
+
+private suspend fun PointerInputScope.detectQuranWordTap(
+    words: List<QuranWord>,
+    layoutProvider: () -> TextLayoutResult?,
+    onWordClick: (QuranWord) -> Unit,
+) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)
+        val up = waitForQuickTapOrNull() ?: return@awaitEachGesture
+        val layout = layoutProvider() ?: return@awaitEachGesture
+        val word = layout.wordAtPosition(words, up.position) ?: return@awaitEachGesture
+        up.consume()
+        onWordClick(word)
+    }
+}
+
+private suspend fun AwaitPointerEventScope.waitForQuickTapOrNull() =
+    withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+        waitForUpOrCancellation()
+    }
+
+internal fun TextLayoutResult.wordAtPosition(
+    words: List<QuranWord>,
+    position: Offset,
+    tolerancePx: Float = 3f,
+): QuranWord? {
+    val offset = getOffsetForPosition(position)
+    val candidate = words.wordAtCharacterOffset(offset)
+    if (candidate != null && position in wordBounds(candidate, tolerancePx)) return candidate
+
+    return words.firstOrNull { word ->
+        position in wordBounds(word, tolerancePx)
+    }
+}
+
+internal fun List<QuranWord>.wordAtCharacterOffset(offset: Int): QuranWord? =
+    firstOrNull { word ->
+        word.charStart >= 0 &&
+            word.charEnd > word.charStart &&
+            offset >= word.charStart &&
+            offset < word.charEnd
+    }
+
+private fun TextLayoutResult.wordBounds(word: QuranWord, tolerancePx: Float): Rect {
+    if (word.charStart < 0 || word.charEnd <= word.charStart) return Rect.Zero
+    var bounds: Rect? = null
+    for (index in word.charStart until word.charEnd.coerceAtMost(layoutInput.text.length)) {
+        val box = getBoundingBox(index)
+        if (box.width <= 0f || box.height <= 0f) continue
+        bounds = bounds?.expandToInclude(box) ?: box
+    }
+    return bounds?.inflate(tolerancePx) ?: Rect.Zero
+}
+
+private fun Rect.expandToInclude(other: Rect): Rect =
+    Rect(
+        left = minOf(left, other.left),
+        top = minOf(top, other.top),
+        right = maxOf(right, other.right),
+        bottom = maxOf(bottom, other.bottom),
+    )
+
+private fun Rect.inflate(amount: Float): Rect =
+    Rect(left - amount, top - amount, right + amount, bottom + amount)
 
 @Composable
 private fun QuranWordChip(
@@ -263,14 +359,9 @@ internal fun QuranWordInfoSheet(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        text = "Qur'an word",
+                        text = "Word details",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W900),
                         color = colors.text,
-                    )
-                    Text(
-                        text = word.wordId,
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W800),
-                        color = colors.accent,
                     )
                 }
                 IconBtn(Icons.Rounded.Close, "Close word details", onClick = onDismiss)
@@ -295,20 +386,11 @@ internal fun QuranWordInfoSheet(
                         color = colors.text,
                         textAlign = TextAlign.Right,
                     )
-                    QuranWordDetailRow("Position", "Surah ${word.surahNumber}, Ayah ${word.ayahNumber}, Word ${word.wordPosition}")
-                    QuranWordDetailRow("Normalised", word.normalizedArabicText.ifBlank { "Unavailable" })
-                    QuranWordDetailRow(
-                        "Metadata",
-                        if (metadata != null) "Aligned by exact word ID" else "Metadata not available for this word yet",
-                    )
-                    QuranWordDetailRow("Root", metadata?.root ?: "Metadata not available yet")
-                    QuranWordDetailRow("Lemma", metadata?.lemma ?: "Metadata not available yet")
-                    QuranWordDetailRow("Translation", metadata?.translation ?: "Metadata not available yet")
-                    QuranWordDetailRow("Transliteration", metadata?.transliteration ?: "Metadata not available yet")
-                    QuranWordDetailRow("Meaning", metadata?.definition ?: "Metadata not available yet")
-                    if (metadata?.source != null) {
-                        QuranWordDetailRow("Source", metadata.source)
-                    }
+                    metadata?.root?.cleanWordField()?.let { QuranWordDetailRow("Root", it) }
+                    metadata?.lemma?.cleanWordField()?.let { QuranWordDetailRow("Lemma", it) }
+                    metadata?.translation?.cleanWordField()?.let { QuranWordDetailRow("Word meaning", it) }
+                    metadata?.definition?.cleanWordField()?.let { QuranWordDetailRow("Meaning", it) }
+                    metadata?.transliteration?.cleanWordField()?.let { QuranWordDetailRow("Transliteration", it, secondary = true) }
                 }
             }
         }
@@ -316,7 +398,7 @@ internal fun QuranWordInfoSheet(
 }
 
 @Composable
-private fun QuranWordDetailRow(label: String, value: String) {
+private fun QuranWordDetailRow(label: String, value: String, secondary: Boolean = false) {
     val colors = VaultThemeTokens.colors
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -330,11 +412,14 @@ private fun QuranWordDetailRow(label: String, value: String) {
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.textSecondary,
+            style = if (secondary) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            color = if (secondary) colors.textMuted else colors.textSecondary,
         )
     }
 }
+
+private fun String.cleanWordField(): String? =
+    trim().takeIf { it.isNotBlank() }
 
 private fun buildMemorizationDisplayText(
     source: AnnotatedString,
