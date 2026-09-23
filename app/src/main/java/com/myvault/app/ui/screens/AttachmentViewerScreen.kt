@@ -720,6 +720,10 @@ fun AttachmentViewerScreen(
                         exportPdfLauncher.launch(attachment.fileName.ifBlank { "myvault.pdf" })
                     },
                     onOpenCompanion = if (supportsCompanion) ({ companionPickerOpen = true }) else null,
+                    preferredClipNoteId = activeCompanionClipNoteId(
+                        mode = companionMode.takeIf { supportsCompanion } ?: PdfCompanionMode.None,
+                        noteId = pdfNotepad.note?.id,
+                    ),
                     onProgressChanged = onPdfProgressChanged,
                     onFirstLoaded = onPdfFirstLoaded,
                     onAddDrawHighlight = onAddPdfHighlight,
@@ -760,6 +764,7 @@ fun AttachmentViewerScreen(
                             onOpenNote = onOpenStudyNote,
                             onSave = onSavePdfNotepad,
                             onDismiss = closeCompanion,
+                            onChooseNote = { companionPickerOpen = true },
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                         PdfCompanionMode.Pdf -> secondaryPdfAttachment?.let { secondPdf ->
@@ -794,9 +799,16 @@ fun AttachmentViewerScreen(
                 PdfCompanionPickerSheet(
                     currentAttachmentId = attachment.id,
                     libraryPdfs = libraryPdfs,
-                    onOpenNote = {
+                    studyNotes = studyNotes,
+                    onCreateNote = {
                         companionPickerOpen = false
-                        onPreparePdfNotepad { companionMode = PdfCompanionMode.Note }
+                        onCreatePdfNotepadNote()
+                        companionMode = PdfCompanionMode.Note
+                    },
+                    onOpenNote = { noteId ->
+                        onSelectPdfNotepadNote(noteId)
+                        companionMode = PdfCompanionMode.Note
+                        companionPickerOpen = false
                     },
                     onOpenPdf = { id ->
                         onSelectSecondaryPdf(id)

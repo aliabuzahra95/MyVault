@@ -12,21 +12,26 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapHoriz
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.pdf.view.PdfView as AndroidxPdfView
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -55,6 +61,11 @@ internal enum class PdfCompanionMode {
     None,
     Note,
     Pdf,
+}
+
+internal enum class PdfCompanionSource {
+    Study,
+    Library,
 }
 
 internal fun supportsPdfCompanionPane(widthDp: Int): Boolean = widthDp >= 700
@@ -70,22 +81,37 @@ internal fun eligibleCompanionPdfs(
     .sortedBy { it.fileName.lowercase() }
     .toList()
 
+internal fun matchingCompanionNotes(notes: List<NoteEntity>, query: String): List<NoteEntity> {
+    val term = query.trim()
+    return if (term.isBlank()) notes else notes.filter { note ->
+        note.title.contains(term, ignoreCase = true) ||
+            note.bodyPlainText.contains(term, ignoreCase = true)
+    }
+}
+
+internal fun activeCompanionClipNoteId(mode: PdfCompanionMode, noteId: String?): String? =
+    noteId?.takeIf { mode == PdfCompanionMode.Note }
+
 @Composable
 internal fun PdfCompanionPickerSheet(
     currentAttachmentId: String,
     libraryPdfs: List<AttachmentEntity>,
-    onOpenNote: () -> Unit,
+    studyNotes: List<NoteEntity>,
+    onCreateNote: () -> Unit,
+    onOpenNote: (String) -> Unit,
     onOpenPdf: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var source by remember { mutableStateOf(PdfCompanionSource.Study) }
     var query by remember { mutableStateOf("") }
-    val candidates = remember(libraryPdfs, currentAttachmentId, query) {
+    val pdfCandidates = remember(libraryPdfs, currentAttachmentId, query) {
         eligibleCompanionPdfs(libraryPdfs, currentAttachmentId).filter { pdf ->
             query.isBlank() || pdf.fileName.contains(query.trim(), ignoreCase = true)
         }
     }
+    val noteCandidates = remember(studyNotes, query) { matchingCompanionNotes(studyNotes, query) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -100,35 +126,75 @@ internal fun PdfCompanionPickerSheet(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.W800,
             )
-            ListItem(
-                headlineContent = { Text("Study note", color = colors.text, fontWeight = FontWeight.W700) },
-                supportingContent = { Text("Write with the PDF visible", color = colors.textMuted) },
-                leadingContent = { Icon(Icons.Rounded.EditNote, null, tint = colors.accent) },
-                modifier = Modifier.clickable(onClick = onOpenNote),
-            )
-            HorizontalDivider(color = colors.border)
-            Text(
-                "Another PDF",
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                color = colors.textSecondary,
-                fontWeight = FontWeight.W700,
-            )
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            ) {
+                PdfCompanionSource.entries.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = source == option,
+                        onClick = {
+                            source = option
+                            query = ""
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index, PdfCompanionSource.entries.size),
+                        label = { Text(if (option == PdfCompanionSource.Study) "Study" else "Library") },
+                    )
+                }
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                placeholder = { Text("Search Library PDFs") },
+                placeholder = {
+                    Text(if (source == PdfCompanionSource.Study) "Search Study notes" else "Search Library PDFs")
+                },
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 singleLine = true,
             )
-            if (candidates.isEmpty()) {
-                Text(
-                    if (query.isBlank()) "No other downloaded PDFs are available." else "No PDF found.",
-                    modifier = Modifier.padding(20.dp),
-                    color = colors.textMuted,
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(candidates, key = AttachmentEntity::id) { pdf ->
+            LazyColumn(modifier = Modifier.fillMaxWidth().height(360.dp)) {
+                if (source == PdfCompanionSource.Study) {
+                    item(key = "create-note") {
+                        ListItem(
+                            headlineContent = { Text("Create New Note", color = colors.text, fontWeight = FontWeight.W700) },
+                            supportingContent = { Text("Create it in Islamic Study", color = colors.textMuted) },
+                            leadingContent = { Icon(Icons.Rounded.Add, null, tint = colors.accent) },
+                            modifier = Modifier.clickable(onClick = onCreateNote),
+                        )
+                    }
+                    if (noteCandidates.isEmpty()) {
+                        item {
+                            Text(
+                                if (query.isBlank()) "No Study notes yet." else "No Study note found.",
+                                modifier = Modifier.padding(20.dp),
+                                color = colors.textMuted,
+                            )
+                        }
+                    }
+                    items(noteCandidates, key = NoteEntity::id) { note ->
+                        ListItem(
+                            headlineContent = {
+                                Text(note.title, color = colors.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            },
+                            supportingContent = {
+                                note.bodyPlainText.takeIf(String::isNotBlank)?.let { body ->
+                                    Text(body, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            },
+                            leadingContent = { Icon(Icons.Rounded.EditNote, null, tint = colors.textSecondary) },
+                            modifier = Modifier.clickable { onOpenNote(note.id) },
+                        )
+                    }
+                } else {
+                    if (pdfCandidates.isEmpty()) {
+                        item {
+                            Text(
+                                if (query.isBlank()) "No other downloaded PDFs are available." else "No PDF found.",
+                                modifier = Modifier.padding(20.dp),
+                                color = colors.textMuted,
+                            )
+                        }
+                    }
+                    items(pdfCandidates, key = AttachmentEntity::id) { pdf ->
                         ListItem(
                             headlineContent = {
                                 Text(

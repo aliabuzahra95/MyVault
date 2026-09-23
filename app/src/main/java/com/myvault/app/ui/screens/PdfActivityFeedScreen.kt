@@ -322,9 +322,8 @@ fun PdfActivityFeedScreen(
                 }
             },
             onSelect = { note ->
-                onClipHighlightToNote(activity.id, note.id) { noteId, _ ->
+                onClipHighlightToNote(activity.id, note.id) { _, _ ->
                     clipActivity = null
-                    noteId?.let(onNavigateToEditor)
                 }
             },
             onDismiss = { clipActivity = null },

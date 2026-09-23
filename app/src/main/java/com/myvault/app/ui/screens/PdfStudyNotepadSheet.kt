@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -99,6 +102,7 @@ internal fun PdfStudyNotepadPane(
     onOpenNote: (String) -> Unit,
     onSave: (String, VaultRichTextDocument, Boolean) -> Unit,
     onDismiss: () -> Unit,
+    onChooseNote: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(modifier = modifier, color = VaultThemeTokens.colors.surface) {
@@ -110,6 +114,7 @@ internal fun PdfStudyNotepadPane(
             onOpenNote = onOpenNote,
             onSave = onSave,
             onDismiss = onDismiss,
+            onChooseNote = onChooseNote,
             showDragHandle = false,
             modifier = Modifier.fillMaxSize(),
         )
@@ -125,6 +130,7 @@ private fun PdfStudyNotepadContent(
     onOpenNote: (String) -> Unit,
     onSave: (String, VaultRichTextDocument, Boolean) -> Unit,
     onDismiss: () -> Unit,
+    onChooseNote: (() -> Unit)? = null,
     showDragHandle: Boolean,
     modifier: Modifier,
 ) {
@@ -213,7 +219,9 @@ private fun PdfStudyNotepadContent(
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().clickable { noteMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            if (onChooseNote != null) onChooseNote() else noteMenuOpen = true
+                        },
                         shape = VaultShapes.md,
                         color = colors.inset,
                     ) {
@@ -263,6 +271,25 @@ private fun PdfStudyNotepadContent(
                 PdfNotepadFormatButton("U", decoration = TextDecoration.Underline, onClick = { toggleStyle(VaultInlineStyle.Underline) })
                 PdfNotepadFormatButton("H", FontWeight.W800, onClick = { toggleStyle(VaultInlineStyle.Heading2) })
                 PdfNotepadFormatButton("❝", onClick = { toggleStyle(VaultInlineStyle.Quote) })
+        }
+
+        if (state.attachments.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.attachments.forEach { attachment ->
+                    NoteInlineAttachment(
+                        attachment = attachment,
+                        onClick = {},
+                        modifier = Modifier.width(220.dp),
+                        compact = true,
+                    )
+                }
+            }
         }
 
         Surface(

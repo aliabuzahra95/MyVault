@@ -166,6 +166,7 @@ internal fun FrozenPdfReaderScreen(
     onMenuClick: () -> Unit,
     onDownloadPdf: () -> Unit = {},
     onOpenCompanion: (() -> Unit)? = null,
+    preferredClipNoteId: String? = null,
     onProgressChanged: (pageIndex: Int, pageCount: Int) -> Unit,
     onFirstLoaded: () -> Unit,
     onAddDrawHighlight: (libraryFolderId: String?, pageIndex: Int, left: Float, top: Float, right: Float, bottom: Float, color: String, onSaved: (Boolean) -> Unit) -> Unit,
@@ -771,7 +772,17 @@ internal fun FrozenPdfReaderScreen(
                     onCreateStudyNoteFromAnnotation(annotation.id, onOpenStudyNote)
                     sheet = PdfReaderSheet.None
                 },
-                onClipToNote = { sheet = PdfReaderSheet.ClipToNote },
+                onClipToNote = {
+                    val destinationNoteId = preferredClipNoteId
+                    if (destinationNoteId == null) {
+                        sheet = PdfReaderSheet.ClipToNote
+                    } else {
+                        sheet = PdfReaderSheet.None
+                        onClipAnnotationToNote(annotation.id, destinationNoteId) { _, message ->
+                            transientMessage = message
+                        }
+                    }
+                },
                 onDelete = {
                     PdfAnnotationPreviewRenderer.invalidate(annotation.id)
                     onDeleteAnnotation(annotation.id)
@@ -828,7 +839,6 @@ internal fun FrozenPdfReaderScreen(
                     onClipAnnotationToNote(annotation.id, note.id) { noteId, message ->
                         transientMessage = message
                         sheet = PdfReaderSheet.None
-                        noteId?.let(onOpenStudyNote)
                     }
                 },
                 onDismiss = { sheet = PdfReaderSheet.None },

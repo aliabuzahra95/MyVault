@@ -1,6 +1,7 @@
 package com.myvault.app.ui.screens
 
 import com.myvault.app.data.local.entity.AttachmentEntity
+import com.myvault.app.data.local.entity.NoteEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,6 +41,26 @@ class PdfCompanionPaneTest {
         }
     }
 
+    @Test
+    fun companionStudySearchMatchesTitleAndBody() {
+        val notes = listOf(
+            note("one", "Hadith principles", "Evidence and commentary"),
+            note("two", "Arabic vocabulary", "Root notes"),
+        )
+
+        assertEquals(listOf("one"), matchingCompanionNotes(notes, "hadith").map(NoteEntity::id))
+        assertEquals(listOf("two"), matchingCompanionNotes(notes, "root").map(NoteEntity::id))
+        assertEquals(notes, matchingCompanionNotes(notes, ""))
+    }
+
+    @Test
+    fun clipsTargetOnlyTheNoteOpenInTheCompanionPane() {
+        assertEquals("note-1", activeCompanionClipNoteId(PdfCompanionMode.Note, "note-1"))
+        assertEquals(null, activeCompanionClipNoteId(PdfCompanionMode.Pdf, "note-1"))
+        assertEquals(null, activeCompanionClipNoteId(PdfCompanionMode.None, "note-1"))
+        assertEquals(null, activeCompanionClipNoteId(PdfCompanionMode.Note, null))
+    }
+
     private fun attachment(id: String, name: String, mimeType: String, path: String) = AttachmentEntity(
         id = id,
         noteId = "note-$id",
@@ -49,5 +70,16 @@ class PdfCompanionPaneTest {
         localPath = path,
         remoteUrl = null,
         createdAt = 1L,
+    )
+
+    private fun note(id: String, title: String, body: String) = NoteEntity(
+        id = id,
+        folderId = null,
+        title = title,
+        bodyPlainText = body,
+        isPinned = false,
+        isFavourite = false,
+        createdAt = 1L,
+        updatedAt = 1L,
     )
 }

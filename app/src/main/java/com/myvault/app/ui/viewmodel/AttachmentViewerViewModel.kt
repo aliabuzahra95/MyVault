@@ -150,12 +150,13 @@ class AttachmentViewerViewModel @Inject constructor(
                 combine(
                     noteRepository.observeNote(noteId),
                     noteRepository.observeRawBlocks(noteId),
-                ) { note, blocks ->
+                    attachmentRepository.observeForNote(noteId),
+                ) { note, blocks, attachments ->
                     val richText = blocks.firstOrNull { it.type == "rich_text" }
                         ?.content
                         ?.let(::parseVaultRichTextDocument)
                         ?: VaultRichTextDocument(note?.bodyPlainText.orEmpty(), emptyList())
-                    PdfNotepadUiState(note = note, document = richText)
+                    PdfNotepadUiState(note = note, document = richText, attachments = attachments)
                 }
             }
         }
@@ -565,6 +566,7 @@ private const val SecondaryPdfIdKey = "secondaryPdfId"
 data class PdfNotepadUiState(
     val note: NoteEntity? = null,
     val document: VaultRichTextDocument = VaultRichTextDocument("", emptyList()),
+    val attachments: List<AttachmentEntity> = emptyList(),
 )
 
 data class DocumentTextUiState(
