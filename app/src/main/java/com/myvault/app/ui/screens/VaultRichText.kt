@@ -2,6 +2,7 @@ package com.myvault.app.ui.screens
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -12,6 +13,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.components.EditorTool
 import com.myvault.app.ui.theme.VaultColors
@@ -60,7 +62,7 @@ internal class VaultRichTextVisualTransformation(
     private val colors: VaultColors,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val styled = buildVaultAnnotatedString(text.text, marks, noteLinks, colors)
+        val styled = buildVaultDisplayAnnotatedString(text.text, marks, noteLinks, colors)
         return TransformedText(styled, OffsetMapping.Identity)
     }
 }
@@ -93,6 +95,70 @@ internal fun buildVaultAnnotatedString(
             }
         }
     }
+
+internal enum class VaultParagraphDirection {
+    Ltr,
+    Rtl,
+}
+
+internal fun resolveVaultParagraphDirection(text: String): VaultParagraphDirection {
+    text.forEach { character ->
+        when (Character.getDirectionality(character)) {
+            Character.DIRECTIONALITY_LEFT_TO_RIGHT,
+            Character.DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING,
+            Character.DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE,
+            -> return VaultParagraphDirection.Ltr
+
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING,
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE,
+            -> return VaultParagraphDirection.Rtl
+        }
+    }
+    return VaultParagraphDirection.Ltr
+}
+
+internal fun vaultDefaultTextDirection(): TextDirection = TextDirection.ContentOrLtr
+
+internal fun buildVaultDisplayAnnotatedString(
+    text: String,
+    marks: List<VaultStyleMark>,
+    noteLinks: List<VaultNoteLink> = emptyList(),
+    colors: VaultColors,
+): AnnotatedString =
+    buildVaultAnnotatedString(text, marks, noteLinks, colors).withVaultParagraphDirections()
+
+internal fun AnnotatedString.withVaultParagraphDirections(): AnnotatedString {
+    if (text.isEmpty()) return this
+    return AnnotatedString.Builder(this).apply {
+        text.forEachParagraphRange { start, end ->
+            addStyle(
+                ParagraphStyle(textDirection = text.substring(start, end).toVaultTextDirection()),
+                start,
+                end,
+            )
+        }
+    }.toAnnotatedString()
+}
+
+private fun String.toVaultTextDirection(): TextDirection =
+    when (resolveVaultParagraphDirection(this)) {
+        VaultParagraphDirection.Ltr -> TextDirection.Ltr
+        VaultParagraphDirection.Rtl -> TextDirection.Rtl
+    }
+
+private inline fun String.forEachParagraphRange(block: (start: Int, end: Int) -> Unit) {
+    var start = 0
+    forEachIndexed { index, character ->
+        if (character == '\n') {
+            val end = index + 1
+            if (start < end) block(start, end)
+            start = end
+        }
+    }
+    if (start < length) block(start, length)
+}
 
 internal data class VaultToolbarStyleUpdate(
     val marks: List<VaultStyleMark>,

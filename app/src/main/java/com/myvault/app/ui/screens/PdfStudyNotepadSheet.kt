@@ -49,6 +49,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -311,6 +312,8 @@ private fun PdfStudyNotepadContent(
                         color = colors.text,
                         fontSize = 16.sp,
                         lineHeight = 24.sp,
+                        textAlign = TextAlign.Start,
+                        textDirection = vaultDefaultTextDirection(),
                     ),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.accent),
                     visualTransformation = VaultRichTextVisualTransformation(marks, links, colors),

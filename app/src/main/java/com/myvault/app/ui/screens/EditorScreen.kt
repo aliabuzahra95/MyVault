@@ -122,7 +122,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -968,7 +968,8 @@ fun EditorScreen(
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                                         color = colors.text,
                                         fontSize = bodyFontSizeSp.sp,
-                                        textDirection = TextDirection.Content,
+                                        textAlign = TextAlign.Start,
+                                        textDirection = vaultDefaultTextDirection(),
                                     ),
                                     cursorBrush = SolidColor(colors.accent),
                                     visualTransformation = remember(styleMarks, noteLinks, colors) {
@@ -2013,7 +2014,7 @@ private fun FormattingEditorOutputPreview(
                 border = BorderStroke(1.dp, colors.border),
             ) {
                 Text(
-                    text = buildVaultAnnotatedString(
+                    text = buildVaultDisplayAnnotatedString(
                         text = previewDocument.text,
                         marks = previewDocument.styleMarks,
                         colors = colors,
@@ -2022,7 +2023,11 @@ private fun FormattingEditorOutputPreview(
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                         .padding(12.dp),
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        lineHeight = 22.sp,
+                        textAlign = TextAlign.Start,
+                        textDirection = vaultDefaultTextDirection(),
+                    ),
                     color = colors.text,
                 )
             }

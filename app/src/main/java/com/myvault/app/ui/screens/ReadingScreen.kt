@@ -90,7 +90,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1011,7 +1010,7 @@ private fun RichNoteBody(
         )
     } else {
         val annotated = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeSentence) {
-            val base = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
+            val base = buildVaultDisplayAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
             if (activeStart < 0) {
                 base
             } else {
@@ -1040,7 +1039,7 @@ private fun RichNoteBody(
                     color = colors.text,
                     fontSize = bodyFontSizeSp.sp,
                     textAlign = TextAlign.Start,
-                    textDirection = TextDirection.Content,
+                    textDirection = vaultDefaultTextDirection(),
                 ),
                 onTextLayout = { textLayout = it; onLayout(it) },
                 onClick = { offset ->
