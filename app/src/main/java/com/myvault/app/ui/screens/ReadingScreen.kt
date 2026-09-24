@@ -218,7 +218,7 @@ fun ReadingScreen(
     val noteBodyChunks = remember(noteBodyText, uiState.richText.styleMarks, uiState.richText.noteLinks) {
         noteBodyText.toReadingBodyChunks(uiState.richText.styleMarks, uiState.richText.noteLinks)
     }
-    val readingLayouts = remember(note?.id, noteBodyText) { mutableMapOf<Int, TextLayoutResult>() }
+    val readingLayouts = remember(note?.id, noteBodyText) { mutableMapOf<Int, ReadingBodyLayout>() }
     val editAtReadingPosition = {
         val visible = readingListState.layoutInfo.visibleItemsInfo
             .firstOrNull { it.key.toString().startsWith("body-") }
@@ -226,11 +226,12 @@ fun ReadingScreen(
         val layout = chunk?.let { readingLayouts[it.start] }
         val anchor = if (note != null && chunk != null && layout != null && visible != null) {
             val y = (readingListState.layoutInfo.viewportStartOffset - visible.offset).coerceAtLeast(0).toFloat()
-            val line = layout.getLineForVerticalPosition(y)
-            val top = layout.getLineTop(line)
-            val height = (layout.getLineBottom(line) - top).coerceAtLeast(1f)
+            val line = layout.layout.getLineForVerticalPosition(y)
+            val top = layout.layout.getLineTop(line)
+            val height = (layout.layout.getLineBottom(line) - top).coerceAtLeast(1f)
             NoteViewportAnchor(note.id, noteBodyText.length, noteBodyText.hashCode(),
-                chunk.start + layout.getLineStart(line), ((y - top) / height).coerceIn(0f, 1f))
+                chunk.start + layout.offsetMapping.transformedToOriginal(layout.layout.getLineStart(line)),
+                ((y - top) / height).coerceIn(0f, 1f))
         } else null
         onEditAtAnchor?.invoke(anchor) ?: onEditClick()
     }
@@ -325,7 +326,9 @@ fun ReadingScreen(
                         richText = chunk.document,
                     onNoteLinkClick = onNoteLinkClick,
                     onDoubleTapEdit = editAtReadingPosition,
-                    onLayout = { readingLayouts[chunk.start] = it },
+                    onLayout = { layout, offsetMapping ->
+                        readingLayouts[chunk.start] = ReadingBodyLayout(layout, offsetMapping)
+                    },
                     bodyFontSizeSp = bodyFontSizeSp,
                         activeSentence = activeSentenceForChunk,
                     followAudio = followAudio,
@@ -973,7 +976,7 @@ private fun RichNoteBody(
     richText: VaultRichTextDocument,
     onNoteLinkClick: (String) -> Unit,
     onDoubleTapEdit: () -> Unit,
-    onLayout: (TextLayoutResult) -> Unit = {},
+    onLayout: (TextLayoutResult, androidx.compose.ui.text.input.OffsetMapping) -> Unit = { _, _ -> },
     bodyFontSizeSp: Float,
     activeSentence: String,
     followAudio: Boolean,
@@ -985,12 +988,32 @@ private fun RichNoteBody(
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val activeStart = activeSentence.takeIf { it.isNotBlank() }?.let(bodyText::indexOf) ?: -1
+    val display = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeSentence) {
+        val base = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors).let { annotated ->
+            if (activeStart < 0) {
+                annotated
+            } else {
+                AnnotatedString.Builder(annotated).apply {
+                    addStyle(
+                        SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
+                        activeStart,
+                        (activeStart + activeSentence.length).coerceAtMost(bodyText.length),
+                    )
+                }.toAnnotatedString()
+            }
+        }
+        base.withVaultBidiIsolation()
+    }
 
-    LaunchedEffect(activeSentence, followAudio, followAudioPausedUntil, textLayout) {
+    LaunchedEffect(activeSentence, followAudio, followAudioPausedUntil, textLayout, display) {
         val layout = textLayout ?: return@LaunchedEffect
         if (!followAudio || activeStart < 0 || System.currentTimeMillis() < followAudioPausedUntil) return@LaunchedEffect
-        val startBox = layout.getBoundingBox(activeStart)
-        val endBox = layout.getBoundingBox((activeStart + activeSentence.length - 1).coerceIn(activeStart, bodyText.lastIndex))
+        val transformedStart = display.offsetMapping.originalToTransformed(activeStart)
+        val transformedEnd = display.offsetMapping.originalToTransformed(
+            (activeStart + activeSentence.length - 1).coerceIn(activeStart, bodyText.lastIndex),
+        )
+        val startBox = layout.getBoundingBox(transformedStart)
+        val endBox = layout.getBoundingBox(transformedEnd)
         bringIntoViewRequester.bringIntoView(
             Rect(
                 left = minOf(startBox.left, endBox.left),
@@ -1009,20 +1032,6 @@ private fun RichNoteBody(
             color = colors.textMuted,
         )
     } else {
-        val annotated = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeSentence) {
-            val base = buildVaultDisplayAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors)
-            if (activeStart < 0) {
-                base
-            } else {
-                AnnotatedString.Builder(base).apply {
-                    addStyle(
-                        SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
-                        activeStart,
-                        (activeStart + activeSentence.length).coerceAtMost(bodyText.length),
-                    )
-                }.toAnnotatedString()
-            }
-        }
         SelectionContainer(
             modifier = modifier
                 .fillMaxWidth()
@@ -1031,7 +1040,7 @@ private fun RichNoteBody(
                 },
         ) {
             ClickableText(
-                text = annotated,
+                text = display.text,
                 modifier = Modifier
                     .fillMaxWidth()
                     .bringIntoViewRequester(bringIntoViewRequester),
@@ -1041,9 +1050,12 @@ private fun RichNoteBody(
                     textAlign = TextAlign.Start,
                     textDirection = vaultDefaultTextDirection(),
                 ),
-                onTextLayout = { textLayout = it; onLayout(it) },
+                onTextLayout = {
+                    textLayout = it
+                    onLayout(it, display.offsetMapping)
+                },
                 onClick = { offset ->
-                    annotated.getStringAnnotations("noteLink", offset, offset).firstOrNull()?.let {
+                    display.text.getStringAnnotations("noteLink", offset, offset).firstOrNull()?.let {
                         onNoteLinkClick(it.item)
                     }
                 },
@@ -1051,6 +1063,11 @@ private fun RichNoteBody(
         }
     }
 }
+
+private data class ReadingBodyLayout(
+    val layout: TextLayoutResult,
+    val offsetMapping: androidx.compose.ui.text.input.OffsetMapping,
+)
 
 private const val FollowAudioPauseMs = 5_000L
 private const val FollowAudioPaddingPx = 48f

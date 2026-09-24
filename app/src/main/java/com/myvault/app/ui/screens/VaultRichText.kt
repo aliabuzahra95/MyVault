@@ -2,7 +2,6 @@ package com.myvault.app.ui.screens
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -62,8 +61,8 @@ internal class VaultRichTextVisualTransformation(
     private val colors: VaultColors,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val styled = buildVaultDisplayAnnotatedString(text.text, marks, noteLinks, colors)
-        return TransformedText(styled, OffsetMapping.Identity)
+        val display = buildVaultDisplayText(text.text, marks, noteLinks, colors)
+        return TransformedText(display.text, display.offsetMapping)
     }
 }
 
@@ -121,40 +120,151 @@ internal fun resolveVaultParagraphDirection(text: String): VaultParagraphDirecti
 
 internal fun vaultDefaultTextDirection(): TextDirection = TextDirection.ContentOrLtr
 
+internal data class VaultBidiDisplayText(
+    val text: AnnotatedString,
+    val offsetMapping: OffsetMapping,
+)
+
+internal fun buildVaultDisplayText(
+    text: String,
+    marks: List<VaultStyleMark>,
+    noteLinks: List<VaultNoteLink> = emptyList(),
+    colors: VaultColors,
+): VaultBidiDisplayText =
+    buildVaultAnnotatedString(text, marks, noteLinks, colors).withVaultBidiIsolation()
+
 internal fun buildVaultDisplayAnnotatedString(
     text: String,
     marks: List<VaultStyleMark>,
     noteLinks: List<VaultNoteLink> = emptyList(),
     colors: VaultColors,
 ): AnnotatedString =
-    buildVaultAnnotatedString(text, marks, noteLinks, colors).withVaultParagraphDirections()
+    buildVaultDisplayText(text, marks, noteLinks, colors).text
 
-internal fun AnnotatedString.withVaultParagraphDirections(): AnnotatedString {
-    if (text.isEmpty()) return this
-    return AnnotatedString.Builder(this).apply {
-        text.forEachParagraphRange { start, end ->
-            if (resolveVaultParagraphDirection(text.substring(start, end)) == VaultParagraphDirection.Rtl) {
-                addStyle(
-                    ParagraphStyle(textDirection = TextDirection.Rtl),
-                    start,
-                    end,
-                )
+internal fun AnnotatedString.withVaultBidiIsolation(): VaultBidiDisplayText {
+    if (text.isEmpty()) return VaultBidiDisplayText(this, OffsetMapping.Identity)
+    val ranges = text.oppositeDirectionRanges()
+    if (ranges.isEmpty()) return VaultBidiDisplayText(this, OffsetMapping.Identity)
+
+    // Isolates exist only in the rendered copy; the offset map keeps editing tied to stored text.
+    val transformed = AnnotatedString.Builder().apply {
+        var sourceOffset = 0
+        ranges.forEach { range ->
+            append(this@withVaultBidiIsolation.subSequence(sourceOffset, range.start))
+            append(if (range.direction == VaultParagraphDirection.Rtl) RTL_ISOLATE else LTR_ISOLATE)
+            append(this@withVaultBidiIsolation.subSequence(range.start, range.end))
+            append(POP_DIRECTIONAL_ISOLATE)
+            sourceOffset = range.end
+        }
+        append(this@withVaultBidiIsolation.subSequence(sourceOffset, text.length))
+    }.toAnnotatedString()
+
+    return VaultBidiDisplayText(
+        text = transformed,
+        offsetMapping = VaultBidiOffsetMapping(text.length, ranges),
+    )
+}
+
+private data class VaultBidiRange(
+    val start: Int,
+    val end: Int,
+    val direction: VaultParagraphDirection,
+)
+
+private fun String.oppositeDirectionRanges(): List<VaultBidiRange> = buildList {
+    var paragraphStart = 0
+    while (paragraphStart < length) {
+        val paragraphEnd = indexOf('\n', paragraphStart).let { if (it < 0) length else it }
+        val baseDirection = resolveVaultParagraphDirection(substring(paragraphStart, paragraphEnd))
+        var runStart = -1
+        var runEnd = -1
+        var index = paragraphStart
+        while (index < paragraphEnd) {
+            val codePoint = codePointAt(index)
+            val codePointLength = Character.charCount(codePoint)
+            val direction = codePoint.strongVaultDirection()
+            when {
+                direction != null && direction != baseDirection -> {
+                    if (runStart < 0) runStart = index
+                    runEnd = index + codePointLength
+                }
+                direction == baseDirection && runStart >= 0 -> {
+                    add(VaultBidiRange(runStart, runEnd, baseDirection.opposite()))
+                    runStart = -1
+                    runEnd = -1
+                }
+                runStart >= 0 && codePoint.belongsToPreviousBidiRun() -> {
+                    runEnd = index + codePointLength
+                }
+            }
+            index += codePointLength
+        }
+        if (runStart >= 0) add(VaultBidiRange(runStart, runEnd, baseDirection.opposite()))
+        paragraphStart = paragraphEnd + 1
+    }
+}
+
+private fun Int.strongVaultDirection(): VaultParagraphDirection? =
+    when (Character.getDirectionality(this)) {
+        Character.DIRECTIONALITY_LEFT_TO_RIGHT,
+        Character.DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING,
+        Character.DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE,
+        -> VaultParagraphDirection.Ltr
+
+        Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+        Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
+        Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING,
+        Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE,
+        -> VaultParagraphDirection.Rtl
+
+        else -> null
+    }
+
+private fun Int.belongsToPreviousBidiRun(): Boolean =
+    when (Character.getType(this)) {
+        Character.NON_SPACING_MARK.toInt(),
+        Character.COMBINING_SPACING_MARK.toInt(),
+        Character.ENCLOSING_MARK.toInt(),
+        Character.FORMAT.toInt(),
+        -> true
+
+        else -> false
+    }
+
+private fun VaultParagraphDirection.opposite(): VaultParagraphDirection =
+    if (this == VaultParagraphDirection.Ltr) VaultParagraphDirection.Rtl else VaultParagraphDirection.Ltr
+
+private class VaultBidiOffsetMapping(
+    private val originalLength: Int,
+    private val ranges: List<VaultBidiRange>,
+) : OffsetMapping {
+    override fun originalToTransformed(offset: Int): Int {
+        val safeOffset = offset.coerceIn(0, originalLength)
+        return safeOffset + ranges.sumOf { range ->
+            when {
+                safeOffset < range.start -> 0
+                safeOffset < range.end -> 1
+                else -> 2
             }
         }
-    }.toAnnotatedString()
+    }
+
+    override fun transformedToOriginal(offset: Int): Int {
+        val transformedLength = originalLength + (ranges.size * 2)
+        val safeOffset = offset.coerceIn(0, transformedLength)
+        var low = 0
+        var high = originalLength
+        while (low < high) {
+            val middle = (low + high) / 2
+            if (originalToTransformed(middle) < safeOffset) low = middle + 1 else high = middle
+        }
+        return low
+    }
 }
 
-private inline fun String.forEachParagraphRange(block: (start: Int, end: Int) -> Unit) {
-    var start = 0
-    forEachIndexed { index, character ->
-        if (character == '\n') {
-            val end = index + 1
-            if (start < end) block(start, end)
-            start = end
-        }
-    }
-    if (start < length) block(start, length)
-}
+private const val LTR_ISOLATE = "\u2066"
+private const val RTL_ISOLATE = "\u2067"
+private const val POP_DIRECTIONAL_ISOLATE = "\u2069"
 
 internal data class VaultToolbarStyleUpdate(
     val marks: List<VaultStyleMark>,

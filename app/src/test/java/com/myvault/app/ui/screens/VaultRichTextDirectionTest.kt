@@ -75,61 +75,102 @@ class VaultRichTextDirectionTest {
     }
 
     @Test
-    fun displayAnnotatedStringAddsRenderOnlyParagraphDirections() {
-        val text = """
-            The universals / universal: (Al-Kulliyat) الكليات - concepts.
-            الكليات (Al-Kulliyat): universal concepts.
-        """.trimIndent()
+    fun displayAddsRenderOnlyIsolationForEmbeddedRtlAndLtrRuns() {
+        val englishFirst = "Al-Kulliyat: The universals / universal — الكليات • concepts."
+        val arabicFirst = "استدل العلماء بهذه الآية = \"The scholars used this verse as evidence.\""
 
-        val storage = buildVaultAnnotatedString(text, emptyList(), colors = LightVaultColors)
-        val display = buildVaultDisplayAnnotatedString(text, emptyList(), colors = LightVaultColors)
+        val englishDisplay = buildVaultDisplayText(englishFirst, emptyList(), colors = LightVaultColors)
+        val arabicDisplay = buildVaultDisplayText(arabicFirst, emptyList(), colors = LightVaultColors)
 
-        assertEquals(text, storage.text)
-        assertEquals(text, display.text)
-        assertTrue(storage.paragraphStyles.isEmpty())
-        assertEquals(1, display.paragraphStyles.size)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Rtl, display.paragraphStyles.single().item.textDirection)
+        assertEquals(
+            "Al-Kulliyat: The universals / universal — \u2067الكليات\u2069 • concepts.",
+            englishDisplay.text.text,
+        )
+        assertEquals(
+            "استدل العلماء بهذه الآية = \"\u2066The scholars used this verse as evidence\u2069.\"",
+            arabicDisplay.text.text,
+        )
+        assertTrue(englishDisplay.text.paragraphStyles.isEmpty())
+        assertTrue(arabicDisplay.text.paragraphStyles.isEmpty())
     }
 
     @Test
-    fun englishFirstMixedPunctuationDoesNotAddParagraphSpacingStyles() {
+    fun mixedPunctuationCasesKeepNeutralCharactersOutsideIsolatedRuns() {
         val text = """
-            The universals / universal: (Al-Kulliyat) الكليات - concepts.
-            Their existence is only / merely: (Innama wujuduhu) إنما وجودها.
-            Not in concrete realities: (La fi al-a'yan) لا في الأعيان - not in external existences.
+            Al-Kulliyat: The universals / universal — الكليات • concepts.
+            Innama wujuduhu: Their existence is — إنما وجودها • only / is merely.
+            Fi al-adh'han: In the minds / in intellects — في الأذهان.
+            La fi al-a'yan: Not in concrete realities — لا في الأعيان • not in external existences.
+            The universals / universal: (Al-Kulliyat) الكليات — concepts.
         """.trimIndent()
 
         val display = buildVaultDisplayAnnotatedString(text, emptyList(), colors = LightVaultColors)
 
-        assertEquals(text, display.text)
+        assertEquals(text, display.text.withoutBidiIsolates())
+        assertEquals(text.count { it == '\n' }, display.text.count { it == '\n' })
+        assertTrue(display.text.contains("\u2067الكليات\u2069 •"))
+        assertTrue(display.text.contains("\u2067إنما وجودها\u2069 •"))
+        assertTrue(display.text.contains("\u2067في الأذهان\u2069."))
+        assertTrue(display.text.contains("\u2067لا في الأعيان\u2069 •"))
         assertTrue(display.paragraphStyles.isEmpty())
     }
 
     @Test
-    fun arabicFirstMixedPunctuationReceivesOnlyRtlParagraphStyle() {
-        val text = "قال العلماء: \"universal / concrete\" (concepts)."
+    fun bidiOffsetMappingKeepsEditorOffsetsOnOriginalText() {
+        val text = "English الكليات text"
+        val display = buildVaultDisplayText(text, emptyList(), colors = LightVaultColors)
+        val arabicStart = text.indexOf("الكليات")
+        val arabicEnd = arabicStart + "الكليات".length
 
-        val display = buildVaultDisplayAnnotatedString(text, emptyList(), colors = LightVaultColors)
-
-        assertEquals(text, display.text)
-        assertEquals(1, display.paragraphStyles.size)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Rtl, display.paragraphStyles.single().item.textDirection)
+        assertEquals(arabicStart + 1, display.offsetMapping.originalToTransformed(arabicStart))
+        assertEquals(arabicEnd + 2, display.offsetMapping.originalToTransformed(arabicEnd))
+        for (offset in 0..text.length) {
+            val transformed = display.offsetMapping.originalToTransformed(offset)
+            assertEquals(offset, display.offsetMapping.transformedToOriginal(transformed))
+        }
     }
 
     @Test
-    fun displayDirectionDoesNotShiftRichTextMarks() {
+    fun displayIsolationPreservesRichTextOnTheSameVisibleCharacters() {
         val text = "Heading الكليات: mixed title"
         val marks = listOf(
             VaultStyleMark(0, text.length, VaultInlineStyle.Heading2),
             VaultStyleMark(8, 15, VaultInlineStyle.ColorRed),
         )
 
-        val display = buildVaultDisplayAnnotatedString(text, marks, colors = LightVaultColors)
+        val display = buildVaultDisplayText(text, marks, colors = LightVaultColors)
 
-        assertEquals(text, display.text)
-        assertTrue(display.spanStyles.any { it.start == 0 && it.end == text.length })
-        assertTrue(display.spanStyles.any { it.start == 8 && it.end == 15 })
-        assertTrue(display.paragraphStyles.isEmpty())
+        assertEquals(text, display.text.text.withoutBidiIsolates())
+        val headingText = display.text.spanStyles
+            .filter { it.item.fontWeight == androidx.compose.ui.text.font.FontWeight.Bold }
+            .sortedBy { it.start }
+            .joinToString(separator = "") { display.text.text.substring(it.start, it.end) }
+            .withoutBidiIsolates()
+        assertEquals(text, headingText)
+        assertTrue(display.text.spanStyles.any { range ->
+            range.item.color == androidx.compose.ui.graphics.Color(0xFFE5484D) &&
+                display.text.text.substring(range.start, range.end) == "الكليات"
+        })
+        assertTrue(display.text.paragraphStyles.isEmpty())
+    }
+
+    @Test
+    fun renderIsolationDoesNotDuplicateParagraphBreaksOrStoredText() {
+        val text = """
+            First paragraph with العربية.
+
+            الفقرة الثانية with English.
+            يا سائلي عن مذهبي وعقيدتي
+            رزق الهدى من للهداية يسأل
+        """.trimIndent()
+        val storage = buildVaultAnnotatedString(text, emptyList(), colors = LightVaultColors)
+        val display = buildVaultDisplayText(text, emptyList(), colors = LightVaultColors)
+
+        assertEquals(text, storage.text)
+        assertEquals(text, display.text.text.withoutBidiIsolates())
+        assertEquals(text.count { it == '\n' }, display.text.text.count { it == '\n' })
+        assertTrue(storage.paragraphStyles.isEmpty())
+        assertTrue(display.text.paragraphStyles.isEmpty())
     }
 
     private fun assertNoInjectedParagraphStyles(text: String) =
@@ -137,4 +178,7 @@ class VaultRichTextDirectionTest {
             assertEquals(text, annotated.text)
             assertTrue(annotated.paragraphStyles.isEmpty())
         }
+
+    private fun String.withoutBidiIsolates(): String =
+        replace("\u2066", "").replace("\u2067", "").replace("\u2069", "")
 }
