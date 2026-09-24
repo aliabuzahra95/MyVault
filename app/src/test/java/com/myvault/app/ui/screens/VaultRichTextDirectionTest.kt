@@ -87,28 +87,33 @@ class VaultRichTextDirectionTest {
         assertEquals(text, storage.text)
         assertEquals(text, display.text)
         assertTrue(storage.paragraphStyles.isEmpty())
-        assertEquals(2, display.paragraphStyles.size)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Ltr, display.paragraphStyles[0].item.textDirection)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Rtl, display.paragraphStyles[1].item.textDirection)
+        assertEquals(1, display.paragraphStyles.size)
+        assertEquals(androidx.compose.ui.text.style.TextDirection.Rtl, display.paragraphStyles.single().item.textDirection)
     }
 
     @Test
-    fun mixedPunctuationExamplesKeepTextAndDirectionRangesStable() {
+    fun englishFirstMixedPunctuationDoesNotAddParagraphSpacingStyles() {
         val text = """
             The universals / universal: (Al-Kulliyat) الكليات - concepts.
             Their existence is only / merely: (Innama wujuduhu) إنما وجودها.
             Not in concrete realities: (La fi al-a'yan) لا في الأعيان - not in external existences.
-            قال العلماء: "universal / concrete" (concepts).
         """.trimIndent()
 
         val display = buildVaultDisplayAnnotatedString(text, emptyList(), colors = LightVaultColors)
 
         assertEquals(text, display.text)
-        assertEquals(4, display.paragraphStyles.size)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Ltr, display.paragraphStyles[0].item.textDirection)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Ltr, display.paragraphStyles[1].item.textDirection)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Ltr, display.paragraphStyles[2].item.textDirection)
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Rtl, display.paragraphStyles[3].item.textDirection)
+        assertTrue(display.paragraphStyles.isEmpty())
+    }
+
+    @Test
+    fun arabicFirstMixedPunctuationReceivesOnlyRtlParagraphStyle() {
+        val text = "قال العلماء: \"universal / concrete\" (concepts)."
+
+        val display = buildVaultDisplayAnnotatedString(text, emptyList(), colors = LightVaultColors)
+
+        assertEquals(text, display.text)
+        assertEquals(1, display.paragraphStyles.size)
+        assertEquals(androidx.compose.ui.text.style.TextDirection.Rtl, display.paragraphStyles.single().item.textDirection)
     }
 
     @Test
@@ -124,7 +129,7 @@ class VaultRichTextDirectionTest {
         assertEquals(text, display.text)
         assertTrue(display.spanStyles.any { it.start == 0 && it.end == text.length })
         assertTrue(display.spanStyles.any { it.start == 8 && it.end == 15 })
-        assertEquals(androidx.compose.ui.text.style.TextDirection.Ltr, display.paragraphStyles.single().item.textDirection)
+        assertTrue(display.paragraphStyles.isEmpty())
     }
 
     private fun assertNoInjectedParagraphStyles(text: String) =

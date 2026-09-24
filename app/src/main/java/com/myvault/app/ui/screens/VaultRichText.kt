@@ -133,20 +133,16 @@ internal fun AnnotatedString.withVaultParagraphDirections(): AnnotatedString {
     if (text.isEmpty()) return this
     return AnnotatedString.Builder(this).apply {
         text.forEachParagraphRange { start, end ->
-            addStyle(
-                ParagraphStyle(textDirection = text.substring(start, end).toVaultTextDirection()),
-                start,
-                end,
-            )
+            if (resolveVaultParagraphDirection(text.substring(start, end)) == VaultParagraphDirection.Rtl) {
+                addStyle(
+                    ParagraphStyle(textDirection = TextDirection.Rtl),
+                    start,
+                    end,
+                )
+            }
         }
     }.toAnnotatedString()
 }
-
-private fun String.toVaultTextDirection(): TextDirection =
-    when (resolveVaultParagraphDirection(this)) {
-        VaultParagraphDirection.Ltr -> TextDirection.Ltr
-        VaultParagraphDirection.Rtl -> TextDirection.Rtl
-    }
 
 private inline fun String.forEachParagraphRange(block: (start: Int, end: Int) -> Unit) {
     var start = 0
