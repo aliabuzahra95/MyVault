@@ -38,6 +38,7 @@ internal fun renderNotebookPdf(
     val pageWidth = ceil(paperWidth).toInt()
     val pageHeight = ceil(paperHeight).toInt()
     val contentWidth = mmToPdfPoints(config.contentWidthMm).toInt()
+    val typography = config.typography()
     val top = mmToPdfPoints(config.topInsetMm)
     val bottom = paperHeight - mmToPdfPoints(config.bottomMarginMm) - if (config.drawPageNumbers) 12f else 0f
     val pages = mutableListOf(mutableListOf<NotebookDraw>())
@@ -50,12 +51,12 @@ internal fun renderNotebookPdf(
 
     fun addParagraph(paragraph: PdfTextParagraph, spacing: Float, heading: Boolean = false) {
         if (paragraph.text.isEmpty()) {
-            if (y + 13f > bottom) nextPage()
-            y += 13f
+            if (y + typography.blankLineSpacingPt > bottom) nextPage()
+            y += typography.blankLineSpacingPt
             return
         }
-        val layout = paragraph.toLayout(contentWidth)
-        if (heading && y > top && y + layout.height + 18f > bottom) nextPage()
+        val layout = paragraph.toLayout(contentWidth, typography)
+        if (heading && y > top && y + layout.height + typography.headingSpacingPt + typography.bodySizePt > bottom) nextPage()
         var first = 0
         while (first < layout.lineCount) {
             val firstTop = layout.getLineTop(first)
@@ -76,7 +77,7 @@ internal fun renderNotebookPdf(
 
     if (!calibration) {
         val titleStyles = if (title.isBlank()) emptyList() else listOf(VaultStyleMark(0, title.length, VaultInlineStyle.Heading))
-        RichTextPdfDocument.paragraphs(VaultRichTextDocument(title, titleStyles)).forEach { addParagraph(it, 18f) }
+        RichTextPdfDocument.paragraphs(VaultRichTextDocument(title, titleStyles)).forEach { addParagraph(it, typography.titleSpacingPt) }
         val printableBody = body.copy(styleMarks = body.styleMarks + body.noteLinks.flatMap { link ->
             listOf(
                 VaultStyleMark(link.start, link.end, VaultInlineStyle.Underline),
@@ -87,7 +88,7 @@ internal fun renderNotebookPdf(
             val heading = paragraph.runs.any { run -> run.styles.any { it in setOf(
                 VaultInlineStyle.Heading, VaultInlineStyle.Heading2, VaultInlineStyle.Heading3, VaultInlineStyle.Heading4,
             ) } }
-            addParagraph(paragraph, if (heading) 8f else 5f, heading)
+            addParagraph(paragraph, if (heading) typography.headingSpacingPt else typography.paragraphSpacingPt, heading)
         }
         images.forEach { attachment ->
             val file = File(attachment.localPath)
@@ -99,8 +100,11 @@ internal fun renderNotebookPdf(
                 .coerceAtMost(config.contentHeightMm.let(::mmToPdfPoints) - 35f)
             if (y + imageHeight + 25f > bottom) nextPage()
             pages.last().add(NotebookDraw.Image(file, y, imageHeight))
-            y += imageHeight + 6f
-            addParagraph(PdfTextParagraph(attachment.fileName, listOf(PdfTextRun(attachment.fileName, emptySet())), 0, false), 8f)
+            y += imageHeight + typography.paragraphSpacingPt
+            addParagraph(
+                PdfTextParagraph(attachment.fileName, listOf(PdfTextRun(attachment.fileName, emptySet())), 0, false),
+                typography.headingSpacingPt,
+            )
         }
     }
 

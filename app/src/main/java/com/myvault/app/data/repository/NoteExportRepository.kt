@@ -13,6 +13,7 @@ import android.text.TextPaint
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.LeadingMarginSpan
+import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import com.myvault.app.data.local.dao.BlockDao
@@ -29,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
 
 @Singleton
 class NoteExportRepository @Inject constructor(
@@ -175,9 +177,10 @@ private fun renderPdf(title: String, body: VaultRichTextDocument, output: File) 
     }
 }
 
-internal fun PdfTextParagraph.toLayout(width: Int): StaticLayout {
+internal fun PdfTextParagraph.toLayout(width: Int, typography: NotebookTypography? = null): StaticLayout {
     val display = androidx.compose.ui.text.AnnotatedString(text).withVaultBidiIsolation()
     val styled = SpannableStringBuilder(display.text.text)
+    val bodySize = typography?.bodySizeFor(text) ?: 13f
     var offset = 0
     runs.forEach { run ->
         val end = offset + run.text.length
@@ -188,10 +191,21 @@ internal fun PdfTextParagraph.toLayout(width: Int): StaticLayout {
                 VaultInlineStyle.Bold -> styled.setSpan(StyleSpan(Typeface.BOLD), displayStart, displayEnd, 0)
                 VaultInlineStyle.Italic -> styled.setSpan(StyleSpan(Typeface.ITALIC), displayStart, displayEnd, 0)
                 VaultInlineStyle.Underline -> styled.setSpan(UnderlineSpan(), displayStart, displayEnd, 0)
-                VaultInlineStyle.Heading -> styled.setSpan(AbsoluteSizeSpan(22), displayStart, displayEnd, 0)
-                VaultInlineStyle.Heading2 -> styled.setSpan(AbsoluteSizeSpan(20), displayStart, displayEnd, 0)
-                VaultInlineStyle.Heading3 -> styled.setSpan(AbsoluteSizeSpan(18), displayStart, displayEnd, 0)
-                VaultInlineStyle.Heading4 -> styled.setSpan(AbsoluteSizeSpan(16), displayStart, displayEnd, 0)
+                VaultInlineStyle.Heading, VaultInlineStyle.Heading2,
+                VaultInlineStyle.Heading3, VaultInlineStyle.Heading4 -> {
+                    val level = when (style) {
+                        VaultInlineStyle.Heading -> 1
+                        VaultInlineStyle.Heading2 -> 2
+                        VaultInlineStyle.Heading3 -> 3
+                        else -> 4
+                    }
+                    val span = if (typography == null) {
+                        AbsoluteSizeSpan(listOf(22, 20, 18, 16)[level - 1])
+                    } else {
+                        RelativeSizeSpan(typography.headingSizeFor(level, text) / bodySize)
+                    }
+                    styled.setSpan(span, displayStart, displayEnd, 0)
+                }
                 VaultInlineStyle.Quote -> styled.setSpan(StyleSpan(Typeface.ITALIC), displayStart, displayEnd, 0)
                 else -> Unit
             }
@@ -200,9 +214,9 @@ internal fun PdfTextParagraph.toLayout(width: Int): StaticLayout {
         }
         offset = end
     }
-    if (listPrefixLength > 0) styled.setSpan(LeadingMarginSpan.Standard(0, 20), 0, styled.length, 0)
+    if (listPrefixLength > 0) styled.setSpan(LeadingMarginSpan.Standard(0, (20f * bodySize / 13f).roundToInt()), 0, styled.length, 0)
     val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 13f
+        textSize = bodySize
         color = android.graphics.Color.BLACK
         typeface = Typeface.DEFAULT
     }
@@ -210,7 +224,7 @@ internal fun PdfTextParagraph.toLayout(width: Int): StaticLayout {
         .setAlignment(Layout.Alignment.ALIGN_NORMAL)
         .setTextDirection(if (rightToLeft) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR)
         .setIncludePad(true)
-        .setLineSpacing(3f, 1f)
+        .setLineSpacing(typography?.lineExtraPt ?: 3f, 1f)
         .build()
 }
 
