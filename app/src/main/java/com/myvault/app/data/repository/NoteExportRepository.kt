@@ -16,11 +16,13 @@ import android.text.style.LeadingMarginSpan
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import com.myvault.app.data.local.dao.BlockDao
+import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.NoteDao
 import com.myvault.app.ui.screens.VaultInlineStyle
 import com.myvault.app.ui.screens.VaultRichTextDocument
 import com.myvault.app.ui.screens.VaultStyleMark
 import com.myvault.app.ui.screens.parseVaultRichTextDocument
+import com.myvault.app.ui.screens.withVaultBidiIsolation
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +35,7 @@ class NoteExportRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val noteDao: NoteDao,
     private val blockDao: BlockDao,
+    private val attachmentDao: AttachmentDao,
 ) {
     suspend fun exportText(noteId: String, destination: Uri) = withContext(Dispatchers.IO) {
         val note = noteDao.getAllIncludingDeleted().firstOrNull { it.id == noteId } ?: error("Note not found")
@@ -44,20 +47,58 @@ class NoteExportRepository @Inject constructor(
     }
 
     suspend fun exportPdf(noteId: String, destination: Uri) = withContext(Dispatchers.IO) {
-        val note = noteDao.getAllIncludingDeleted().firstOrNull { it.id == noteId } ?: error("Note not found")
-        val richBlock = blockDao.getForNote(noteId).firstOrNull { it.type == "rich_text" }
-        val body = richBlock?.content?.let(::parseVaultRichTextDocument)
-            ?: if (richBlock == null) VaultRichTextDocument(note.bodyPlainText, emptyList())
-            else error("Stored rich text could not be read safely")
+        val (title, body) = loadNote(noteId)
         val temporary = File.createTempFile("note-export-", ".pdf", context.cacheDir)
         try {
-            renderPdf(note.title, body, temporary)
+            renderPdf(title, body, temporary)
             context.contentResolver.openOutputStream(destination)?.use { output ->
                 temporary.inputStream().use { it.copyTo(output) }
             } ?: error("Unable to write export")
         } finally {
             temporary.delete()
         }
+    }
+
+    suspend fun exportNotebookPdf(
+        noteId: String,
+        destination: Uri,
+        config: NotebookExportConfig,
+        calibration: Boolean = false,
+    ) = withContext(Dispatchers.IO) {
+        val temporary = createNotebookPdf(noteId, config, calibration)
+        try {
+            context.contentResolver.openOutputStream(destination)?.use { output ->
+                temporary.inputStream().use { it.copyTo(output) }
+            } ?: error("Unable to write notebook PDF")
+        } finally {
+            temporary.delete()
+        }
+    }
+
+    suspend fun createNotebookPdf(noteId: String, config: NotebookExportConfig, calibration: Boolean = false): File =
+        withContext(Dispatchers.IO) {
+            val (title, body) = loadNote(noteId)
+            val directory = File(context.cacheDir, "notebook_print").apply { mkdirs() }
+            val output = File.createTempFile("notebook-print-", ".pdf", directory)
+            try {
+                val images = attachmentDao.getForNotes(listOf(noteId))
+                    .filter { it.deletedAt == null && it.mimeType.startsWith("image/") }
+                    .sortedBy { it.createdAt }
+                renderNotebookPdf(title, body, images, config, calibration, output)
+                output
+            } catch (error: Throwable) {
+                output.delete()
+                throw error
+            }
+        }
+
+    private suspend fun loadNote(noteId: String): Pair<String, VaultRichTextDocument> {
+        val note = noteDao.getAllIncludingDeleted().firstOrNull { it.id == noteId } ?: error("Note not found")
+        val richBlock = blockDao.getForNote(noteId).firstOrNull { it.type == "rich_text" }
+        val body = richBlock?.content?.let(::parseVaultRichTextDocument)
+            ?: if (richBlock == null) VaultRichTextDocument(note.bodyPlainText, emptyList())
+            else error("Stored rich text could not be read safely")
+        return note.title to body
     }
 }
 
@@ -134,29 +175,32 @@ private fun renderPdf(title: String, body: VaultRichTextDocument, output: File) 
     }
 }
 
-private fun PdfTextParagraph.toLayout(width: Int): StaticLayout {
-    val styled = SpannableStringBuilder(text)
+internal fun PdfTextParagraph.toLayout(width: Int): StaticLayout {
+    val display = androidx.compose.ui.text.AnnotatedString(text).withVaultBidiIsolation()
+    val styled = SpannableStringBuilder(display.text.text)
     var offset = 0
     runs.forEach { run ->
         val end = offset + run.text.length
+        val displayStart = display.offsetMapping.originalToTransformed(offset)
+        val displayEnd = display.offsetMapping.originalToTransformed(end)
         run.styles.forEach { style ->
             when (style) {
-                VaultInlineStyle.Bold -> styled.setSpan(StyleSpan(Typeface.BOLD), offset, end, 0)
-                VaultInlineStyle.Italic -> styled.setSpan(StyleSpan(Typeface.ITALIC), offset, end, 0)
-                VaultInlineStyle.Underline -> styled.setSpan(UnderlineSpan(), offset, end, 0)
-                VaultInlineStyle.Heading -> styled.setSpan(AbsoluteSizeSpan(22), offset, end, 0)
-                VaultInlineStyle.Heading2 -> styled.setSpan(AbsoluteSizeSpan(20), offset, end, 0)
-                VaultInlineStyle.Heading3 -> styled.setSpan(AbsoluteSizeSpan(18), offset, end, 0)
-                VaultInlineStyle.Heading4 -> styled.setSpan(AbsoluteSizeSpan(16), offset, end, 0)
-                VaultInlineStyle.Quote -> styled.setSpan(StyleSpan(Typeface.ITALIC), offset, end, 0)
+                VaultInlineStyle.Bold -> styled.setSpan(StyleSpan(Typeface.BOLD), displayStart, displayEnd, 0)
+                VaultInlineStyle.Italic -> styled.setSpan(StyleSpan(Typeface.ITALIC), displayStart, displayEnd, 0)
+                VaultInlineStyle.Underline -> styled.setSpan(UnderlineSpan(), displayStart, displayEnd, 0)
+                VaultInlineStyle.Heading -> styled.setSpan(AbsoluteSizeSpan(22), displayStart, displayEnd, 0)
+                VaultInlineStyle.Heading2 -> styled.setSpan(AbsoluteSizeSpan(20), displayStart, displayEnd, 0)
+                VaultInlineStyle.Heading3 -> styled.setSpan(AbsoluteSizeSpan(18), displayStart, displayEnd, 0)
+                VaultInlineStyle.Heading4 -> styled.setSpan(AbsoluteSizeSpan(16), displayStart, displayEnd, 0)
+                VaultInlineStyle.Quote -> styled.setSpan(StyleSpan(Typeface.ITALIC), displayStart, displayEnd, 0)
                 else -> Unit
             }
-            if (style in headingStyles) styled.setSpan(StyleSpan(Typeface.BOLD), offset, end, 0)
-            style.pdfColor()?.let { styled.setSpan(ForegroundColorSpan(it), offset, end, 0) }
+            if (style in headingStyles) styled.setSpan(StyleSpan(Typeface.BOLD), displayStart, displayEnd, 0)
+            style.pdfColor()?.let { styled.setSpan(ForegroundColorSpan(it), displayStart, displayEnd, 0) }
         }
         offset = end
     }
-    if (listPrefixLength > 0) styled.setSpan(LeadingMarginSpan.Standard(0, 20), 0, text.length, 0)
+    if (listPrefixLength > 0) styled.setSpan(LeadingMarginSpan.Standard(0, 20), 0, styled.length, 0)
     val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 13f
         color = android.graphics.Color.BLACK

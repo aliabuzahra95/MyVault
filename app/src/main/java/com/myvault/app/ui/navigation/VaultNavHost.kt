@@ -1,7 +1,18 @@
 package com.myvault.app.ui.navigation
 
 import android.widget.Toast
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
+import android.print.PageRange
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintDocumentInfo
+import android.print.PrintManager
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.activity.compose.BackHandler
@@ -71,6 +82,7 @@ import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL
 import com.myvault.app.data.local.entity.FOLDER_MODE_PERSONAL_LIBRARY
 import com.myvault.app.data.local.entity.FOLDER_MODE_STUDY
 import com.myvault.app.data.repository.DashboardActivityKind
+import com.myvault.app.data.repository.NotebookExportConfig
 import com.myvault.app.data.narration.NarrationPlaybackStatus
 import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
@@ -106,6 +118,7 @@ import com.myvault.app.ui.screens.ReflectionsScreen
 import com.myvault.app.ui.components.drawerAccountKey
 import com.myvault.app.ui.components.resolveDrawerIdentity
 import com.myvault.app.ui.screens.ReadingScreen
+import com.myvault.app.ui.screens.NotebookPrintAction
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
 import com.myvault.app.ui.theme.VaultSpacing
@@ -131,6 +144,67 @@ import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
 import com.myvault.app.ui.viewmodel.ShellPreferencesViewModel
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+
+private fun handleNotebookExport(
+    context: Context,
+    viewModel: NoteViewModel,
+    action: NotebookPrintAction,
+    config: NotebookExportConfig,
+    destination: Uri?,
+) {
+    val fail: (String) -> Unit = { message -> Toast.makeText(context, message, Toast.LENGTH_LONG).show() }
+    if (destination != null) {
+        viewModel.exportNotebookPdf(destination, config, action == NotebookPrintAction.Calibration, fail)
+        return
+    }
+    viewModel.prepareNotebookPdf(config, onReady = { file ->
+        when (action) {
+            NotebookPrintAction.Share -> {
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(intent, "Share notebook PDF"))
+            }
+            NotebookPrintAction.Print -> {
+                val manager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                val adapter = object : PrintDocumentAdapter() {
+                    override fun onLayout(
+                        oldAttributes: PrintAttributes?, newAttributes: PrintAttributes,
+                        cancellationSignal: CancellationSignal, callback: LayoutResultCallback, extras: android.os.Bundle?,
+                    ) {
+                        callback.onLayoutFinished(
+                            PrintDocumentInfo.Builder("MyVault notebook.pdf")
+                                .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                                .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN).build(),
+                            true,
+                        )
+                    }
+
+                    override fun onWrite(
+                        pages: Array<out PageRange>, destination: ParcelFileDescriptor,
+                        cancellationSignal: CancellationSignal, callback: WriteResultCallback,
+                    ) {
+                        Thread {
+                            runCatching {
+                                FileOutputStream(destination.fileDescriptor).use { output -> file.inputStream().use { it.copyTo(output) } }
+                            }.onSuccess { callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES)) }
+                                .onFailure { callback.onWriteFailed(it.message ?: "Unable to print notebook") }
+                        }.start()
+                    }
+                }
+                manager.print("MyVault notebook", adapter, PrintAttributes.Builder()
+                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4.asLandscape())
+                    .setColorMode(PrintAttributes.COLOR_MODE_COLOR).build())
+            }
+            else -> Unit
+        }
+    }, onError = fail)
+}
 
 @Composable
 fun VaultNavHost(
@@ -1362,6 +1436,7 @@ fun VaultNavHost(
                 },
                 onExportText = { uri -> viewModel.exportText(uri) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
                 onExportPdf = { uri -> viewModel.exportPdf(uri) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
+                onNotebookExport = { action, config, uri -> handleNotebookExport(context, viewModel, action, config, uri) },
                 onCreateTable = viewModel::createTable,
                 onUpdateTableCell = viewModel::updateTableCell,
                 onDeleteTable = viewModel::deleteTable,
@@ -1437,6 +1512,7 @@ fun VaultNavHost(
                 },
                 onExportText = { uri -> viewModel.exportText(uri) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
                 onExportPdf = { uri -> viewModel.exportPdf(uri) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } },
+                onNotebookExport = { action, config, uri -> handleNotebookExport(context, viewModel, action, config, uri) },
                 onNoteLinkClick = { noteId ->
                     navController.navigate(
                         if (preferences.defaultNoteView == "editing") {

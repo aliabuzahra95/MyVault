@@ -8,3 +8,5 @@
 
 # Optional PDFBox JPEG2000 decoder. Text extraction does not require this class.
 -dontwarn com.gemalto.jp2.JP2Decoder
+# Notebook PDF output contains no JPEG2000 images; PDFBox's optional encoder is unused.
+-dontwarn com.gemalto.jp2.JP2Encoder

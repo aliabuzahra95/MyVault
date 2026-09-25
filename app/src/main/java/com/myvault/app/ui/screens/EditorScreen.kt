@@ -132,6 +132,7 @@ import com.myvault.app.BuildConfig
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.pdfClipSourceOrNull
 import com.myvault.app.data.repository.SourceReferenceCard
+import com.myvault.app.data.repository.NotebookExportConfig
 import com.myvault.app.data.repository.toRelativeTime
 import com.myvault.app.ui.components.EditorTool
 import com.myvault.app.ui.components.EditorToolbar
@@ -184,6 +185,7 @@ fun EditorScreen(
     onDeleteNote: () -> Unit = {},
     onExportText: (Uri) -> Unit = {},
     onExportPdf: (Uri) -> Unit = {},
+    onNotebookExport: (NotebookPrintAction, NotebookExportConfig, Uri?) -> Unit = { _, _, _ -> },
     onCreateTable: (rows: Int, columns: Int) -> Unit = { _, _ -> },
     onUpdateTableCell: (tableId: String, row: Int, column: Int, text: String) -> Unit = { _, _, _, _ -> },
     onDeleteTable: (String) -> Unit = {},
@@ -225,6 +227,9 @@ fun EditorScreen(
     var formattingToolbarHeightPx by remember { mutableIntStateOf(0) }
     var moreFormattingOpen by remember { mutableStateOf(false) }
     var exportOpen by remember { mutableStateOf(false) }
+    var notebookPrintOpen by remember { mutableStateOf(false) }
+    var notebookConfig by remember { mutableStateOf(NotebookExportConfig()) }
+    var notebookDocumentAction by remember { mutableStateOf(NotebookPrintAction.Save) }
     var noteInfoOpen by remember { mutableStateOf(false) }
     var knowledgeOpen by remember { mutableStateOf(false) }
     var attachmentsOpen by remember { mutableStateOf(false) }
@@ -283,6 +288,9 @@ fun EditorScreen(
     }
     val exportPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         uri?.let(onExportPdf)
+    }
+    val notebookPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        uri?.let { onNotebookExport(notebookDocumentAction, notebookConfig, it) }
     }
     val supportedTools = remember {
         listOf(
@@ -1604,10 +1612,22 @@ fun EditorScreen(
                             exportOpen = false
                             exportPdfLauncher.launch("${uiState.note?.title?.toSafeFileName() ?: "note"}.pdf")
                         }),
+                        NoteSheetAction("A5 Notebook Print", Icons.Rounded.FileDownload, onClick = {
+                            exportOpen = false
+                            notebookPrintOpen = true
+                        }),
                     ),
                 ),
             ),
         )
+    }
+
+    if (notebookPrintOpen) NotebookPrintSheet(onDismiss = { notebookPrintOpen = false }) { action, config ->
+        notebookConfig = config
+        if (action == NotebookPrintAction.Save || action == NotebookPrintAction.Calibration) {
+            notebookDocumentAction = action
+            notebookPdfLauncher.launch("${uiState.note?.title?.toSafeFileName() ?: "note"}-${if (action == NotebookPrintAction.Calibration) "calibration" else "notebook"}.pdf")
+        } else onNotebookExport(action, config, null)
     }
 
     if (intelligentStructureOpen) {

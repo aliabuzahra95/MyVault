@@ -24,6 +24,7 @@ import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.KnowledgeRepository
 import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.data.repository.NoteExportRepository
+import com.myvault.app.data.repository.NotebookExportConfig
 import com.myvault.app.data.repository.NoteLinkRef
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.data.repository.SourceReferenceCard
@@ -372,6 +373,22 @@ class NoteViewModel @Inject constructor(
             runCatching { noteExportRepository.exportPdf(noteId, uri) }
                 .onSuccess { onComplete("PDF export saved") }
                 .onFailure { onComplete("PDF export failed: ${it.message ?: "Unknown error"}") }
+        }
+    }
+
+    fun exportNotebookPdf(uri: Uri, config: NotebookExportConfig, calibration: Boolean, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { noteExportRepository.exportNotebookPdf(noteId, uri, config, calibration) }
+                .onSuccess { onComplete("Notebook PDF saved") }
+                .onFailure { onComplete("Notebook export failed: ${it.message ?: "Unknown error"}") }
+        }
+    }
+
+    fun prepareNotebookPdf(config: NotebookExportConfig, onReady: (java.io.File) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { noteExportRepository.createNotebookPdf(noteId, config) }
+                .onSuccess(onReady)
+                .onFailure { onError("Notebook export failed: ${it.message ?: "Unknown error"}") }
         }
     }
 
