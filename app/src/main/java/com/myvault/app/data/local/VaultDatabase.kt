@@ -16,6 +16,7 @@ import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfAnnotationSegmentDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
+import com.myvault.app.data.local.dao.RecordSyncDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
@@ -38,6 +39,11 @@ import com.myvault.app.data.local.entity.NoteTagCrossRef
 import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
+import com.myvault.app.data.local.entity.RecordSyncConflictEntity
+import com.myvault.app.data.local.entity.RecordSyncControlEntity
+import com.myvault.app.data.local.entity.RecordSyncFileEntity
+import com.myvault.app.data.local.entity.RecordSyncHeadEntity
+import com.myvault.app.data.local.entity.RecordSyncPendingEntity
 import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
 
@@ -64,8 +70,13 @@ import com.myvault.app.data.local.entity.TagEntity
         CourseNoteEntity::class,
         CourseStickyNoteEntity::class,
         CourseConceptCardEntity::class,
+        RecordSyncControlEntity::class,
+        RecordSyncPendingEntity::class,
+        RecordSyncHeadEntity::class,
+        RecordSyncFileEntity::class,
+        RecordSyncConflictEntity::class,
     ],
-    version = 30,
+    version = 31,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -84,6 +95,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun knowledgeTagDao(): KnowledgeTagDao
     abstract fun noteVersionDao(): NoteVersionDao
     abstract fun courseDao(): CourseDao
+    abstract fun recordSyncDao(): RecordSyncDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -594,6 +606,10 @@ abstract class VaultDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) = RecordSyncSchema.migrate(db)
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -624,6 +640,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_27_28,
             MIGRATION_28_29,
             MIGRATION_29_30,
+            MIGRATION_30_31,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

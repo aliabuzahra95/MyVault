@@ -2,6 +2,9 @@ package com.myvault.app.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.myvault.app.data.local.RecordSyncSchema
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.local.dao.BlockDao
@@ -15,6 +18,7 @@ import com.myvault.app.data.local.dao.NoteVersionDao
 import com.myvault.app.data.local.dao.PdfAnnotationDao
 import com.myvault.app.data.local.dao.PdfAnnotationSegmentDao
 import com.myvault.app.data.local.dao.PdfReadingProgressDao
+import com.myvault.app.data.local.dao.RecordSyncDao
 import com.myvault.app.data.local.dao.SearchDao
 import com.myvault.app.data.local.dao.SourceBacklinkDao
 import com.myvault.app.data.local.dao.TagDao
@@ -33,6 +37,11 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): VaultDatabase =
         Room.databaseBuilder(context, VaultDatabase::class.java, "my_vault.db")
             .addMigrations(*VaultDatabase.ALL_MIGRATIONS)
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    RecordSyncSchema.installTriggers(db)
+                }
+            })
             .build()
 
     @Provides
@@ -79,4 +88,7 @@ object AppModule {
 
     @Provides
     fun provideCourseDao(database: VaultDatabase): CourseDao = database.courseDao()
+
+    @Provides
+    fun provideRecordSyncDao(database: VaultDatabase): RecordSyncDao = database.recordSyncDao()
 }

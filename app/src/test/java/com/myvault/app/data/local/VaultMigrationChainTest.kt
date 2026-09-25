@@ -14,7 +14,7 @@ class VaultMigrationChainTest {
         migrations.zipWithNext().forEach { (current, next) ->
             assertEquals(current.endVersion, next.startVersion)
         }
-        assertEquals(30, migrations.last().endVersion)
+        assertEquals(31, migrations.last().endVersion)
     }
 
     @Test
@@ -95,5 +95,29 @@ class VaultMigrationChainTest {
         VaultDatabase.MIGRATION_28_29.migrate(database)
 
         assertEquals(listOf("ALTER TABLE folders ADD COLUMN colorKey TEXT"), executedSql)
+    }
+
+    @Test
+    fun migration30To31AddsIsolatedSyncTablesWithoutChangingUserTables() {
+        val executedSql = mutableListOf<String>()
+        val database = Proxy.newProxyInstance(
+            SupportSQLiteDatabase::class.java.classLoader,
+            arrayOf(SupportSQLiteDatabase::class.java),
+        ) { _, method, args ->
+            if (method.name == "execSQL" && !args.isNullOrEmpty()) executedSql += args.first() as String
+            when (method.returnType) {
+                java.lang.Boolean.TYPE -> false
+                java.lang.Integer.TYPE -> 0
+                java.lang.Long.TYPE -> 0L
+                else -> null
+            }
+        } as SupportSQLiteDatabase
+
+        VaultDatabase.MIGRATION_30_31.migrate(database)
+
+        assert(executedSql.any { it.contains("CREATE TABLE IF NOT EXISTS record_sync_pending") })
+        assert(executedSql.any { it.contains("CREATE TRIGGER IF NOT EXISTS record_sync_capture_note_update") })
+        assert(executedSql.none { it.contains("DROP TABLE", ignoreCase = true) })
+        assert(executedSql.none { it.startsWith("ALTER TABLE notes") || it.startsWith("ALTER TABLE folders") })
     }
 }
