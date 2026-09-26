@@ -164,7 +164,6 @@ fun SettingsScreen(
     onGoogleDriveForcePush: ((Intent) -> Unit) -> Unit = { _ -> },
     onGoogleDrivePull: ((Intent) -> Unit) -> Unit = { _ -> },
     onBackupSettingsOpened: () -> Unit = {},
-    onOpenSyncPilot: () -> Unit = {},
     formattingAccountEmail: String = "",
     onFormattingAccountLogin: (String, String) -> Unit = { _, _ -> },
     onFormattingAccountLogout: () -> Unit = {},
@@ -262,7 +261,6 @@ fun SettingsScreen(
             onBack = { destination = FrozenSettingsDestination.Main },
             onConnect = { onPrepareGoogleDriveSignIn { signInLauncher.launch(it) } },
             onBackupRestore = { destination = FrozenSettingsDestination.BackupRestore },
-            onOpenSyncPilot = onOpenSyncPilot,
         )
         FrozenSettingsDestination.BackupRestore -> FrozenBackupRestoreSettings(
             preferences = preferences,
@@ -614,7 +612,7 @@ private fun FrozenRecentlyDeletedSettings(
 }
 
 @Composable
-private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onConnect: () -> Unit, onBackupRestore: () -> Unit, onOpenSyncPilot: () -> Unit) {
+private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onConnect: () -> Unit, onBackupRestore: () -> Unit) {
     FrozenSettingsPage("Google Drive", onBack) {
         item {
             val connected = preferences.googleDriveAccountEmail.isNotBlank()
@@ -630,9 +628,6 @@ private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: 
         }
         frozenSection("VAULT BACKUP") {
             FrozenSettingsRow(Icons.Rounded.SettingsBackupRestore, "Backup / Restore", value = if (state.active) "In progress" else preferences.backupSummary(), onClick = onBackupRestore)
-        }
-        frozenSection("EXPERIMENTAL") {
-            FrozenSettingsRow(Icons.Rounded.Cloud, "Two-phone sync test", value = "Test notes only", onClick = onOpenSyncPilot)
         }
     }
 }

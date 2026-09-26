@@ -14,7 +14,7 @@ class VaultMigrationChainTest {
         migrations.zipWithNext().forEach { (current, next) ->
             assertEquals(current.endVersion, next.startVersion)
         }
-        assertEquals(31, migrations.last().endVersion)
+        assertEquals(32, migrations.last().endVersion)
     }
 
     @Test
@@ -119,5 +119,32 @@ class VaultMigrationChainTest {
         assert(executedSql.any { it.contains("CREATE TRIGGER IF NOT EXISTS record_sync_capture_note_update") })
         assert(executedSql.none { it.contains("DROP TABLE", ignoreCase = true) })
         assert(executedSql.none { it.startsWith("ALTER TABLE notes") || it.startsWith("ALTER TABLE folders") })
+    }
+
+    @Test
+    fun migration31To32DisablesSyncWithoutTouchingUserDataOrDroppingTables() {
+        val executedSql = mutableListOf<String>()
+        val database = Proxy.newProxyInstance(
+            SupportSQLiteDatabase::class.java.classLoader,
+            arrayOf(SupportSQLiteDatabase::class.java),
+        ) { _, method, args ->
+            if (method.name == "execSQL" && !args.isNullOrEmpty()) executedSql += args.first() as String
+            when (method.returnType) {
+                java.lang.Boolean.TYPE -> false
+                java.lang.Integer.TYPE -> 0
+                java.lang.Long.TYPE -> 0L
+                else -> null
+            }
+        } as SupportSQLiteDatabase
+
+        VaultDatabase.MIGRATION_31_32.migrate(database)
+
+        assertEquals(8, executedSql.size)
+        assertEquals(
+            "UPDATE record_sync_control SET enabled = 0, paused = 1, applyingRemote = 0",
+            executedSql.first(),
+        )
+        assert(executedSql.drop(1).all { it.startsWith("DROP TRIGGER IF EXISTS record_sync_capture_") })
+        assert(executedSql.none { it.contains("notes ") || it.contains("folders ") || it.contains("DROP TABLE") })
     }
 }

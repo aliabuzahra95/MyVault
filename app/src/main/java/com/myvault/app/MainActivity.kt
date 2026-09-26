@@ -47,7 +47,6 @@ import androidx.fragment.app.FragmentActivity
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.repository.NoteRepository
-import com.myvault.app.data.sync.record.PilotSyncScheduler
 import com.myvault.app.ui.navigation.VaultNavHost
 import com.myvault.app.ui.screens.parseRichImport
 import com.myvault.app.ui.screens.toJsonArrayString
@@ -69,7 +68,6 @@ import kotlinx.coroutines.launch
 class MainActivity : FragmentActivity() {
     @Inject lateinit var preferences: VaultPreferences
     @Inject lateinit var noteRepository: NoteRepository
-    @Inject lateinit var pilotSyncScheduler: PilotSyncScheduler
     private var promptShowing = false
     private var lastPausedAt = 0L
     private var pendingSharedNoteId by mutableStateOf<String?>(null)
@@ -78,11 +76,6 @@ class MainActivity : FragmentActivity() {
     private var pendingQuickNoteCreate by mutableStateOf(false)
     private var quickNoteCreationInFlight = false
     private lateinit var quickNoteLaunchGuard: QuickNoteLaunchGuard
-
-    override fun onResume() {
-        super.onResume()
-        pilotSyncScheduler.scheduleWhenAppOpens()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

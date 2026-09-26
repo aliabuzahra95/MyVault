@@ -76,7 +76,7 @@ import com.myvault.app.data.local.entity.TagEntity
         RecordSyncFileEntity::class,
         RecordSyncConflictEntity::class,
     ],
-    version = 31,
+    version = 32,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -610,6 +610,10 @@ abstract class VaultDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = RecordSyncSchema.migrate(db)
         }
 
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) = RecordSyncSchema.disable(db)
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -641,6 +645,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_28_29,
             MIGRATION_29_30,
             MIGRATION_30_31,
+            MIGRATION_31_32,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

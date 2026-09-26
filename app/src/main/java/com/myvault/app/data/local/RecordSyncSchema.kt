@@ -3,6 +3,14 @@ package com.myvault.app.data.local
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 internal object RecordSyncSchema {
+    fun disable(db: SupportSQLiteDatabase) {
+        db.execSQL("UPDATE record_sync_control SET enabled = 0, paused = 1, applyingRemote = 0")
+        listOf(
+            "note_insert", "note_update", "note_delete",
+            "folder_insert", "folder_update", "folder_delete", "folder_mode_notes",
+        ).forEach { suffix -> db.execSQL("DROP TRIGGER IF EXISTS record_sync_capture_$suffix") }
+    }
+
     fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS record_sync_control (id INTEGER NOT NULL PRIMARY KEY, accountId TEXT, clientId TEXT NOT NULL, enabled INTEGER NOT NULL, paused INTEGER NOT NULL, applyingRemote INTEGER NOT NULL, cursor TEXT)")
         db.execSQL("CREATE TABLE IF NOT EXISTS record_sync_pending (accountId TEXT NOT NULL, entityType TEXT NOT NULL, entityId TEXT NOT NULL, generation INTEGER NOT NULL, changedAt INTEGER NOT NULL, baseRevisionId TEXT, preparedGeneration INTEGER, preparedRevisionJson TEXT, excludedReason TEXT, PRIMARY KEY(accountId, entityType, entityId))")
