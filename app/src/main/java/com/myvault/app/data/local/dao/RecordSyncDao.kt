@@ -34,6 +34,9 @@ interface RecordSyncDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun seedPending(value: RecordSyncPendingEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun savePending(value: RecordSyncPendingEntity)
+
     @Query("SELECT * FROM record_sync_pending WHERE accountId = :accountId AND entityType = :type AND entityId = :id")
     suspend fun pendingFor(accountId: String, type: String, id: String): RecordSyncPendingEntity?
 

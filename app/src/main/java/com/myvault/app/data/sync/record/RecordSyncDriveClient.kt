@@ -34,6 +34,12 @@ internal class RecordSyncDriveClient @Inject constructor(@param:ApplicationConte
         return ensureFolder(sync, "records")
     }
 
+    fun ensurePilotRecordsFolder(): String {
+        val root = ensureFolder("root", "MyVault")
+        val sync = ensureFolder(root, "sync-v1")
+        return ensureFolder(sync, "pilot-records")
+    }
+
     fun findRecordsFolder(): String? {
         val root = findFolder("root", "MyVault") ?: return null
         val sync = findFolder(root, "sync-v1") ?: return null

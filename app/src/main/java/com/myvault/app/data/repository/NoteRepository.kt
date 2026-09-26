@@ -139,9 +139,8 @@ class NoteRepository @Inject constructor(
         tags.map { it.name }
     }
 
-    suspend fun createNote(folderId: String?, title: String = "Untitled note", parentNoteId: String? = null): String {
+    suspend fun createNote(folderId: String?, title: String = "Untitled note", parentNoteId: String? = null, noteId: String = UUID.randomUUID().toString()): String {
         val now = System.currentTimeMillis()
-        val noteId = UUID.randomUUID().toString()
         val notes = noteDao.getAll()
         val parentNote = parentNoteId?.let { id -> notes.firstOrNull { it.id == id } }
         val safeParentNoteId = parentNote?.id

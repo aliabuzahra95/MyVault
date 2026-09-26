@@ -121,6 +121,7 @@ import com.myvault.app.ui.screens.ReadingScreen
 import com.myvault.app.ui.screens.NotebookPrintAction
 import com.myvault.app.ui.screens.SearchScreen
 import com.myvault.app.ui.screens.SettingsScreen
+import com.myvault.app.ui.screens.RecordSyncPilotScreen
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.ui.viewmodel.AttachmentsViewModel
@@ -142,6 +143,7 @@ import com.myvault.app.ui.viewmodel.QuranReaderViewModel
 import com.myvault.app.ui.viewmodel.QuranReflectionsViewModel
 import com.myvault.app.ui.viewmodel.SearchViewModel
 import com.myvault.app.ui.viewmodel.SettingsViewModel
+import com.myvault.app.ui.viewmodel.RecordSyncPilotViewModel
 import com.myvault.app.ui.viewmodel.ShellPreferencesViewModel
 import kotlinx.coroutines.launch
 import java.io.File
@@ -1804,6 +1806,7 @@ fun VaultNavHost(
                     viewModel.pullGoogleDriveSync(onAuthorizationRequired) { backupMessage = it }
                 },
                 onBackupSettingsOpened = viewModel::observeDriveRestoreState,
+                onOpenSyncPilot = { navController.navigate(VaultDestination.RecordSyncPilot.route) },
                 formattingAccountEmail = supabaseSession.email,
                 onFormattingAccountLogin = { email, password -> viewModel.signInFormattingAccount(email, password) { backupMessage = it } },
                 onFormattingAccountLogout = { viewModel.signOutFormattingAccount { backupMessage = it } },
@@ -1815,6 +1818,18 @@ fun VaultNavHost(
                 },
                 initialSection = pendingSettingsSection,
                 onInitialSectionConsumed = { pendingSettingsSection = null },
+            )
+        }
+        composable(VaultDestination.RecordSyncPilot.route) {
+            val viewModel: RecordSyncPilotViewModel = hiltViewModel()
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            LaunchedEffect(viewModel) { viewModel.refresh() }
+            RecordSyncPilotScreen(
+                state = state,
+                onBack = { navController.popBackStack() },
+                onCreate = { viewModel.create { id -> navController.navigate(VaultDestination.Editor.route(id, quickFocus = true)) } },
+                onSync = viewModel::sync,
+                onOpenNote = { id -> navController.navigate(VaultDestination.Editor.route(id)) },
             )
         }
         composable(
