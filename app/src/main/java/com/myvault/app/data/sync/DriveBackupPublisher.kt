@@ -34,6 +34,28 @@ internal data class DriveBackupPublicationResult(
 internal class DriveBackupPublicationFailure(cause: Exception, count: Int, bytes: Long) :
     IllegalStateException("${cause.message} Staging retained: at least $count object(s), $bytes bytes; no Drive files deleted.", cause)
 
+internal fun matchesCommittedBackup(previous: PublishedDriveBackup?, uploads: List<DriveBackupUpload>): Boolean {
+    if (previous == null || uploads.isEmpty()) return false
+    return runCatching {
+        val entries = JSONObject(previous.text).getJSONArray("entries")
+        if (entries.length() != uploads.size || uploads.map { it.path }.toSet().size != uploads.size) return false
+        val oldByPath = (0 until entries.length()).map { entries.getJSONObject(it) }.associateBy { it.getString("path") }
+        if (oldByPath.size != entries.length() || oldByPath.keys != uploads.map { it.path }.toSet()) return false
+        uploads.all { upload ->
+            val old = oldByPath.getValue(upload.path)
+            old.optString("cloudFileId").isNotBlank() &&
+                old.getString("kind") == upload.kind &&
+                if (upload.path == "metadata/manifest.json") {
+                    val local = JSONObject(upload.file.readText())
+                    local.optString("format") == "myvault-backup" && local.optInt("version") == 1 &&
+                        old.getLong("size") > 0 && old.getString("sha256").isNotBlank()
+                } else {
+                    old.getLong("size") == upload.size && old.getString("sha256").equals(upload.sha256, ignoreCase = true)
+                }
+        }
+    }.getOrDefault(false)
+}
+
 /** The production publication sequence. Transport injection permits failures at
  * real upload/readback/publication boundaries without accessing a user's Drive. */
 internal class DriveBackupPublisher(private val transport: DriveBackupPublicationTransport) {

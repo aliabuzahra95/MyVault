@@ -12,6 +12,34 @@ import java.security.MessageDigest
 class DriveBackupPublisherTest {
     private fun ByteArray.hash() = MessageDigest.getInstance("SHA-256").digest(this).joinToString("") { "%02x".format(it) }
 
+    @Test fun unchangedSnapshotSkipsOnlyGeneratedManifestTimestamp() {
+        val directory = Files.createTempDirectory("drive-no-change-test").toFile()
+        try {
+            fun upload(path: String, body: String): DriveBackupUpload {
+                val file = File(directory, path.substringAfterLast('/')).apply { writeText(body) }
+                return DriveBackupUpload(path, file.name, "metadata", file, file.length(), file.readBytes().hash())
+            }
+            val oldManifest = upload("metadata/manifest.json", """{"format":"myvault-backup","version":1,"createdAt":1}""")
+            val notes = upload("metadata/notes.json", """[{"id":"n1","title":"First"}]""")
+            val entries = JSONArray().apply {
+                listOf(oldManifest, notes).forEach { item ->
+                    put(JSONObject().put("path", item.path).put("kind", item.kind)
+                        .put("cloudFileId", "verified-${item.name}").put("size", item.size).put("sha256", item.sha256))
+                }
+            }
+            val previous = PublishedDriveBackup("committed", JSONObject().put("entries", entries).toString())
+            val newManifest = upload("metadata/manifest.json", """{"format":"myvault-backup","version":1,"createdAt":2}""")
+            assertTrue(matchesCommittedBackup(previous, listOf(newManifest, notes)))
+            val changedNote = upload("metadata/notes.json", """[{"id":"n1","title":"Updated"}]""")
+            assertFalse(matchesCommittedBackup(previous, listOf(newManifest, changedNote)))
+            assertFalse(matchesCommittedBackup(previous, listOf(newManifest)))
+            entries.getJSONObject(1).remove("cloudFileId")
+            assertFalse(matchesCommittedBackup(PublishedDriveBackup("committed", JSONObject().put("entries", entries).toString()), listOf(newManifest, notes)))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
     private inner class Fixture(private val failure: String? = null) {
         val directory = Files.createTempDirectory("drive-publication-test").toFile()
         val files = linkedMapOf<String, ByteArray>()

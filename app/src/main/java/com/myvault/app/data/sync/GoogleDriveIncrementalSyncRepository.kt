@@ -122,6 +122,11 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             val localFileEntries = metadataDir.localFileDriveEntries()
             metadataDir.reconcileAttachmentFileClaims(localFileEntries.map { it.backupEntry }.toSet())
             val entries = metadataDir.toMetadataDriveEntries() + localFileEntries
+            val uploads = entries.map { DriveBackupUpload(it.path, it.fileName, it.kind, it.file, it.size, it.sha256) }
+            if (!force && matchesCommittedBackup(previous, uploads)) {
+                preferences.markGoogleDriveSync(driveAccount.email, remoteVersion)
+                return@withContext DriveSyncResult.Success("Already backed up. No files uploaded or backup snapshot replaced.")
+            }
             val cloudVersion = maxOf(System.currentTimeMillis(), remoteVersion + 1)
             val transport = object : DriveBackupPublicationTransport {
                 override fun readCommitted() = drive.readCommittedBackup(vault.manifests.id)
@@ -167,7 +172,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             }
             val result = DriveBackupPublisher(transport).publish(
                 previous = previous,
-                uploads = entries.map { DriveBackupUpload(it.path, it.fileName, it.kind, it.file, it.size, it.sha256) },
+                uploads = uploads,
                 manifest = { ids ->
                     entries.forEach { it.cloudFileId = ids.getValue(it.path) }
                     entries.toManifest(cloudVersion).toString(2)
