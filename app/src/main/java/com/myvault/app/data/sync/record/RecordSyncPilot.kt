@@ -37,7 +37,6 @@ internal fun validatePilotRevision(revision: RecordSyncRevision) {
         return
     }
     val payload = JSONObject(requireNotNull(revision.payloadJson))
-    require(payload.getString("title").startsWith(PilotNotePrefix)) { "The incoming note is not a test note." }
     require(payload.isNull("folderId") && payload.isNull("parentNoteId")) { "Pilot notes must stay in Study root." }
     require(payload.isNull("deletedAt")) { "Test deletion must use a tombstone." }
     noteFromPayload(payload)
@@ -48,6 +47,14 @@ internal fun validatePilotRevision(revision: RecordSyncRevision) {
         "Test notes containing binary blocks are not supported."
     }
 }
+
+internal fun canAdoptOwnEarlierRevision(
+    clientId: String,
+    currentHead: String?,
+    pending: RecordSyncPendingEntity?,
+    revision: RecordSyncRevision,
+): Boolean = pending != null && revision.clientId == clientId &&
+    (if (currentHead == null) revision.parents.isEmpty() else currentHead in revision.parents)
 
 @Singleton
 internal class RecordSyncPilot @Inject constructor(
@@ -60,21 +67,23 @@ internal class RecordSyncPilot @Inject constructor(
     private val noteTableDao: NoteTableDao,
     private val noteRepository: NoteRepository,
     private val drive: RecordSyncDriveClient,
+    private val scheduler: PilotSyncScheduler,
 ) {
     private val mutex = Mutex()
     private val prefs = context.getSharedPreferences("record_sync_pilot", Context.MODE_PRIVATE)
 
     suspend fun createTestNote(): String = withContext(Dispatchers.IO) {
         val id = PilotNotePrefix + UUID.randomUUID()
-        noteRepository.createNote(folderId = null, title = id, noteId = id)
+        noteRepository.createNote(folderId = null, title = "Test note ${id.removePrefix(PilotNotePrefix).take(8)}", noteId = id)
         noteRepository.saveRichText(id, "Android sync test. Edit this note on either phone.", "[]")
         register(id)
+        scheduler.scheduleAfterEdit(id)
         id
     }
 
     suspend fun notes(): List<PilotNote> = withContext(Dispatchers.IO) {
         knownIds().mapNotNull { id ->
-            noteDao.getByIdIncludingDeleted(id)?.takeIf { it.deletedAt == null && it.title.startsWith(PilotNotePrefix) }
+            noteDao.getByIdIncludingDeleted(id)?.takeIf { it.deletedAt == null }
                 ?.let { PilotNote(id, it.title) }
         }.sortedBy { it.title }
     }
@@ -94,7 +103,11 @@ internal class RecordSyncPilot @Inject constructor(
         }
         val folder = drive.ensurePilotRecordsFolder()
         markChangedTestNotes(account)
-        val remote = drive.listRecords(folder).map { file ->
+        val remote = drive.listRecords(folder).mapNotNull { file ->
+            syncDao.fileById(file.id)?.let { known ->
+                require(known.accountId == account) { "A pilot file belongs to another sync account." }
+                return@mapNotNull null
+            }
             val revision = RecordSyncRevision.parse(JSONObject(drive.download(file.id)))
             require(file.name == "${revision.revisionId}.json") { "A pilot file name does not match its revision." }
             validatePilotRevision(revision)
@@ -106,7 +119,7 @@ internal class RecordSyncPilot @Inject constructor(
             val next = remaining.firstOrNull { (_, revision) ->
                 revision.parents.none { parent -> remaining.any { it.second.revisionId == parent } }
             } ?: error("Pilot revisions have an ancestry cycle. Local notes were preserved.")
-            if (applyOne(account, next.first, next.second)) imported++
+            if (applyOne(account, clientId, next.first, next.second)) imported++
             remaining.remove(next)
         }
         var uploaded = 0
@@ -158,8 +171,8 @@ internal class RecordSyncPilot @Inject constructor(
         val note = noteDao.getByIdIncludingDeleted(id) ?: return null
         require(isPilotNoteId(id) && id in knownIds()) { "Only registered test notes may sync." }
         if (note.deletedAt != null) return null
-        require(note.title.startsWith(PilotNotePrefix) && note.folderId == null && note.parentNoteId == null) {
-            "Test note was renamed or moved; pilot sync stopped without uploading it."
+        require(note.folderId == null && note.parentNoteId == null) {
+            "Test note was moved out of Study root; pilot sync stopped without uploading it."
         }
         require(attachmentDao.getForNotes(listOf(id)).isEmpty() && noteTableDao.countForNote(id) == 0) {
             "Test note has an attachment or table; pilot sync stopped without uploading it."
@@ -175,7 +188,7 @@ internal class RecordSyncPilot @Inject constructor(
         }
     }
 
-    private suspend fun applyOne(account: String, file: RecordSyncDriveFile, revision: RecordSyncRevision): Boolean {
+    private suspend fun applyOne(account: String, clientId: String, file: RecordSyncDriveFile, revision: RecordSyncRevision): Boolean {
         val knownFile = syncDao.fileById(file.id)
         if (knownFile != null) {
             require(knownFile.accountId == account) { "Pilot file ID belongs to another sync state." }
@@ -191,8 +204,10 @@ internal class RecordSyncPilot @Inject constructor(
         val prepared = pending?.preparedRevisionJson?.let { RecordSyncRevision.parse(JSONObject(it)) }
         val canApply = (head == null && local == null && pending == null) ||
             (head != null && head.revisionId in revision.parents && localHash == head.contentHash && pending == null)
-        val canAdopt = (head == null && sameLocal) || (prepared?.revisionId == revision.revisionId && sameLocal)
-        if (!canApply && !canAdopt && head?.revisionId != revision.revisionId) {
+        val ownLinearRevision = canAdoptOwnEarlierRevision(clientId, head?.revisionId, pending, revision)
+        val canAdopt = sameLocal && (head == null || prepared?.revisionId == revision.revisionId || ownLinearRevision)
+        val canAdoptOlder = !sameLocal && ownLinearRevision
+        if (!canApply && !canAdopt && !canAdoptOlder && head?.revisionId != revision.revisionId) {
             syncDao.saveConflict(RecordSyncConflictEntity("$account:note:$id:${revision.revisionId}", account,
                 "note", id, head?.revisionId, revision.revisionId, revision.payloadJson, revision.deleted,
                 null, System.currentTimeMillis()))
@@ -212,8 +227,16 @@ internal class RecordSyncPilot @Inject constructor(
             }
             syncDao.saveHead(RecordSyncHeadEntity(account, "note", id, revision.revisionId, revision.contentHash, revision.deleted))
             syncDao.saveFile(RecordSyncFileEntity(file.id, account, "note", id, revision.revisionId, revision.mutationId))
-            if (prepared?.revisionId == revision.revisionId)
-                syncDao.acknowledge(account, "note", id, pending!!.generation)
+            if (canAdoptOlder) {
+                syncDao.savePending(pending!!.copy(
+                    baseRevisionId = revision.revisionId,
+                    preparedGeneration = null,
+                    preparedRevisionJson = null,
+                ))
+            }
+            if (sameLocal && (prepared?.revisionId == revision.revisionId || ownLinearRevision)) {
+                pending?.let { syncDao.acknowledge(account, "note", id, it.generation) }
+            }
         }
         register(id)
         return canApply

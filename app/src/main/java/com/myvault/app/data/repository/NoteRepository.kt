@@ -34,6 +34,7 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.myvault.app.data.sync.record.PilotSyncScheduler
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 @Singleton
@@ -50,6 +51,7 @@ class NoteRepository @Inject constructor(
     private val pdfReadingProgressDao: PdfReadingProgressDao,
     private val sourceBacklinkDao: SourceBacklinkDao,
     private val knowledgeTagDao: KnowledgeTagDao,
+    private val pilotSyncScheduler: PilotSyncScheduler,
 ) {
     private val bodyBlockTypes = listOf(
         "rich_text",
@@ -201,6 +203,7 @@ class NoteRepository @Inject constructor(
 
     suspend fun updateTitle(noteId: String, title: String) {
         noteDao.updateTitle(noteId, title.ifBlank { "Untitled note" }, System.currentTimeMillis())
+        pilotSyncScheduler.scheduleAfterEdit(noteId)
     }
 
     suspend fun getNote(noteId: String): NoteEntity? = noteDao.getById(noteId)
@@ -317,6 +320,7 @@ class NoteRepository @Inject constructor(
             noteDao.updateDeletedAt(noteIds, now, now)
             attachmentDao.updateDeletedAtForNotes(noteIds, now)
         }
+        pilotSyncScheduler.scheduleAfterEdit(noteId)
     }
 
     suspend fun restoreNote(noteId: String) {
@@ -326,6 +330,7 @@ class NoteRepository @Inject constructor(
             noteDao.updateDeletedAt(noteIds, null, System.currentTimeMillis())
             attachmentDao.updateDeletedAtForNotes(noteIds, null)
         }
+        pilotSyncScheduler.scheduleAfterEdit(noteId)
     }
 
     suspend fun permanentlyDeleteNote(noteId: String) {
@@ -473,6 +478,7 @@ class NoteRepository @Inject constructor(
             blockDao.deleteTypesForNoteExcept(noteId, bodyBlockTypes, blockId)
             noteDao.updateBodyPlainText(noteId, currentBodyPlainText(noteId, text), System.currentTimeMillis())
         }
+        pilotSyncScheduler.scheduleAfterEdit(noteId)
     }
 
     suspend fun restoreVersion(noteId: String, versionId: String) {

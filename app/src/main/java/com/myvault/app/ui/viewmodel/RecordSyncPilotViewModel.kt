@@ -38,13 +38,19 @@ internal class RecordSyncPilotViewModel @Inject constructor(private val pilot: R
         }
     }
 
-    fun sync() = viewModelScope.launch {
+    fun sync() = performSync(showProgress = true)
+
+    fun autoSync() = performSync(showProgress = false)
+
+    private fun performSync(showProgress: Boolean) = viewModelScope.launch {
         if (mutableState.value.busy) return@launch
-        mutableState.value = mutableState.value.copy(busy = true, message = "Checking test notes…")
+        mutableState.value = mutableState.value.copy(busy = true, message = if (showProgress) "Checking test notes…" else mutableState.value.message)
         runCatching { pilot.syncNow() }.onSuccess { result ->
             mutableState.value = mutableState.value.copy(
                 notes = pilot.notes(), busy = false,
-                message = "Done: ${result.uploaded} sent, ${result.imported} received, ${result.conflicts} conflicts.",
+                message = if (showProgress || result.uploaded > 0 || result.imported > 0 || result.conflicts > 0)
+                    "Done: ${result.uploaded} sent, ${result.imported} received, ${result.conflicts} conflicts."
+                else mutableState.value.message,
             )
         }.onFailure { error ->
             mutableState.value = mutableState.value.copy(busy = false, message = error.message ?: "Test sync failed.")

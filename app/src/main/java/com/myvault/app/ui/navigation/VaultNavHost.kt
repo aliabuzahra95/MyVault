@@ -1829,6 +1829,7 @@ fun VaultNavHost(
                 onBack = { navController.popBackStack() },
                 onCreate = { viewModel.create { id -> navController.navigate(VaultDestination.Editor.route(id, quickFocus = true)) } },
                 onSync = viewModel::sync,
+                onAutoSync = viewModel::autoSync,
                 onOpenNote = { id -> navController.navigate(VaultDestination.Editor.route(id)) },
             )
         }

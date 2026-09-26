@@ -2,6 +2,7 @@ package com.myvault.app.data.sync.record
 
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.NoteEntity
+import com.myvault.app.data.local.entity.RecordSyncPendingEntity
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
@@ -22,8 +23,8 @@ class RecordSyncPilotTest {
         validatePilotRevision(revision())
     }
 
-    @Test fun ordinaryTitleAndFolderRelationshipAreRejected() {
-        rejects(revision(title = "Private note"))
+    @Test fun renamingARegisteredTestNoteIsAllowedButMovingItIsNot() {
+        validatePilotRevision(revision(title = "My renamed lesson"))
         rejects(revision(folderId = "existing-folder"))
     }
 
@@ -35,6 +36,15 @@ class RecordSyncPilotTest {
     @Test fun deletionRequiresAnExistingParentRevision() {
         rejects(RecordSyncRevision.create("note", id, "client", emptyList(), null))
         validatePilotRevision(RecordSyncRevision.create("note", id, "client", listOf("base"), null))
+    }
+
+    @Test fun ownInterruptedUploadCanBecomeBaseForNewerLocalEdit() {
+        val pending = RecordSyncPendingEntity("pilot:account", "note", id, 2, 1, null)
+        val firstUpload = revision().copy(clientId = "this-phone")
+        assertTrue(canAdoptOwnEarlierRevision("this-phone", null, pending, firstUpload))
+        assertFalse(canAdoptOwnEarlierRevision("other-phone", null, pending, firstUpload))
+        assertFalse(canAdoptOwnEarlierRevision("this-phone", "different-base", pending, firstUpload))
+        assertFalse(canAdoptOwnEarlierRevision("this-phone", null, null, firstUpload))
     }
 
     private fun revision(
