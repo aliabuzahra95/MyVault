@@ -3,6 +3,7 @@ package com.myvault.app.data.sync.record
 import com.myvault.app.data.local.entity.BlockEntity
 import com.myvault.app.data.local.entity.NoteEntity
 import com.myvault.app.data.local.entity.RecordSyncPendingEntity
+import com.myvault.app.data.local.entity.RecordSyncFileEntity
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
@@ -46,6 +47,24 @@ class RecordSyncPilotTest {
         assertFalse(canAdoptOwnEarlierRevision("this-phone", "different-base", pending, firstUpload))
         assertFalse(canAdoptOwnEarlierRevision("this-phone", null, null, firstUpload))
     }
+
+    @Test fun pilotFileIndexIsAccountScopedAndAcceptsLegacyEntries() {
+        val accountA = "pilot:account-a"
+        val accountB = "pilot:account-b"
+        val driveFileId = "same-drive-file"
+        val oldMapping = file(driveFileId, accountA)
+        assertFalse(knownPilotFile(accountB, null, oldMapping))
+        assertTrue(knownPilotFile(accountA, null, oldMapping))
+
+        val scopedKey = pilotFileKey(accountB, driveFileId)
+        assertFalse(scopedKey == pilotFileKey(accountA, driveFileId))
+        assertFalse(scopedKey == driveFileId)
+        assertTrue(knownPilotFile(accountB, file(scopedKey, accountB), oldMapping))
+    }
+
+    private fun file(key: String, account: String) = RecordSyncFileEntity(
+        key, account, "note", id, "revision", "mutation",
+    )
 
     private fun revision(
         title: String = id,

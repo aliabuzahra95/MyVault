@@ -30,6 +30,14 @@ data class PilotSyncResult(val uploaded: Int, val imported: Int, val conflicts: 
 
 internal fun isPilotNoteId(id: String): Boolean = id.startsWith(PilotNotePrefix) && id.length > PilotNotePrefix.length
 
+internal fun pilotFileKey(account: String, driveFileId: String): String = "pilot-file:$account:$driveFileId"
+
+internal fun knownPilotFile(
+    account: String,
+    scoped: RecordSyncFileEntity?,
+    legacy: RecordSyncFileEntity?,
+): Boolean = scoped?.accountId == account || legacy?.accountId == account
+
 internal fun validatePilotRevision(revision: RecordSyncRevision) {
     require(revision.entityType == "note" && isPilotNoteId(revision.entityId)) { "Only test notes may enter the pilot." }
     if (revision.deleted) {
@@ -104,10 +112,7 @@ internal class RecordSyncPilot @Inject constructor(
         val folder = drive.ensurePilotRecordsFolder()
         markChangedTestNotes(account)
         val remote = drive.listRecords(folder).mapNotNull { file ->
-            syncDao.fileById(file.id)?.let { known ->
-                require(known.accountId == account) { "A pilot file belongs to another sync account." }
-                return@mapNotNull null
-            }
+            if (isKnownFile(account, file.id)) return@mapNotNull null
             val revision = RecordSyncRevision.parse(JSONObject(drive.download(file.id)))
             require(file.name == "${revision.revisionId}.json") { "A pilot file name does not match its revision." }
             validatePilotRevision(revision)
@@ -143,7 +148,7 @@ internal class RecordSyncPilot @Inject constructor(
             }
             val fileId = drive.upload(folder, revision)
             database.withTransaction {
-                syncDao.saveFile(RecordSyncFileEntity(fileId, account, "note", note.id, revision.revisionId, revision.mutationId))
+                syncDao.saveFile(RecordSyncFileEntity(pilotFileKey(account, fileId), account, "note", note.id, revision.revisionId, revision.mutationId))
                 syncDao.saveHead(RecordSyncHeadEntity(account, "note", note.id, revision.revisionId, revision.contentHash, revision.deleted))
                 syncDao.acknowledge(account, "note", note.id, current.generation)
             }
@@ -189,11 +194,7 @@ internal class RecordSyncPilot @Inject constructor(
     }
 
     private suspend fun applyOne(account: String, clientId: String, file: RecordSyncDriveFile, revision: RecordSyncRevision): Boolean {
-        val knownFile = syncDao.fileById(file.id)
-        if (knownFile != null) {
-            require(knownFile.accountId == account) { "Pilot file ID belongs to another sync state." }
-            return false
-        }
+        if (isKnownFile(account, file.id)) return false
         val id = revision.entityId
         val head = syncDao.head(account, "note", id)
         val local = noteDao.getByIdIncludingDeleted(id)
@@ -211,7 +212,7 @@ internal class RecordSyncPilot @Inject constructor(
             syncDao.saveConflict(RecordSyncConflictEntity("$account:note:$id:${revision.revisionId}", account,
                 "note", id, head?.revisionId, revision.revisionId, revision.payloadJson, revision.deleted,
                 null, System.currentTimeMillis()))
-            syncDao.saveFile(RecordSyncFileEntity(file.id, account, "note", id, revision.revisionId, revision.mutationId))
+            syncDao.saveFile(RecordSyncFileEntity(pilotFileKey(account, file.id), account, "note", id, revision.revisionId, revision.mutationId))
             return false
         }
         database.withTransaction {
@@ -226,7 +227,7 @@ internal class RecordSyncPilot @Inject constructor(
                 }
             }
             syncDao.saveHead(RecordSyncHeadEntity(account, "note", id, revision.revisionId, revision.contentHash, revision.deleted))
-            syncDao.saveFile(RecordSyncFileEntity(file.id, account, "note", id, revision.revisionId, revision.mutationId))
+            syncDao.saveFile(RecordSyncFileEntity(pilotFileKey(account, file.id), account, "note", id, revision.revisionId, revision.mutationId))
             if (canAdoptOlder) {
                 syncDao.savePending(pending!!.copy(
                     baseRevisionId = revision.revisionId,
@@ -243,6 +244,12 @@ internal class RecordSyncPilot @Inject constructor(
     }
 
     private fun knownIds(): Set<String> = prefs.getStringSet("noteIds", emptySet()).orEmpty().filter(::isPilotNoteId).toSet()
+
+    private suspend fun isKnownFile(account: String, driveFileId: String): Boolean = knownPilotFile(
+        account,
+        syncDao.fileById(pilotFileKey(account, driveFileId)),
+        syncDao.fileById(driveFileId),
+    )
 
     private fun register(id: String) {
         require(isPilotNoteId(id))
