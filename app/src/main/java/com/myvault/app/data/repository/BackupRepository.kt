@@ -72,6 +72,17 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+internal fun <T> changedRestoreRows(incoming: List<T>, current: List<T>, id: (T) -> String): List<T> {
+    val effectiveRows = current.associateBy(id).toMutableMap()
+    return incoming.filter { row ->
+        val key = id(row)
+        if (effectiveRows[key] == row) false else {
+            effectiveRows[key] = row
+            true
+        }
+    }
+}
+
 @Singleton
 class BackupRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -642,16 +653,16 @@ class BackupRepository @Inject constructor(
             val backedUpPreferences = entries["settings.json"]?.let { JSONObject(it).toValidatedBackupPreferences() }
 
             database.withTransaction {
-                if (folders.isNotEmpty()) folderDao.upsertAll(folders)
+                val changedFolders = changedRestoreRows(folders, folderDao.getAllIncludingDeleted()) { it.id }
+                if (changedFolders.isNotEmpty()) folderDao.upsertAll(changedFolders)
                 if (courses.isNotEmpty()) courseDao.upsertCourses(courses)
                 if (courseConceptCards.isNotEmpty()) courseDao.upsertConceptCards(courseConceptCards)
                 if (legacyCourseFolders.isNotEmpty()) courseDao.upsertLegacyFolders(legacyCourseFolders)
                 if (legacyCourseNotes.isNotEmpty()) courseDao.upsertLegacyNotes(legacyCourseNotes)
                 if (legacyCourseStickyNotes.isNotEmpty()) courseDao.upsertLegacyStickyNotes(legacyCourseStickyNotes)
                 if (folderStickyNotes.isNotEmpty()) folderStickyNoteDao.upsertAll(folderStickyNotes)
-                if (notes.isNotEmpty()) {
-                    noteDao.upsertAll(notes)
-                }
+                val changedNotes = changedRestoreRows(notes, noteDao.getAllIncludingDeleted()) { it.id }
+                if (changedNotes.isNotEmpty()) noteDao.upsertAll(changedNotes)
                 if (blocks.isNotEmpty()) blockDao.upsertAll(blocks)
                 if (tags.isNotEmpty()) tagDao.upsertAll(tags)
                 if (tagRefs.isNotEmpty()) tagDao.upsertRefs(tagRefs)
