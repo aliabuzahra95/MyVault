@@ -42,6 +42,8 @@ interface BackupJournalDao {
     suspend fun binaryReference(scope: String, id: String): BackupBinaryReference?
     @Query("DELETE FROM backup_binary_references WHERE accountScope=:scope")
     suspend fun clearBinaryReferences(scope: String)
+    @Query("DELETE FROM backup_binary_references WHERE accountScope=:scope AND attachmentId=:id")
+    suspend fun removeBinaryReference(scope: String, id: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putBinaryReferences(values: List<BackupBinaryReference>)
 }

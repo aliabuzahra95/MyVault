@@ -53,6 +53,10 @@ import com.myvault.app.data.local.dao.BackupJournalDao
 import com.myvault.app.data.local.entity.BackupBinaryFingerprint
 import com.myvault.app.data.local.entity.BackupBinaryReference
 import com.myvault.app.data.local.dao.BackupCaptureDao
+import com.myvault.app.data.local.dao.BackupGraphDao
+import com.myvault.app.data.local.entity.BackupGraphBinding
+import com.myvault.app.data.local.entity.BackupGraphPublication
+import com.myvault.app.data.local.entity.BackupGraphPublicationObject
 
 @Database(
     entities = [
@@ -87,8 +91,11 @@ import com.myvault.app.data.local.dao.BackupCaptureDao
         BackupTrackingAccount::class,
         BackupBinaryFingerprint::class,
         BackupBinaryReference::class,
+        BackupGraphBinding::class,
+        BackupGraphPublication::class,
+        BackupGraphPublicationObject::class,
     ],
-    version = 34,
+    version = 35,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -110,6 +117,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun recordSyncDao(): RecordSyncDao
     abstract fun backupJournalDao(): BackupJournalDao
     abstract fun backupCaptureDao(): BackupCaptureDao
+    abstract fun backupGraphDao(): BackupGraphDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -638,6 +646,10 @@ abstract class VaultDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = BackupBinarySchema.migrate(db)
         }
 
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) = BackupGraphSchema.migrate(db)
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -672,6 +684,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_31_32,
             MIGRATION_32_33,
             MIGRATION_33_34,
+            MIGRATION_34_35,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {
