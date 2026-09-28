@@ -6,6 +6,8 @@ This is tracking groundwork only. The full-array production Backup writer and ex
 
 Room 32 -> 33 adds only `backup_journal_state`, `backup_tracking_accounts`, and `backup_pending_changes`. All existing tables, identities, rich text, indices and inert compatibility-only record-sync tables remain unchanged.
 
+Room 33 -> 34 subsequently adds only `backup_binary_fingerprints` and `backup_binary_references`. See [local baseline and capture](local-baseline-and-capture.md) for the verified baseline, binary-write and pending-payload contracts. Neither migration changes existing user tables or initializes trust by scanning user rows.
+
 `BackupRecordKeys` in `IncrementalBackupFormat.kt` is the authoritative group/key registry. The database callback inspects column metadata, not user rows, and installs backup-only INSERT/UPDATE/DELETE triggers for:
 
 - folders, notes, blocks, tags, note_tags, note_tables, note_versions
@@ -42,9 +44,9 @@ The existing Restore database transaction is wrapped in transaction-local journa
 
 ## Binary dependencies and remaining integration
 
-Attachment/PDF rows are tracked logically. Future staging must resolve their durable binary paths/fingerprints; annotation geometry, backlinks and attachment links depend on those objects. This stage neither hashes nor uploads binaries. Direct external modification of bytes without a repository/metadata mutation is not detected; future integrity repair must handle that case.
+Attachment/PDF rows are tracked logically. Durable imports, generated clips, PDF replacements and full Restore file copies now persist or invalidate SHA-256 fingerprints at their write boundary. Pending capture resolves direct binary dependencies without reading file bytes. Unknown historical bytes require explicit verification or one-time full baseline preparation. Unmanaged external filesystem modification remains an integrity-repair concern; captured binary staging verifies actual bytes and aborts on mismatch.
 
-Next stage: consistent per-key payload capture, verified baseline establishment, settings-intent recovery at backup entry, binary dependency/fingerprint handling, incremental writer acknowledgement after commit, and targeted restore-state tracking. None is enabled here. The previous 76-second preparation scan is not fixed by this groundwork.
+Next stage: integrate these local APIs with authenticated full-baseline publication/readback, then the separately gated checkpoint/delta writer and targeted restore-state tracking. None is connected to the production Backup button here. The previous 76-second preparation scan is not fixed by this groundwork.
 
 ## Validation
 

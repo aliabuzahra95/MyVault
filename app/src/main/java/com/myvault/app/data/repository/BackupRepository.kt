@@ -61,6 +61,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -104,6 +105,7 @@ class BackupRepository @Inject constructor(
     private val knowledgeTagDao: KnowledgeTagDao,
     private val vaultPreferences: VaultPreferences,
 ) {
+    private val backupBinaries by lazy { BackupBinaryStore(context, database, vaultPreferences.backupJournal) }
     suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "vault-manual-export-${System.currentTimeMillis()}.vaultbackup")
         try {
@@ -523,9 +525,15 @@ class BackupRepository @Inject constructor(
         )
     }
 
-    private suspend fun restoreBackup(input: InputStream): BackupResult {
+    private suspend fun restoreBackup(input: InputStream): BackupResult = vaultPreferences.backupJournal.binaryMutex.withLock {
+        vaultPreferences.backupJournal.invalidateBaseline("restore_requires_verified_baseline")
+        restoreBackupContents(input)
+    }
+
+    private suspend fun restoreBackupContents(input: InputStream): BackupResult {
         val entries = mutableMapOf<String, String>()
         val restoredFiles = mutableMapOf<String, File>()
+        val restoredFingerprints = mutableMapOf<String, BackupByteFingerprint>()
         try {
             ZipInputStream(input.buffered()).use { zip ->
                 var entry = zip.nextEntry
@@ -604,7 +612,7 @@ class BackupRepository @Inject constructor(
             val missingAttachmentFileIds = attachmentsJson.unavailableAttachmentFileIds(restoredFiles.keys)
             val restoredLibraryFolderIds = folders.map { it.id }.toSet()
             val attachments = attachmentsJson
-                .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")]) }
+                .mapJson { json -> json.toAttachmentEntity(restoredFiles[json.getString("id")], restoredFingerprints) }
                 .filterNot { it.id in missingAttachmentFileIds }
                 .filter {
                     it.noteId in restoredNoteIds || it.noteId.isBlank() || it.libraryFolderId in restoredLibraryFolderIds
@@ -670,6 +678,9 @@ class BackupRepository @Inject constructor(
                 if (tables.isNotEmpty()) noteTableDao.upsertAll(tables)
                 if (noteVersions.isNotEmpty()) noteVersionDao.upsertAll(noteVersions)
                 if (orderedAttachments.isNotEmpty()) attachmentDao.upsertAll(orderedAttachments)
+                orderedAttachments.forEach { attachment ->
+                    restoredFingerprints[attachment.id]?.let { backupBinaries.persistWritten(attachment, it, mutated = false) }
+                }
                 val existingAnnotationIdsForRestoredAttachments = if (restoredAttachmentIds.isEmpty()) {
                     emptyList()
                 } else {
@@ -716,7 +727,7 @@ class BackupRepository @Inject constructor(
         }
     }
 
-    private fun JSONObject.toAttachmentEntity(restoredFile: File?): AttachmentEntity {
+    private fun JSONObject.toAttachmentEntity(restoredFile: File?, fingerprints: MutableMap<String, BackupByteFingerprint>): AttachmentEntity {
         val id = getString("id")
         val noteId = optString("noteId")
         val libraryFolderId = optNullableString("libraryFolderId")
@@ -728,7 +739,8 @@ class BackupRepository @Inject constructor(
         val targetFile = File(context.filesDir, "$storageRoot/${id}_$fileName").apply {
             parentFile?.mkdirs()
             if (restoredFile != null) {
-                restoredFile.copyTo(this, overwrite = true)
+                backupBinaries.invalidateBeforeRestoreWrite(id)
+                fingerprints[id] = restoredFile.inputStream().use { input -> outputStream().use { fingerprintBackupBytes(input, it) } }
             }
         }
         return AttachmentEntity(
@@ -1287,7 +1299,7 @@ internal fun FolderEntity.toBackupJsonObject(): JSONObject =
         .put("deletedAt", deletedAt)
         .put("colorKey", colorKey)
 
-private fun CourseEntity.toJson(): JSONObject =
+internal fun CourseEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("title", title)
@@ -1296,7 +1308,7 @@ private fun CourseEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun CourseConceptCardEntity.toJson(): JSONObject =
+internal fun CourseConceptCardEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("courseId", courseId)
@@ -1308,7 +1320,7 @@ private fun CourseConceptCardEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun CourseFolderEntity.toJson(): JSONObject =
+internal fun CourseFolderEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("courseId", courseId)
@@ -1317,7 +1329,7 @@ private fun CourseFolderEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun CourseNoteEntity.toJson(): JSONObject =
+internal fun CourseNoteEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("courseId", courseId)
@@ -1329,7 +1341,7 @@ private fun CourseNoteEntity.toJson(): JSONObject =
         .put("updatedAt", updatedAt)
         .put("lastOpenedAt", lastOpenedAt)
 
-private fun CourseStickyNoteEntity.toJson(): JSONObject =
+internal fun CourseStickyNoteEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("courseId", courseId)
@@ -1338,7 +1350,7 @@ private fun CourseStickyNoteEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun FolderStickyNoteEntity.toJson(): JSONObject =
+internal fun FolderStickyNoteEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("folderId", folderId)
@@ -1346,7 +1358,7 @@ private fun FolderStickyNoteEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun NoteEntity.toJson(): JSONObject =
+internal fun NoteEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("folderId", folderId)
@@ -1361,7 +1373,7 @@ private fun NoteEntity.toJson(): JSONObject =
         .put("updatedAt", updatedAt)
         .put("deletedAt", deletedAt)
 
-private fun BlockEntity.toJson(): JSONObject =
+internal fun BlockEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("noteId", noteId)
@@ -1369,7 +1381,7 @@ private fun BlockEntity.toJson(): JSONObject =
         .put("content", content)
         .put("orderIndex", orderIndex)
 
-private fun NoteTableEntity.toJson(): JSONObject =
+internal fun NoteTableEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("noteId", noteId)
@@ -1380,7 +1392,7 @@ private fun NoteTableEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun NoteVersionEntity.toJson(): JSONObject =
+internal fun NoteVersionEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("noteId", noteId)
@@ -1392,7 +1404,7 @@ private fun NoteVersionEntity.toJson(): JSONObject =
         .put("characterCount", characterCount)
         .put("createdAt", createdAt)
 
-private fun PdfReadingProgressEntity.toJson(): JSONObject =
+internal fun PdfReadingProgressEntity.toJson(): JSONObject =
     JSONObject()
         .put("attachmentId", attachmentId)
         .put("pageIndex", pageIndex)
@@ -1401,7 +1413,7 @@ private fun PdfReadingProgressEntity.toJson(): JSONObject =
         .put("lastOpenedAt", lastOpenedAt)
         .put("updatedAt", updatedAt)
 
-private fun PdfAnnotationEntity.toJson(): JSONObject =
+internal fun PdfAnnotationEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("attachmentId", attachmentId)
@@ -1422,7 +1434,7 @@ private fun PdfAnnotationEntity.toJson(): JSONObject =
         .put("createdAt", createdAt)
         .put("updatedAt", updatedAt)
 
-private fun PdfAnnotationSegmentEntity.toJson(): JSONObject =
+internal fun PdfAnnotationSegmentEntity.toJson(): JSONObject =
     JSONObject()
         .put("annotationId", annotationId)
         .put("orderIndex", orderIndex)
@@ -1432,15 +1444,15 @@ private fun PdfAnnotationSegmentEntity.toJson(): JSONObject =
         .put("right", right)
         .put("bottom", bottom)
 
-private fun TagEntity.toJson(): JSONObject =
+internal fun TagEntity.toJson(): JSONObject =
     JSONObject().put("name", name)
 
-private fun NoteTagCrossRef.toJson(): JSONObject =
+internal fun NoteTagCrossRef.toJson(): JSONObject =
     JSONObject()
         .put("noteId", noteId)
         .put("tagName", tagName)
 
-private fun SourceBacklinkEntity.toJson(): JSONObject =
+internal fun SourceBacklinkEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("noteId", noteId)
@@ -1453,20 +1465,20 @@ private fun SourceBacklinkEntity.toJson(): JSONObject =
         .put("bottom", bottom)
         .put("createdAt", createdAt)
 
-private fun KnowledgeTagEntity.toJson(): JSONObject =
+internal fun KnowledgeTagEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("name", name)
         .put("createdAt", createdAt)
 
-private fun KnowledgeTagLinkEntity.toJson(): JSONObject =
+internal fun KnowledgeTagLinkEntity.toJson(): JSONObject =
     JSONObject()
         .put("tagId", tagId)
         .put("targetType", targetType)
         .put("targetId", targetId)
         .put("createdAt", createdAt)
 
-private fun AttachmentEntity.toJson(): JSONObject =
+internal fun AttachmentEntity.toJson(): JSONObject =
     JSONObject()
         .put("id", id)
         .put("noteId", noteId)

@@ -16,6 +16,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -29,6 +30,8 @@ class AttachmentRepository @Inject constructor(
     private val folderDao: FolderDao,
     private val noteDao: NoteDao,
     private val pdfAnnotationDao: PdfAnnotationDao,
+    private val backupJournal: BackupChangeJournal,
+    private val backupBinaries: BackupBinaryStore,
 ) {
     fun observeCardsForMode(mode: String) = combine(
         attachmentDao.observeAll(),
@@ -85,7 +88,7 @@ class AttachmentRepository @Inject constructor(
         attachmentDao.findDuplicateLibraryPdf(folderId = folderId, fileName = fileName)
     }
 
-    suspend fun attachDocument(noteId: String, uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun attachDocument(noteId: String, uri: Uri): String = withBinaryWrite {
         val resolver = context.contentResolver
         val id = UUID.randomUUID().toString()
         val fileName = resolver.displayName(uri).sanitizeFileName().ifBlank { "attachment-$id" }
@@ -93,25 +96,27 @@ class AttachmentRepository @Inject constructor(
         val attachmentsDir = File(context.filesDir, "attachments/$noteId").apply { mkdirs() }
         val localFile = File(attachmentsDir, "${id}_$fileName")
 
-        resolver.openInputStream(uri)?.use { input ->
-            localFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Unable to open selected file")
+        val digest = resolver.openInputStream(uri)?.use { backupBinaries.writeNew(localFile, it) }
+            ?: error("Unable to open selected file")
 
-        val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
-        attachmentDao.upsertAll(
-            listOf(
-                AttachmentEntity(
-                    id = id,
-                    noteId = noteId,
-                    fileName = fileName,
-                    mimeType = mimeType,
-                    sizeBytes = sizeBytes,
-                    localPath = localFile.absolutePath,
-                    remoteUrl = null,
-                    createdAt = System.currentTimeMillis(),
+        val sizeBytes = digest.size
+        database.withTransaction {
+            attachmentDao.upsertAll(
+                listOf(
+                    AttachmentEntity(
+                        id = id,
+                        noteId = noteId,
+                        fileName = fileName,
+                        mimeType = mimeType,
+                        sizeBytes = sizeBytes,
+                        localPath = localFile.absolutePath,
+                        remoteUrl = null,
+                        createdAt = System.currentTimeMillis(),
+                    ),
                 ),
-            ),
-        )
+            )
+            backupBinaries.persistWritten(attachmentDao.getByIdIncludingDeleted(id)!!, digest)
+        }
         id
     }
 
@@ -120,30 +125,33 @@ class AttachmentRepository @Inject constructor(
         fileName: String,
         bytes: ByteArray,
         sourceUrl: String?,
-    ): String = withContext(Dispatchers.IO) {
+    ): String = withBinaryWrite {
         val id = UUID.randomUUID().toString()
         val safeName = fileName.sanitizeFileName().ifBlank { "pdf-clip-$id.png" }
         val attachmentsDir = File(context.filesDir, "attachments/$noteId").apply { mkdirs() }
         val localFile = File(attachmentsDir, "${id}_$safeName")
-        localFile.outputStream().use { it.write(bytes) }
-        attachmentDao.upsertAll(
-            listOf(
-                AttachmentEntity(
-                    id = id,
-                    noteId = noteId,
-                    fileName = safeName,
-                    mimeType = "image/png",
-                    sizeBytes = localFile.length(),
-                    localPath = localFile.absolutePath,
-                    remoteUrl = sourceUrl,
-                    createdAt = System.currentTimeMillis(),
+        val digest = bytes.inputStream().use { backupBinaries.writeNew(localFile, it) }
+        database.withTransaction {
+            attachmentDao.upsertAll(
+                listOf(
+                    AttachmentEntity(
+                        id = id,
+                        noteId = noteId,
+                        fileName = safeName,
+                        mimeType = "image/png",
+                        sizeBytes = localFile.length(),
+                        localPath = localFile.absolutePath,
+                        remoteUrl = sourceUrl,
+                        createdAt = System.currentTimeMillis(),
+                    ),
                 ),
-            ),
-        )
+            )
+            backupBinaries.persistWritten(attachmentDao.getByIdIncludingDeleted(id)!!, digest)
+        }
         id
     }
 
-    suspend fun importLibraryDocument(folderId: String?, uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun importLibraryDocument(folderId: String?, uri: Uri): String = withBinaryWrite {
         val resolver = context.contentResolver
         val id = UUID.randomUUID().toString()
         val fileName = resolver.displayName(uri).sanitizeFileName().ifBlank { "library-file-$id" }
@@ -151,11 +159,10 @@ class AttachmentRepository @Inject constructor(
         val attachmentsDir = File(context.filesDir, "library/${folderId ?: "root"}").apply { mkdirs() }
         val localFile = File(attachmentsDir, "${id}_$fileName")
 
-        resolver.openInputStream(uri)?.use { input ->
-            localFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Unable to open selected file")
+        val digest = resolver.openInputStream(uri)?.use { backupBinaries.writeNew(localFile, it) }
+            ?: error("Unable to open selected file")
 
-        val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
+        val sizeBytes = digest.size
         database.withTransaction {
             attachmentDao.upsertAll(
                 listOf(
@@ -173,11 +180,12 @@ class AttachmentRepository @Inject constructor(
                     ),
                 ),
             )
+            backupBinaries.persistWritten(attachmentDao.getByIdIncludingDeleted(id)!!, digest)
         }
         id
     }
 
-    suspend fun replaceLibraryPdf(existingAttachmentId: String, uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun replaceLibraryPdf(existingAttachmentId: String, uri: Uri): String = withBinaryWrite {
         val existing = attachmentDao.getByIdIncludingDeleted(existingAttachmentId)
             ?: error("Original PDF could not be found")
         val resolver = context.contentResolver
@@ -185,29 +193,35 @@ class AttachmentRepository @Inject constructor(
         val mimeType = resolver.getType(uri) ?: existing.mimeType
         check(fileName.isPdfFileName() || mimeType == "application/pdf") { "Only PDFs can be replaced here." }
         val attachmentsDir = File(context.filesDir, "library/${existing.libraryFolderId ?: "root"}").apply { mkdirs() }
-        val localFile = File(attachmentsDir, "${existing.id}_$fileName")
+        val localFile = File(attachmentsDir, "${existing.id}_${UUID.randomUUID()}_$fileName")
 
-        resolver.openInputStream(uri)?.use { input ->
-            localFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Unable to open selected file")
+        val digest = resolver.openInputStream(uri)?.use { backupBinaries.writeNew(localFile, it) }
+            ?: error("Unable to open selected file")
 
+        val sizeBytes = digest.size
+        database.withTransaction {
+            attachmentDao.upsertAll(
+                listOf(
+                    existing.copy(
+                        fileName = fileName,
+                        mimeType = mimeType,
+                        sizeBytes = sizeBytes,
+                        localPath = localFile.absolutePath,
+                        deletedAt = null,
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                ),
+            )
+            backupBinaries.persistWritten(attachmentDao.getByIdIncludingDeleted(existing.id)!!, digest)
+        }
         runCatching {
             File(existing.localPath).takeIf { it.absolutePath != localFile.absolutePath && it.exists() }?.delete()
         }
-        val sizeBytes = resolver.fileSize(uri).takeIf { it > 0 } ?: localFile.length()
-        attachmentDao.upsertAll(
-            listOf(
-                existing.copy(
-                    fileName = fileName,
-                    mimeType = mimeType,
-                    sizeBytes = sizeBytes,
-                    localPath = localFile.absolutePath,
-                    deletedAt = null,
-                    createdAt = System.currentTimeMillis(),
-                ),
-            ),
-        )
         existing.id
+    }
+
+    private suspend fun <T> withBinaryWrite(block: suspend () -> T): T = withContext(Dispatchers.IO) {
+        backupJournal.binaryMutex.withLock { block() }
     }
 
     suspend fun exportAttachmentToUri(attachmentId: String, destination: Uri) = withContext(Dispatchers.IO) {

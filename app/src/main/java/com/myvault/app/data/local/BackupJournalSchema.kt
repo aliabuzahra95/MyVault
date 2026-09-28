@@ -49,6 +49,8 @@ internal object BackupJournalSchema {
             db.beginTransaction()
             try {
                 migrate(db)
+                BackupBinarySchema.migrate(db)
+                BackupBinarySchema.triggers.forEach(db::execSQL)
                 BackupRecordKeys.keys.forEach { file ->
                     val columns = mutableListOf<String>()
                     db.query("PRAGMA table_info(`${backupRecordTable(file)}`)").use { cursor ->

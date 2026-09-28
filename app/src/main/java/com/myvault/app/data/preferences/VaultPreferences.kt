@@ -98,7 +98,7 @@ class VaultPreferences @Inject constructor(
     private val injectedBackupJournal: BackupChangeJournal? = null,
 ) {
     private val startupCache = context.getSharedPreferences("vault_startup_preferences", Context.MODE_PRIVATE)
-    private val backupJournal by lazy {
+    internal val backupJournal by lazy {
         injectedBackupJournal ?: EntryPointAccessors.fromApplication(context, BackupJournalEntryPoint::class.java).backupJournal()
     }
 

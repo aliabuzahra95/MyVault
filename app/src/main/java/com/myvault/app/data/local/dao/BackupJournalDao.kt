@@ -8,6 +8,8 @@ import com.myvault.app.data.local.BackupJournalSql
 import com.myvault.app.data.local.entity.BackupJournalState
 import com.myvault.app.data.local.entity.BackupPendingChange
 import com.myvault.app.data.local.entity.BackupTrackingAccount
+import com.myvault.app.data.local.entity.BackupBinaryFingerprint
+import com.myvault.app.data.local.entity.BackupBinaryReference
 
 @Dao
 interface BackupJournalDao {
@@ -30,4 +32,16 @@ interface BackupJournalDao {
     @Query("UPDATE backup_journal_state SET settingsToken = :token WHERE id = 1")
     suspend fun setSettingsToken(token: String?)
     @Query(BackupJournalSql.SettingsDirty) suspend fun dirtySettings()
+    @Query("SELECT * FROM backup_binary_fingerprints WHERE attachmentId = :id")
+    suspend fun fingerprint(id: String): BackupBinaryFingerprint?
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putFingerprint(value: BackupBinaryFingerprint)
+    @Query("INSERT OR REPLACE INTO backup_pending_changes SELECT accountScope, 'attachments.json', :id, '', '', 'UPSERT', (SELECT generation FROM backup_journal_state WHERE id=1) FROM backup_tracking_accounts")
+    suspend fun dirtyBinary(id: String)
+    @Query("SELECT * FROM backup_binary_references WHERE accountScope=:scope AND attachmentId=:id")
+    suspend fun binaryReference(scope: String, id: String): BackupBinaryReference?
+    @Query("DELETE FROM backup_binary_references WHERE accountScope=:scope")
+    suspend fun clearBinaryReferences(scope: String)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putBinaryReferences(values: List<BackupBinaryReference>)
 }

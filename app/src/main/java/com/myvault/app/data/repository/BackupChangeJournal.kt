@@ -50,6 +50,7 @@ internal fun validateBackupAcknowledgement(
 class BackupChangeJournal @Inject constructor(private val database: VaultDatabase) {
     private val dao get() = database.backupJournalDao()
     internal val settingsMutex = Mutex()
+    internal val binaryMutex = Mutex()
 
     suspend fun registerAccount(email: String) = database.withTransaction {
         val scope = accountScope(email)
@@ -67,8 +68,22 @@ class BackupChangeJournal @Inject constructor(private val database: VaultDatabas
     internal suspend fun acknowledgeConfirmedDelta(snapshot: CapturedBackupChanges, proof: ConfirmedBackupCommit) =
         acknowledge(snapshot, proof, fullCheckpoint = false)
 
-    internal suspend fun acceptVerifiedFullCheckpoint(snapshot: CapturedBackupChanges, proof: ConfirmedBackupCommit) =
-        acknowledge(snapshot, proof, fullCheckpoint = true)
+    internal suspend fun establishVerifiedBaseline(prepared: PreparedBackupBaseline, proof: VerifiedBackupBaseline) = database.withTransaction {
+        check(proof.preparationId == prepared.preparationId)
+        val snapshot = prepared.journal
+        val current = dao.account(snapshot.account.accountScope)!!
+        validateBackupAcknowledgement(snapshot, proof.commit, current, dao.clock(), fullCheckpoint = true)
+        dao.acknowledge(current.accountScope, snapshot.generation)
+        dao.clearBinaryReferences(current.accountScope)
+        dao.putBinaryReferences(proof.binaries)
+        dao.trust(current.accountScope, proof.commit.checkpointId, proof.commit.headId, proof.commit.manifestId, proof.commit.manifestSha256)
+    }
+
+    internal suspend fun invalidateBaseline(reason: String) = database.withTransaction {
+        dao.enterRestore()
+        dao.invalidate(reason)
+        dao.leaveRestore()
+    }
 
     private suspend fun acknowledge(snapshot: CapturedBackupChanges, proof: ConfirmedBackupCommit, fullCheckpoint: Boolean) = database.withTransaction {
         val clock = dao.clock()

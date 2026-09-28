@@ -33,8 +33,9 @@ class BackupJournalRoomTest {
                     val entity = entities.getJSONObject(i)
                     val table = entity.getString("tableName")
                     db.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}", table))
-                    val indices = entity.getJSONArray("indices")
-                    for (j in 0 until indices.length()) db.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+                    entity.optJSONArray("indices")?.let { indices ->
+                        for (j in 0 until indices.length()) db.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+                    }
                     entity.optJSONArray("contentSyncTriggers")?.let { triggers ->
                         for (j in 0 until triggers.length()) db.execSQL(triggers.getString(j))
                     }
@@ -47,7 +48,7 @@ class BackupJournalRoomTest {
             }
             room = open()
             val first = room
-            assertEquals(33, first.openHelper.writableDatabase.version)
+            assertEquals(34, first.openHelper.writableDatabase.version)
             assertEquals("English العربية", first.noteDao().getAllIncludingDeleted().single().bodyPlainText)
             first.openHelper.writableDatabase.query("SELECT content FROM blocks WHERE id='existing-block'").use {
                 assertTrue(it.moveToFirst()); assertEquals(richText, it.getString(0))

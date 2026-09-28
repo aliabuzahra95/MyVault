@@ -50,6 +50,9 @@ import com.myvault.app.data.local.entity.BackupJournalState
 import com.myvault.app.data.local.entity.BackupPendingChange
 import com.myvault.app.data.local.entity.BackupTrackingAccount
 import com.myvault.app.data.local.dao.BackupJournalDao
+import com.myvault.app.data.local.entity.BackupBinaryFingerprint
+import com.myvault.app.data.local.entity.BackupBinaryReference
+import com.myvault.app.data.local.dao.BackupCaptureDao
 
 @Database(
     entities = [
@@ -82,8 +85,10 @@ import com.myvault.app.data.local.dao.BackupJournalDao
         BackupJournalState::class,
         BackupPendingChange::class,
         BackupTrackingAccount::class,
+        BackupBinaryFingerprint::class,
+        BackupBinaryReference::class,
     ],
-    version = 33,
+    version = 34,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -104,6 +109,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun courseDao(): CourseDao
     abstract fun recordSyncDao(): RecordSyncDao
     abstract fun backupJournalDao(): BackupJournalDao
+    abstract fun backupCaptureDao(): BackupCaptureDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -628,6 +634,10 @@ abstract class VaultDatabase : RoomDatabase() {
 
         val BACKUP_JOURNAL_CALLBACK: Callback = BackupJournalSchema.callback
 
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) = BackupBinarySchema.migrate(db)
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -661,6 +671,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_30_31,
             MIGRATION_31_32,
             MIGRATION_32_33,
+            MIGRATION_33_34,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {
