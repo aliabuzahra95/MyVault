@@ -33,6 +33,7 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): VaultDatabase =
         Room.databaseBuilder(context, VaultDatabase::class.java, "my_vault.db")
             .addMigrations(*VaultDatabase.ALL_MIGRATIONS)
+            .addCallback(VaultDatabase.BACKUP_JOURNAL_CALLBACK)
             .build()
 
     @Provides

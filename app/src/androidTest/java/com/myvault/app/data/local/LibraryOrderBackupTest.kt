@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.myvault.app.data.local.entity.*
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.BackupRepository
+import com.myvault.app.data.repository.BackupChangeJournal
 import com.myvault.app.data.repository.FolderRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -27,8 +28,8 @@ class LibraryOrderBackupTest {
             override fun getFilesDir() = File(root,"files").apply { mkdirs() }
             override fun getCacheDir() = File(root,"cache").apply { mkdirs() }
         }
-        val db = Room.inMemoryDatabaseBuilder(context,VaultDatabase::class.java).build()
-        val repo = BackupRepository(context,db,db.folderDao(),db.folderStickyNoteDao(),db.noteDao(),db.blockDao(),db.courseDao(),db.tagDao(),db.attachmentDao(),db.searchDao(),db.noteTableDao(),db.noteVersionDao(),db.pdfReadingProgressDao(),db.pdfAnnotationDao(),db.pdfAnnotationSegmentDao(),db.sourceBacklinkDao(),db.knowledgeTagDao(),VaultPreferences(context))
+        val db = Room.inMemoryDatabaseBuilder(context,VaultDatabase::class.java).addCallback(VaultDatabase.BACKUP_JOURNAL_CALLBACK).build()
+        val repo = BackupRepository(context,db,db.folderDao(),db.folderStickyNoteDao(),db.noteDao(),db.blockDao(),db.courseDao(),db.tagDao(),db.attachmentDao(),db.searchDao(),db.noteTableDao(),db.noteVersionDao(),db.pdfReadingProgressDao(),db.pdfAnnotationDao(),db.pdfAnnotationSegmentDao(),db.sourceBacklinkDao(),db.knowledgeTagDao(),VaultPreferences(context, BackupChangeJournal(db)))
         val organiser = FolderRepository(db,db.folderDao(),db.folderStickyNoteDao(),db.noteDao(),db.attachmentDao(),db.blockDao(),db.tagDao(),db.noteTableDao(),db.noteVersionDao(),db.pdfAnnotationDao(),db.pdfReadingProgressDao(),db.sourceBacklinkDao(),db.knowledgeTagDao())
         val folder = FolderEntity("folder",null,"Folder",orderIndex=0,isFavourite=false,mode=FOLDER_MODE_LIBRARY,createdAt=10,updatedAt=11)
         val nested = folder.copy(id="nested",parentId="folder",name="Nested")

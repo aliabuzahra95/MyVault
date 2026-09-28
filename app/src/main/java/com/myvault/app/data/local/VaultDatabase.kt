@@ -46,6 +46,10 @@ import com.myvault.app.data.local.entity.RecordSyncHeadEntity
 import com.myvault.app.data.local.entity.RecordSyncPendingEntity
 import com.myvault.app.data.local.entity.SourceBacklinkEntity
 import com.myvault.app.data.local.entity.TagEntity
+import com.myvault.app.data.local.entity.BackupJournalState
+import com.myvault.app.data.local.entity.BackupPendingChange
+import com.myvault.app.data.local.entity.BackupTrackingAccount
+import com.myvault.app.data.local.dao.BackupJournalDao
 
 @Database(
     entities = [
@@ -75,8 +79,11 @@ import com.myvault.app.data.local.entity.TagEntity
         RecordSyncHeadEntity::class,
         RecordSyncFileEntity::class,
         RecordSyncConflictEntity::class,
+        BackupJournalState::class,
+        BackupPendingChange::class,
+        BackupTrackingAccount::class,
     ],
-    version = 32,
+    version = 33,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -96,6 +103,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun noteVersionDao(): NoteVersionDao
     abstract fun courseDao(): CourseDao
     abstract fun recordSyncDao(): RecordSyncDao
+    abstract fun backupJournalDao(): BackupJournalDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -614,6 +622,12 @@ abstract class VaultDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = RecordSyncSchema.disable(db)
         }
 
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) = BackupJournalSchema.migrate(db)
+        }
+
+        val BACKUP_JOURNAL_CALLBACK: Callback = BackupJournalSchema.callback
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -646,6 +660,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_29_30,
             MIGRATION_30_31,
             MIGRATION_31_32,
+            MIGRATION_32_33,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

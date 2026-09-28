@@ -2,6 +2,7 @@ package com.myvault.app.data.preferences
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -25,6 +26,14 @@ import com.myvault.app.data.quran.memorization.toQuranMemorizationSavedAttemptOr
 import com.myvault.app.data.quran.memorization.toQuranSurahMemorizationSavedAttemptOrNull
 import com.myvault.app.data.quran.memorization.toSurahAttemptPreferenceEntry
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import dagger.hilt.android.EntryPointAccessors
+import com.myvault.app.data.repository.BackupChangeJournal
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -84,8 +93,28 @@ data class AzureSpeechSettings(
 )
 
 @Singleton
-class VaultPreferences @Inject constructor(@param:ApplicationContext private val context: Context) {
+class VaultPreferences @Inject constructor(
+    @param:ApplicationContext private val context: Context,
+    private val injectedBackupJournal: BackupChangeJournal? = null,
+) {
     private val startupCache = context.getSharedPreferences("vault_startup_preferences", Context.MODE_PRIVATE)
+    private val backupJournal by lazy {
+        injectedBackupJournal ?: EntryPointAccessors.fromApplication(context, BackupJournalEntryPoint::class.java).backupJournal()
+    }
+
+    private suspend fun editBackedUpSettings(restoring: Boolean = false, transform: suspend (MutablePreferences) -> Unit) {
+        backupJournal.settingsMutex.withLock {
+            val before = context.vaultDataStore.data.first()
+            backupJournal.recoverInterruptedSettingsWrite()
+            val candidate = before.toMutablePreferences()
+            transform(candidate)
+            if (!restoring && BackupFields.values.all { before[it] == candidate[it] }) return@withLock
+            // The durable intent precedes DataStore's disk commit; capture/ack are blocked while it is open.
+            val token = backupJournal.beginSettingsWrite(restoring)
+            try { context.vaultDataStore.edit { transform(it) } }
+            finally { withContext(NonCancellable) { backupJournal.finishSettingsWrite(token, restoring) } }
+        }
+    }
 
     val userPreferences: Flow<VaultUserPreferences> =
         context.vaultDataStore.data.map { preferences ->
@@ -188,7 +217,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setTheme(theme: VaultThemeMode) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.Theme] = theme.legacyStoredValue
             preferences[Keys.ThemeModeV2] = theme.v2StoredValue
         }
@@ -201,38 +230,38 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setWorkspace(workspace: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.Workspace] = workspace
         }
     }
 
     suspend fun setAccentColor(accentColor: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.AccentColor] = accentColor
         }
     }
 
     suspend fun setFontSize(fontSize: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.FontSize] = fontSize
         }
     }
 
     suspend fun setDashboardFontSize(fontSize: String) {
         startupCache.edit().putString(Keys.CachedDashboardFontSize, fontSize).apply()
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.DashboardFontSize] = fontSize
         }
     }
 
     suspend fun setNoteFontSize(fontSize: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.NoteFontSize] = fontSize
         }
     }
 
     suspend fun setDefaultNoteView(defaultNoteView: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.DefaultNoteView] = defaultNoteView
         }
     }
@@ -253,7 +282,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setNotePreview(notePreview: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.NotePreview] = notePreview
         }
     }
@@ -277,13 +306,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setSecurityLockEnabled(enabled: Boolean) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.SecurityLockEnabled] = enabled
         }
     }
 
     suspend fun setSecurityLockTimeout(timeoutMs: Long) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.SecurityLockTimeoutMs] = timeoutMs
         }
     }
@@ -295,6 +324,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setGoogleDriveAccountEmail(email: String) {
+        if (email.isNotBlank()) backupJournal.registerAccount(email)
         context.vaultDataStore.edit { preferences ->
             val displayEmail = email.trim()
             val metadata = preferences[Keys.GoogleDriveSyncMetadataByAccount]
@@ -344,7 +374,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setQuranReadingPosition(surahNumber: Int, ayahNumber: Int) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranLastReadSurah] = surahNumber.coerceAtLeast(1)
             preferences[Keys.QuranLastReadAyah] = ayahNumber.coerceAtLeast(1)
             val updated = preferences[Keys.QuranRecentLocations].orEmpty()
@@ -355,61 +385,61 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setQuranArabicFontPercent(percent: Int) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranArabicFontPercent] = percent.coerceIn(70, 140)
         }
     }
 
     suspend fun setQuranTranslationFontPercent(percent: Int) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranTranslationFontPercent] = percent.coerceIn(80, 130)
         }
     }
 
     suspend fun setQuranTranslationEnabled(enabled: Boolean) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranTranslationEnabled] = enabled
         }
     }
 
     suspend fun setQuranTranslationSource(source: QuranTranslationSource) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranTranslationSource] = source.storedValue
         }
     }
 
     suspend fun setQuranTajweedEnabled(enabled: Boolean) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranTajweedEnabled] = enabled
         }
     }
 
     suspend fun setQuranTafsirSourceId(sourceId: Int) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranTafsirSourceId] = sourceId
         }
     }
 
     suspend fun setQuranAudioReciterId(reciterId: Int) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranAudioReciterId] = reciterId.coerceAtLeast(0)
         }
     }
 
     suspend fun setQuranAudioPlaybackSpeed(speed: Float) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranAudioPlaybackSpeed] = speed.coerceIn(0.5f, 2f)
         }
     }
 
     suspend fun setQuranBookmarkedVerses(verseKeys: Set<String>) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranBookmarkedVerses] = verseKeys
         }
     }
 
     suspend fun restoreBackedUpPreferences(backup: VaultBackupPreferences) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings(restoring = true) { preferences ->
             val restoredTheme = VaultThemeMode.fromStoredValues(
                 themeModeV2 = backup.themeModeV2,
                 legacyTheme = backup.theme,
@@ -460,13 +490,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setQuranMemorizationRecords(records: List<MemorizationRecord>) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.QuranMemorizationRecords] = records.map { it.toPreferenceEntry() }.toSet()
         }
     }
 
     suspend fun addQuranMemorizationAttempt(attempt: QuranMemorizationSavedAttempt) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             val currentAttempts = preferences[Keys.QuranMemorizationAttempts].orEmpty()
                 .mapNotNull { it.toQuranMemorizationSavedAttemptOrNull() }
                 .filterNot { it.attemptId == attempt.attemptId }
@@ -478,7 +508,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun addQuranSurahMemorizationAttempt(attempt: QuranSurahMemorizationSavedAttempt) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             val currentAttempts = preferences[Keys.QuranSurahMemorizationAttempts].orEmpty()
                 .mapNotNull { it.toQuranSurahMemorizationSavedAttemptOrNull() }
                 .filterNot { it.attemptId == attempt.attemptId }
@@ -490,7 +520,7 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setExpandedFolderIds(folderIds: Set<String>) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.ExpandedFolderIds] = folderIds
         }
     }
@@ -516,13 +546,13 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
     }
 
     suspend fun setLibraryViewMode(mode: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             preferences[Keys.LibraryViewMode] = mode
         }
     }
 
     suspend fun setLibraryViewMode(locationKey: String, mode: String) {
-        context.vaultDataStore.edit { preferences ->
+        editBackedUpSettings { preferences ->
             val updated = preferences[Keys.LibraryViewModesByLocation].orEmpty()
                 .mapNotNull { entry ->
                     val separator = entry.indexOf('=')
@@ -533,6 +563,29 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
                 .apply { this[locationKey] = mode }
             preferences[Keys.LibraryViewModesByLocation] = updated.map { (key, value) -> "$key=$value" }.toSet()
         }
+    }
+
+    internal companion object {
+        // Tested against the actual settings.json serializer. Credentials and backup timestamps are excluded.
+        val BackupFields: Map<String, Preferences.Key<*>> = linkedMapOf(
+            "theme" to Keys.Theme, "themeModeV2" to Keys.ThemeModeV2, "workspace" to Keys.Workspace,
+            "accentColor" to Keys.AccentColor, "fontSize" to Keys.FontSize,
+            "dashboardFontSize" to Keys.DashboardFontSize, "noteFontSize" to Keys.NoteFontSize,
+            "notePreview" to Keys.NotePreview, "defaultNoteView" to Keys.DefaultNoteView,
+            "autoTagSuggestions" to Keys.AutoTagSuggestions, "securityLockEnabled" to Keys.SecurityLockEnabled,
+            "securityLockTimeoutMs" to Keys.SecurityLockTimeoutMs, "quranLastReadSurah" to Keys.QuranLastReadSurah,
+            "quranLastReadAyah" to Keys.QuranLastReadAyah, "quranArabicFontPercent" to Keys.QuranArabicFontPercent,
+            "quranTranslationFontPercent" to Keys.QuranTranslationFontPercent,
+            "quranTranslationEnabled" to Keys.QuranTranslationEnabled, "quranTranslationSource" to Keys.QuranTranslationSource,
+            "quranTajweedEnabled" to Keys.QuranTajweedEnabled, "quranTafsirSourceId" to Keys.QuranTafsirSourceId,
+            "quranAudioReciterId" to Keys.QuranAudioReciterId, "quranAudioPlaybackSpeed" to Keys.QuranAudioPlaybackSpeed,
+            "quranBookmarkedVerses" to Keys.QuranBookmarkedVerses, "quranRecentLocations" to Keys.QuranRecentLocations,
+            "quranMemorizationRecords" to Keys.QuranMemorizationRecords,
+            "quranMemorizationAttempts" to Keys.QuranMemorizationAttempts,
+            "quranSurahMemorizationAttempts" to Keys.QuranSurahMemorizationAttempts,
+            "expandedFolderIds" to Keys.ExpandedFolderIds, "libraryViewMode" to Keys.LibraryViewMode,
+            "libraryViewModesByLocation" to Keys.LibraryViewModesByLocation,
+        )
     }
 
     private object Keys {
@@ -585,6 +638,12 @@ class VaultPreferences @Inject constructor(@param:ApplicationContext private val
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
         const val CachedDashboardFontSize: String = "dashboard_font_size"
     }
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface BackupJournalEntryPoint {
+    fun backupJournal(): BackupChangeJournal
 }
 
 const val WORKSPACE_PERSONAL = "personal"

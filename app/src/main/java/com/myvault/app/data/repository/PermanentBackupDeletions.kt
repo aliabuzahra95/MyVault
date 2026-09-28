@@ -7,10 +7,7 @@ internal fun permanentBackupDeletionSql(change: BackupRecordChange): Pair<String
     check(change.deleted)
     val fields = BackupRecordKeys.getValue(change.file)
     check(fields.size == change.key.size && change.key.all { it.isNotBlank() })
-    val table = when (change.file) {
-        "pdf_annotation_geometry.json" -> "pdf_annotation_segments"
-        else -> change.file.removeSuffix(".json")
-    }
+    val table = backupRecordTable(change.file)
     return "DELETE FROM `$table` WHERE ${fields.joinToString(" AND ") { "`$it` = ?" }}" to
         change.key.map { it as Any }.toTypedArray()
 }

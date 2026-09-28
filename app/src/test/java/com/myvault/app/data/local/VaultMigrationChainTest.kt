@@ -14,7 +14,7 @@ class VaultMigrationChainTest {
         migrations.zipWithNext().forEach { (current, next) ->
             assertEquals(current.endVersion, next.startVersion)
         }
-        assertEquals(32, migrations.last().endVersion)
+        assertEquals(33, migrations.last().endVersion)
     }
 
     @Test

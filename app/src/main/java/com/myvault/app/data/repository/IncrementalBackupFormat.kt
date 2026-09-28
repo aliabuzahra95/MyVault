@@ -22,6 +22,11 @@ internal val BackupRecordKeys = linkedMapOf(
     "knowledge_tag_links.json" to listOf("tagId", "targetType", "targetId"),
 )
 
+internal fun backupRecordTable(file: String): String {
+    check(file in BackupRecordKeys)
+    return if (file == "pdf_annotation_geometry.json") "pdf_annotation_segments" else file.removeSuffix(".json")
+}
+
 internal data class BackupRecordChange(
     val file: String,
     val key: List<String>,

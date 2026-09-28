@@ -653,7 +653,7 @@ class BackupRepository @Inject constructor(
                 }
             val backedUpPreferences = entries["settings.json"]?.let { JSONObject(it).toValidatedBackupPreferences() }
 
-            database.withTransaction {
+            BackupChangeJournal(database).withRestoreOrigin {
                 val changedFolders = changedRestoreRows(folders, folderDao.getAllIncludingDeleted()) { it.id }
                 if (changedFolders.isNotEmpty()) folderDao.upsertAll(changedFolders)
                 if (courses.isNotEmpty()) courseDao.upsertCourses(courses)
@@ -1047,7 +1047,7 @@ private fun File.writeJsonFile(name: String, json: Any) {
     resolve(name).writeText(json.toString(), Charsets.UTF_8)
 }
 
-private fun VaultUserPreferences.toBackupJson(): JSONObject =
+internal fun VaultUserPreferences.toBackupJson(): JSONObject =
     JSONObject()
         .put("schemaVersion", 1)
         .put("theme", theme.legacyStoredValue)
