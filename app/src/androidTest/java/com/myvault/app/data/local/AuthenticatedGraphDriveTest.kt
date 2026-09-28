@@ -22,12 +22,13 @@ import java.net.Socket
 class AuthenticatedGraphDriveTest {
     private val base get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun config() = JSONObject(File(base.filesDir, "disposable-drive-config.json").readText())
-    internal class RemoteStore(val config: JSONObject) : DisposableGraphObjectStore {
+    internal class RemoteStore(val config: JSONObject, private val timing: BackupGraphTiming? = null) : DisposableGraphObjectStore {
         override val context = GraphWriterContext(config.getString("accountScope"), config.getString("driveAccountId"), config.getString("lineageId"))
         var lostRole: String? = null
         var lost = false
         fun call(action: String, fields: JSONObject = JSONObject()): Any {
             fields.put("action", action).put("lineage", context.lineageId)
+            fields.put("stage", timing?.current ?: "harness")
             val body = fields.toString().toByteArray(Charsets.UTF_8)
             val raw = Socket("127.0.0.1", config.getInt("port")).use { socket ->
                 socket.soTimeout = 120000
@@ -40,6 +41,9 @@ class AuthenticatedGraphDriveTest {
             return response.get("value")
         }
         override suspend fun reserveId() = call("reserve") as String
+        override suspend fun reserveIds(count: Int): List<String> = (call("reserveMany", JSONObject().put("count", count)) as JSONArray).let { ids ->
+            (0 until ids.length()).map { ids.getString(it) }
+        }
         fun bytes(id: String): ByteArray? = call("read", JSONObject().put("id", id)).let {
             if (it == JSONObject.NULL) null else android.util.Base64.decode(it as String, android.util.Base64.NO_WRAP)
         }

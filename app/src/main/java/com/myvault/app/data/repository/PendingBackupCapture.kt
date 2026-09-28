@@ -49,30 +49,31 @@ internal fun pendingBackupRecordSql(group: String): String =
     "SELECT * FROM `${backupRecordTable(group)}` WHERE ${BackupRecordKeys.getValue(group).joinToString(" AND ") { "`$it` = ?" }}"
 
 /** Uses the same entity serializers as full Backup, without querying an entire table. */
-internal suspend fun BackupCaptureDao.readBackupRecord(group: String, key: List<String>): JSONObject? {
+internal suspend fun BackupCaptureDao.readBackupRecord(group: String, key: List<String>, timing: BackupGraphTiming = BackupGraphTiming()): JSONObject? {
     check(key.size == BackupRecordKeys.getValue(group).size)
     val query = SimpleSQLiteQuery(pendingBackupRecordSql(group), key.toTypedArray())
+    fun <T> encode(row: T?, serializer: (T) -> JSONObject): JSONObject? = timing.local("payload.serialization") { row?.let(serializer) }
     return when (group) {
-        "folders.json" -> folders(query).singleOrNull()?.toBackupJsonObject()
-        "notes.json" -> notes(query).singleOrNull()?.toJson()
-        "blocks.json" -> blocks(query).singleOrNull()?.toJson()
-        "tags.json" -> tags(query).singleOrNull()?.toJson()
-        "note_tags.json" -> noteTags(query).singleOrNull()?.toJson()
-        "note_tables.json" -> tables(query).singleOrNull()?.toJson()
-        "note_versions.json" -> versions(query).singleOrNull()?.toJson()
-        "attachments.json" -> attachments(query).singleOrNull()?.toJson()
-        "folder_sticky_notes.json" -> stickyNotes(query).singleOrNull()?.toJson()
-        "courses.json" -> courses(query).singleOrNull()?.toJson()
-        "course_concept_cards.json" -> cards(query).singleOrNull()?.toJson()
-        "course_folders.json" -> courseFolders(query).singleOrNull()?.toJson()
-        "course_notes.json" -> courseNotes(query).singleOrNull()?.toJson()
-        "course_sticky_notes.json" -> courseStickyNotes(query).singleOrNull()?.toJson()
-        "pdf_reading_progress.json" -> progress(query).singleOrNull()?.toJson()
-        "pdf_annotations.json" -> annotations(query).singleOrNull()?.toJson()
-        "pdf_annotation_geometry.json" -> geometry(query).singleOrNull()?.toJson()
-        "source_backlinks.json" -> backlinks(query).singleOrNull()?.toJson()
-        "knowledge_tags.json" -> knowledgeTags(query).singleOrNull()?.toJson()
-        "knowledge_tag_links.json" -> knowledgeLinks(query).singleOrNull()?.toJson()
+        "folders.json" -> encode(folders(query).singleOrNull()) { it.toBackupJsonObject() }
+        "notes.json" -> encode(notes(query).singleOrNull()) { it.toJson() }
+        "blocks.json" -> encode(blocks(query).singleOrNull()) { it.toJson() }
+        "tags.json" -> encode(tags(query).singleOrNull()) { it.toJson() }
+        "note_tags.json" -> encode(noteTags(query).singleOrNull()) { it.toJson() }
+        "note_tables.json" -> encode(tables(query).singleOrNull()) { it.toJson() }
+        "note_versions.json" -> encode(versions(query).singleOrNull()) { it.toJson() }
+        "attachments.json" -> encode(attachments(query).singleOrNull()) { it.toJson() }
+        "folder_sticky_notes.json" -> encode(stickyNotes(query).singleOrNull()) { it.toJson() }
+        "courses.json" -> encode(courses(query).singleOrNull()) { it.toJson() }
+        "course_concept_cards.json" -> encode(cards(query).singleOrNull()) { it.toJson() }
+        "course_folders.json" -> encode(courseFolders(query).singleOrNull()) { it.toJson() }
+        "course_notes.json" -> encode(courseNotes(query).singleOrNull()) { it.toJson() }
+        "course_sticky_notes.json" -> encode(courseStickyNotes(query).singleOrNull()) { it.toJson() }
+        "pdf_reading_progress.json" -> encode(progress(query).singleOrNull()) { it.toJson() }
+        "pdf_annotations.json" -> encode(annotations(query).singleOrNull()) { it.toJson() }
+        "pdf_annotation_geometry.json" -> encode(geometry(query).singleOrNull()) { it.toJson() }
+        "source_backlinks.json" -> encode(backlinks(query).singleOrNull()) { it.toJson() }
+        "knowledge_tags.json" -> encode(knowledgeTags(query).singleOrNull()) { it.toJson() }
+        "knowledge_tag_links.json" -> encode(knowledgeLinks(query).singleOrNull()) { it.toJson() }
         else -> error("Protocol group has no capture adapter: $group")
     }
 }
@@ -112,20 +113,20 @@ class PendingBackupCapture @Inject constructor(
     private val journal: BackupChangeJournal,
     private val preferences: VaultPreferences,
 ) {
-    internal suspend fun capture(email: String): PendingBackupBatch = journal.binaryMutex.withLock {
+    internal suspend fun capture(email: String, timing: BackupGraphTiming = BackupGraphTiming()): PendingBackupBatch = journal.binaryMutex.withLock {
         journal.settingsMutex.withLock {
             if (database.backupJournalDao().clock().settingsToken != null) {
                 preferences.userPreferences.first()
                 journal.recoverInterruptedSettingsWrite()
             }
             database.withTransaction {
-                val snapshot = journal.capture(email)
+                val snapshot = timing.measure("journal.rows") { journal.capture(email) }
                 val queried = mutableListOf<BackupRecordIdentity>()
                 val cache = mutableMapOf<BackupRecordIdentity, JSONObject>()
                 val binaries = linkedMapOf<String, CapturedBackupBinary>()
                 suspend fun read(identity: BackupRecordIdentity): JSONObject = cache.getOrPutSuspend(identity) {
                     queried += identity
-                    database.backupCaptureDao().readBackupRecord(identity.group, identity.key)
+                    timing.measure("payload.read") { database.backupCaptureDao().readBackupRecord(identity.group, identity.key, timing) }
                         ?: error("Pending/dependent record is missing; a verified full baseline is required. Absence is not deletion.")
                 }
                 suspend fun binary(id: String) {
@@ -155,13 +156,16 @@ class PendingBackupCapture @Inject constructor(
                             settingsReads++
                             preferences.userPreferences.first().toBackupJson()
                         } else read(BackupRecordIdentity(change.recordGroup, key))
-                        val dependencies = backupRecordDependencies(change.recordGroup, row)
-                        if (change.recordGroup == "attachments.json") {
-                            binary(key.single())
-                            row.put("fileEntry", "files/${key.single()}")
+                        val dependencies = timing.measure("binary.dependencies") {
+                            val deps = backupRecordDependencies(change.recordGroup, row)
+                            if (change.recordGroup == "attachments.json") {
+                                binary(key.single())
+                                row.put("fileEntry", "files/${key.single()}")
+                            }
+                            deps.forEach { resolveBinary(it) }
+                            deps
                         }
-                        dependencies.forEach { resolveBinary(it) }
-                        CapturedBackupRecord(change.recordGroup, key, change.operation, change.generation, row.toString(), dependencies)
+                        CapturedBackupRecord(change.recordGroup, key, change.operation, change.generation, timing.local("payload.serialization") { row.toString() }, dependencies)
                     }
                 }
                 PendingBackupBatch(snapshot, records, binaries.values.toList(), queried.toList(), settingsReads)

@@ -15,6 +15,7 @@ import java.util.UUID
 internal interface DisposableGraphObjectStore {
     val context: GraphWriterContext
     suspend fun reserveId(): String
+    suspend fun reserveIds(count: Int): List<String> = List(count) { reserveId() }
     /** Complete inventory of the enrolled namespace. Missing/ambiguous/incomplete discovery must throw, not return empty. */
     suspend fun commits(): List<GraphObject>
     suspend fun read(objectId: String): InputStream?
@@ -42,6 +43,7 @@ internal class InternalBackupGraphWriter(
     private val stagingRoot: File,
     private val store: DisposableGraphObjectStore,
     private val boundary: suspend (String) -> Unit = {},
+    private val timing: BackupGraphTiming = BackupGraphTiming(),
 ) {
     init {
         check(stagingRoot.canonicalPath.startsWith(privateFilesDir.canonicalPath + File.separator)) { "Publication staging must use durable private files, not cache/external storage." }
@@ -49,21 +51,22 @@ internal class InternalBackupGraphWriter(
     private val dao get() = database.backupGraphDao()
     private val context get() = store.context.also { it.validate() }
 
-    suspend fun publish(): GraphWriterResult {
+    suspend fun publish(): GraphWriterResult = timing.measure("writer.total") { publishInternal() }
+    private suspend fun publishInternal(): GraphWriterResult {
         val c = context
         val unfinished = dao.unfinished(c.accountScope)
         if (unfinished.isNotEmpty()) {
             check(unfinished.size == 1) { "Ambiguous pending publication; reconciliation required." }
             return resume(unfinished.single().operationId)
         }
-        val binding = dao.binding(c.accountScope, c.lineageId) ?: error("A verified graph root/baseline is required.")
+        val binding = timing.measure("baseline.resolve") { dao.binding(c.accountScope, c.lineageId) ?: error("A verified graph root/baseline is required.") }
         val graph = checkedGraph(binding)
-        val batch = capture.capture(c.accountScope)
+        val batch = timing.measure("journal.capture") { capture.capture(c.accountScope, timing) }
         checkParent(binding, batch.journal)
         if (batch.records.isEmpty()) return GraphWriterResult(null, binding.commitId, true, false, GraphWriterMetrics(0, 0, 0, 0, 0, 0))
         check(graph.plan().deltas.size < 4096) { "A verified new full checkpoint is required before extending this delta epoch." }
         val parent = graph.commits.getValue(binding.commitId)
-        val publication = prepareDelta(batch, binding, parent)
+        val publication = timing.measure("publication.prepare") { prepareDelta(batch, binding, parent) }
         return resume(publication.operationId)
     }
 
@@ -75,11 +78,12 @@ internal class InternalBackupGraphWriter(
         check(prepared.objects.filter { it.kind == "metadata" }.map { it.backupEntry }.toSet() == BackupRecordKeys.keys + setOf("settings.json", "manifest.json"))
         check(prepared.objects.map { it.path }.distinct().size == prepared.objects.size)
         val op = UUID.randomUUID().toString()
+        val ids = reserveObjectIds(prepared.objects.size + 2)
         val objects = mutableListOf<BackupGraphPublicationObject>()
         val inventory = JSONArray()
         for (source in prepared.objects) {
             val target = stage(op, objects.size, source.file, source.sha256, source.byteSize)
-            val obj = newObject(op, objects.size, if (source.kind == "file") "BINARY" else "METADATA", source.attachmentId, target, source.sha256, source.byteSize)
+            val obj = newObject(ids[objects.size], op, objects.size, if (source.kind == "file") "BINARY" else "METADATA", source.attachmentId, target, source.sha256, source.byteSize)
             objects += obj
             inventory.put(JSONObject().put("path", source.path).put("backupEntry", source.backupEntry).put("kind", source.kind)
                 .put("objectId", obj.objectId).put("attachmentId", source.attachmentId ?: JSONObject.NULL))
@@ -92,10 +96,10 @@ internal class InternalBackupGraphWriter(
         }
         val checkpointBytes = JSONObject().put("schemaVersion", 1).put("storage", "google-drive-api").put("cloudVersion", 1)
             .put("entries", JSONArray(entries)).toString().toByteArray(Charsets.UTF_8)
-        val cp = byteObject(op, objects.size, "CHECKPOINT", checkpointBytes).also { objects += it }
+        val cp = byteObject(ids[objects.size], op, objects.size, "CHECKPOINT", checkpointBytes).also { objects += it }
         val commit = BackupGraphCommit(c.driveAccountId, c.lineageId, op, "checkpoint", listOf(BackupGraphCapability), emptyList(),
             GraphCheckpoint("full-${cp.sha256}", cp.ref()), null)
-        objects += byteObject(op, objects.size, "COMMIT", BackupGraphProtocol.encode(commit))
+        objects += byteObject(ids[objects.size], op, objects.size, "COMMIT", BackupGraphProtocol.encode(commit))
         val frozen = JSONObject(BackupGraphIntentCodec.batch(PendingBackupBatch(prepared.journal, emptyList(), emptyList(), emptyList(), 0)))
             .put("rootInventory", inventory).put("preparationId", prepared.preparationId).toString()
         val p = publication(op, prepared.journal, null, frozen, commit)
@@ -105,6 +109,7 @@ internal class InternalBackupGraphWriter(
 
     private suspend fun prepareDelta(batch: PendingBackupBatch, binding: BackupGraphBinding, parent: BackupGraphCommit): BackupGraphPublication {
         val op = UUID.randomUUID().toString()
+        val ids = reserveObjectIds(batch.binaries.count { it.reusableCloudFileId == null } + 2)
         val objects = mutableListOf<BackupGraphPublicationObject>()
         check(batch.records.size == batch.journal.changes.size && batch.records.all { r ->
             batch.journal.changes.any { it.recordGroup == r.group && it.stableKey() == r.key && it.operation == r.operation && it.generation == r.generation }
@@ -118,19 +123,19 @@ internal class InternalBackupGraphWriter(
                 }
                 check(isDurableBackupBinary(privateFilesDir, File(binary.localPath))) { "Temporary/external files cannot be published as durable backup binaries." }
                 val staged = stage(op, objects.size, File(binary.localPath), binary.sha256, binary.byteSize)
-                val obj = newObject(op, objects.size, "BINARY", binary.attachmentId, staged, binary.sha256, binary.byteSize).also { objects += it }
+                val obj = newObject(ids[objects.size], op, objects.size, "BINARY", binary.attachmentId, staged, binary.sha256, binary.byteSize).also { objects += it }
                 binaries += BackupBinaryDescriptor(binary.attachmentId, obj.objectId, obj.sha256, obj.byteCount).validate()
             }
         }
         val binaryCapable = BackupBinaryReaderCapability in parent.requiredReaders || batch.records.any { it.group == "attachments.json" }
         val deltaId = UUID.randomUUID().toString()
-        val delta = IncrementalBackupFormat.createDelta(binding.checkpointId, binding.deltaHeadId, deltaId,
-            batch.records.map { it.protocolChange() }, if (binaryCapable) binaries else null)
-        val deltaObj = byteObject(op, objects.size, "DELTA", delta.toString().toByteArray(Charsets.UTF_8)).also { objects += it }
+        val delta = timing.local("delta.creation") { IncrementalBackupFormat.createDelta(binding.checkpointId, binding.deltaHeadId, deltaId,
+            batch.records.map { it.protocolChange() }, if (binaryCapable) binaries else null) }
+        val deltaObj = byteObject(ids[objects.size], op, objects.size, "DELTA", delta.toString().toByteArray(Charsets.UTF_8)).also { objects += it }
         val commit = BackupGraphCommit(context.driveAccountId, context.lineageId, op, "delta",
             (parent.requiredReaders + "checkpoint-delta-v1" + if (binaryCapable) listOf(BackupBinaryReaderCapability) else emptyList()).distinct().sorted(),
             listOf(GraphParent(binding.commitId, binding.commitRef())), binding.checkpoint(), GraphDelta(deltaId, binding.deltaHeadId, deltaObj.ref()))
-        objects += byteObject(op, objects.size, "COMMIT", BackupGraphProtocol.encode(commit))
+        objects += byteObject(ids[objects.size], op, objects.size, "COMMIT", timing.local("commit.creation") { BackupGraphProtocol.encode(commit) })
         return publication(op, batch.journal, binding, BackupGraphIntentCodec.batch(batch), commit).also { persist(it, objects) }
     }
 
@@ -183,13 +188,13 @@ internal class InternalBackupGraphWriter(
             verifyStaged(obj)
             val exists = verifyExisting(obj)
             if (!exists) {
-                store.create(obj.objectId, obj.role, File(obj.stagedPath))
+                timing.measure("upload.${obj.role}") { store.create(obj.objectId, obj.role, File(obj.stagedPath)) }
                 if (obj.role == "BINARY") binaryCount++
                 if (obj.role == "DELTA") deltaCount++
                 if (obj.role == "COMMIT") commitCount++
                 boundary("CREATED_${obj.role}")
+                check(verifyExisting(obj)) { "Immutable object is missing after create." }
             }
-            check(verifyExisting(obj)) { "Immutable object is missing after create." }
             check(dao.receipt(c.accountScope, operation, obj.objectId, obj.sha256, obj.byteCount) == 1)
             boundary("VERIFIED_${obj.role}")
         }
@@ -197,9 +202,10 @@ internal class InternalBackupGraphWriter(
         boundary("COMMIT_VERIFIED")
         boundary("BEFORE_COMPLETION")
         val rootProof = if (commit.kind == "checkpoint") rootProof(p, objects, commit) else null
-        complete(p, objects, commit, rootProof)
+        timing.measure("local.completion") { complete(p, objects, commit, rootProof) }
         boundary("COMPLETE")
-        val graph = BackupGraph.discover(store.commits(), c.driveAccountId, c.lineageId)
+        val inventory = timing.measure("graph.discovery") { store.commits() }
+        val graph = timing.local("graph.validation") { BackupGraph.discover(inventory, c.driveAccountId, c.lineageId) }
         return GraphWriterResult(operation, commit.commitId, false, graph.status == GraphStatus.FORK, metrics(binaryCount, deltaCount, commitCount))
     }
 
@@ -255,13 +261,15 @@ internal class InternalBackupGraphWriter(
     }
 
     private suspend fun checkedGraph(binding: BackupGraphBinding): BackupGraph {
-        val graph = BackupGraph.discover(store.commits(), context.driveAccountId, context.lineageId)
+        val inventory = timing.measure("graph.discovery") { store.commits() }
+        val graph = timing.local("graph.validation") { BackupGraph.discover(inventory, context.driveAccountId, context.lineageId) }
         check(graph.status == GraphStatus.SINGLE_TIP && graph.tips.single() == binding.commitId) { "Fork, unsupported/missing ancestry or newer branch requires reconciliation." }
         val parent = graph.commits.getValue(binding.commitId)
         check(parent.checkpoint == binding.checkpoint() && parent.deltaHead == binding.deltaHeadId)
-        val input = store.read(binding.commitFileId) ?: error("Parent commit is missing.")
-        val bytes = input.use { it.readBytes() }
-        val verified = BackupGraphProtocol.parse(GraphObject(binding.commitRef(), bytes))
+        // The complete fresh inventory already contains these exact verified bytes. It is not a cached head.
+        val proof = inventory.single { it.objectRef.cloudFileId == binding.commitFileId }
+        check(proof.objectRef == binding.commitRef()) { "Parent descriptor differs from the trusted binding." }
+        val verified = timing.local("baseline.verify") { BackupGraphProtocol.parse(proof) }
         check(verified == parent)
         return graph
     }
@@ -313,14 +321,19 @@ internal class InternalBackupGraphWriter(
         return prepared to proof
     }
 
-    private suspend fun newObject(op: String, ordinal: Int, role: String, attachment: String?, file: File, hash: String, size: Long): BackupGraphPublicationObject {
-        val id = store.reserveId().also(BackupGraphProtocol::id)
+    private suspend fun reserveObjectIds(count: Int): List<String> = timing.measure("ids.generate") {
+        store.reserveIds(count).also { ids ->
+            check(ids.size == count && ids.distinct().size == count) { "Reserved immutable IDs are incomplete/ambiguous." }
+            ids.forEach(BackupGraphProtocol::id)
+        }
+    }
+    private fun newObject(id: String, op: String, ordinal: Int, role: String, attachment: String?, file: File, hash: String, size: Long): BackupGraphPublicationObject {
         return BackupGraphPublicationObject(context.accountScope, op, id, ordinal, role, attachment, file.canonicalPath, hash, size, null, null)
     }
-    private suspend fun byteObject(op: String, ordinal: Int, role: String, bytes: ByteArray): BackupGraphPublicationObject {
+    private fun byteObject(id: String, op: String, ordinal: Int, role: String, bytes: ByteArray): BackupGraphPublicationObject {
         val file = target(op, ordinal)
-        FileOutputStream(file).use { it.write(bytes); it.fd.sync() }
-        return newObject(op, ordinal, role, null, file, IncrementalBackupFormat.sha256(bytes), bytes.size.toLong())
+        timing.local("local.staging") { FileOutputStream(file).use { it.write(bytes); it.fd.sync() } }
+        return newObject(id, op, ordinal, role, null, file, IncrementalBackupFormat.sha256(bytes), bytes.size.toLong())
     }
     private fun target(op: String, ordinal: Int): File {
         val dir = File(stagingRoot, op).apply { check(mkdirs() || isDirectory) }
@@ -330,25 +343,25 @@ internal class InternalBackupGraphWriter(
     }
     private fun stage(op: String, ordinal: Int, source: File, hash: String, size: Long): File {
         val target = target(op, ordinal)
-        val digest = source.inputStream().use { input -> FileOutputStream(target).use { output ->
+        val digest = timing.local("local.staging") { source.inputStream().use { input -> FileOutputStream(target).use { output ->
             fingerprintBackupBytes(input, output).also { output.fd.sync() }
-        } }
+        } } }
         check(digest.sha256 == hash && digest.size == size) { "Source binary changed after capture; nothing was committed." }
         return target
     }
     private fun verifyStaged(obj: BackupGraphPublicationObject) {
         val file = File(obj.stagedPath)
         check(file.canonicalFile.toPath().startsWith(stagingRoot.canonicalFile.toPath()) && file.isFile) { "Durable staging file is missing/unsafe." }
-        val digest = file.inputStream().use { fingerprintBackupBytes(it) }
+        val digest = timing.local("local.staged_verification") { file.inputStream().use { fingerprintBackupBytes(it) } }
         check(digest.sha256 == obj.sha256 && digest.size == obj.byteCount) { "Staged bytes are corrupt; pending changes were preserved." }
         check(obj.verifiedSha256 == null || obj.verifiedSha256 == obj.sha256)
         check(obj.verifiedByteCount == null || obj.verifiedByteCount == obj.byteCount)
     }
-    private suspend fun verifyExisting(obj: BackupGraphPublicationObject): Boolean {
-        val input = store.read(obj.objectId) ?: return false
+    private suspend fun verifyExisting(obj: BackupGraphPublicationObject): Boolean = timing.measure("verification.${obj.role}") {
+        val input = store.read(obj.objectId) ?: return@measure false
         val digest = input.use { fingerprintBackupBytes(it) }
         check(digest.sha256 == obj.sha256 && digest.size == obj.byteCount) { "Intended immutable ID resolves to different bytes." }
-        return true
+        true
     }
 }
 

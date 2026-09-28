@@ -108,6 +108,49 @@ class BackupGraphWriterRoomTest {
         try { block(); fail("Expected safe refusal") } catch (_: IllegalStateException) { } catch (_: java.io.IOException) { }
     }
 
+    @Test fun batchedReservationAndFreshInventoryProofPreserveExactReadback() = runBlocking {
+        val f = Fixture()
+        f.use {
+            f.root(); f.edit("One pending note العربية")
+            val reservations = mutableListOf<Int>()
+            val reads = mutableMapOf<String, Int>()
+            val remote = object : DisposableGraphObjectStore by f.store {
+                override suspend fun reserveIds(count: Int): List<String> {
+                    reservations += count; return List(count) { f.store.reserveId() }
+                }
+                override suspend fun read(objectId: String): java.io.InputStream? {
+                    reads[objectId] = (reads[objectId] ?: 0) + 1; return f.store.read(objectId)
+                }
+            }
+            val timing = BackupGraphTiming(true)
+            val writer = InternalBackupGraphWriter(f.db,f.journal,PendingBackupCapture(f.db,f.journal,VaultPreferences(base,f.journal)),
+                base.filesDir,File(f.root,"staging"),remote,timing=timing)
+            val parent = f.binding(); val result = writer.publish()
+            assertEquals(listOf(2),reservations)
+            assertNull("Parent bytes already came from fresh inventory",reads[parent.commitFileId])
+            val objects=f.db.backupGraphDao().objects(f.ctx.accountScope,result.operationId!!)
+            assertEquals(2,reads[objects.single { it.role=="DELTA" }.objectId]) // Missing probe + exact post-create readback.
+            assertTrue(timing.snapshot().any { it.name=="verification.COMMIT" && it.endNanos>=it.startNanos })
+            assertTrue(f.pending().isEmpty())
+            reads.clear(); reservations.clear(); assertTrue(writer.publish().alreadyBackedUp)
+            assertTrue(reservations.isEmpty()); assertTrue(reads.isEmpty())
+        }
+    }
+
+    @Test fun duplicateReservedIdsFailBeforeAnyPublication() = runBlocking {
+        val f=Fixture()
+        f.use {
+            f.root();f.edit("Unpublished newer edit")
+            val remote=object:DisposableGraphObjectStore by f.store {
+                override suspend fun reserveIds(count:Int)=List(count) { "duplicate-intended-id" }
+            }
+            val writer=InternalBackupGraphWriter(f.db,f.journal,PendingBackupCapture(f.db,f.journal,VaultPreferences(base,f.journal)),
+                base.filesDir,File(f.root,"staging"),remote)
+            val parent=f.binding();val count=f.store.commits().size
+            fails { writer.publish() }; assertEquals(parent,f.binding());assertEquals(count,f.store.commits().size);assertEquals(1,f.pending().size)
+        }
+    }
+
     @Test fun migration34To35PreservesAllRepresentativeRowsAndFreshInstallWorks() = runBlocking {
         val name = "graph-migration-disposable-${UUID.randomUUID()}.db"
         val schema = InstrumentationRegistry.getInstrumentation().context.assets.open("com.myvault.app.data.local.VaultDatabase/34.json")
