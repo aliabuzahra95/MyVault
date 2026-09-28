@@ -42,6 +42,7 @@ internal data class ReconstructedBackup(
     val files: Map<String, String>,
     val permanentDeletions: List<BackupRecordChange>,
     val headId: String?,
+    val binaries: List<BackupBinaryDescriptor>? = null,
 )
 
 /** Checkpoint entries stay immutable. Each descriptor identifies one verified change object. */
@@ -53,8 +54,9 @@ internal object IncrementalBackupFormat {
     fun extension(manifest: JSONObject): JSONObject? {
         if (!manifest.has(IncrementalBackupField)) return null
         val extension = manifest.getJSONObject(IncrementalBackupField)
-        check(extension.getInt("version") == 1) { "Unsupported incremental backup version." }
-        check(extension.getString("requiredReader") == "checkpoint-delta-v1") { "Unsupported backup reader capability." }
+        val version = extension.getInt("version")
+        check((version == 1 && extension.getString("requiredReader") == "checkpoint-delta-v1") ||
+            (version == 2 && extension.getString("requiredReader") == BackupBinaryReaderCapability)) { "Unsupported backup reader capability." }
         requireId(extension.getString("checkpointId"))
         requireId(extension.getString("headId"))
         descriptors(extension)
@@ -88,13 +90,14 @@ internal object IncrementalBackupFormat {
         return if (index < 0) null else chain.drop(index + 1)
     }
 
-    fun createDelta(checkpointId: String, parentId: String, deltaId: String, changes: List<BackupRecordChange>): JSONObject {
+    fun createDelta(checkpointId: String, parentId: String, deltaId: String, changes: List<BackupRecordChange>, binaries: List<BackupBinaryDescriptor>? = null): JSONObject {
         listOf(checkpointId, parentId, deltaId).forEach(::requireId)
         check(deltaId != checkpointId && deltaId != parentId) { "Delta ID must be new." }
         check(changes.isNotEmpty() && changes.size <= MaxChanges) { "A delta must contain actual changes." }
-        val result = JSONObject().put("format", "myvault-backup-delta").put("version", 1)
+        val result = JSONObject().put("format", "myvault-backup-delta").put("version", if (binaries == null) 1 else 2)
             .put("checkpointId", checkpointId).put("parentId", parentId).put("deltaId", deltaId)
             .put("changes", JSONArray(changes.map { it.toJson() }))
+        if (binaries != null) result.put("binaries", JSONArray(binaries.map { it.toJson() }))
         parseChanges(result)
         check(result.toString().toByteArray(Charsets.UTF_8).size <= MaxDeltaBytes) { "Backup delta is too large." }
         return result
@@ -111,14 +114,21 @@ internal object IncrementalBackupFormat {
         val chain = JSONArray(previous?.getJSONArray("deltas")?.toString() ?: "[]")
         chain.put(JSONObject().put("deltaId", delta.getString("deltaId")).put("parentId", parent)
             .put("cloudFileId", cloudFileId).put("size", bytes.size).put("sha256", sha256(bytes)))
+        val binaryCapability = previous?.getInt("version") == 2 || delta.getInt("version") == 2
         return JSONObject(manifest.toString()).put("cloudVersion", cloudVersion)
-            .put(IncrementalBackupField, JSONObject().put("version", 1).put("requiredReader", "checkpoint-delta-v1")
+            .put(IncrementalBackupField, JSONObject().put("version", if (binaryCapability) 2 else 1)
+                .put("requiredReader", if (binaryCapability) BackupBinaryReaderCapability else "checkpoint-delta-v1")
                 .put("checkpointId", checkpoint).put("headId", delta.getString("deltaId")).put("deltas", chain))
             .also { extension(it) }
     }
 
-    fun reconstruct(checkpointFiles: Map<String, String>, extension: JSONObject?, load: (JSONObject) -> ByteArray): ReconstructedBackup {
+    fun reconstruct(checkpointFiles: Map<String, String>, extension: JSONObject?, checkpointBinaries: List<BackupBinaryDescriptor>? = null, load: (JSONObject) -> ByteArray): ReconstructedBackup {
         if (extension == null) return ReconstructedBackup(checkpointFiles.toMap(), emptyList(), null)
+        extension(JSONObject().put(IncrementalBackupField, extension))
+        val binaryResolution = if (extension.getInt("version") == 2) {
+            check(checkpointBinaries != null) { "Binary-capable backup requires the checkpoint binary index." }
+            BackupBinaryResolution(checkpointBinaries)
+        } else null
         val files = checkpointFiles.toMutableMap()
         val deletions = linkedMapOf<String, BackupRecordChange>()
         descriptors(extension).forEach { descriptor ->
@@ -130,7 +140,10 @@ internal object IncrementalBackupFormat {
             check(delta.getString("checkpointId") == extension.getString("checkpointId") &&
                 delta.getString("parentId") == descriptor.getString("parentId") &&
                 delta.getString("deltaId") == descriptor.getString("deltaId")) { "Delta content does not match its committed ancestry." }
-            parseChanges(delta).groupBy { it.file }.forEach { (file, changes) ->
+            check(delta.getInt("version") != 2 || binaryResolution != null) { "Binary delta requires the new reader capability." }
+            val parsed = parseChanges(delta)
+            binaryResolution?.apply(parsed, parseBackupBinaries(delta, parsed))
+            parsed.groupBy { it.file }.forEach { (file, changes) ->
                 if (file == "settings.json") {
                     files[file] = changes.single().value!!.toString()
                 } else {
@@ -155,17 +168,17 @@ internal object IncrementalBackupFormat {
                 }
             }
         }
-        return ReconstructedBackup(files, deletions.values.toList(), extension.getString("headId"))
+        return ReconstructedBackup(files, deletions.values.toList(), extension.getString("headId"), binaryResolution?.finish(files))
     }
 
     fun parseChanges(delta: JSONObject): List<BackupRecordChange> {
-        check(delta.getString("format") == "myvault-backup-delta" && delta.getInt("version") == 1) { "Unsupported backup delta." }
+        check(delta.getString("format") == "myvault-backup-delta" && delta.getInt("version") in 1..2) { "Unsupported backup delta." }
         listOf("checkpointId", "parentId", "deltaId").forEach { requireId(delta.getString(it)) }
         check(delta.getString("deltaId") != delta.getString("parentId") && delta.getString("deltaId") != delta.getString("checkpointId")) { "Delta ID must be new." }
         val changes = delta.getJSONArray("changes")
         check(changes.length() in 1..MaxChanges) { "Invalid backup change count." }
         val seen = mutableSetOf<String>()
-        return (0 until changes.length()).map { index ->
+        val parsed = (0 until changes.length()).map { index ->
             val json = changes.getJSONObject(index)
             val file = json.getString("file")
             val fields = if (file == "settings.json") listOf("settings") else BackupRecordKeys[file]
@@ -188,6 +201,8 @@ internal object IncrementalBackupFormat {
                 else -> error("Unsupported backup change operation.")
             }
         }
+        parseBackupBinaries(delta, parsed)
+        return parsed
     }
 
     fun key(file: String, row: JSONObject): List<String> = if (file == "settings.json") listOf("settings") else

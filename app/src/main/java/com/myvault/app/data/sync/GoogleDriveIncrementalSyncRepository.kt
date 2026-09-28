@@ -14,6 +14,7 @@ import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.BackupRepository
 import com.myvault.app.data.repository.IncrementalBackupFormat
+import com.myvault.app.data.repository.BackupBinaryDescriptor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -310,7 +311,12 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             check(uploadedBytesMatchManifest(bytes, entry.size, entry.sha256)) { "Checkpoint checksum verification failed." }
             checkpoint[entry.backupEntry] = bytes.toString(Charsets.UTF_8)
         }
-        val reconstructed = IncrementalBackupFormat.reconstruct(checkpoint, extension) { descriptor ->
+        val checkpointBinaries = if (extension.getInt("version") == 2) entries.filter { it.kind == EntryKindFile }.map { entry ->
+            check(entry.backupEntry.startsWith("files/")) { "Invalid checkpoint binary path." }
+            val id = entry.backupEntry.removePrefix("files/")
+            BackupBinaryDescriptor(id, entry.cloudFileId, entry.sha256, entry.size).validate()
+        } else null
+        val reconstructed = IncrementalBackupFormat.reconstruct(checkpoint, extension, checkpointBinaries) { descriptor ->
             drive.downloadBytes(descriptor.getString("cloudFileId"))
         }
         val metadata = reconstructed.files.toMutableMap()
@@ -318,7 +324,11 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         metadata["manifest.json"] = JSONObject(metadata.getValue("manifest.json")).put("incrementalBackupApplied", marker).toString()
         metadata["permanent_deletions.json"] = JSONObject().put("format", "myvault-permanent-deletions").put("version", 1)
             .put("state", marker).put("changes", JSONArray(reconstructed.permanentDeletions.map { it.toJson() })).toString()
-        val files = entries.filter { it.kind == EntryKindFile }
+        val files = reconstructed.binaries?.map { binary ->
+            RemoteEntry(path = "files/${binary.attachmentId}", fileName = binary.attachmentId,
+                backupEntry = "files/${binary.attachmentId}", kind = EntryKindFile,
+                sha256 = binary.sha256, size = binary.size, cloudFileId = binary.cloudFileId)
+        } ?: entries.filter { it.kind == EntryKindFile }
         ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
             metadata.forEach { (name, text) ->
                 zip.putNextEntry(ZipEntry(name))
