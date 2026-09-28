@@ -312,6 +312,48 @@ class BackupGraphWriterRoomTest {
         }
     }
 
+    @Test fun newAttachmentAndLostBinaryOrDeltaResponseRecoverExactObjects() = runBlocking {
+        for (role in listOf("BINARY", "DELTA")) Fixture().use { f ->
+            f.root(); val parent = f.binding()
+            f.binary(8192, "new-attachment")
+            var interrupted = false
+            f.store.afterCreate = { _, createdRole ->
+                if (createdRole == role && !interrupted) { interrupted = true; error("Disposable lost response") }
+            }
+            fails { f.writer().publish() }
+            assertTrue(interrupted)
+            assertEquals(parent, f.binding())
+            assertEquals(1, f.store.commits().size)
+            assertEquals(1, f.pending().size)
+            val publication = f.db.backupGraphDao().unfinished(account).single()
+            val intended = f.db.backupGraphDao().objects(account, publication.operationId)
+            assertEquals(listOf("BINARY", "DELTA", "COMMIT"), intended.map { it.role })
+            val createdBefore = f.store.bytes().keys.toSet()
+            f.reopen(); f.store.afterCreate = null
+            val result = f.writer().resume(publication.operationId)
+            assertEquals(publication.operationId, result.commitId)
+            assertEquals(0, result.metrics.binariesCreated)
+            assertEquals(2, f.store.commits().size)
+            assertTrue(f.store.bytes().keys.containsAll(createdBefore))
+            assertEquals(1, f.store.events.count { it == "BINARY" })
+            assertTrue(f.pending().isEmpty())
+            val binary = f.read().binaries!!.single()
+            assertEquals("new-attachment", binary.attachmentId)
+            assertEquals(8192L, binary.size)
+            assertEquals(IncrementalBackupFormat.sha256(ByteArray(8192) { 82 }), binary.sha256)
+            val after = f.store.bytes().keys.toSet()
+            f.writer().resume(publication.operationId)
+            assertEquals(after, f.store.bytes().keys)
+        }
+        Fixture().use { f ->
+            f.root(); f.binary(8192, "new-attachment")
+            val result = f.writer().publish()
+            assertEquals(GraphWriterMetrics(1, 1, 1, 1, 1, 1), result.metrics)
+            assertEquals(8192L, f.read().binaries!!.single().size)
+            f.export("new-attachment", JSONObject().put("expectedBody", "Original العربية").put("expectedNoteCount", 1))
+        }
+    }
+
     @Test fun lostAcknowledgementWithNewerEditAndBinaryOrphanRecovery() = runBlocking {
         Fixture().use { f ->
             f.root(); f.edit("Frozen N")
