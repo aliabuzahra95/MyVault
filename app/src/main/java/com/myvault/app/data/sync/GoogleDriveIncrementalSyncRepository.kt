@@ -13,6 +13,7 @@ import com.google.android.gms.common.api.Scope
 import com.myvault.app.data.local.dao.AttachmentDao
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.BackupRepository
+import com.myvault.app.data.repository.IncrementalBackupFormat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -110,6 +111,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val drive = driveAccount.client
         val vault = drive.ensureMyVaultLayout()
         val previous = drive.readCommittedBackup(vault.manifests.id)
+        if (previous != null && JSONObject(previous.text).has("incrementalBackup")) {
+            return@withContext DriveSyncResult.Failure("Incremental backup publication is disabled pending the coordinated Android/Web release. This backup was not changed.")
+        }
         val remoteVersion = previous?.let { JSONObject(it.text).optLong("cloudVersion", 0L) } ?: 0L
         val lastSyncedVersion = preferences.googleDriveSyncMetadata(driveAccount.email).lastManifestAt
         if (!force && hasNewerRemoteDriveVersion(remoteVersion, lastSyncedVersion)) {
@@ -220,6 +224,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         var downloadedFiles = 0
         var reusedLocalFiles = 0
         try {
+            if (manifest.has("incrementalBackup")) {
+                return@withContext restoreIncrementalBackup(drive, manifest, zipFile, driveAccount.email, onProgress)
+            }
             val localAttachments = attachmentDao.getAllIncludingDeleted().associateBy { it.id }
             onProgress(
                 DriveRestoreProgress(
@@ -282,6 +289,61 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         } finally {
             zipFile.delete()
         }
+    }
+
+    private suspend fun restoreIncrementalBackup(
+        drive: DriveApiClient,
+        manifest: JSONObject,
+        zipFile: File,
+        email: String,
+        onProgress: suspend (DriveRestoreProgress) -> Unit,
+    ): DriveSyncResult {
+        val extension = IncrementalBackupFormat.extension(manifest)!!
+        val rawEntries = manifest.getJSONArray("entries")
+        val paths = (0 until rawEntries.length()).map { rawEntries.getJSONObject(it).getString("path") }
+        check(paths.toSet().size == paths.size) { "Duplicate checkpoint paths." }
+        val entries = manifest.toRemoteEntryMap().values
+        val checkpoint = linkedMapOf<String, String>()
+        entries.filter { it.kind == EntryKindMetadata }.forEach { entry ->
+            check(entry.cloudFileId.isNotBlank()) { "Checkpoint lacks an exact Drive file ID." }
+            val bytes = drive.downloadBytes(entry.cloudFileId)
+            check(uploadedBytesMatchManifest(bytes, entry.size, entry.sha256)) { "Checkpoint checksum verification failed." }
+            checkpoint[entry.backupEntry] = bytes.toString(Charsets.UTF_8)
+        }
+        val reconstructed = IncrementalBackupFormat.reconstruct(checkpoint, extension) { descriptor ->
+            drive.downloadBytes(descriptor.getString("cloudFileId"))
+        }
+        val metadata = reconstructed.files.toMutableMap()
+        val marker = JSONObject().put("checkpointId", extension.getString("checkpointId")).put("headId", reconstructed.headId)
+        metadata["manifest.json"] = JSONObject(metadata.getValue("manifest.json")).put("incrementalBackupApplied", marker).toString()
+        metadata["permanent_deletions.json"] = JSONObject().put("format", "myvault-permanent-deletions").put("version", 1)
+            .put("state", marker).put("changes", JSONArray(reconstructed.permanentDeletions.map { it.toJson() })).toString()
+        val files = entries.filter { it.kind == EntryKindFile }
+        ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
+            metadata.forEach { (name, text) ->
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(text.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+            files.forEachIndexed { index, entry ->
+                onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Downloading, message = "Verifying checkpoint file ${index + 1} of ${files.size}", current = index + 1, total = files.size))
+                check(entry.cloudFileId.isNotBlank()) { "Checkpoint lacks an exact binary file ID." }
+                val staged = File(context.cacheDir, "verified-checkpoint-${java.util.UUID.randomUUID()}")
+                try {
+                    staged.outputStream().use { drive.copyFileToWithRetry(entry.cloudFileId, it) }
+                    check(staged.length() == entry.size && staged.sha256() == entry.sha256) { "Checkpoint file checksum verification failed." }
+                    zip.putNextEntry(ZipEntry(entry.backupEntry))
+                    staged.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                } finally {
+                    staged.delete()
+                }
+            }
+        }
+        onProgress(DriveRestoreProgress(stage = DriveRestoreStage.RestoringDatabase, message = "Restoring verified checkpoint and changes"))
+        val restored = backupRepository.restoreBackupFromFile(zipFile)
+        preferences.markGoogleDriveSync(email, manifest.getLong("cloudVersion"))
+        return DriveSyncResult.Success("Drive restore complete: ${restored.noteCount} notes; verified incremental backup ${reconstructed.headId}.")
     }
 
     suspend fun checkForRemoteUpdates(): DriveSyncResult = withContext(Dispatchers.IO) {
@@ -615,6 +677,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
 
         fun downloadJsonObject(fileId: String): JSONObject =
             JSONObject(requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null).toString(Charsets.UTF_8))
+
+        fun downloadBytes(fileId: String): ByteArray =
+            requestBytes("GET", "$DriveFilesUrl/${fileId.urlPathEncode()}?alt=media", null, null)
 
         fun readCommittedBackup(manifestsId: String): PublishedDriveBackup? {
             val matches = listChildren(manifestsId).filter { it.name == SyncManifestFile }

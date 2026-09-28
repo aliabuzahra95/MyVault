@@ -552,6 +552,7 @@ class BackupRepository @Inject constructor(
 
             validateManifest(entries["manifest.json"])
 
+            val permanentDeletions = readPermanentBackupDeletions(entries)
             val folders = entries.requireJsonArray("folders.json").mapJson { it.toBackupFolderEntity() }
             val restoredFolderIds = folders.map { it.id }.toSet()
             val folderStickyNotes = entries.optionalJsonArray("folder_sticky_notes.json")
@@ -696,6 +697,10 @@ class BackupRepository @Inject constructor(
                 if (sourceBacklinks.isNotEmpty()) sourceBacklinkDao.upsertAll(sourceBacklinks)
                 if (knowledgeTags.isNotEmpty()) knowledgeTagDao.upsertTags(knowledgeTags)
                 if (knowledgeTagLinks.isNotEmpty()) knowledgeTagDao.upsertLinks(knowledgeTagLinks)
+                permanentDeletions.forEach { change ->
+                    val (sql, args) = permanentBackupDeletionSql(change)
+                    database.openHelper.writableDatabase.execSQL(sql, args)
+                }
                 noteDao.clearMissingFolderReferences()
             }
             backedUpPreferences?.let { vaultPreferences.restoreBackedUpPreferences(it) }
@@ -1556,7 +1561,7 @@ private fun JSONObject.toFolderStickyNoteEntity(): FolderStickyNoteEntity =
         updatedAt = getLong("updatedAt"),
     )
 
-private fun JSONObject.toNoteEntity(): NoteEntity =
+internal fun JSONObject.toNoteEntity(): NoteEntity =
     NoteEntity(
         id = getString("id"),
         folderId = optNullableString("folderId"),
@@ -1652,7 +1657,7 @@ private fun JSONObject.toKnowledgeTagLinkEntity(): KnowledgeTagLinkEntity =
         createdAt = getLong("createdAt"),
     )
 
-private fun JSONObject.toBlockEntity(): BlockEntity =
+internal fun JSONObject.toBlockEntity(): BlockEntity =
     BlockEntity(
         id = getString("id"),
         noteId = getString("noteId"),
