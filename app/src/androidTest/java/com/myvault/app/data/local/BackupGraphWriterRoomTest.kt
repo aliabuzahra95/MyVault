@@ -52,12 +52,14 @@ class BackupGraphWriterRoomTest {
         private fun File.internLock() = canonicalPath.intern()
     }
 
-    internal inner class Fixture(val shared: FilesStore? = null, nameOverride: String? = null) : AutoCloseable {
+    internal inner class Fixture(val shared: FilesStore? = null, nameOverride: String? = null,
+        remoteStore: DisposableGraphObjectStore? = null) : AutoCloseable {
         val name = nameOverride ?: "graph-writer-disposable-${UUID.randomUUID()}.db"
         val root = File(base.filesDir, name.removeSuffix(".db")).apply { mkdirs() }
         val attachments = File(base.filesDir, "attachments/${root.name}").apply { mkdirs() }
-        val ctx = GraphWriterContext(account, driveAccount, lineage)
+        val ctx = remoteStore?.context ?: GraphWriterContext(account, driveAccount, lineage)
         val store = shared ?: FilesStore(File(root, "objects"), ctx)
+        val publicationStore = remoteStore ?: store
         val queries = java.util.Collections.synchronizedList(mutableListOf<String>())
         fun querySnapshot(): List<String> = synchronized(queries) { queries.toList() }
         var db = open()
@@ -67,7 +69,7 @@ class BackupGraphWriterRoomTest {
             .setQueryCallback({ sql, _ -> queries.add(sql) }, java.util.concurrent.Executor { it.run() })
             .addCallback(VaultDatabase.BACKUP_JOURNAL_CALLBACK).build()
         fun writer(boundary: suspend (String) -> Unit = {}) = InternalBackupGraphWriter(db, journal,
-            PendingBackupCapture(db, journal, VaultPreferences(base, journal)), base.filesDir, File(root, "staging"), store, boundary)
+            PendingBackupCapture(db, journal, VaultPreferences(base, journal)), base.filesDir, File(root, "staging"), publicationStore, boundary)
         suspend fun note(id: String = "n", text: String = "Original العربية") {
             db.noteDao().upsertAll(listOf(NoteEntity(id, null, title = "English العربية", bodyPlainText = text, isPinned = false,
                 isFavourite = false, createdAt = 10, updatedAt = 11)))
@@ -82,15 +84,15 @@ class BackupGraphWriterRoomTest {
             db.withTransaction { db.attachmentDao().upsertAll(listOf(row)); binaries.persistWritten(row, digest) }
         }
         suspend fun prepared(): PreparedBackupBaseline {
-            journal.registerAccount(account)
+            journal.registerAccount(ctx.accountScope)
             val prefs = VaultPreferences(base, journal)
             val repo = BackupRepository(base,db,db.folderDao(),db.folderStickyNoteDao(),db.noteDao(),db.blockDao(),db.courseDao(),db.tagDao(),db.attachmentDao(),db.searchDao(),db.noteTableDao(),db.noteVersionDao(),db.pdfReadingProgressDao(),db.pdfAnnotationDao(),db.pdfAnnotationSegmentDao(),db.sourceBacklinkDao(),db.knowledgeTagDao(),prefs)
-            return BackupBaselinePreparer(base,db,journal,prefs,repo,BackupBinaryStore(base,db,journal)).prepare(account).also { stagedBaselines += it.directory }
+            return BackupBaselinePreparer(base,db,journal,prefs,repo,BackupBinaryStore(base,db,journal)).prepare(ctx.accountScope).also { stagedBaselines += it.directory }
         }
         suspend fun root(): GraphWriterResult { note(); return writer().createRoot(prepared()) }
         fun reopen() { db.close(); db = open(); journal = BackupChangeJournal(db) }
-        suspend fun binding() = db.backupGraphDao().binding(account, lineage)!!
-        suspend fun pending() = db.backupJournalDao().pending(account)
+        suspend fun binding() = db.backupGraphDao().binding(ctx.accountScope, ctx.lineageId)!!
+        suspend fun pending() = db.backupJournalDao().pending(ctx.accountScope)
         fun graph(objects: List<GraphObject>) = BackupGraph.discover(objects, driveAccount, lineage)
         suspend fun read() = BackupGraphReconstruction.read(graph(store.commits())) { store.bytes().getValue(it) }
         override fun close() { db.close(); base.deleteDatabase(name); root.deleteRecursively(); attachments.deleteRecursively(); stagedBaselines.forEach { it.deleteRecursively() } }
