@@ -120,13 +120,15 @@ internal fun WorkInfo.toDriveRestoreState(): DriveRestoreState {
         progress.getInt(DriveSyncWorker.KeyTotal, 0)
     }
     val completedAt = outputData.getLong(DriveSyncWorker.KeyCompletedAt, 0L)
+    val detail = if (stage == DriveRestoreStage.Failed) null else
+        outputData.getString(DriveSyncWorker.KeyDetail) ?: progress.getString(DriveSyncWorker.KeyDetail)
     return when (state) {
         WorkInfo.State.ENQUEUED,
         WorkInfo.State.RUNNING,
         WorkInfo.State.BLOCKED,
         -> DriveRestoreState(
             active = true,
-            progress = DriveRestoreProgress(stage = stage, message = message, current = current, total = total),
+            progress = DriveRestoreProgress(stage = stage, message = message, current = current, total = total, detail = detail),
             operation = operation,
         )
         WorkInfo.State.SUCCEEDED -> DriveRestoreState(
@@ -136,6 +138,7 @@ internal fun WorkInfo.toDriveRestoreState(): DriveRestoreState {
                 message = message,
                 current = current,
                 total = total,
+                detail = detail,
             ),
             message = message,
             operation = operation,

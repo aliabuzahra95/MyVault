@@ -1,8 +1,11 @@
 package com.myvault.app.ui.screens
 
 import android.app.Activity
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,6 +86,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -637,6 +642,20 @@ private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: 
 @Composable
 private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDrivePull: () -> Unit, onReadiness: ((String) -> Unit) -> Unit) {
     val lastBackupAt = state.confirmedLastBackupAt(preferences.lastGoogleDriveSyncAt)
+    val context = LocalContext.current
+    var pendingOperation by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        val operation = pendingOperation
+        pendingOperation = null
+        operation?.invoke()
+    }
+    fun startDriveOperation(operation: () -> Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (requiresDriveNotificationPermission(Build.VERSION.SDK_INT, granted)) {
+            pendingOperation = operation
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else operation()
+    }
     var checking by remember { mutableStateOf(false) }
     var readinessMessage by remember { mutableStateOf<String?>(null) }
     readinessMessage?.let { message ->
@@ -649,8 +668,8 @@ private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state
                 checking = true
                 onReadiness { readinessMessage = it; checking = false }
             })
-            FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = "Last backup: ${lastBackupAt.displayBackupTime()}", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking, onClick = onDrivePush)
-            FrozenSettingsRow(Icons.Rounded.Restore, "Restore from Drive", value = if (state.active) "In progress" else "Latest Drive backup", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking, onClick = onDrivePull)
+            FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = "Last backup: ${lastBackupAt.displayBackupTime()}", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking && pendingOperation == null, onClick = { startDriveOperation(onDrivePush) })
+            FrozenSettingsRow(Icons.Rounded.Restore, "Restore from Drive", value = if (state.active) "In progress" else "Latest Drive backup", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking && pendingOperation == null, onClick = { startDriveOperation(onDrivePull) })
         }
         frozenSection("LOCAL BACKUP") {
             FrozenSettingsRow(Icons.Rounded.Backup, "Export backup file", value = preferences.lastLocalBackupAt.displayBackupTime(), onClick = onLocalBackup)
@@ -666,6 +685,8 @@ private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state
         }
     }
 }
+
+internal fun requiresDriveNotificationPermission(sdk: Int, granted: Boolean): Boolean = sdk >= 33 && !granted
 
 @Composable
 private fun FrozenFormattingAccountSettings(email: String, onBack: () -> Unit, onSignIn: () -> Unit, onSignOut: () -> Unit) {

@@ -114,7 +114,10 @@ class BackupBaselinePreparer @Inject constructor(
     private val backupRepository: BackupRepository,
     private val binaries: BackupBinaryStore,
 ) {
-    internal suspend fun prepare(account: String): PreparedBackupBaseline = journal.binaryMutex.withLock {
+    internal suspend fun prepare(
+        account: String,
+        onProgress: suspend (GraphBackupProgress) -> Unit = {},
+    ): PreparedBackupBaseline = journal.binaryMutex.withLock {
         journal.settingsMutex.withLock {
             preferences.userPreferences.first()
             journal.recoverInterruptedSettingsWrite()
@@ -122,6 +125,7 @@ class BackupBaselinePreparer @Inject constructor(
             val directory = File(context.cacheDir, "backup-baseline-$preparation").apply { mkdirs() }
             try {
                 val metadata = File(directory, "metadata")
+                onProgress(GraphBackupProgress(GraphBackupStage.READING_BASELINE))
                 val captured = database.withTransaction {
                     backupRepository.exportMetadataForDriveSync(metadata)
                     journal.capture(account)
@@ -129,11 +133,14 @@ class BackupBaselinePreparer @Inject constructor(
                 val required = BackupRecordKeys.keys + setOf("settings.json", "manifest.json")
                 val files = metadata.listFiles()?.filter { it.isFile } ?: error("Baseline metadata could not be staged.")
                 check(files.map { it.name }.toSet() == required)
-                val objects = files.map { file ->
+                onProgress(GraphBackupProgress(GraphBackupStage.STAGING_METADATA, 0, files.size))
+                val objects = files.mapIndexed { index, file ->
                     val digest = file.inputStream().use { fingerprintBackupBytes(it) }
+                    onProgress(GraphBackupProgress(GraphBackupStage.STAGING_METADATA, index + 1, files.size))
                     PreparedBaselineObject("metadata/${file.name}", file.name, "metadata", file, digest.size, digest.sha256)
                 }.toMutableList()
                 val attachments = JSONArray(File(metadata, "attachments.json").readText())
+                if (attachments.length() > 0) onProgress(GraphBackupProgress(GraphBackupStage.STAGING_FILES, 0, attachments.length()))
                 for (i in 0 until attachments.length()) {
                     val row = attachments.getJSONObject(i)
                     val id = row.getString("id")
@@ -147,6 +154,7 @@ class BackupBaselinePreparer @Inject constructor(
                     check(current.localPath == source.absolutePath && current.sizeBytes == digest.size)
                     binaries.persistWritten(current, digest, mutated = false)
                     objects += PreparedBaselineObject("files/$id", "files/$id", "file", target, digest.size, digest.sha256, id)
+                    onProgress(GraphBackupProgress(GraphBackupStage.STAGING_FILES, i + 1, attachments.length()))
                 }
                 PreparedBackupBaseline(preparation, captured, directory, objects.toList())
             } catch (error: Throwable) {

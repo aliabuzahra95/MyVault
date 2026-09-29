@@ -83,11 +83,11 @@ class BackupGraphWriterRoomTest {
                 localPath = file.absolutePath, remoteUrl = null, createdAt = 10)
             db.withTransaction { db.attachmentDao().upsertAll(listOf(row)); binaries.persistWritten(row, digest) }
         }
-        suspend fun prepared(): PreparedBackupBaseline {
+        suspend fun prepared(onProgress: suspend (GraphBackupProgress) -> Unit = {}): PreparedBackupBaseline {
             journal.registerAccount(ctx.accountScope)
             val prefs = VaultPreferences(base, journal)
             val repo = BackupRepository(base,db,db.folderDao(),db.folderStickyNoteDao(),db.noteDao(),db.blockDao(),db.courseDao(),db.tagDao(),db.attachmentDao(),db.searchDao(),db.noteTableDao(),db.noteVersionDao(),db.pdfReadingProgressDao(),db.pdfAnnotationDao(),db.pdfAnnotationSegmentDao(),db.sourceBacklinkDao(),db.knowledgeTagDao(),prefs)
-            return BackupBaselinePreparer(base,db,journal,prefs,repo,BackupBinaryStore(base,db,journal)).prepare(ctx.accountScope).also { stagedBaselines += it.directory }
+            return BackupBaselinePreparer(base,db,journal,prefs,repo,BackupBinaryStore(base,db,journal)).prepare(ctx.accountScope,onProgress).also { stagedBaselines += it.directory }
         }
         suspend fun root(): GraphWriterResult { note(); return writer().createRoot(prepared()) }
         fun reopen() { db.close(); db = open(); journal = BackupChangeJournal(db) }
@@ -106,6 +106,64 @@ class BackupGraphWriterRoomTest {
 
     private suspend fun fails(block: suspend () -> Unit) {
         try { block(); fail("Expected safe refusal") } catch (_: IllegalStateException) { } catch (_: java.io.IOException) { }
+    }
+
+    @Test fun baselineProgressTracksActualObjectsAndOnlyCompletesAfterVerifiedCommit() = runBlocking {
+        Fixture().use { f ->
+            f.note(); f.binary(4096)
+            val preparation = mutableListOf<GraphBackupProgress>()
+            val prepared = f.prepared { preparation += it }
+            assertEquals(GraphBackupStage.READING_BASELINE, preparation.first().stage)
+            assertEquals(1, preparation.last { it.stage == GraphBackupStage.STAGING_FILES }.current)
+            assertEquals(prepared.objects.count { it.kind == "metadata" },
+                preparation.last { it.stage == GraphBackupStage.STAGING_METADATA }.total)
+            assertTrue(preparation.none { it.stage == GraphBackupStage.COMPLETE })
+            val events = mutableListOf<GraphBackupProgress>()
+            val writer = InternalBackupGraphWriter(f.db, f.journal,
+                PendingBackupCapture(f.db,f.journal,VaultPreferences(base,f.journal)),
+                base.filesDir, File(f.root,"staging"), f.store, onProgress = { progress ->
+                    events += progress
+                    if (progress.stage == GraphBackupStage.COMPLETE) {
+                        val binding = f.binding()
+                        assertEquals("COMPLETE", f.db.backupGraphDao().publication(account,binding.commitId)!!.status)
+                        assertTrue(f.pending().isEmpty())
+                    }
+                })
+            val result = writer.createRoot(prepared)
+            val objects = f.db.backupGraphDao().objects(account,result.operationId!!)
+            assertEquals("COMMIT", f.store.events.last())
+            assertEquals(objects.size, events.last { it.stage == GraphBackupStage.VERIFYING }.total)
+            assertEquals(prepared.objects.size + 1, events.last { it.stage == GraphBackupStage.VERIFYING_BASELINE }.current)
+            assertEquals(GraphBackupStage.COMPLETE, events.last().stage)
+            events.clear(); f.store.events.clear()
+            assertTrue(writer.publish().alreadyBackedUp)
+            assertEquals(GraphBackupStage.ALREADY_BACKED_UP,events.last().stage)
+            assertTrue(events.none { it.stage in setOf(GraphBackupStage.STAGING_PUBLICATION,GraphBackupStage.UPLOADING,GraphBackupStage.VERIFYING) })
+            assertTrue(f.store.events.isEmpty())
+        }
+    }
+
+    @Test fun interruptedCompletionNeverReportsSuccessAndExactRetryFinishes() = runBlocking {
+        Fixture().use { f ->
+            f.root(); f.edit("Pending change العربية")
+            val events = mutableListOf<GraphBackupProgress>()
+            fun writer(interrupt: Boolean) = InternalBackupGraphWriter(f.db,f.journal,
+                PendingBackupCapture(f.db,f.journal,VaultPreferences(base,f.journal)),
+                base.filesDir,File(f.root,"staging"),f.store,
+                boundary = { if (interrupt && it == "BEFORE_COMPLETION") error("Disposable interruption") },
+                onProgress = { events += it })
+            fails { writer(true).publish() }
+            assertTrue(events.none { it.stage in setOf(GraphBackupStage.COMPLETE,GraphBackupStage.ALREADY_BACKED_UP) })
+            assertEquals(1,f.pending().size)
+            val operation = f.db.backupGraphDao().unfinished(account).single().operationId
+            val count = f.store.commits().size
+            f.reopen(); events.clear()
+            val result = writer(false).resume(operation)
+            assertEquals(operation,result.commitId)
+            assertEquals(count,f.store.commits().size)
+            assertEquals(GraphBackupStage.COMPLETE,events.last().stage)
+            assertTrue(f.pending().isEmpty())
+        }
     }
 
     @Test fun batchedReservationAndFreshInventoryProofPreserveExactReadback() = runBlocking {

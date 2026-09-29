@@ -12,6 +12,21 @@ import org.junit.Test
 
 class DriveProgressPresentationTest {
     @Test
+    fun `graph stages retain their actual explanation instead of legacy manifest wording`() {
+        val presentation = DriveRestoreState(
+            active = true,
+            operation = DriveSyncOperation.Backup,
+            progress = DriveRestoreProgress(
+                stage = DriveRestoreStage.Finalising,
+                message = "Saving the verified backup position",
+                detail = "Saving the verified backup position",
+            ),
+        ).toDriveProgressPresentation()
+        assertEquals("Saving the verified backup position", presentation.detail)
+        assertNull(presentation.percent)
+    }
+
+    @Test
     fun `measurable upload presents real object percentage`() {
         val presentation = DriveRestoreState(
             active = true,

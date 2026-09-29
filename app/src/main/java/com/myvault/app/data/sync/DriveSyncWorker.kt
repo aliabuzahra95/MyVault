@@ -2,7 +2,9 @@ package com.myvault.app.data.sync
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -13,8 +15,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.myvault.app.BuildConfig
 import com.myvault.app.R
+import com.myvault.app.MainActivity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 
 @HiltWorker
 class DriveSyncWorker @AssistedInject constructor(
@@ -35,6 +39,7 @@ class DriveSyncWorker @AssistedInject constructor(
                 else -> googleDriveSyncRepository.pushToDrive { publishProgress(it) }
             }
         } catch (error: Throwable) {
+            if (error is CancellationException) throw error
             if (BuildConfig.DEBUG) {
                 Log.e(Tag, "Google Drive ${operation.operationLabel()} crashed", error)
             }
@@ -64,20 +69,12 @@ class DriveSyncWorker @AssistedInject constructor(
                 KeyMessage to progress.message,
                 KeyCurrent to progress.current,
                 KeyTotal to progress.total,
+                KeyDetail to progress.detail,
                 KeyOperation to operation,
             ),
         )
-        safeSetForeground(operation, progress)
-    }
-
-    private suspend fun safeSetForeground(operation: String, progress: DriveRestoreProgress) {
-        runCatching {
-            setForeground(createForegroundInfo(operation, progress))
-        }.onFailure { error ->
-            if (BuildConfig.DEBUG) {
-                Log.e(Tag, "Unable to show Google Drive ${operation.operationLabel()} foreground notification", error)
-            }
-        }
+        // Do not start long-running Drive work without Android's foreground protection.
+        setForeground(createForegroundInfo(operation, progress))
     }
 
     private fun createForegroundInfo(operation: String, progress: DriveRestoreProgress): ForegroundInfo {
@@ -88,6 +85,12 @@ class DriveSyncWorker @AssistedInject constructor(
             .setContentTitle(if (operation == OperationPull) "MyVault restore" else "MyVault backup")
             .setContentText(progress.message.ifBlank { progress.stage.label })
             .setOngoing(true)
+            .setContentIntent(PendingIntent.getActivity(
+                applicationContext,
+                NotificationId,
+                Intent(applicationContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ))
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .apply {
@@ -117,6 +120,7 @@ class DriveSyncWorker @AssistedInject constructor(
             KeyTotal to latestProgress.total,
             KeyOperation to operation,
             KeyCompletedAt to completedAt,
+            KeyDetail to message.takeIf { latestProgress.detail != null },
         )
 
     private fun String.progressTitle(): String =
@@ -136,6 +140,7 @@ class DriveSyncWorker @AssistedInject constructor(
         const val KeyMessage = "message"
         const val KeyCurrent = "current"
         const val KeyTotal = "total"
+        const val KeyDetail = "detail"
         const val KeyCompletedAt = "completed_at"
         private const val ChannelId = "myvault_drive_sync"
         private const val NotificationId = 2407

@@ -30,7 +30,7 @@ internal fun DriveRestoreState.toDriveProgressPresentation(): DriveProgressPrese
         DriveRestoreStage.Complete -> if (operation == DriveSyncOperation.Backup) "Backup complete" else "Restore complete"
         DriveRestoreStage.Failed -> if (operation == DriveSyncOperation.Backup) "Backup failed" else "Restore failed"
     }
-    val detail = when (progress.stage) {
+    val detail = progress.detail ?: when (progress.stage) {
         DriveRestoreStage.Preparing -> when {
             progress.message.contains("export", ignoreCase = true) -> "Preparing backup metadata"
             operation == DriveSyncOperation.Backup -> "Checking Google Drive and preparing your backup"

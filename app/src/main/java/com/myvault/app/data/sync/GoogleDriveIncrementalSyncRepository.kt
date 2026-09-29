@@ -229,6 +229,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     "${result.skippedFiles} unchanged file(s) skipped. Previous backup files retained.",
             )
         } catch (error: Throwable) {
+            if (error is CancellationException) throw error
             if (error.requiresDriveReconnect()) preferences.setGoogleDriveAccountEmail("")
             DriveSyncResult.Failure(error.driveMessage("Drive push failed"))
         } finally {
@@ -312,6 +313,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     "$downloadedFiles file(s) downloaded, $reusedLocalFiles reused locally.$missingFilesMessage",
             )
         } catch (error: Throwable) {
+            if (error is CancellationException) throw error
             if (error.requiresDriveReconnect()) preferences.setGoogleDriveAccountEmail("")
             DriveSyncResult.Failure(error.driveMessage("Drive pull failed"))
         } finally {
@@ -1085,6 +1087,7 @@ data class DriveRestoreProgress(
     val message: String = "",
     val current: Int = 0,
     val total: Int = 0,
+    val detail: String? = null,
 ) {
     val percent: Int?
         get() = total.takeIf { it > 0 }?.let { ((current.toFloat() / it.toFloat()) * 100f).toInt().coerceIn(0, 100) }

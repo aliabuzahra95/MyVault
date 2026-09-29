@@ -12,6 +12,27 @@ import org.junit.Test
 
 class GoogleDriveRestoreControllerTest {
     @Test
+    fun `restored worker progress keeps exact graph detail and never masks failure`() {
+        val progress = Data.Builder()
+            .putString(DriveSyncWorker.KeyStage, DriveRestoreStage.Verifying.name)
+            .putString(DriveSyncWorker.KeyDetail, "Verifying the complete initial checkpoint")
+            .putInt(DriveSyncWorker.KeyCurrent, 3)
+            .putInt(DriveSyncWorker.KeyTotal, 5)
+            .build()
+        val running = workInfo(WorkInfo.State.RUNNING, progress = progress).toDriveRestoreState()
+        assertEquals("Verifying the complete initial checkpoint", running.progress.detail)
+        assertEquals(60,running.progress.percent)
+        val output = Data.Builder()
+            .putString(DriveSyncWorker.KeyStage, DriveRestoreStage.Failed.name)
+            .putString(DriveSyncWorker.KeyMessage, "Verification failed; previous backup retained")
+            .build()
+        val failed = workInfo(WorkInfo.State.SUCCEEDED, output, progress).toDriveRestoreState()
+        assertEquals(DriveRestoreStage.Failed,failed.progress.stage)
+        assertNull(failed.progress.detail)
+        assertEquals("Verification failed; previous backup retained",failed.progress.message)
+    }
+
+    @Test
     fun `tracked work wins over stale historical records`() {
         val stale = workInfo(state = WorkInfo.State.SUCCEEDED)
         val current = workInfo(state = WorkInfo.State.RUNNING)

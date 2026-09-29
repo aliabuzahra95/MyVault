@@ -44,6 +44,7 @@ internal class InternalBackupGraphWriter(
     private val store: DisposableGraphObjectStore,
     private val boundary: suspend (String) -> Unit = {},
     private val timing: BackupGraphTiming = BackupGraphTiming(),
+    private val onProgress: suspend (GraphBackupProgress) -> Unit = {},
 ) {
     init {
         check(stagingRoot.canonicalPath.startsWith(privateFilesDir.canonicalPath + File.separator)) { "Publication staging must use durable private files, not cache/external storage." }
@@ -53,6 +54,7 @@ internal class InternalBackupGraphWriter(
 
     suspend fun publish(): GraphWriterResult = timing.measure("writer.total") { publishInternal() }
     private suspend fun publishInternal(): GraphWriterResult {
+        onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
         val unfinished = dao.unfinished(c.accountScope)
         if (unfinished.isNotEmpty()) {
@@ -61,9 +63,13 @@ internal class InternalBackupGraphWriter(
         }
         val binding = timing.measure("baseline.resolve") { dao.binding(c.accountScope, c.lineageId) ?: error("A verified graph root/baseline is required.") }
         val graph = checkedGraph(binding)
+        onProgress(GraphBackupProgress(GraphBackupStage.CAPTURING_CHANGES))
         val batch = timing.measure("journal.capture") { capture.capture(c.accountScope, timing) }
         checkParent(binding, batch.journal)
-        if (batch.records.isEmpty()) return GraphWriterResult(null, binding.commitId, true, false, GraphWriterMetrics(0, 0, 0, 0, 0, 0))
+        if (batch.records.isEmpty()) {
+            onProgress(GraphBackupProgress(GraphBackupStage.ALREADY_BACKED_UP))
+            return GraphWriterResult(null, binding.commitId, true, false, GraphWriterMetrics(0, 0, 0, 0, 0, 0))
+        }
         check(graph.plan().deltas.size < 4096) { "A verified new full checkpoint is required before extending this delta epoch." }
         val parent = graph.commits.getValue(binding.commitId)
         val publication = timing.measure("publication.prepare") { prepareDelta(batch, binding, parent) }
@@ -71,6 +77,7 @@ internal class InternalBackupGraphWriter(
     }
 
     suspend fun createRoot(prepared: PreparedBackupBaseline): GraphWriterResult {
+        onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
         check(prepared.journal.account.accountScope == c.accountScope)
         check(dao.unfinished(c.accountScope).isEmpty()) { "Recover the existing operation before creating a root." }
@@ -81,12 +88,14 @@ internal class InternalBackupGraphWriter(
         val ids = reserveObjectIds(prepared.objects.size + 2)
         val objects = mutableListOf<BackupGraphPublicationObject>()
         val inventory = JSONArray()
+        onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, 0, prepared.objects.size + 2))
         for (source in prepared.objects) {
             val target = stage(op, objects.size, source.file, source.sha256, source.byteSize)
             val obj = newObject(ids[objects.size], op, objects.size, if (source.kind == "file") "BINARY" else "METADATA", source.attachmentId, target, source.sha256, source.byteSize)
             objects += obj
             inventory.put(JSONObject().put("path", source.path).put("backupEntry", source.backupEntry).put("kind", source.kind)
                 .put("objectId", obj.objectId).put("attachmentId", source.attachmentId ?: JSONObject.NULL))
+            onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, prepared.objects.size + 2))
         }
         val entries = BackupGraphIntentCodec.array(inventory).map { item ->
             val obj = objects.single { it.objectId == item.getString("objectId") }
@@ -100,6 +109,7 @@ internal class InternalBackupGraphWriter(
         val commit = BackupGraphCommit(c.driveAccountId, c.lineageId, op, "checkpoint", listOf(BackupGraphCapability), emptyList(),
             GraphCheckpoint("full-${cp.sha256}", cp.ref()), null)
         objects += byteObject(ids[objects.size], op, objects.size, "COMMIT", BackupGraphProtocol.encode(commit))
+        onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, objects.size))
         val frozen = JSONObject(BackupGraphIntentCodec.batch(PendingBackupBatch(prepared.journal, emptyList(), emptyList(), emptyList(), 0)))
             .put("rootInventory", inventory).put("preparationId", prepared.preparationId).toString()
         val p = publication(op, prepared.journal, null, frozen, commit)
@@ -108,6 +118,8 @@ internal class InternalBackupGraphWriter(
     }
 
     private suspend fun prepareDelta(batch: PendingBackupBatch, binding: BackupGraphBinding, parent: BackupGraphCommit): BackupGraphPublication {
+        val stagedCount = batch.binaries.count { it.reusableCloudFileId == null } + 2
+        onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, 0, stagedCount))
         val op = UUID.randomUUID().toString()
         val ids = reserveObjectIds(batch.binaries.count { it.reusableCloudFileId == null } + 2)
         val objects = mutableListOf<BackupGraphPublicationObject>()
@@ -125,6 +137,7 @@ internal class InternalBackupGraphWriter(
                 val staged = stage(op, objects.size, File(binary.localPath), binary.sha256, binary.byteSize)
                 val obj = newObject(ids[objects.size], op, objects.size, "BINARY", binary.attachmentId, staged, binary.sha256, binary.byteSize).also { objects += it }
                 binaries += BackupBinaryDescriptor(binary.attachmentId, obj.objectId, obj.sha256, obj.byteCount).validate()
+                onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, stagedCount))
             }
         }
         val binaryCapable = BackupBinaryReaderCapability in parent.requiredReaders || batch.records.any { it.group == "attachments.json" }
@@ -136,6 +149,7 @@ internal class InternalBackupGraphWriter(
             (parent.requiredReaders + "checkpoint-delta-v1" + if (binaryCapable) listOf(BackupBinaryReaderCapability) else emptyList()).distinct().sorted(),
             listOf(GraphParent(binding.commitId, binding.commitRef())), binding.checkpoint(), GraphDelta(deltaId, binding.deltaHeadId, deltaObj.ref()))
         objects += byteObject(ids[objects.size], op, objects.size, "COMMIT", timing.local("commit.creation") { BackupGraphProtocol.encode(commit) })
+        onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, stagedCount))
         return publication(op, batch.journal, binding, BackupGraphIntentCodec.batch(batch), commit).also { persist(it, objects) }
     }
 
@@ -153,6 +167,7 @@ internal class InternalBackupGraphWriter(
     }
 
     suspend fun resume(operation: String): GraphWriterResult {
+        onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
         val p = dao.publication(c.accountScope, operation) ?: error("No operation for this account.")
         check(p.driveAccountId == c.driveAccountId && p.lineageId == c.lineageId)
@@ -170,6 +185,7 @@ internal class InternalBackupGraphWriter(
             check(verifyExisting(commitObject)) { "Previously committed object is missing." }
             val graph = BackupGraph.discover(store.commits(), c.driveAccountId, c.lineageId)
             check(graph.status in setOf(GraphStatus.SINGLE_TIP, GraphStatus.FORK) && graph.commits[commit.commitId] == commit) { "Previously committed graph is no longer verifiable." }
+            if (graph.status != GraphStatus.FORK) onProgress(GraphBackupProgress(GraphBackupStage.COMPLETE))
             return GraphWriterResult(operation, commit.commitId, false, graph.status == GraphStatus.FORK, metrics())
         }
         validateOriginal(p)
@@ -188,24 +204,29 @@ internal class InternalBackupGraphWriter(
             verifyStaged(obj)
             val exists = verifyExisting(obj)
             if (!exists) {
+                onProgress(GraphBackupProgress(GraphBackupStage.UPLOADING, index, objects.size))
                 timing.measure("upload.${obj.role}") { store.create(obj.objectId, obj.role, File(obj.stagedPath)) }
                 if (obj.role == "BINARY") binaryCount++
                 if (obj.role == "DELTA") deltaCount++
                 if (obj.role == "COMMIT") commitCount++
                 boundary("CREATED_${obj.role}")
+                onProgress(GraphBackupProgress(GraphBackupStage.VERIFYING, index, objects.size))
                 check(verifyExisting(obj)) { "Immutable object is missing after create." }
             }
             check(dao.receipt(c.accountScope, operation, obj.objectId, obj.sha256, obj.byteCount) == 1)
             boundary("VERIFIED_${obj.role}")
+            onProgress(GraphBackupProgress(GraphBackupStage.VERIFYING, index + 1, objects.size))
         }
         dao.status(c.accountScope, operation, "COMMIT_VERIFIED")
         boundary("COMMIT_VERIFIED")
         boundary("BEFORE_COMPLETION")
         val rootProof = if (commit.kind == "checkpoint") rootProof(p, objects, commit) else null
+        onProgress(GraphBackupProgress(GraphBackupStage.COMPLETING))
         timing.measure("local.completion") { complete(p, objects, commit, rootProof) }
         boundary("COMPLETE")
         val inventory = timing.measure("graph.discovery") { store.commits() }
         val graph = timing.local("graph.validation") { BackupGraph.discover(inventory, c.driveAccountId, c.lineageId) }
+        if (graph.status == GraphStatus.SINGLE_TIP) onProgress(GraphBackupProgress(GraphBackupStage.COMPLETE))
         return GraphWriterResult(operation, commit.commitId, false, graph.status == GraphStatus.FORK, metrics(binaryCount, deltaCount, commitCount))
     }
 
@@ -311,10 +332,14 @@ internal class InternalBackupGraphWriter(
             })
         val checkpoint = objects.single { it.role == "CHECKPOINT" }
         val bytes = File(checkpoint.stagedPath).readBytes()
+        onProgress(GraphBackupProgress(GraphBackupStage.VERIFYING_BASELINE, 0, inventory.size + 1))
         val readback = store.read(checkpoint.objectId)!!.use { it.readBytes() }
-        val receipts = inventory.map { row ->
+        onProgress(GraphBackupProgress(GraphBackupStage.VERIFYING_BASELINE, 1, inventory.size + 1))
+        val receipts = inventory.mapIndexed { index, row ->
             val id = row.getString("objectId")
-            store.read(id)!!.use { VerifiedRemoteBackupObject.read(p.accountScope, id, it) }
+            store.read(id)!!.use { VerifiedRemoteBackupObject.read(p.accountScope, id, it) }.also {
+                onProgress(GraphBackupProgress(GraphBackupStage.VERIFYING_BASELINE, index + 2, inventory.size + 1))
+            }
         }
         val proof = VerifiedBackupBaseline.verify(prepared, p.accountScope, checkpoint.objectId, bytes, readback, receipts)
         check(proof.commit.checkpointId == commit.checkpoint.checkpointId)
