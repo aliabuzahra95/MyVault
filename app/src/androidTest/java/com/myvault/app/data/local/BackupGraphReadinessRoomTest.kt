@@ -31,8 +31,9 @@ class BackupGraphReadinessRoomTest {
                     val entity = entities.getJSONObject(i)
                     val table = entity.getString("tableName")
                     raw.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}", table))
-                    val indices = entity.getJSONArray("indices")
-                    for (j in 0 until indices.length()) raw.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+                    entity.optJSONArray("indices")?.let { indices ->
+                        for (j in 0 until indices.length()) raw.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+                    }
                 }
                 raw.execSQL("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
                 raw.execSQL("INSERT INTO room_master_table VALUES(42,?)", arrayOf(schema.getString("identityHash")))
