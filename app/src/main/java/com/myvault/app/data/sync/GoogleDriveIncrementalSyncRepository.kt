@@ -15,6 +15,10 @@ import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.BackupRepository
 import com.myvault.app.data.repository.IncrementalBackupFormat
 import com.myvault.app.data.repository.BackupBinaryDescriptor
+import com.myvault.app.data.repository.*
+import com.myvault.app.data.local.VaultDatabase
+import com.myvault.app.data.preferences.normalizeGoogleDriveAccount
+import kotlinx.coroutines.CancellationException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -70,7 +74,30 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private val backupRepository: BackupRepository,
     private val attachmentDao: AttachmentDao,
     private val preferences: VaultPreferences,
+    private val database: VaultDatabase,
 ) {
+    /** Production Google sign-in, GET-only Drive inspection and read-only local snapshot. */
+    suspend fun checkGraphBackupReadiness(): String = withContext(Dispatchers.IO) {
+        val signedIn = GoogleSignIn.getLastSignedInAccount(context)
+            ?: return@withContext "Connect Google Drive first. Nothing was changed."
+        if (!GoogleSignIn.hasPermissions(signedIn, DriveScope)) return@withContext "Reconnect Google Drive and approve access first. Nothing was changed."
+        val email = normalizeGoogleDriveAccount(signedIn.email.orEmpty())
+        if ('@' !in email) return@withContext "The Google account could not be verified. Nothing was changed."
+        try {
+            val drive = DriveApiClient(context, signedIn)
+            val inventory = drive.inspectGraphReadiness(email)
+            val local = readLocalBackupReadiness(database, email)
+            val graph = inventory.lineage?.let { BackupGraph.discover(inventory.objects,inventory.accountId,it) }
+            check(normalizeGoogleDriveAccount(GoogleSignIn.getLastSignedInAccount(context)?.email.orEmpty()) == email)
+            if (local.lineage != null && inventory.lineage != null && local.lineage != inventory.lineage) {
+                "The visible graph has a different lineage from this Vault. Reconciliation is required. Nothing was changed."
+            } else reconcileBackupGraph(local,inventory.accountId,inventory.legacyVisible,inventory.namespaceCount,graph,inventory.objects).message()
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            "Backup readiness could not be verified. No upload, Restore, deletion or trust change occurred. Check your connection and Google Drive sign-in, then try again."
+        }
+    }
+
     suspend fun prepareSignInIntent(): Intent {
         val client = GoogleSignIn.getClient(context, signInOptions())
         val intent = suspendCancellableCoroutine { continuation ->
@@ -574,6 +601,54 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         private val context: Context,
         private val account: GoogleSignInAccount,
     ) {
+        fun inspectGraphReadiness(email: String): ReadinessInventory {
+            val user = requestJson("GET", "https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)").getJSONObject("user")
+            val identity = user.getString("permissionId").also { BackupGraphProtocol.id(it) }
+            check(normalizeGoogleDriveAccount(user.getString("emailAddress")) == email)
+            val legacyRoots = readinessList("name = '${MyVaultRoot.escapeDriveQuery()}' and mimeType = '$FolderMimeType' and trashed = false")
+            check(legacyRoots.size <= 1) { "Ambiguous legacy namespace." }
+            val legacyVisible = legacyRoots.singleOrNull()?.let { root ->
+                val folders = readinessList("'${root.getString("id").escapeDriveQuery()}' in parents and name = 'manifests' and mimeType = '$FolderMimeType' and trashed = false")
+                check(folders.size <= 1)
+                folders.singleOrNull()?.let { folder ->
+                    val manifests = readinessList("'${folder.getString("id").escapeDriveQuery()}' in parents and name = '$SyncManifestFile' and trashed = false")
+                    check(manifests.size <= 1)
+                    manifests.singleOrNull()?.let { file ->
+                        val value = downloadJsonObject(file.getString("id"))
+                        check(value.getInt("schemaVersion") == 1 && value.getString("storage") == "google-drive-api" && value.getJSONArray("entries").length() > 0)
+                        true
+                    }
+                }
+            } ?: false
+            val roots = readinessList("name = '${BackupGraphNamespace.escapeDriveQuery()}' and mimeType = '$FolderMimeType' and trashed = false")
+            if (roots.size != 1) return ReadinessInventory(identity,legacyVisible,roots.size,null,emptyList())
+            val directories = readinessList("'${roots.single().getString("id").escapeDriveQuery()}' in parents and name = 'commits' and mimeType = '$FolderMimeType' and trashed = false")
+            if (directories.size != 1) return ReadinessInventory(identity,legacyVisible,if (directories.size > 1) 2 else 1,null,emptyList())
+            val files = readinessList("'${directories.single().getString("id").escapeDriveQuery()}' in parents and trashed = false")
+            val objects = files.map { file ->
+                val size = file.getString("size").toLong(); check(size in 1..65536)
+                val ref = GraphObjectRef(file.getString("id"),file.getString("sha256Checksum"),size)
+                BackupGraphProtocol.reference(ref,65536)
+                val bytes = requestBytes("GET", "$DriveFilesUrl/${ref.cloudFileId}?alt=media", null, null)
+                BackupGraphProtocol.verify(ref,bytes)
+                GraphObject(ref,bytes)
+            }
+            val lineages = objects.map { JSONObject(BackupGraphProtocol.utf8(it.bytes)).getString("lineageId").also(BackupGraphProtocol::id) }.distinct()
+            return ReadinessInventory(identity,legacyVisible,if(lineages.size > 1) 2 else 1,lineages.singleOrNull(),objects)
+        }
+
+        private fun readinessList(query: String): List<JSONObject> {
+            val result = mutableListOf<JSONObject>(); var page: String? = null
+            do {
+                val suffix = page?.let { "&pageToken=${it.urlEncode()}" }.orEmpty()
+                val response = requestJson("GET", "$DriveFilesUrl?q=${query.urlEncode()}&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size,sha256Checksum)$suffix")
+                val files = response.getJSONArray("files")
+                for (i in 0 until files.length()) result += files.getJSONObject(i)
+                page = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+            } while (page != null)
+            return result
+        }
+
         fun ensureMyVaultLayout(): DriveVaultFolder {
             val root = ensureFolder(parentId = "root", name = MyVaultRoot)
             return DriveVaultFolder(
@@ -906,6 +981,8 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val manifests: DriveFile,
         val backups: DriveFile,
     )
+
+    private data class ReadinessInventory(val accountId: String, val legacyVisible: Boolean, val namespaceCount: Int, val lineage: String?, val objects: List<GraphObject>)
 
     private data class DriveFile(
         val id: String,

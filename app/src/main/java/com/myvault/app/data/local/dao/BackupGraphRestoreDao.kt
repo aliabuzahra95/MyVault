@@ -10,6 +10,8 @@ import com.myvault.app.data.local.entity.BackupGraphRestoreObject
 
 @Dao
 interface BackupGraphRestoreDao {
+    @Query("SELECT * FROM backup_graph_applied_states WHERE accountScope=:scope")
+    suspend fun appliedForAccount(scope: String): List<BackupGraphAppliedState>
     @Query("SELECT * FROM backup_graph_applied_states WHERE accountScope=:scope AND lineageId=:lineage")
     suspend fun applied(scope: String, lineage: String): BackupGraphAppliedState?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putApplied(value: BackupGraphAppliedState)

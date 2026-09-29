@@ -161,6 +161,7 @@ fun SettingsScreen(
     onGoogleDriveSignInResult: (Intent?, (Intent) -> Unit) -> Unit = { _, _ -> },
     onGoogleDriveConsentResult: (Boolean) -> Unit = {},
     onGoogleDrivePush: ((Intent) -> Unit) -> Unit = { _ -> },
+    onGoogleDriveReadiness: ((String) -> Unit) -> Unit = { result -> result("Readiness check is unavailable.") },
     onGoogleDriveForcePush: ((Intent) -> Unit) -> Unit = { _ -> },
     onGoogleDrivePull: ((Intent) -> Unit) -> Unit = { _ -> },
     onBackupSettingsOpened: () -> Unit = {},
@@ -269,6 +270,7 @@ fun SettingsScreen(
             onLocalBackup = { backupLauncher.launch("my-vault-${System.currentTimeMillis()}.vaultbackup") },
             onLocalRestore = { restoreLauncher.launch(arrayOf("application/octet-stream", "application/zip", "*/*")) },
             onDrivePush = { onGoogleDrivePush { consentLauncher.launch(it) } },
+            onReadiness = onGoogleDriveReadiness,
             onDrivePull = { driveRestoreConfirmOpen = true },
         )
         FrozenSettingsDestination.FormattingAccount -> FrozenFormattingAccountSettings(
@@ -633,12 +635,22 @@ private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: 
 }
 
 @Composable
-private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDrivePull: () -> Unit) {
+private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDrivePull: () -> Unit, onReadiness: ((String) -> Unit) -> Unit) {
     val lastBackupAt = state.confirmedLastBackupAt(preferences.lastGoogleDriveSyncAt)
+    var checking by remember { mutableStateOf(false) }
+    var readinessMessage by remember { mutableStateOf<String?>(null) }
+    readinessMessage?.let { message ->
+        AlertDialog(onDismissRequest = { readinessMessage = null }, title = { Text("Backup readiness") },
+            text = { Text(message, modifier = Modifier.verticalScroll(rememberScrollState())) }, confirmButton = { TextButton(onClick = { readinessMessage = null }) { Text("Close") } })
+    }
     FrozenSettingsPage("Backup / Restore", onBack) {
         frozenSection("GOOGLE DRIVE") {
-            FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = "Last backup: ${lastBackupAt.displayBackupTime()}", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active, onClick = onDrivePush)
-            FrozenSettingsRow(Icons.Rounded.Restore, "Restore from Drive", value = if (state.active) "In progress" else "Latest Drive backup", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active, onClick = onDrivePull)
+            FrozenSettingsRow(Icons.Rounded.Verified, "Check backup readiness", value = if (checking) "Checking" else "Read-only", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking, onClick = {
+                checking = true
+                onReadiness { readinessMessage = it; checking = false }
+            })
+            FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = "Last backup: ${lastBackupAt.displayBackupTime()}", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking, onClick = onDrivePush)
+            FrozenSettingsRow(Icons.Rounded.Restore, "Restore from Drive", value = if (state.active) "In progress" else "Latest Drive backup", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking, onClick = onDrivePull)
         }
         frozenSection("LOCAL BACKUP") {
             FrozenSettingsRow(Icons.Rounded.Backup, "Export backup file", value = preferences.lastLocalBackupAt.displayBackupTime(), onClick = onLocalBackup)

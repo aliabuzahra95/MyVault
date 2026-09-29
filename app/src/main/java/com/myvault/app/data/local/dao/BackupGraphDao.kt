@@ -10,6 +10,8 @@ import com.myvault.app.data.local.entity.BackupGraphPublicationObject
 
 @Dao
 interface BackupGraphDao {
+    @Query("SELECT * FROM backup_graph_bindings WHERE accountScope=:scope")
+    suspend fun bindings(scope: String): List<BackupGraphBinding>
     @Query("SELECT * FROM backup_graph_bindings WHERE accountScope=:scope AND lineageId=:lineage")
     suspend fun binding(scope: String, lineage: String): BackupGraphBinding?
     @Insert(onConflict = OnConflictStrategy.REPLACE)

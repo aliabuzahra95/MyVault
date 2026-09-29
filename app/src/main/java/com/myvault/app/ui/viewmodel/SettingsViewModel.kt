@@ -271,6 +271,10 @@ class SettingsViewModel @Inject constructor(
         authorizeAndStartDriveOperation(PendingDriveOperation.Pull, onAuthorizationRequired, onComplete)
     }
 
+    fun checkBackupReadiness(onComplete: (String) -> Unit) {
+        viewModelScope.launch { onComplete(googleDriveSyncRepository.checkGraphBackupReadiness()) }
+    }
+
     private fun authorizeAndStartDriveOperation(
         operation: PendingDriveOperation,
         onAuthorizationRequired: (Intent) -> Unit,

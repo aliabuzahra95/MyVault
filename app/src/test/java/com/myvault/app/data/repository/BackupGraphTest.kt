@@ -154,7 +154,7 @@ class BackupGraphTest {
             .first { File(it, "app/src/main/java/com/myvault/app/data/local/VaultDatabase.kt").exists() }
         val drive = File(root, "app/src/main/java/com/myvault/app/data/sync/GoogleDriveIncrementalSyncRepository.kt").readText()
         assertTrue(drive.contains("backupRepository.exportMetadataForDriveSync(")); assertTrue(drive.contains("backupRepository.restoreBackupFromFile("))
-        assertFalse(drive.contains("BackupGraph") || drive.contains("IncrementalBackupWriter("))
+        assertFalse(drive.contains("InternalBackupGraphWriter(") || drive.contains("InternalBackupGraphRestore(") || drive.contains("IncrementalBackupWriter("))
         val schema = JSONObject(File(root, "app/schemas/com.myvault.app.data.local.VaultDatabase/34.json").readText())
         assertEquals(34, schema.getJSONObject("database").getInt("version"))
     }
