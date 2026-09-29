@@ -48,7 +48,7 @@ class BackupJournalRoomTest {
             }
             room = open()
             val first = room
-            assertEquals(35, first.openHelper.writableDatabase.version)
+            assertEquals(36, first.openHelper.writableDatabase.version)
             assertEquals("English العربية", first.noteDao().getAllIncludingDeleted().single().bodyPlainText)
             first.openHelper.writableDatabase.query("SELECT content FROM blocks WHERE id='existing-block'").use {
                 assertTrue(it.moveToFirst()); assertEquals(richText, it.getString(0))

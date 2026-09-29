@@ -192,7 +192,7 @@ class BackupGraphWriterRoomTest {
             }
             db = Room.databaseBuilder(base,VaultDatabase::class.java,name).addMigrations(*VaultDatabase.ALL_MIGRATIONS).build()
             val migrated = db.openHelper.writableDatabase
-            assertEquals(35, migrated.version)
+            assertEquals(36, migrated.version)
             before.forEach { (table, expected) -> migrated.query("SELECT * FROM `$table` ORDER BY rowid").use { c ->
                 val rows = JSONArray(); while(c.moveToNext()) rows.put(JSONArray((0 until c.columnCount).map { if(c.isNull(it)) JSONObject.NULL else c.getString(it) })); assertEquals(table,expected,rows.toString())
             } }
@@ -200,7 +200,7 @@ class BackupGraphWriterRoomTest {
                 migrated.query("SELECT COUNT(*) FROM $table").use { it.moveToFirst(); assertEquals(0,it.getInt(0)) }
             }
         } finally { db?.close(); base.deleteDatabase(name) }
-        Fixture().use { f -> assertEquals(35, f.db.openHelper.writableDatabase.version); assertTrue(f.db.backupGraphDao().unfinished(account).isEmpty()) }
+        Fixture().use { f -> assertEquals(36, f.db.openHelper.writableDatabase.version); assertTrue(f.db.backupGraphDao().unfinished(account).isEmpty()) }
     }
 
     @Test fun pendingOnlyCoalescingExactDeletesAndGenerationRace() = runBlocking {

@@ -440,6 +440,16 @@ class VaultPreferences @Inject constructor(
 
     suspend fun restoreBackedUpPreferences(backup: VaultBackupPreferences) {
         editBackedUpSettings(restoring = true) { preferences ->
+            applyBackupPreferences(preferences, backup)
+        }
+    }
+
+    /** Internal graph Restore owns the durable recovery token and holds settingsMutex. */
+    internal suspend fun applyGraphRestorePreferences(backup: VaultBackupPreferences) {
+        context.vaultDataStore.edit { applyBackupPreferences(it, backup) }
+    }
+
+    private fun applyBackupPreferences(preferences: MutablePreferences, backup: VaultBackupPreferences) {
             val restoredTheme = VaultThemeMode.fromStoredValues(
                 themeModeV2 = backup.themeModeV2,
                 legacyTheme = backup.theme,
@@ -486,7 +496,6 @@ class VaultPreferences @Inject constructor(
             preferences[Keys.LibraryViewModesByLocation] = backup.libraryViewModesByLocation
                 .map { (key, value) -> "$key=$value" }
                 .toSet()
-        }
     }
 
     suspend fun setQuranMemorizationRecords(records: List<MemorizationRecord>) {

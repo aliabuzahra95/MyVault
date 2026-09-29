@@ -57,6 +57,10 @@ import com.myvault.app.data.local.dao.BackupGraphDao
 import com.myvault.app.data.local.entity.BackupGraphBinding
 import com.myvault.app.data.local.entity.BackupGraphPublication
 import com.myvault.app.data.local.entity.BackupGraphPublicationObject
+import com.myvault.app.data.local.entity.BackupGraphAppliedState
+import com.myvault.app.data.local.entity.BackupGraphRestore
+import com.myvault.app.data.local.entity.BackupGraphRestoreObject
+import com.myvault.app.data.local.dao.BackupGraphRestoreDao
 
 @Database(
     entities = [
@@ -94,8 +98,11 @@ import com.myvault.app.data.local.entity.BackupGraphPublicationObject
         BackupGraphBinding::class,
         BackupGraphPublication::class,
         BackupGraphPublicationObject::class,
+        BackupGraphAppliedState::class,
+        BackupGraphRestore::class,
+        BackupGraphRestoreObject::class,
     ],
-    version = 35,
+    version = 36,
     exportSchema = true,
 )
 abstract class VaultDatabase : RoomDatabase() {
@@ -118,6 +125,7 @@ abstract class VaultDatabase : RoomDatabase() {
     abstract fun backupJournalDao(): BackupJournalDao
     abstract fun backupCaptureDao(): BackupCaptureDao
     abstract fun backupGraphDao(): BackupGraphDao
+    abstract fun backupGraphRestoreDao(): BackupGraphRestoreDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -650,6 +658,10 @@ abstract class VaultDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = BackupGraphSchema.migrate(db)
         }
 
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) = BackupGraphRestoreSchema.migrate(db)
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
@@ -685,6 +697,7 @@ abstract class VaultDatabase : RoomDatabase() {
             MIGRATION_32_33,
             MIGRATION_33_34,
             MIGRATION_34_35,
+            MIGRATION_35_36,
         )
 
         private fun createNotesFtsTriggers(db: SupportSQLiteDatabase) {

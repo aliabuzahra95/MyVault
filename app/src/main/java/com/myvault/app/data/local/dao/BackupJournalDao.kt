@@ -40,6 +40,8 @@ interface BackupJournalDao {
     suspend fun dirtyBinary(id: String)
     @Query("SELECT * FROM backup_binary_references WHERE accountScope=:scope AND attachmentId=:id")
     suspend fun binaryReference(scope: String, id: String): BackupBinaryReference?
+    @Query("SELECT * FROM backup_binary_references WHERE accountScope=:scope AND cloudFileId=:file")
+    suspend fun binaryReferencesForObject(scope: String, file: String): List<BackupBinaryReference>
     @Query("DELETE FROM backup_binary_references WHERE accountScope=:scope")
     suspend fun clearBinaryReferences(scope: String)
     @Query("DELETE FROM backup_binary_references WHERE accountScope=:scope AND attachmentId=:id")

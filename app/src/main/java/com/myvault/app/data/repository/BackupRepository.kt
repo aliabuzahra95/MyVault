@@ -1589,6 +1589,37 @@ internal fun JSONObject.toNoteEntity(): NoteEntity =
         deletedAt = optNullableLong("deletedAt"),
     )
 
+/** Same typed legacy codecs, but no full-array relationship cleanup or replacement of unrelated rows. */
+internal fun normalizedGraphRestoreRow(group: String, row: JSONObject, attachmentPath: String? = null): JSONObject = when (group) {
+    "folders.json" -> row.toBackupFolderEntity().toBackupJsonObject()
+    "notes.json" -> row.toNoteEntity().toJson()
+    "blocks.json" -> row.toBlockEntity().toJson()
+    "tags.json" -> row.toTagEntity().toJson()
+    "note_tags.json" -> row.toNoteTagCrossRef().toJson()
+    "note_tables.json" -> row.toNoteTableEntity().toJson()
+    "note_versions.json" -> row.toNoteVersionEntity().toJson()
+    "folder_sticky_notes.json" -> row.toFolderStickyNoteEntity().toJson()
+    "courses.json" -> row.toCourseEntity().toJson()
+    "course_concept_cards.json" -> row.toCourseConceptCardEntity().toJson()
+    "course_folders.json" -> row.toCourseFolderEntity().toJson()
+    "course_notes.json" -> row.toCourseNoteEntity().toJson()
+    "course_sticky_notes.json" -> row.toCourseStickyNoteEntity().toJson()
+    "pdf_reading_progress.json" -> row.toPdfReadingProgressEntity().toJson()
+    "pdf_annotations.json" -> row.toPdfAnnotationEntity().toJson()
+    "pdf_annotation_geometry.json" -> (row.toPdfAnnotationSegmentEntityOrNull() ?: error("Invalid annotation geometry.")).toJson()
+    "source_backlinks.json" -> row.toSourceBacklinkEntity().toJson()
+    "knowledge_tags.json" -> row.toKnowledgeTagEntity().toJson()
+    "knowledge_tag_links.json" -> row.toKnowledgeTagLinkEntity().toJson()
+    "attachments.json" -> AttachmentEntity(
+        id = row.getString("id"), noteId = row.optString("noteId"), libraryFolderId = row.optNullableString("libraryFolderId"),
+        fileName = row.getString("fileName"), mimeType = row.getString("mimeType"), sizeBytes = row.getLong("sizeBytes"),
+        localPath = attachmentPath ?: error("Attachment requires a verified local binary/path."), remoteUrl = row.optNullableString("remoteUrl"),
+        isPinned = row.optBoolean("isPinned", false), createdAt = row.getLong("createdAt"),
+        deletedAt = row.optNullableLong("deletedAt"), orderIndex = row.optInt("orderIndex", 0),
+    ).toJson()
+    else -> error("Unsupported Restore record group.")
+}.also { check(IncrementalBackupFormat.key(group, it) == IncrementalBackupFormat.key(group, row)) }
+
 private fun JSONObject.toPdfReadingProgressEntity(): PdfReadingProgressEntity =
     PdfReadingProgressEntity(
         attachmentId = getString("attachmentId"),
