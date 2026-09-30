@@ -78,12 +78,31 @@ internal class InternalBackupGraphWriter(
         return resume(publication.operationId)
     }
 
-    suspend fun createRoot(prepared: PreparedBackupBaseline): GraphWriterResult {
+    suspend fun createRoot(prepared: PreparedBackupBaseline): GraphWriterResult = createFullCheckpoint(prepared, null)
+
+    /** Explicit full-snapshot reconciliation. The old tip remains an immutable parent. */
+    suspend fun replaceCheckpoint(prepared: PreparedBackupBaseline): GraphWriterResult {
+        val c = context
+        val parent = dao.binding(c.accountScope, c.lineageId) ?: error("A verified graph parent is required.")
+        return createFullCheckpoint(prepared, parent)
+    }
+
+    private suspend fun createFullCheckpoint(prepared: PreparedBackupBaseline, parent: BackupGraphBinding?): GraphWriterResult {
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
         check(prepared.journal.account.accountScope == c.accountScope)
-        check(dao.unfinished(c.accountScope).isEmpty()) { "Recover the existing operation before creating a root." }
-        check(dao.binding(c.accountScope, c.lineageId) == null && store.commits().isEmpty()) { "Existing graph requires reconciliation, not a new root." }
+        check(dao.unfinished(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty()) {
+            "Recover the existing operation before creating a checkpoint."
+        }
+        val parentCommit = if (parent == null) {
+            check(dao.binding(c.accountScope, c.lineageId) == null && store.commits().isEmpty()) {
+                "Existing graph requires reconciliation, not a new root."
+            }
+            null
+        } else {
+            check(dao.binding(c.accountScope, c.lineageId) == parent)
+            checkedGraph(parent).commits.getValue(parent.commitId)
+        }
         check(prepared.objects.filter { it.kind == "metadata" }.map { it.backupEntry }.toSet() == BackupRecordKeys.keys + setOf("settings.json", "manifest.json"))
         check(prepared.objects.map { it.path }.distinct().size == prepared.objects.size)
         val op = UUID.randomUUID().toString()
@@ -108,13 +127,16 @@ internal class InternalBackupGraphWriter(
         val checkpointBytes = JSONObject().put("schemaVersion", 1).put("storage", "google-drive-api").put("cloudVersion", 1)
             .put("entries", JSONArray(entries)).toString().toByteArray(Charsets.UTF_8)
         val cp = byteObject(ids[objects.size], op, objects.size, "CHECKPOINT", checkpointBytes).also { objects += it }
-        val commit = BackupGraphCommit(c.driveAccountId, c.lineageId, op, "checkpoint", listOf(BackupGraphCapability), emptyList(),
+        val commit = BackupGraphCommit(c.driveAccountId, c.lineageId, op, "checkpoint",
+            parentCommit?.requiredReaders ?: listOf(BackupGraphCapability),
+            parent?.let { listOf(GraphParent(it.commitId, it.commitRef())) } ?: emptyList(),
             GraphCheckpoint("full-${cp.sha256}", cp.ref()), null)
+        check(parent == null || commit.checkpoint != parent.checkpoint()) { "The replacement checkpoint must have new verified content." }
         objects += byteObject(ids[objects.size], op, objects.size, "COMMIT", BackupGraphProtocol.encode(commit))
         onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, objects.size))
         val frozen = JSONObject(BackupGraphIntentCodec.batch(PendingBackupBatch(prepared.journal, emptyList(), emptyList(), emptyList(), 0)))
             .put("rootInventory", inventory).put("preparationId", prepared.preparationId).toString()
-        val p = publication(op, prepared.journal, null, frozen, commit)
+        val p = publication(op, prepared.journal, parent, frozen, commit)
         persist(p, objects)
         return resume(op)
     }
@@ -276,7 +298,9 @@ internal class InternalBackupGraphWriter(
         check(clock.originEpoch == p.capturedOriginEpoch && clock.generation >= p.capturedGeneration && clock.settingsToken == null && clock.suppressionDepth == 0)
         val expected = p.originalBindingJson?.let(BackupGraphIntentCodec::binding)
         check(dao.binding(p.accountScope, p.lineageId) == expected) { "Graph binding changed; reconciliation required." }
-        if (expected != null) checkParent(expected, BackupGraphIntentCodec.snapshot(p))
+        if (expected != null && JSONObject(p.commitJson).getString("kind") == "delta") {
+            checkParent(expected, BackupGraphIntentCodec.snapshot(p))
+        }
     }
 
     private fun checkParent(b: BackupGraphBinding, snapshot: CapturedBackupChanges) {
@@ -319,7 +343,9 @@ internal class InternalBackupGraphWriter(
             binaries.forEach { b -> check(objects.single { it.objectId == b.cloudFileId }.let { it.attachmentId == b.attachmentId && it.sha256 == b.sha256 && it.byteCount == b.size }) }
             check(objects.all { it.role in setOf("BINARY", "DELTA", "COMMIT") })
         } else {
-            check(p.originalBindingJson == null && commit.parents.isEmpty())
+            val parent = p.originalBindingJson?.let(BackupGraphIntentCodec::binding)
+            check(commit.parents == (parent?.let { listOf(GraphParent(it.commitId, it.commitRef())) } ?: emptyList<GraphParent>()))
+            check(parent == null || commit.checkpoint != parent.checkpoint())
             val cp = objects.single { it.role == "CHECKPOINT" }
             check(cp.ref() == commit.checkpoint.objectRef && objects[objects.lastIndex - 1] == cp)
             check(objects.dropLast(2).all { it.role in setOf("BINARY", "METADATA") })

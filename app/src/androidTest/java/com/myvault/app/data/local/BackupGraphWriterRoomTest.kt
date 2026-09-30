@@ -529,6 +529,31 @@ class BackupGraphWriterRoomTest {
             fails { f.writer().publish() }; assertTrue(f.db.backupGraphDao().unfinished(account).isEmpty())
         }
     }
+
+    @Test fun invalidatedBaselineCanPublishVerifiedChildCheckpointWithoutLosingNewerEdit() = runBlocking {
+        Fixture().use { f ->
+            f.root()
+            val old = f.binding()
+            f.journal.invalidateBaseline("restore_requires_verified_baseline")
+            f.edit("Restored local snapshot العربية")
+            val prepared = f.prepared()
+            fails { f.writer { if (it == "VERIFIED_COMMIT") error("Lost local acknowledgement") }.replaceCheckpoint(prepared) }
+            val operation = f.db.backupGraphDao().unfinished(account).single().operationId
+            assertEquals(old, f.binding())
+            f.edit("Newer edit after capture")
+            f.reopen()
+            f.writer().resume(operation)
+            val replacement = f.binding()
+            assertEquals(old.commitId, f.graph(f.store.commits()).commits.getValue(replacement.commitId).parents.single().commitId)
+            assertNotEquals(old.checkpointId, replacement.checkpointId)
+            assertEquals(GraphStatus.SINGLE_TIP, f.graph(f.store.commits()).status)
+            assertEquals("Restored local snapshot العربية", JSONArray(f.read().files.getValue("notes.json")).getJSONObject(0).getString("bodyPlainText"))
+            assertEquals(1, f.pending().size)
+            f.writer().publish()
+            assertTrue(f.pending().isEmpty())
+            assertEquals("Newer edit after capture", JSONArray(f.read().files.getValue("notes.json")).getJSONObject(0).getString("bodyPlainText"))
+        }
+    }
 }
 
 /** Run prepare/recover as separate instrumentations with an intervening process stop on the disposable emulator. */
