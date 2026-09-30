@@ -55,6 +55,10 @@ public final class ProductionVisibilityJavaInstrumentation extends Instrumentati
                 finish(Activity.RESULT_OK, result(readinessDiagnostic()));
                 return;
             }
+            if ("graph-remote-diagnostic".equals(arguments.getString("visibilityPhase"))) {
+                finish(Activity.RESULT_OK, result(graphRemoteDiagnostic()));
+                return;
+            }
             verify();
             finish(Activity.RESULT_OK, result("cleanup".equals(arguments.getString("visibilityPhase"))
                     ? "PASS: exact disposable Drive files and root deleted"
@@ -108,6 +112,62 @@ public final class ProductionVisibilityJavaInstrumentation extends Instrumentati
                     + " unfinishedPublications=" + publications + " unfinishedRestoresAll=" + restores
                     + " unfinishedRestoresAccount=" + accountRestores;
         }
+    }
+
+    private String graphRemoteDiagnostic() throws Exception {
+        Context context = getTargetContext();
+        SharedPreferences signIn = context.getSharedPreferences("com.google.android.gms.signin", Context.MODE_PRIVATE);
+        String selectedId = signIn.getString("defaultGoogleSignInAccount", null);
+        String selectedJson = selectedId == null ? null : signIn.getString("googleSignInAccount:" + selectedId, null);
+        if (selectedJson == null) throw new IllegalStateException("No selected Drive account");
+        String email = new JSONObject(selectedJson).getString("email");
+        String accountScope = email.trim().toLowerCase(Locale.ROOT);
+        String expectedAccountId;
+        String commitFileId;
+        String expectedHash;
+        long expectedSize;
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(context.getDatabasePath("my_vault.db").getAbsolutePath(),
+                null, SQLiteDatabase.OPEN_READONLY);
+             Cursor cursor = db.rawQuery("SELECT driveAccountId,commitFileId,commitSha256,commitSize FROM backup_graph_bindings WHERE accountScope=?", new String[]{accountScope})) {
+            if (!cursor.moveToFirst()) throw new IllegalStateException("No local graph binding");
+            expectedAccountId = cursor.getString(0);
+            commitFileId = cursor.getString(1);
+            expectedHash = cursor.getString(2);
+            expectedSize = cursor.getLong(3);
+            if (cursor.moveToNext()) throw new IllegalStateException("Multiple local graph bindings");
+        }
+        Account googleAccount = null;
+        for (Account candidate : AccountManager.get(context).getAccountsByType("com.google")) {
+            if (email.equalsIgnoreCase(candidate.name)) googleAccount = candidate;
+        }
+        if (googleAccount == null) throw new IllegalStateException("Selected account unavailable");
+        String token = AccountManager.get(context).getAuthToken(googleAccount, "oauth2:" + SCOPE,
+                null, false, null, null).getResult().getString(AccountManager.KEY_AUTHTOKEN);
+        if (token == null) throw new IllegalStateException("Drive authorization requires user action");
+        JSONObject identity = new JSONObject(new String(get(token, API + "/about?fields=user(permissionId)", 8192), StandardCharsets.UTF_8));
+        boolean accountMatches = expectedAccountId.equals(identity.getJSONObject("user").getString("permissionId"));
+        if (!accountMatches) return "READ_ONLY_GRAPH_REMOTE accountMatches=false; no graph files inspected";
+        String query = URLEncoder.encode("name = 'MyVault Backup Graph v1' and mimeType = 'application/vnd.google-apps.folder' and trashed = false", StandardCharsets.UTF_8);
+        JSONObject listed = new JSONObject(new String(get(token, API + "/files?q=" + query
+                + "&fields=nextPageToken,files(id,name)&pageSize=1000", 16384), StandardCharsets.UTF_8));
+        if (listed.has("nextPageToken")) throw new IllegalStateException("Graph namespace listing incomplete");
+        int rootCount = listed.getJSONArray("files").length();
+        String commitProof;
+        try {
+            JSONObject metadata = new JSONObject(new String(get(token, API + "/files/" + commitFileId
+                    + "?fields=id,size,trashed", 8192), StandardCharsets.UTF_8));
+            if (metadata.optBoolean("trashed") || metadata.getLong("size") != expectedSize) {
+                commitProof = "mismatched";
+            } else {
+                byte[] bytes = get(token, API + "/files/" + commitFileId + "?alt=media", 65536);
+                commitProof = bytes.length == expectedSize && expectedHash.equals(sha256(bytes)) ? "verified" : "mismatched";
+            }
+        } catch (IllegalStateException error) {
+            if (!error.getMessage().endsWith("HTTP 404")) throw error;
+            commitProof = "missing";
+        }
+        return "READ_ONLY_GRAPH_REMOTE accountMatches=true namespaceRoots=" + rootCount
+                + " savedCommit=" + commitProof;
     }
 
     private static long scalar(SQLiteDatabase db, String sql, String... args) {
