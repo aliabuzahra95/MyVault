@@ -46,6 +46,9 @@ import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.LocalLibrary
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.School
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,6 +91,8 @@ import com.myvault.app.data.preferences.WORKSPACE_ISLAMIC_CORPUS
 import com.myvault.app.data.preferences.WORKSPACE_PERSONAL
 import com.myvault.app.data.sync.DriveRestoreStage
 import com.myvault.app.data.sync.DriveSyncOperation
+import com.myvault.app.data.sync.LatestBackupNotice
+import com.myvault.app.data.sync.LatestBackupNoticeKind
 import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.VaultExplorerActionHost
 import com.myvault.app.ui.components.VaultExplorerMoveTarget
@@ -206,8 +211,17 @@ private fun handleNotebookExport(
     }, onError = fail)
 }
 
+internal fun dispatchLatestBackupLifecycleCheck(
+    event: Lifecycle.Event,
+    enabled: Boolean,
+    check: () -> Unit,
+) {
+    if (enabled && event == Lifecycle.Event.ON_RESUME) check()
+}
+
 @Composable
 fun VaultNavHost(
+    latestBackupChecksEnabled: Boolean = true,
     pendingOpenNoteId: String? = null,
     pendingOpenNoteCourseId: String? = null,
     pendingOpenNoteQuickFocus: Boolean = false,
@@ -236,6 +250,9 @@ fun VaultNavHost(
     var pendingMemoriseAutoRecord by rememberSaveable { mutableStateOf(false) }
     var pendingCourseId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingLatestBackupNotice by remember { mutableStateOf<LatestBackupNotice?>(null) }
+    var foregroundLatestBackupNotice by remember { mutableStateOf<LatestBackupNotice?>(null) }
+    val latestBackupViewModel: SettingsViewModel = hiltViewModel()
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
     val narrationMiniPlayerVisibility = remember { MutableTransitionState(false) }
@@ -475,6 +492,35 @@ fun VaultNavHost(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    DisposableEffect(lifecycleOwner, latestBackupViewModel, latestBackupChecksEnabled) {
+        val observer = LifecycleEventObserver { _, event ->
+            dispatchLatestBackupLifecycleCheck(event, latestBackupChecksEnabled) {
+                latestBackupViewModel.checkForLatestGraphBackup { notice ->
+                    if (notice != null) foregroundLatestBackupNotice = notice
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    foregroundLatestBackupNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { foregroundLatestBackupNotice = null },
+            title = { Text(if (notice.kind == LatestBackupNoticeKind.BLOCKED) "Backup needs attention" else "Newer backup available") },
+            text = { Text(notice.message) },
+            confirmButton = {
+                TextButton(onClick = {
+                    foregroundLatestBackupNotice = null
+                    pendingLatestBackupNotice = notice
+                    pendingSettingsSection = "backup_restore"
+                    navController.navigateToVaultRoot(VaultDestination.Settings.route)
+                }) { Text("Review") }
+            },
+            dismissButton = { TextButton(onClick = { foregroundLatestBackupNotice = null }) { Text("Later") } },
+        )
     }
 
     fun switchWorkspace(label: String) {
@@ -1817,6 +1863,8 @@ fun VaultNavHost(
                     viewModel.dismissDriveRestoreMessage()
                 },
                 initialSection = pendingSettingsSection,
+                initialLatestBackupNotice = pendingLatestBackupNotice,
+                onInitialLatestBackupNoticeConsumed = { pendingLatestBackupNotice = null },
                 onInitialSectionConsumed = { pendingSettingsSection = null },
             )
         }

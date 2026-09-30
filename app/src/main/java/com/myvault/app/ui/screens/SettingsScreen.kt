@@ -182,6 +182,8 @@ fun SettingsScreen(
     onDismissBackupMessage: () -> Unit = {},
     initialSection: String? = null,
     onInitialSectionConsumed: () -> Unit = {},
+    initialLatestBackupNotice: LatestBackupNotice? = null,
+    onInitialLatestBackupNoticeConsumed: () -> Unit = {},
 ) {
     var destination by remember { mutableStateOf(FrozenSettingsDestination.Main) }
     var choiceDialog by remember { mutableStateOf<String?>(null) }
@@ -203,6 +205,7 @@ fun SettingsScreen(
     LaunchedEffect(initialSection) {
         when (initialSection) {
             "azure_speech" -> destination = FrozenSettingsDestination.AzureSpeech
+            "backup_restore" -> destination = FrozenSettingsDestination.BackupRestore
             null -> return@LaunchedEffect
         }
         onInitialSectionConsumed()
@@ -282,6 +285,8 @@ fun SettingsScreen(
             onDriveForcePush = { onGoogleDriveForcePush { consentLauncher.launch(it) } },
             onReadiness = onGoogleDriveReadiness,
             onLatestBackupCheck = onLatestBackupCheck,
+            initialLatestBackupNotice = initialLatestBackupNotice,
+            onInitialLatestBackupNoticeConsumed = onInitialLatestBackupNoticeConsumed,
             onTransitionPreview = onGoogleDriveTransitionPreview,
             onDrivePull = { driveRestoreConfirmOpen = true },
         )
@@ -647,7 +652,7 @@ private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: 
 }
 
 @Composable
-private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDriveForcePush: () -> Unit, onDrivePull: () -> Unit, onReadiness: ((String) -> Unit) -> Unit, onLatestBackupCheck: ((LatestBackupNotice?) -> Unit) -> Unit, onTransitionPreview: ((String) -> Unit) -> Unit) {
+private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDriveForcePush: () -> Unit, onDrivePull: () -> Unit, onReadiness: ((String) -> Unit) -> Unit, onLatestBackupCheck: ((LatestBackupNotice?) -> Unit) -> Unit, initialLatestBackupNotice: LatestBackupNotice?, onInitialLatestBackupNoticeConsumed: () -> Unit, onTransitionPreview: ((String) -> Unit) -> Unit) {
     val lastBackupAt = state.confirmedLastBackupAt(preferences.lastGoogleDriveSyncAt)
     val context = LocalContext.current
     var pendingOperation by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -668,9 +673,17 @@ private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state
     var transitionReady by remember { mutableStateOf(false) }
     LaunchedEffect(preferences.googleDriveAccountEmail) { transitionReady = false }
     var readinessMessage by remember { mutableStateOf<String?>(null) }
-    var latestBackupNotice by remember(preferences.googleDriveAccountEmail) { mutableStateOf<LatestBackupNotice?>(null) }
+    var latestBackupNotice by remember(preferences.googleDriveAccountEmail) { mutableStateOf(initialLatestBackupNotice) }
+    LaunchedEffect(initialLatestBackupNotice) {
+        if (initialLatestBackupNotice != null) {
+            latestBackupNotice = initialLatestBackupNotice
+            onInitialLatestBackupNoticeConsumed()
+        }
+    }
     LaunchedEffect(preferences.googleDriveAccountEmail) {
-        if (preferences.googleDriveAccountEmail.isNotBlank()) onLatestBackupCheck { latestBackupNotice = it }
+        if (preferences.googleDriveAccountEmail.isNotBlank() && latestBackupNotice == null) {
+            onLatestBackupCheck { latestBackupNotice = it }
+        }
     }
     latestBackupNotice?.let { notice ->
         if (notice.kind == LatestBackupNoticeKind.NEWER) {

@@ -209,6 +209,7 @@ class MainActivity : FragmentActivity() {
                                 .then(if (locked) Modifier.blur(18.dp) else Modifier),
                         ) {
                             VaultNavHost(
+                                latestBackupChecksEnabled = unlocked,
                                 pendingOpenNoteId = if (unlocked) {
                                     pendingWidgetNoteOpen?.noteId ?: pendingSharedNoteId
                                 } else {
