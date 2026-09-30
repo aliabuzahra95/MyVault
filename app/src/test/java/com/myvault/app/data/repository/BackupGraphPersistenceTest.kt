@@ -34,14 +34,17 @@ class BackupGraphPersistenceTest {
         val captured = BackupGraphIntentCodec.snapshot(p)
         assertEquals(listOf("tag:1","note","n:2"),captured.changes.last().stableKey())
     }
-    @Test fun internalWriterHasNoProductionRegistrationAndLegacyRoutingStaysActive() {
+    @Test fun productionConnectionRemainsGatedAndLegacyRoutingStaysActive() {
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }.first { File(it,"app/src/main").isDirectory }
         val main = File(root,"app/src/main/java/com/myvault/app")
         val references = main.walkTopDown().filter { it.extension=="kt" && it.name!="InternalBackupGraphWriter.kt" }.filter { it.readText().contains("InternalBackupGraphWriter(") }.toList()
-        assertTrue(references.isEmpty())
+        assertEquals(listOf("GoogleDriveIncrementalSyncRepository.kt"), references.map { it.name })
         val legacy = File(main,"data/sync/GoogleDriveIncrementalSyncRepository.kt").readText()
         assertTrue(legacy.contains("backupRepository.exportMetadataForDriveSync(metadataDir)"))
         assertTrue(legacy.contains("backupRepository.restoreBackupFromFile("))
+        assertTrue(legacy.contains("if (BackupGraphPublicationEnabled)"))
+        assertTrue(legacy.contains("check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled)"))
+        assertTrue(legacy.indexOf("if (BackupGraphPublicationEnabled)") < legacy.indexOf("drive.ensureMyVaultLayout()"))
         assertFalse(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
     }
     @Test fun schema35PreservesEverySchema34EntityExactly() {

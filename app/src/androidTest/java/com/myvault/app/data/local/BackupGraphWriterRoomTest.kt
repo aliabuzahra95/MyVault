@@ -108,6 +108,36 @@ class BackupGraphWriterRoomTest {
         try { block(); fail("Expected safe refusal") } catch (_: IllegalStateException) { } catch (_: java.io.IOException) { }
     }
 
+    @Test fun recoveryRequiresExactOriginalNamespaceAndPreservesNewerGeneration() = runBlocking {
+        Fixture().use { f ->
+            var proof = "verified-original-namespace"
+            val boundStore = object : DisposableGraphObjectStore by f.store {
+                override val namespaceProof: String get() = proof
+            }
+            fun writer(stop: suspend (String) -> Unit = {}) = InternalBackupGraphWriter(f.db, f.journal,
+                PendingBackupCapture(f.db, f.journal, VaultPreferences(base, f.journal)), base.filesDir,
+                File(f.root, "staging"), boundStore, stop)
+            f.note()
+            fails { writer { if (it == "CREATED_COMMIT") error("Simulated process death before acknowledgement") }.createRoot(f.prepared()) }
+            val original = f.db.backupGraphDao().unfinished(account).single()
+            assertEquals(proof, JSONObject(original.frozenBatchJson).getString("namespaceProof"))
+            f.edit("N+1 remains local العربية")
+            val pending = f.pending()
+            proof = "different-namespace"
+            f.reopen()
+            fails { writer().resume(original.operationId) }
+            assertEquals(pending, f.pending())
+            assertNull(f.db.backupGraphDao().binding(account, lineage))
+            proof = "verified-original-namespace"
+            val result = writer().resume(original.operationId)
+            assertEquals(original.operationId, result.commitId)
+            assertEquals(pending, f.pending())
+            assertEquals("N+1 remains local العربية", f.db.noteDao().getById("n")!!.bodyPlainText)
+            assertEquals("COMPLETE", f.db.backupGraphDao().publication(account, original.operationId)!!.status)
+            assertEquals(0, writer().resume(original.operationId).metrics.commitsCreated)
+        }
+    }
+
     @Test fun baselineProgressTracksActualObjectsAndOnlyCompletesAfterVerifiedCommit() = runBlocking {
         Fixture().use { f ->
             f.note(); f.binary(4096)

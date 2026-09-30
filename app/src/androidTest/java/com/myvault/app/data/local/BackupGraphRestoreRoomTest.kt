@@ -34,6 +34,103 @@ class BackupGraphRestoreRoomTest {
     private suspend fun applied(f: BackupGraphWriterRoomTest.Fixture) = f.db.backupGraphRestoreDao().applied(f.ctx.accountScope,f.ctx.lineageId)
     private suspend fun fails(block: suspend () -> Unit) { var failed=false;try { block() } catch(_: IllegalStateException) { failed=true } catch(_: java.io.IOException) { failed=true };assertTrue(failed) }
 
+    @Test fun ownPublicationIsAlreadyCurrentWithoutInventingRestoredPosition() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { f ->
+            f.root()
+            val binding = f.binding()
+            assertNull(applied(f))
+            val result = restorer(f).restore()
+            assertEquals(GraphRestoreStatus.ALREADY_CURRENT, result.status)
+            assertEquals(0, result.rowsWritten)
+            assertEquals(0, result.binariesDownloaded)
+            assertNull(applied(f))
+            assertEquals(binding, f.binding())
+            f.edit("Unbacked local edit")
+            val pending = f.pending()
+            assertEquals(GraphRestoreStatus.ALREADY_CURRENT, restorer(f).restore().status)
+            assertEquals(pending, f.pending())
+            assertEquals("Unbacked local edit", f.db.noteDao().getById("n")!!.bodyPlainText)
+        }
+    }
+
+    @Test fun publishedPhoneRestoresOnlyDescendantThenBacksUpNewLocalEdit() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { f ->
+            f.root()
+            val published = f.binding()
+            val note = f.db.noteDao().getById("n")!!.copy(bodyPlainText = "Incoming other-device edit")
+            val incoming = append(f, listOf(BackupRecordChange("notes.json", listOf("n"), note.toJson())))
+            val result = restorer(f).restore()
+            assertEquals(GraphRestoreStatus.APPLIED, result.status)
+            assertEquals(1, result.commitsApplied)
+            assertEquals(1, result.rowsWritten)
+            assertEquals(published, f.binding())
+            val restored = applied(f)!!
+            assertEquals(BackupGraphProtocol.parse(incoming).commitId, restored.commitId)
+            assertFalse(f.db.backupJournalDao().account(f.ctx.accountScope)!!.trusted)
+            assertTrue(f.pending().isEmpty())
+            f.edit("New local work after Restore")
+            val pending = f.pending()
+            assertTrue(adoptVerifiedRestoredParent(f.db, f.ctx, f.store.commits()))
+            assertEquals(pending, f.pending())
+            assertEquals(restored, applied(f))
+            assertFalse(adoptVerifiedRestoredParent(f.db, f.ctx, f.store.commits()))
+            val next = f.writer().publish()
+            assertFalse(next.alreadyBackedUp)
+            assertTrue(f.pending().isEmpty())
+            assertEquals(restored, applied(f))
+            assertEquals(GraphRestoreStatus.ALREADY_CURRENT, restorer(f).restore().status)
+            assertEquals("New local work after Restore", f.db.noteDao().getById("n")!!.bodyPlainText)
+        }
+    }
+
+    @Test fun publishedBaseWithPendingLocalEditBlocksIncomingWithoutAcknowledgingIt() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { f ->
+            f.root()
+            append(f, listOf(BackupRecordChange("notes.json", listOf("n"), f.db.noteDao().getById("n")!!.copy(bodyPlainText = "Incoming").toJson())))
+            f.edit("Keep local")
+            val pending = f.pending(); val binding = f.binding()
+            assertEquals(GraphRestoreStatus.LOCAL_CHANGES, restorer(f).restore().status)
+            assertEquals(pending, f.pending()); assertEquals(binding, f.binding()); assertNull(applied(f))
+            assertEquals("Keep local", f.db.noteDao().getById("n")!!.bodyPlainText)
+        }
+    }
+
+    @Test fun publicationSourceProofSurvivesRestartAndDoesNotReplayCheckpoint() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { f ->
+            f.root()
+            append(f, listOf(BackupRecordChange("notes.json", listOf("n"), f.db.noteDao().getById("n")!!.copy(bodyPlainText = "Resumed exact descendant").toJson())))
+            fails { restorer(f, boundary = { if (it == "INTENT_PERSISTED") error("Disposable interruption") }).restore() }
+            val intent = f.db.backupGraphRestoreDao().unfinished().single()
+            assertTrue(JSONObject(intent.frozenChangesJson).has("publicationSource"))
+            assertNull(intent.originalAppliedJson)
+            val pending = f.pending()
+            f.reopen()
+            val result = restorer(f).restore()
+            assertEquals(GraphRestoreStatus.APPLIED, result.status)
+            assertEquals(1, result.rowsWritten)
+            assertEquals(pending, f.pending())
+            assertEquals("Resumed exact descendant", f.db.noteDao().getById("n")!!.bodyPlainText)
+            assertEquals("COMPLETE", f.db.backupGraphRestoreDao().intent(f.ctx.accountScope, intent.operationId)!!.status)
+        }
+    }
+
+    @Test fun restoredParentHandoffRejectsWrongAccountAndNewerRemoteWithoutChangingPending() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { source ->
+            source.root()
+            target(source).use { f ->
+                restorer(f).restore()
+                f.edit("Preserve pending")
+                val pending = f.pending(); val restored = applied(f)
+                fails { adoptVerifiedRestoredParent(f.db, f.ctx.copy(driveAccountId = "another-account"), source.store.commits()) }
+                source.edit("New remote change"); source.writer().publish()
+                fails { adoptVerifiedRestoredParent(f.db, f.ctx, source.store.commits()) }
+                assertEquals(pending, f.pending()); assertEquals(restored, applied(f))
+                assertNull(f.db.backupGraphDao().binding(f.ctx.accountScope, f.ctx.lineageId))
+                assertFalse(f.db.backupJournalDao().account(f.ctx.accountScope)!!.trusted)
+            }
+        }
+    }
+
     @Test fun realPreferencesAdapterPreservesUnrelatedAccountAndRestoresOnlyBackupFields() = runBlocking {
         BackupGraphWriterRoomTest().Fixture().use { f ->
             val preferences = VaultPreferences(base, f.journal)

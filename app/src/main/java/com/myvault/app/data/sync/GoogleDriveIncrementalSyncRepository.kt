@@ -56,6 +56,9 @@ internal fun uploadedBytesMatchManifest(bytes: ByteArray, expectedSize: Long, ex
     bytes.size.toLong() == expectedSize && bytes.sha256() == expectedSha256
 
 private class DriveAuthenticationException : IllegalStateException(DriveReconnectMessage)
+private class GraphDriveHttpException(val status: Int, detail: String? = null) : IllegalStateException(
+    "Google Drive returned HTTP $status" + (detail?.let { ": $it" } ?: ". No immutable object was overwritten."),
+)
 
 private fun Throwable.isInterruptedDriveConnection(): Boolean {
     val text = generateSequence(this) { it.cause }
@@ -75,6 +78,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val preferences: VaultPreferences,
     private val database: VaultDatabase,
+    private val backupJournal: BackupChangeJournal,
+    private val pendingBackupCapture: PendingBackupCapture,
+    private val baselinePreparer: BackupBaselinePreparer,
 ) {
     /** Production Google sign-in, GET-only Drive inspection and read-only local snapshot. */
     suspend fun checkGraphBackupReadiness(): String = withContext(Dispatchers.IO) {
@@ -109,6 +115,96 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         return intent
     }
 
+    private suspend fun openGraphStore(drive: DriveApiClient, email: String, allowEnrollment: Boolean): AccountBoundGraphStore? {
+        val (driveId, api) = drive.graphApi(email)
+        val identity = IncrementalBackupFormat.sha256(driveId.toByteArray(Charsets.UTF_8))
+        val enrollment = GraphNamespaceEnrollment(File(context.filesDir, "backup-graph-enrollment/$identity.json"), api)
+        val owned = enrollment.load(email, driveId)
+        val roots = api.roots(BackupGraphNamespace)
+        check(roots.size <= 1) { "Multiple graph namespaces require reconciliation." }
+        val layout = if (owned != null) {
+            check(roots.all { it.id == owned.rootId }) { "The graph namespace differs from this account's enrolled namespace." }
+            val established = database.backupGraphDao().bindings(email).isNotEmpty() ||
+                database.backupGraphRestoreDao().appliedForAccount(email).isNotEmpty() ||
+                database.backupGraphDao().unfinished(email).isNotEmpty()
+            if (established) check(roots.size == 1) { "The enrolled graph root is no longer visible. It was not recreated." }
+            if (allowEnrollment && !established) enrollment.enroll(email, driveId) else owned
+        } else if (roots.isNotEmpty()) {
+            discoverGraphLayout(api, email, driveId) ?: error("Graph discovery did not complete.")
+        } else {
+            check(database.backupGraphDao().bindings(email).isEmpty() && database.backupGraphRestoreDao().appliedForAccount(email).isEmpty()) {
+                "The trusted graph namespace is not visible. No replacement baseline was created."
+            }
+            if (!allowEnrollment) return null
+            // The initial operation is the only full-inventory path. Legacy data is inspected, never rewritten.
+            val remote = drive.inspectGraphReadiness(email)
+            val local = readLocalBackupReadiness(database, email)
+            val decision = reconcileBackupGraph(local, driveId, remote.legacyVisible, remote.namespaceCount, null, emptyList())
+            check(decision.state in setOf(BackupGraphReadinessState.FIRST_BASELINE_REQUIRED, BackupGraphReadinessState.LEGACY_BASELINE_REQUIRED)) {
+                "Current Vault/Drive relationship requires reconciliation. Nothing was published."
+            }
+            enrollment.enroll(email, driveId)
+        }
+        return AccountBoundGraphStore(GraphWriterContext(email, driveId, layout.lineageId), api, layout)
+    }
+
+    private suspend fun runGraphBackup(drive: DriveApiClient, email: String, force: Boolean,
+        onProgress: suspend (DriveRestoreProgress) -> Unit): DriveSyncResult = try {
+        check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled) { "Backup/Restore must be enabled together." }
+        val store = openGraphStore(drive, email, true) ?: error("Graph enrollment is required.")
+        val writer = InternalBackupGraphWriter(database, backupJournal, pendingBackupCapture, context.filesDir,
+            File(context.filesDir, "backup-graph-publications"), store, onProgress = { onProgress(it.toDriveProgress()) })
+        val unfinished = database.backupGraphDao().unfinished(email)
+        val result = if (unfinished.isNotEmpty()) writer.publish() else {
+            check(database.backupGraphRestoreDao().unfinished().isEmpty()) { "Complete the interrupted Restore before Backup." }
+            val binding = database.backupGraphDao().binding(email, store.context.lineageId)
+            val applied = database.backupGraphRestoreDao().applied(email, store.context.lineageId)
+            if (binding == null && applied == null) {
+                check(store.commits().isEmpty()) { "A graph already exists. Restore/reconcile it before creating a baseline." }
+                val prepared = baselinePreparer.prepare(email) { onProgress(it.toDriveProgress()) }
+                try { writer.createRoot(prepared) } finally { prepared.directory.deleteRecursively() }
+            } else {
+                check(!force) { "Force Backup is not available for graph backups. Normal Backup preserves immutable history and captures pending changes." }
+                if (trustedPublicationPosition(database, store.context) == null) {
+                    check(adoptVerifiedRestoredParent(database, store.context, store.commits())) {
+                        "A verified Restore or baseline is required before Backup. Local changes were preserved."
+                    }
+                }
+                writer.publish()
+            }
+        }
+        if (result.forkDetected) DriveSyncResult.Conflict("Fork detected. Both immutable backups were preserved. Backup/Restore require reconciliation.")
+        else DriveSyncResult.Success(if (result.alreadyBackedUp) "Already backed up." else "Backup complete. Your previous legacy backup remains preserved.")
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        DriveSyncResult.Failure(error.driveMessage("Backup failed safely; pending local changes and previous backups were preserved"))
+    }
+
+    private suspend fun runGraphRestore(drive: DriveApiClient, email: String,
+        onProgress: suspend (DriveRestoreProgress) -> Unit): DriveSyncResult? = try {
+        check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled) { "Backup/Restore must be enabled together." }
+        val store = openGraphStore(drive, email, false)
+        if (store == null) null else {
+            check(database.backupGraphDao().unfinished(email).isEmpty()) { "Recover the unfinished Backup before Restore." }
+            val restoring = "Checking graph backup and missing updates"
+            onProgress(DriveRestoreProgress(DriveRestoreStage.Preparing, restoring, detail = restoring))
+            val result = InternalBackupGraphRestore(database, backupJournal, context.filesDir,
+                File(context.filesDir, "backup-graph-restores"), store, GraphRestorePreferences(preferences)).restore()
+            when (result.status) {
+                GraphRestoreStatus.APPLIED -> DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates.")
+                GraphRestoreStatus.ALREADY_CURRENT -> DriveSyncResult.Success("Already up to date.")
+                GraphRestoreStatus.LOCAL_CHANGES -> DriveSyncResult.Failure("Local changes need to be backed up or resolved before Restore. Nothing was overwritten.")
+                GraphRestoreStatus.FORK -> DriveSyncResult.Conflict("Fork detected. Restore cannot choose a branch. Local data was preserved.")
+                GraphRestoreStatus.UNSUPPORTED -> DriveSyncResult.Failure("Unsupported backup version. Update MyVault before Restore.")
+                GraphRestoreStatus.DIVERGENT -> DriveSyncResult.Failure("Local and remote backup histories diverge. Reconciliation is required.")
+                else -> DriveSyncResult.Failure("Restore blocked safely: ${result.status.name.lowercase().replace('_', ' ')}. Local data was preserved.")
+            }
+        }
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        DriveSyncResult.Failure(error.driveMessage("Restore failed safely; no unverified graph position was applied"))
+    }
+
     suspend fun handleSignInResult(data: Intent?): DriveAuthorizationResult = withContext(Dispatchers.IO) {
         val account = runCatching {
             GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java)
@@ -137,6 +233,12 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive backup"))
         val driveAccount = driveAccountOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
         val drive = driveAccount.client
+        if (BackupGraphPublicationEnabled) {
+            return@withContext runGraphBackup(drive, driveAccount.email, force, onProgress)
+        }
+        if (drive.hasGraphNamespace() || database.backupGraphDao().bindings(driveAccount.email).isNotEmpty()) {
+            return@withContext DriveSyncResult.Failure("A graph backup exists. The legacy backup was preserved. This version cannot publish until graph Backup is enabled.")
+        }
         val vault = drive.ensureMyVaultLayout()
         val previous = drive.readCommittedBackup(vault.manifests.id)
         if (previous != null && JSONObject(previous.text).has("incrementalBackup")) {
@@ -242,6 +344,13 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         onProgress(DriveRestoreProgress(stage = DriveRestoreStage.Preparing, message = "Preparing Google Drive restore"))
         val driveAccount = driveAccountOrFailure() ?: return@withContext DriveSyncResult.Failure("Connect Google Drive first.")
         val drive = driveAccount.client
+        if (BackupGraphTargetedRestoreEnabled) {
+            val graphResult = runGraphRestore(drive, driveAccount.email, onProgress)
+            if (graphResult != null) return@withContext graphResult
+        } else if (drive.hasGraphNamespace() || database.backupGraphDao().bindings(driveAccount.email).isNotEmpty() ||
+            database.backupGraphRestoreDao().appliedForAccount(driveAccount.email).isNotEmpty()) {
+            return@withContext DriveSyncResult.Failure("A graph backup exists. This version cannot Restore it until graph Restore is enabled. Local data was not changed.")
+        }
         val vault = drive.ensureMyVaultLayout()
         val manifestFile = drive.findChild(vault.manifests.id, SyncManifestFile)
             ?: return@withContext DriveSyncResult.Failure("No MyVault Drive sync manifest found yet. Push from your latest device first.")
@@ -603,6 +712,166 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         private val context: Context,
         private val account: GoogleSignInAccount,
     ) {
+        fun hasGraphNamespace(): Boolean = readinessList("name = '${BackupGraphNamespace.escapeDriveQuery()}' and mimeType = '$FolderMimeType' and trashed = false").isNotEmpty()
+
+        fun graphApi(email: String): Pair<String, GraphDriveApi> {
+            fun assertActive() {
+                check(normalizeGoogleDriveAccount(account.email.orEmpty()) == email &&
+                    normalizeGoogleDriveAccount(GoogleSignIn.getLastSignedInAccount(context)?.email.orEmpty()) == email) {
+                    "Google account changed. Backup/Restore stopped without acknowledging local changes."
+                }
+            }
+            assertActive()
+            val user = requestJson("GET", "https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)").getJSONObject("user")
+            check(normalizeGoogleDriveAccount(user.getString("emailAddress")) == email)
+            val driveId = user.getString("permissionId").also(BackupGraphProtocol::id)
+            assertActive()
+            fun JSONObject.graphFile() = GraphDriveFile(getString("id"), getString("name"), getString("mimeType"),
+                optJSONArray("parents")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
+                optBoolean("trashed"), if (has("size")) getString("size").toLong() else null,
+                optString("sha256Checksum").takeIf { it.isNotEmpty() })
+            val fields = "id,name,mimeType,parents,trashed,size,sha256Checksum"
+            fun list(query: String): List<GraphDriveFile> {
+                assertActive(); val result = mutableListOf<GraphDriveFile>(); var page: String? = null
+                do {
+                    val suffix = page?.let { "&pageToken=${it.urlEncode()}" }.orEmpty()
+                    val json = requestJson("GET", "$DriveFilesUrl?q=${query.urlEncode()}&spaces=drive&pageSize=1000&fields=nextPageToken,files($fields)$suffix")
+                    val files = json.getJSONArray("files")
+                    for (i in 0 until files.length()) result += files.getJSONObject(i).graphFile()
+                    page = json.optString("nextPageToken").takeIf { it.isNotBlank() }
+                    assertActive()
+                } while (page != null)
+                return result
+            }
+            val api = object : GraphDriveApi {
+                override suspend fun assertAccount(account: String, driveAccountId: String) {
+                    check(account == email && driveAccountId == driveId); assertActive()
+                }
+                override suspend fun roots(name: String): List<GraphDriveFile> {
+                    check(name == BackupGraphNamespace)
+                    return list("name = '${name.escapeDriveQuery()}' and mimeType = '$FolderMimeType' and trashed = false")
+                }
+                override suspend fun children(parent: String): List<GraphDriveFile> {
+                    BackupGraphProtocol.id(parent)
+                    return list("'${parent.escapeDriveQuery()}' in parents and trashed = false")
+                }
+                override suspend fun metadata(id: String): GraphDriveFile? {
+                    BackupGraphProtocol.id(id); assertActive()
+                    return try { requestJson("GET", "$DriveFilesUrl/${id.urlPathEncode()}?fields=$fields").graphFile().also { assertActive() } }
+                    catch (e: GraphDriveHttpException) { assertActive(); if (e.status == 404) null else throw e }
+                }
+                override suspend fun download(id: String): java.io.InputStream {
+                    BackupGraphProtocol.id(id); assertActive()
+                    return openGraphDownload(id) { assertActive() }
+                }
+                override suspend fun reserveIds(count: Int): List<String> {
+                    check(count in 1..1000); assertActive()
+                    val ids = requestJson("GET", "$DriveFilesUrl/generateIds?space=drive&type=files&count=$count").getJSONArray("ids")
+                    assertActive(); return (0 until ids.length()).map { ids.getString(it) }
+                }
+                override suspend fun createFolder(id: String, name: String, parent: String?) {
+                    assertActive(); BackupGraphProtocol.id(id)
+                    val body = JSONObject().put("id", id).put("name", name).put("mimeType", FolderMimeType)
+                    if (parent != null) body.put("parents", JSONArray().put(parent))
+                    try { check(requestJson("POST", "$DriveFilesUrl?fields=id", body.toString().toByteArray(), "application/json").getString("id") == id) }
+                    catch (e: GraphDriveHttpException) { if (e.status != 409) throw e }
+                    assertActive()
+                }
+                override suspend fun createObject(id: String, name: String, parent: String, mimeType: String, source: File) {
+                    assertActive(); BackupGraphProtocol.id(id)
+                    val metadata = JSONObject().put("id", id).put("name", name).put("parents", JSONArray().put(parent)).put("mimeType", mimeType)
+                    if (source.length() > 5L * 1024 * 1024) {
+                        uploadGraphResumable(id, metadata, mimeType, source, ::assertActive)
+                        assertActive(); return
+                    }
+                    val boundary = "myvault-graph-${java.util.UUID.randomUUID()}"
+                    try {
+                        val created = requestJsonStreaming("POST", "$DriveUploadUrl?uploadType=multipart&fields=id", "multipart/related; boundary=$boundary") { output ->
+                            output.writeUtf8("--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$metadata\r\n")
+                            output.writeUtf8("--$boundary\r\nContent-Type: $mimeType\r\n\r\n")
+                            source.inputStream().buffered().use { it.copyTo(output) }
+                            output.writeUtf8("\r\n--$boundary--\r\n")
+                        }
+                        check(created.getString("id") == id)
+                    } catch (e: GraphDriveHttpException) { if (e.status != 409) throw e }
+                    assertActive()
+                }
+            }
+            return driveId to api
+        }
+
+        private fun uploadGraphResumable(id: String, metadata: JSONObject, mime: String, source: File, assertActive: () -> Unit) {
+            var token = accessToken()
+            var session: String? = null
+            for (attempt in 0..1) {
+                assertActive()
+                val body = metadata.toString().toByteArray(Charsets.UTF_8)
+                val connection = (URL("$DriveUploadUrl?uploadType=resumable&fields=id").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"; doOutput = true; instanceFollowRedirects = false
+                    connectTimeout = 30_000; readTimeout = 120_000; setFixedLengthStreamingMode(body.size)
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                    setRequestProperty("X-Upload-Content-Type", mime)
+                    setRequestProperty("X-Upload-Content-Length", source.length().toString())
+                }
+                try {
+                    connection.outputStream.use { it.write(body) }
+                    val status = connection.responseCode
+                    if (shouldRefreshDriveToken(status, attempt)) { token = refreshAccessToken(token); continue }
+                    if (status == 409) return // Caller performs exact immutable object readback.
+                    if (status == HttpUnauthorized) throw DriveAuthenticationException()
+                    if (status !in 200..299) throw GraphDriveHttpException(status)
+                    session = connection.getHeaderField("Location") ?: error("Drive did not return an upload session.")
+                    val url = URL(session)
+                    check(url.protocol == "https" && url.host == "www.googleapis.com" && url.port in listOf(-1, 443) &&
+                        url.userInfo == null && url.ref == null && url.path == "/upload/drive/v3/files") { "Unexpected upload session origin." }
+                    assertActive(); break
+                } finally { connection.disconnect() }
+            }
+            val destination = session ?: throw DriveAuthenticationException()
+            for (attempt in 0..1) {
+                assertActive()
+                val connection = (URL(destination).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"; doOutput = true; instanceFollowRedirects = false
+                    connectTimeout = 30_000; readTimeout = 120_000; setFixedLengthStreamingMode(source.length())
+                    setRequestProperty("Authorization", "Bearer $token"); setRequestProperty("Content-Type", mime)
+                }
+                try {
+                    source.inputStream().buffered().use { input -> connection.outputStream.use { input.copyTo(it) } }
+                    val status = connection.responseCode
+                    if (shouldRefreshDriveToken(status, attempt)) { token = refreshAccessToken(token); continue }
+                    if (status == HttpUnauthorized) throw DriveAuthenticationException()
+                    if (status == 409) return
+                    if (status !in 200..299) throw GraphDriveHttpException(status)
+                    val created = connection.inputStream.use { JSONObject(it.readBytes().toString(Charsets.UTF_8)) }
+                    check(created.getString("id") == id); assertActive(); return
+                } finally { connection.disconnect() }
+            }
+            throw DriveAuthenticationException()
+        }
+
+        private fun openGraphDownload(id: String, assertActive: () -> Unit): java.io.InputStream {
+            var token = accessToken()
+            for (attempt in 0..1) {
+                assertActive()
+                val connection = (URL("$DriveFilesUrl/${id.urlPathEncode()}?alt=media").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"; connectTimeout = 30_000; readTimeout = 120_000
+                    setRequestProperty("Authorization", "Bearer $token")
+                }
+                try {
+                    val status = connection.responseCode
+                    if (shouldRefreshDriveToken(status, attempt)) { connection.disconnect(); token = refreshAccessToken(token); continue }
+                    if (status == HttpUnauthorized) throw DriveAuthenticationException()
+                    if (status !in 200..299) throw GraphDriveHttpException(status)
+                    assertActive()
+                    return object : java.io.FilterInputStream(connection.inputStream) {
+                        override fun close() { try { super.close(); assertActive() } finally { connection.disconnect() } }
+                    }
+                } catch (e: Throwable) { connection.disconnect(); throw e }
+            }
+            throw DriveAuthenticationException()
+        }
+
         fun inspectGraphReadiness(email: String): ReadinessInventory {
             val user = requestJson("GET", "https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)").getJSONObject("user")
             val identity = user.getString("permissionId").also { BackupGraphProtocol.id(it) }
@@ -859,7 +1128,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     }
                     if (responseCode == HttpUnauthorized) throw DriveAuthenticationException()
                     if (responseCode !in 200..299) {
-                        error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+                        throw GraphDriveHttpException(responseCode, bytes.toString(Charsets.UTF_8).take(300))
                     }
                     return bytes
                 } finally {
@@ -902,7 +1171,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     }
                     if (responseCode == HttpUnauthorized) throw DriveAuthenticationException()
                     if (responseCode !in 200..299) {
-                        error("Google Drive returned HTTP $responseCode: ${bytes.toString(Charsets.UTF_8).take(300)}")
+                        throw GraphDriveHttpException(responseCode, bytes.toString(Charsets.UTF_8).take(300))
                     }
                     return bytes
                 } finally {

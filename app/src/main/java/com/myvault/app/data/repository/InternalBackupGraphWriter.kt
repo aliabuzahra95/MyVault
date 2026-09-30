@@ -11,9 +11,11 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
 
-/** No production transport/DI/UI registration. Implementations must bind every call to this account/lineage. */
+/** Immutable transport. Implementations bind every call to the verified account/lineage/namespace. */
 internal interface DisposableGraphObjectStore {
     val context: GraphWriterContext
+    /** Exact enrolled layout proof for production recovery; absent only in disposable legacy fixtures. */
+    val namespaceProof: String? get() = null
     suspend fun reserveId(): String
     suspend fun reserveIds(count: Int): List<String> = List(count) { reserveId() }
     /** Complete inventory of the enrolled namespace. Missing/ambiguous/incomplete discovery must throw, not return empty. */
@@ -155,7 +157,8 @@ internal class InternalBackupGraphWriter(
 
     private fun publication(op: String, snapshot: CapturedBackupChanges, binding: BackupGraphBinding?, frozen: String, commit: BackupGraphCommit) =
         BackupGraphPublication(context.accountScope, op, context.lineageId, context.driveAccountId, snapshot.generation, snapshot.originEpoch,
-            BackupGraphIntentCodec.account(snapshot.account), binding?.let(BackupGraphIntentCodec::binding), frozen,
+            BackupGraphIntentCodec.account(snapshot.account), binding?.let(BackupGraphIntentCodec::binding),
+            JSONObject(frozen).put("namespaceProof", store.namespaceProof ?: JSONObject.NULL).toString(),
             BackupGraphProtocol.utf8(BackupGraphProtocol.encode(commit)), "PREPARED")
 
     private suspend fun persist(p: BackupGraphPublication, objects: List<BackupGraphPublicationObject>) = database.withTransaction {
@@ -171,6 +174,8 @@ internal class InternalBackupGraphWriter(
         val c = context
         val p = dao.publication(c.accountScope, operation) ?: error("No operation for this account.")
         check(p.driveAccountId == c.driveAccountId && p.lineageId == c.lineageId)
+        val frozenNamespace = JSONObject(p.frozenBatchJson).let { if (it.isNull("namespaceProof") || !it.has("namespaceProof")) null else it.getString("namespaceProof") }
+        check(frozenNamespace == store.namespaceProof) { "Publication recovery requires its original verified namespace." }
         val objects = dao.objects(c.accountScope, operation)
         val commitObject = objects.single { it.role == "COMMIT" }
         val commitBytes = p.commitJson.toByteArray(Charsets.UTF_8)

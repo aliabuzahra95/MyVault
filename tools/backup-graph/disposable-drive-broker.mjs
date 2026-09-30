@@ -218,6 +218,9 @@ async function serve() {
   }
   try { if(!store.state.rootId) { await store.initialise(); await store.preflight(); } }
   catch (e) { store.state.error = e.message; store.persist(); if (store.state.rootId) await store.cleanup(); throw e; }
+  // Optional harness acceleration only. Every reuse still requires fresh,
+  // ownership-checked provider SHA-256 and size; missing proof downloads again.
+  if (process.env.MYVAULT_BROKER_FAST === '1') store.fast = true;
   const nonce = randomBytes(32).toString('hex');
   const server = http.createServer(async (req, res) => {
     res.setHeader('Connection', 'close'); res.setHeader('Cache-Control', 'no-store');

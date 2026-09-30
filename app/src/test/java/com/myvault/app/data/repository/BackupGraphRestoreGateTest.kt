@@ -14,6 +14,10 @@ class BackupGraphRestoreGateTest {
         assertFalse(IncrementalBackupPublicationEnabled)
         val root=File("src/main/java/com/myvault/app")
         val references=root.walkTopDown().filter {it.isFile && it.extension=="kt" && it.name!="InternalBackupGraphRestore.kt"}.filter {it.readText().contains("InternalBackupGraphRestore(")}.toList()
-        assertTrue("No production entry point may invoke the internal Restore",references.isEmpty())
+        assertEquals(listOf("GoogleDriveIncrementalSyncRepository.kt"), references.map { it.name })
+        val routing = references.single().readText()
+        assertTrue(routing.contains("if (BackupGraphTargetedRestoreEnabled)"))
+        assertTrue(routing.contains("check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled)"))
+        assertTrue(routing.contains("backupRepository.restoreBackupFromFile("))
     }
 }

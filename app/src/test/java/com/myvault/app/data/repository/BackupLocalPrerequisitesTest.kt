@@ -197,9 +197,14 @@ class BackupLocalPrerequisitesTest {
     }
     @Test fun productionWriterGateAndRoutesRemainUnchanged() {
         assertFalse(IncrementalBackupPublicationEnabled)
+        assertFalse(BackupGraphPublicationEnabled)
+        assertFalse(BackupGraphTargetedRestoreEnabled)
         val drive = File(root(), "app/src/main/java/com/myvault/app/data/sync/GoogleDriveIncrementalSyncRepository.kt").readText()
         assertTrue(drive.contains("backupRepository.exportMetadataForDriveSync(")); assertTrue(drive.contains("backupRepository.restoreBackupFromFile("))
-        assertFalse(drive.contains("BackupBaselinePreparer") || drive.contains("PendingBackupCapture") || drive.contains("establishVerifiedBaseline"))
+        assertTrue(drive.contains("if (BackupGraphPublicationEnabled)"))
+        assertTrue(drive.contains("if (BackupGraphTargetedRestoreEnabled)"))
+        assertTrue(drive.contains("BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled"))
+        assertFalse(drive.contains("establishVerifiedBaseline"))
     }
     @Test fun exportActualSqlAndVerifiedProofForDisposableIntegrationChecks() {
         val f = fixture(); val proof = verify(f)

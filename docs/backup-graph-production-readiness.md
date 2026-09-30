@@ -1,5 +1,65 @@
 # Production Graph Readiness Check
 
+## Latest Gated Routing Work
+
+The September 30 continuation starts at Android
+`8711d78d330a54f710751bb8e412369262b79779` and Web
+`b60dd68349f90b01e45b0a1054f3dda37e659e05`. Both recovery tags are
+`recovery-before-production-graph-routing-20260929-214738`.
+
+Normal authenticated Android graph transport and paired manual Backup/Restore
+branches are implemented, but both production flags remain false. Namespace
+enrollment persists intended folder IDs before creating anything. Existing graph
+discovery is read-only; a missing trusted root cannot be replaced silently.
+The first graph baseline captures the current local Vault in a separate immutable
+namespace and never rewrites the legacy backup. Later publications use pending
+capture. Force Backup is rejected for graph-established accounts rather than
+falling back to mutable legacy publication.
+
+Publication-parent proof and actual applied/Restore position remain separate.
+A verified own publication supports an already-current Restore without inventing
+a Restore row. Following an actual Restore, the next Backup explicitly adopts
+the verified single tip as its parent, without acknowledging pending user edits.
+Publication intents are bound to their exact enrolled namespace on retry.
+
+The existing persistent manual WorkManager operation invokes the repository,
+so the gated graph route uses the same background protection/progress channel.
+This is not automatic sync. Large graph objects use streaming resumable creates;
+interrupted transfers retry the same intended immutable ID and full frozen bytes,
+not an unverified overwrite. Real-provider testing of this normal large-object
+adapter still requires the production-auth acceptance step.
+
+Validation so far: 129 focused Android host tests, 38 disposable Room/runtime
+tests, debug/test APK build and release/R8 build passed. Room remains 36.
+The Web counterpart passed 32 Chromium/IndexedDB cases, typecheck, production
+build, historical/delta/binary compatibility and Android writer fixture checks.
+The authenticated disposable writer passed prepare and separate-process recovery;
+both Android and Web detected the resulting two-tip fork. These broker tests do
+not prove file visibility between the normal production OAuth clients.
+
+A second fresh disposable Drive graph passed full Restore, already-current,
+one-note, three-commit, 4096-to-8192-byte replacement, metadata-only update,
+new attachment, exact deletion and process-restart recovery. The already-current
+case used two Drive requests and applied zero rows/downloaded zero binaries.
+The one-note case used five requests, applied one row and downloaded zero
+binaries. Web independently reconstructed the same nine-commit synthetic graph.
+These are emulator/test-account observations, not Samsung acceptance timings.
+
+The normal Web OAuth visibility probe did not complete: Google sign-in closed
+its popup before returning permission, and the user confirmed that this test
+browser does not allow sign-in. No normal Web Drive file request was made. Do
+not retry that browser or substitute the separate disposable broker credential
+for the actual Web client. The normal Android-owned visibility probe remains
+one-sided and its exact isolated test root must be cleaned up only through the
+same authorized owner; it is not a graph backup or a legacy backup.
+
+Release is still blocked on normal Android/Web OAuth cross-visibility,
+coordinated Web activation, production-account read-only reconciliation and
+verified initial baseline establishment. No new functional release APK has been
+signed or uploaded, and no real Vault or legacy backup has been modified.
+
+## Earlier Readiness-Only Build
+
 This build adds a manual, read-only readiness check. It does not enable graph
 Backup or targeted Restore. Existing production Backup/Restore remains active.
 Room remains version 36. No schema or backup format change is made.

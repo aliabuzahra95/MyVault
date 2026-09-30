@@ -65,22 +65,37 @@ internal class InternalBackupGraphRestore(
         outstanding.singleOrNull()?.let { val result = resume(it); committed++; written += result.first; downloaded += result.second }
         val (objects, graph) = inventory(); allowed(graph)
         val applied = dao.applied(c.accountScope, c.lineageId)
+        val publication = trustedPublicationPosition(db, c)
         if (applied != null) {
             if (applied.driveAccountId != c.driveAccountId || db.backupJournalDao().clock().originEpoch != applied.originEpoch) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
             val receipt = objects.singleOrNull { it.objectRef.cloudFileId == applied.commitFileId }
             if (receipt == null || receipt.objectRef != applied.ref()) throw Blocked(GraphRestoreStatus.DIVERGENT)
         }
-        val plan = graph.plan(applied?.commitId)
+        if (publication != null) {
+            val ref = GraphObjectRef(publication.commitFileId, publication.commitSha256, publication.commitSize)
+            if (objects.singleOrNull { it.objectRef.cloudFileId == ref.cloudFileId }?.objectRef != ref) throw Blocked(GraphRestoreStatus.DIVERGENT)
+            val commit = graph.commits[publication.commitId] ?: throw Blocked(GraphRestoreStatus.DIVERGENT)
+            if (commit.checkpoint != GraphCheckpoint(publication.checkpointId,
+                    GraphObjectRef(publication.checkpointFileId, publication.checkpointSha256, publication.checkpointSize)) ||
+                commit.deltaHead != publication.deltaHeadId ||
+                applied != null && graph.plan().commits.let { path ->
+                    val restoredIndex = path.indexOfFirst { it.commitId == applied.commitId }
+                    val publishedIndex = path.indexOfFirst { it.commitId == publication.commitId }
+                    restoredIndex < 0 || publishedIndex < restoredIndex
+                }) throw Blocked(GraphRestoreStatus.DIVERGENT)
+        }
+        val position = publication?.commitId ?: applied?.commitId
+        val plan = graph.plan(position)
         if (plan.status == GraphStatus.DIVERGENT) throw Blocked(GraphRestoreStatus.DIVERGENT)
         // Nothing is overwritten on the fast path, including locally modified rows.
         if (plan.status == GraphStatus.ALREADY_CURRENT) return GraphRestoreResult(if (committed == 0) GraphRestoreStatus.ALREADY_CURRENT else GraphRestoreStatus.APPLIED, committed, written, downloaded)
-        if (applied != null && plan.requiresCheckpoint) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+        if (position != null && plan.requiresCheckpoint) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
         checkNoLocalChanges()
-        if (applied == null && hasUserRows()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
-        val missing = if (applied == null) plan.commits.drop(plan.commits.indexOfLast { it.kind == "checkpoint" }) else plan.descendants
-        for (commit in missing) {
+        if (position == null && hasUserRows()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+        val missing = if (position == null) plan.commits.drop(plan.commits.indexOfLast { it.kind == "checkpoint" }) else plan.descendants
+        for ((index, commit) in missing.withIndex()) {
             val receipt = objects.single { BackupGraphProtocol.parse(it).commitId == commit.commitId }
-            val intent = prepare(commit, receipt.objectRef)
+            val intent = prepare(commit, receipt.objectRef, publication.takeIf { index == 0 })
             boundary("INTENT_PERSISTED")
             val result = resume(intent); committed++; written += result.first; downloaded += result.second
         }
@@ -99,7 +114,7 @@ internal class InternalBackupGraphRestore(
         val input = store.read(ref.cloudFileId) ?: error("Required immutable object is missing.")
         val bytes = input.use { it.readBytes() }; BackupGraphProtocol.verify(ref, bytes); return bytes
     }
-    private suspend fun prepare(commit: BackupGraphCommit, ref: GraphObjectRef): BackupGraphRestore {
+    private suspend fun prepare(commit: BackupGraphCommit, ref: GraphObjectRef, publication: BackupGraphBinding? = null): BackupGraphRestore {
         val changes: List<BackupRecordChange>
         val binaries: List<BackupBinaryDescriptor>
         if (commit.kind == "delta") {
@@ -148,7 +163,7 @@ internal class InternalBackupGraphRestore(
         }
         check(binaries.all { b -> changes.any { it.file == "attachments.json" && it.key == listOf(b.attachmentId) && !it.deleted } })
         changes.filter { it.file == "settings.json" }.forEach { it.value!!.toValidatedBackupPreferences() }
-        val frozen = JSONObject().put("changes",JSONArray(changes.map { it.toJson() })).put("binaries",JSONArray(resolved.map { it.toJson() })).toString()
+        val frozen = JSONObject().put("changes",JSONArray(changes.map { it.toJson() })).put("binaries",JSONArray(resolved.map { it.toJson() }))
         val operation = UUID.randomUUID().toString()
         val settingsBefore = if (changes.any { it.file == "settings.json" }) settings.read().toString() else null
         return db.withTransaction {
@@ -156,11 +171,17 @@ internal class InternalBackupGraphRestore(
             checkNoLocalChanges()
             val clock = db.backupJournalDao().clock(); check(clock.suppressionDepth == 0 && clock.settingsToken == null)
             val original = dao.applied(context.accountScope,context.lineageId)
-            if (original != null) check(commit.parents.single().commitId == original.commitId && commit.checkpoint.checkpointId == original.checkpointId && commit.delta!!.parentId == original.deltaHeadId)
+            if (publication != null) {
+                check(trustedPublicationPosition(db, context) == publication)
+                check(commit.parents.single().commitId == publication.commitId && commit.checkpoint.checkpointId == publication.checkpointId && commit.delta!!.parentId == publication.deltaHeadId)
+                frozen.put("publicationSource", BackupGraphIntentCodec.binding(publication))
+                    .put("publicationAccount", BackupGraphIntentCodec.account(db.backupJournalDao().account(context.accountScope)!!))
+            } else if (original != null) check(commit.parents.single().commitId == original.commitId && commit.checkpoint.checkpointId == original.checkpointId && commit.delta!!.parentId == original.deltaHeadId)
             else check(commit.kind == "checkpoint")
+            val frozenJson = frozen.toString()
             val intent = BackupGraphRestore(context.accountScope,operation,context.lineageId,context.driveAccountId,
                 original?.proof(),clock.generation,clock.originEpoch,BackupGraphProtocol.utf8(BackupGraphProtocol.encode(commit)),
-                ref.cloudFileId,ref.sha256,ref.size,frozen,IncrementalBackupFormat.sha256(frozen.toByteArray()),settingsBefore,"NONE","PREPARED")
+                ref.cloudFileId,ref.sha256,ref.size,frozenJson,IncrementalBackupFormat.sha256(frozenJson.toByteArray()),settingsBefore,"NONE","PREPARED")
             dao.insert(intent)
             dao.insertObjects(resolved.mapIndexed { index, b ->
                 val fp = db.backupJournalDao().fingerprint(b.attachmentId)
@@ -180,6 +201,11 @@ internal class InternalBackupGraphRestore(
     private suspend fun guard(intent: BackupGraphRestore) {
         check(intent.accountScope == context.accountScope && intent.lineageId == context.lineageId && intent.driveAccountId == context.driveAccountId)
         if (dao.applied(intent.accountScope,intent.lineageId)?.proof() != intent.originalAppliedJson) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+        val frozen = JSONObject(intent.frozenChangesJson)
+        if (frozen.has("publicationSource")) {
+            if (trustedPublicationPosition(db, context, "graph-restore:${intent.operationId}") != BackupGraphIntentCodec.binding(frozen.getString("publicationSource")) ||
+                db.backupJournalDao().account(intent.accountScope) != BackupGraphIntentCodec.account(frozen.getString("publicationAccount"))) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+        }
         val clock = db.backupJournalDao().clock()
         if (clock.generation != intent.capturedGeneration || clock.originEpoch != intent.capturedOriginEpoch) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
         checkNoLocalChanges()

@@ -148,13 +148,14 @@ class BackupGraphTest {
         println("Disposable graph benchmark: $performance")
     }
 
-    @Test fun publicationAndProductionRoutingRemainOffAndRoomRemains34() {
+    @Test fun publicationRemainsOffAndHistoricalSchema34RemainsAvailable() {
         assertFalse(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir"))).absoluteFile) { it.parentFile }
             .first { File(it, "app/src/main/java/com/myvault/app/data/local/VaultDatabase.kt").exists() }
         val drive = File(root, "app/src/main/java/com/myvault/app/data/sync/GoogleDriveIncrementalSyncRepository.kt").readText()
         assertTrue(drive.contains("backupRepository.exportMetadataForDriveSync(")); assertTrue(drive.contains("backupRepository.restoreBackupFromFile("))
-        assertFalse(drive.contains("InternalBackupGraphWriter(") || drive.contains("InternalBackupGraphRestore(") || drive.contains("IncrementalBackupWriter("))
+        assertTrue(drive.contains("if (BackupGraphPublicationEnabled)") && drive.contains("if (BackupGraphTargetedRestoreEnabled)"))
+        assertFalse(drive.contains("IncrementalBackupWriter("))
         val schema = JSONObject(File(root, "app/schemas/com.myvault.app.data.local.VaultDatabase/34.json").readText())
         assertEquals(34, schema.getJSONObject("database").getInt("version"))
     }
