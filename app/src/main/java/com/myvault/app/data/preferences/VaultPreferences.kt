@@ -31,6 +31,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.hilt.android.EntryPointAccessors
 import com.myvault.app.data.repository.BackupChangeJournal
+import com.myvault.app.data.sync.latestBackupNoticeStorageKey
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
@@ -335,6 +336,14 @@ class VaultPreferences @Inject constructor(
             preferences[Keys.LastGoogleDriveSyncAt] = metadata.lastSyncAt
             preferences[Keys.LastGoogleDriveManifestAt] = metadata.lastManifestAt
         }
+    }
+
+    fun lastNotifiedGraphTip(accountEmail: String, lineageId: String): String? =
+        startupCache.getString(latestBackupNoticeStorageKey(accountEmail, lineageId), null)
+
+    fun markGraphTipNotified(accountEmail: String, lineageId: String, commitId: String) {
+        require(commitId.isNotBlank())
+        startupCache.edit().putString(latestBackupNoticeStorageKey(accountEmail, lineageId), commitId).apply()
     }
 
     suspend fun googleDriveSyncMetadata(accountEmail: String): GoogleDriveSyncMetadata {

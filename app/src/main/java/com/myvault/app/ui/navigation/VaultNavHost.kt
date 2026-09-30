@@ -1798,6 +1798,7 @@ fun VaultNavHost(
                     viewModel.pushGoogleDriveSync(onAuthorizationRequired) { backupMessage = it }
                 },
                 onGoogleDriveReadiness = viewModel::checkBackupReadiness,
+                onLatestBackupCheck = viewModel::checkForLatestGraphBackup,
                 onGoogleDriveTransitionPreview = viewModel::previewPhoneGraphTransition,
                 onGoogleDriveForcePush = { onAuthorizationRequired ->
                     viewModel.forcePushGoogleDriveSync(onAuthorizationRequired) { backupMessage = it }

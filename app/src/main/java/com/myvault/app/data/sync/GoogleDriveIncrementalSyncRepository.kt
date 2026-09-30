@@ -104,6 +104,36 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         }
     }
 
+    /** Metadata-only graph check. It never downloads Vault payloads or applies a Restore. */
+    suspend fun checkForLatestGraphBackup(): LatestBackupNotice? = withContext(Dispatchers.IO) {
+        val account = driveAccountOrFailure() ?: return@withContext null
+        try {
+            val store = openGraphStore(account.client, account.email, false) ?: return@withContext null
+            val objects = store.commits()
+            val graph = BackupGraph.discover(objects, store.context.driveAccountId, store.context.lineageId)
+            val local = readLocalBackupReadiness(database, account.email, includeHasData = false)
+            val readiness = reconcileBackupGraph(local, store.context.driveAccountId, false, 1, graph, objects)
+            val tip = graph.tips.singleOrNull()
+            val notice = latestBackupNotice(
+                readiness.state,
+                tip,
+                preferences.lastNotifiedGraphTip(account.email, store.context.lineageId),
+            )
+            if (notice?.remoteCommitId != null) {
+                preferences.markGraphTipNotified(account.email, store.context.lineageId, notice.remoteCommitId)
+            }
+            notice
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            LatestBackupNotice(
+                LatestBackupNoticeKind.BLOCKED,
+                null,
+                "The Drive backup could not be verified safely. Nothing was restored.",
+            )
+        }
+    }
+
     /** Full but read-only old-tip/current-Vault comparison for explicit user review. */
     suspend fun previewPhoneGraphTransition(): String = withContext(Dispatchers.IO) {
         val account = driveAccountOrFailure() ?: return@withContext "Connect Google Drive first. Nothing was changed."

@@ -71,7 +71,7 @@ internal fun reconcileBackupGraph(local: LocalBackupReadiness, accountId: String
 }
 
 /** Read-only local snapshot. Never enrolls an account, captures/acks work or hashes binaries. */
-internal suspend fun readLocalBackupReadiness(db: VaultDatabase, email: String): LocalBackupReadiness = db.withTransaction {
+internal suspend fun readLocalBackupReadiness(db: VaultDatabase, email: String, includeHasData: Boolean = true): LocalBackupReadiness = db.withTransaction {
     val account = normalizeGoogleDriveAccount(email)
     check('@' in account)
     val journal = db.backupJournalDao(); val clock = journal.clock()
@@ -88,7 +88,7 @@ internal suspend fun readLocalBackupReadiness(db: VaultDatabase, email: String):
     val reference = publication?.let { GraphObjectRef(it.commitFileId,it.commitSha256,it.commitSize) }
         ?: restored?.let { GraphObjectRef(it.commitFileId,it.commitSha256,it.commitSize) }
         ?: binding?.let { GraphObjectRef(it.commitFileId,it.commitSha256,it.commitSize) }
-    val hasData = BackupRecordKeys.keys.any { group -> db.openHelper.readableDatabase.query("SELECT 1 FROM `${backupRecordTable(group)}` LIMIT 1").use { it.moveToFirst() } }
+    val hasData = includeHasData && BackupRecordKeys.keys.any { group -> db.openHelper.readableDatabase.query("SELECT 1 FROM `${backupRecordTable(group)}` LIMIT 1").use { it.moveToFirst() } }
     LocalBackupReadiness(pending,hasData,position,reference,publication?.lineageId ?: restored?.lineageId ?: binding?.lineageId,
         publication?.driveAccountId ?: restored?.driveAccountId ?: binding?.driveAccountId,
         publication != null || restored?.originEpoch == clock.originEpoch,
