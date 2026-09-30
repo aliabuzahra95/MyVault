@@ -73,6 +73,33 @@ class AccountBoundGraphStoreTest {
             assertTrue(restarted.commits().isEmpty())
         } finally { directory.deleteRecursively() }
     }
+    @Test fun explicitRemovedTestGraphStartsFreshAndRetainsOldProofAcrossRestart() = runBlocking {
+        val directory = Files.createTempDirectory("graph-test-restart").toFile()
+        try {
+            val api = Api(account, driveId)
+            val intent = File(directory, "intent.json")
+            val old = setup(api, intent)
+            val oldProof = intent.readBytes()
+            val oldCommit = api.commit(old, root(old))
+            val enrollment = GraphNamespaceEnrollment(intent, api)
+            rejected { enrollment.enrollAfterTestGraphRemoval(account, driveId) }
+            api.files[old.layout.rootId] = api.files.getValue(old.layout.rootId).copy(trashed = true)
+            api.crashAfterFolder = api.folderCreates + 2
+            rejected { enrollment.enrollAfterTestGraphRemoval(account, driveId) }
+            val next = enrollment.load(account, driveId)!!
+            assertNotEquals(old.layout.rootId, next.rootId)
+            assertNotEquals(old.layout.lineageId, next.lineageId)
+            assertArrayEquals(oldProof, File(directory, "intent.json.${old.layout.lineageId}.abandoned").readBytes())
+            assertArrayEquals(oldCommit.bytes, api.bytes.getValue(oldCommit.objectRef.cloudFileId))
+            api.crashAfterFolder = null
+            assertEquals(next, enrollment.enroll(account, driveId))
+            assertEquals(10, api.generated)
+            assertEquals(1, api.roots(BackupGraphNamespace).size)
+            api.activeAccount = "another@example.com"
+            rejected { enrollment.enrollAfterTestGraphRemoval(account, driveId) }
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun conflictingIntendedFolderFailsWithoutOverwriteOrTrust() = runBlocking {
         val directory = Files.createTempDirectory("graph-enrollment-test").toFile()
         try {

@@ -61,7 +61,7 @@ class BackupGraphReconciliationTest {
             val result = BackupGraphReadiness(state, local(), true)
             assertFalse(result.publicationAllowed)
             assertTrue(result.message().contains("Read-only check"))
-            assertTrue(result.message().contains("Production graph mode remains disabled"))
+            assertFalse(result.message().contains("Production graph mode remains disabled"))
         }
     }
 }

@@ -117,6 +117,7 @@ class BackupBaselinePreparer @Inject constructor(
     internal suspend fun prepare(
         account: String,
         onProgress: suspend (GraphBackupProgress) -> Unit = {},
+        persistFingerprints: Boolean = true,
     ): PreparedBackupBaseline = journal.binaryMutex.withLock {
         journal.settingsMutex.withLock {
             preferences.userPreferences.first()
@@ -152,7 +153,7 @@ class BackupBaselinePreparer @Inject constructor(
                     check(digest.size == row.getLong("sizeBytes")) { "Attachment size is inconsistent; baseline remains untrusted." }
                     val current = database.attachmentDao().getByIdIncludingDeleted(id) ?: error("Attachment was deleted during baseline staging.")
                     check(current.localPath == source.absolutePath && current.sizeBytes == digest.size)
-                    binaries.persistWritten(current, digest, mutated = false)
+                    if (persistFingerprints) binaries.persistWritten(current, digest, mutated = false)
                     objects += PreparedBaselineObject("files/$id", "files/$id", "file", target, digest.size, digest.sha256, id)
                     onProgress(GraphBackupProgress(GraphBackupStage.STAGING_FILES, i + 1, attachments.length()))
                 }

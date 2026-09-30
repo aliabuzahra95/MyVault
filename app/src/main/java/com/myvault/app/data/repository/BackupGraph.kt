@@ -9,7 +9,7 @@ import java.util.ArrayDeque
 internal const val BackupGraphCapability = "backup-commit-graph-v1"
 internal const val BackupGraphNamespace = "MyVault Backup Graph v1"
 internal val BackupGraphDirectories = listOf("checkpoints", "commits", "deltas", "binaries")
-internal const val BackupGraphPublicationEnabled = false
+internal const val BackupGraphPublicationEnabled = true
 
 internal data class GraphObjectRef(val cloudFileId: String, val sha256: String, val size: Long)
 internal data class GraphParent(val commitId: String, val objectRef: GraphObjectRef)

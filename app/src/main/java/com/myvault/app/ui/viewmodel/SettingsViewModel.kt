@@ -275,6 +275,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { onComplete(googleDriveSyncRepository.checkGraphBackupReadiness()) }
     }
 
+    fun previewPhoneGraphTransition(onComplete: (String) -> Unit) {
+        viewModelScope.launch { onComplete(googleDriveSyncRepository.previewPhoneGraphTransition()) }
+    }
+
     private fun authorizeAndStartDriveOperation(
         operation: PendingDriveOperation,
         onAuthorizationRequired: (Intent) -> Unit,

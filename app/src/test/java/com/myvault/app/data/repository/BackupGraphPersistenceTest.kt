@@ -45,7 +45,7 @@ class BackupGraphPersistenceTest {
         assertTrue(legacy.contains("if (BackupGraphPublicationEnabled)"))
         assertTrue(legacy.contains("check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled)"))
         assertTrue(legacy.indexOf("if (BackupGraphPublicationEnabled)") < legacy.indexOf("drive.ensureMyVaultLayout()"))
-        assertFalse(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
+        assertTrue(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
     }
     @Test fun schema35PreservesEverySchema34EntityExactly() {
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }.first { File(it,"app/schemas").isDirectory }

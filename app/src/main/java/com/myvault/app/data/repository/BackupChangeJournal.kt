@@ -3,6 +3,7 @@ package com.myvault.app.data.repository
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.entity.BackupPendingChange
+import com.myvault.app.data.local.entity.BackupBinaryReference
 import com.myvault.app.data.local.entity.BackupTrackingAccount
 import com.myvault.app.data.preferences.normalizeGoogleDriveAccount
 import kotlinx.coroutines.sync.Mutex
@@ -67,6 +68,23 @@ class BackupChangeJournal @Inject constructor(private val database: VaultDatabas
 
     internal suspend fun acknowledgeConfirmedDelta(snapshot: CapturedBackupChanges, proof: ConfirmedBackupCommit) =
         acknowledge(snapshot, proof, fullCheckpoint = false)
+
+    /** The caller must first verify the complete old graph and publish its exact frozen transition delta. */
+    internal suspend fun establishVerifiedTransition(
+        snapshot: CapturedBackupChanges,
+        proof: ConfirmedBackupCommit,
+        binaries: List<BackupBinaryReference>,
+    ) = database.withTransaction {
+        val current = dao.account(snapshot.account.accountScope)!!
+        check(!snapshot.account.trusted) { "Transition is only for an invalidated baseline." }
+        validateBackupAcknowledgement(snapshot, proof, current, dao.clock(), fullCheckpoint = true)
+        check(binaries.map { it.attachmentId }.distinct().size == binaries.size)
+        check(binaries.all { it.accountScope == current.accountScope && it.checkpointId == proof.checkpointId && it.headId == proof.headId })
+        dao.acknowledge(current.accountScope, snapshot.generation)
+        dao.clearBinaryReferences(current.accountScope)
+        dao.putBinaryReferences(binaries)
+        dao.trust(current.accountScope, proof.checkpointId, proof.headId, proof.manifestId, proof.manifestSha256)
+    }
 
     internal suspend fun establishVerifiedBaseline(prepared: PreparedBackupBaseline, proof: VerifiedBackupBaseline) = database.withTransaction {
         check(proof.preparationId == prepared.preparationId)

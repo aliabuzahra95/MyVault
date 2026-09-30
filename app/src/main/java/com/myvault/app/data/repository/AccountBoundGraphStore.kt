@@ -161,6 +161,29 @@ internal class GraphNamespaceEnrollment(private val intentFile: File, private va
         check(json.getInt("version") == 1 && json.getString("account") == account && json.getString("driveAccountId") == driveId)
         return GraphDriveLayout.parse(json.getJSONObject("layout"))
     }
+    /** Explicitly abandon a removed test namespace, retaining its local proof for recovery. */
+    suspend fun enrollAfterTestGraphRemoval(account: String, driveId: String): GraphDriveLayout {
+        api.assertAccount(account, driveId)
+        check(api.roots(BackupGraphNamespace).isEmpty()) { "An active graph cannot be abandoned by this action." }
+        val old = load(account, driveId) ?: return enroll(account, driveId)
+        check(api.metadata(old.rootId)?.trashed != false) { "The old graph still exists; it was not replaced." }
+        val ids = api.reserveIds(5)
+        check(ids.size == 5 && ids.distinct().size == 5)
+        val next = GraphDriveLayout(ids.first(), UUID.randomUUID().toString(),
+            BackupGraphDirectories.mapIndexed { index, name -> name to ids[index + 1] }.toMap()).also { it.validate() }
+        api.assertAccount(account, driveId)
+        check(load(account, driveId) == old && api.roots(BackupGraphNamespace).isEmpty())
+        val archive = File(intentFile.parentFile, "${intentFile.name}.${old.lineageId}.abandoned")
+        if (!archive.exists()) FileOutputStream(archive).use { out -> intentFile.inputStream().use { it.copyTo(out) }; out.fd.sync() }
+        check(archive.readBytes().contentEquals(intentFile.readBytes())) { "The archived test proof differs." }
+        val bytes = JSONObject().put("version", 1).put("account", account).put("driveAccountId", driveId)
+            .put("layout", JSONObject(next.encode())).toString().toByteArray(Charsets.UTF_8)
+        val temporary = File(intentFile.parentFile, "${intentFile.name}.${UUID.randomUUID()}.tmp")
+        FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }
+        java.nio.file.Files.move(temporary.toPath(), intentFile.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        return enroll(account, driveId)
+    }
     suspend fun enroll(account: String, driveId: String): GraphDriveLayout {
         api.assertAccount(account, driveId)
         var layout = load(account, driveId)

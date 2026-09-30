@@ -40,7 +40,7 @@ internal data class BackupGraphReadiness(val state: BackupGraphReadinessState, v
             BackupGraphReadinessState.MISSING_NAMESPACE -> "The local graph position cannot be found in the visible Drive namespace."
             BackupGraphReadinessState.RECOVERY_REQUIRED -> "An unfinished operation or invalidated local proof requires recovery first."
         }
-        return "$explanation\n\nPending local changes: ${local.pendingCount}. Local Vault data: ${if (local.hasData) "present" else "none"}.\n\nRead-only check: no upload, Restore, deletion, acknowledgement or trust change. Production graph mode remains disabled."
+        return "$explanation\n\nPending local changes: ${local.pendingCount}. Local Vault data: ${if (local.hasData) "present" else "none"}.\n\nRead-only check: no upload, Restore, deletion, acknowledgement or trust change."
     }
 }
 

@@ -87,6 +87,45 @@ internal class InternalBackupGraphWriter(
         return createFullCheckpoint(prepared, parent)
     }
 
+    /** Explicit one-time bridge from the verified old tip to a frozen authoritative Vault. */
+    suspend fun previewTransition(prepared: PreparedBackupBaseline): Pair<String, BackupGraphTransition> {
+        val c = context
+        check(prepared.journal.account.accountScope == c.accountScope && !prepared.journal.account.trusted)
+        check(dao.unfinished(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty())
+        val binding = dao.binding(c.accountScope, c.lineageId) ?: error("Existing graph binding is required.")
+        val graph = checkedGraph(binding)
+        check(graph.plan().deltas.size < 4096) { "Existing delta epoch is full; transition cannot be represented." }
+        val old = verifiedGraphSnapshot(store, graph)
+        val diff = calculateGraphTransition(old, prepared)
+        check(prepared.journal.originEpoch == database.backupJournalDao().clock().originEpoch)
+        if (diff.records.isNotEmpty()) IncrementalBackupFormat.createDelta(binding.checkpointId, binding.deltaHeadId,
+            UUID.randomUUID().toString(), diff.records.map { it.protocolChange() }, emptyList())
+        return binding.commitId to diff
+    }
+
+    suspend fun transition(prepared: PreparedBackupBaseline): Pair<GraphWriterResult, BackupGraphTransition> {
+        val c = context
+        val (oldTip, diff) = previewTransition(prepared)
+        val binding = dao.binding(c.accountScope, c.lineageId) ?: error("Graph binding changed.")
+        check(binding.commitId == oldTip)
+        val graph = checkedGraph(binding)
+        if (diff.records.isEmpty()) {
+            database.withTransaction {
+                check(dao.binding(c.accountScope, c.lineageId) == binding)
+                journal.establishVerifiedTransition(prepared.journal, ConfirmedBackupCommit(c.accountScope, prepared.journal.generation,
+                    binding.checkpointFileId, binding.checkpointSha256, binding.checkpointId, binding.deltaHeadId),
+                    diff.oldBinaryReferences.map { BackupBinaryReference(c.accountScope, it.attachmentId, binding.checkpointId,
+                        binding.deltaHeadId, it.cloudFileId, it.size, it.sha256) })
+                dao.putBinding(binding.copy(originEpoch = prepared.journal.originEpoch))
+            }
+            return GraphWriterResult(null, binding.commitId, true, false, GraphWriterMetrics(0, 0, 0, 0, 0, 0)) to diff
+        }
+        val batch = PendingBackupBatch(prepared.journal, diff.records, diff.binaries, emptyList(), 0)
+        val publication = prepareDelta(batch, binding, graph.commits.getValue(binding.commitId), diff,
+            prepared.objects.filter { it.kind == "file" }.mapNotNull { it.attachmentId }, prepared.directory)
+        return resume(publication.operationId) to diff
+    }
+
     private suspend fun createFullCheckpoint(prepared: PreparedBackupBaseline, parent: BackupGraphBinding?): GraphWriterResult {
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
@@ -141,13 +180,16 @@ internal class InternalBackupGraphWriter(
         return resume(op)
     }
 
-    private suspend fun prepareDelta(batch: PendingBackupBatch, binding: BackupGraphBinding, parent: BackupGraphCommit): BackupGraphPublication {
+    private suspend fun prepareDelta(batch: PendingBackupBatch, binding: BackupGraphBinding, parent: BackupGraphCommit,
+        transition: BackupGraphTransition? = null, currentAttachmentIds: List<String> = emptyList(),
+        transitionDirectory: File? = null): BackupGraphPublication {
         val stagedCount = batch.binaries.count { it.reusableCloudFileId == null } + 2
         onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, 0, stagedCount))
         val op = UUID.randomUUID().toString()
         val ids = reserveObjectIds(batch.binaries.count { it.reusableCloudFileId == null } + 2)
         val objects = mutableListOf<BackupGraphPublicationObject>()
-        check(batch.records.size == batch.journal.changes.size && batch.records.all { r ->
+        check((transition != null || batch.records.size == batch.journal.changes.size) && batch.records.all { r ->
+            transition != null ||
             batch.journal.changes.any { it.recordGroup == r.group && it.stableKey() == r.key && it.operation == r.operation && it.generation == r.generation }
         })
         val binaries = mutableListOf<BackupBinaryDescriptor>()
@@ -157,8 +199,12 @@ internal class InternalBackupGraphWriter(
                 check(batch.records.any { it.group == "attachments.json" && it.key == listOf(binary.attachmentId) && it.operation == "UPSERT" }) {
                     "Changed dependency bytes require an explicit attachment upsert."
                 }
-                check(isDurableBackupBinary(privateFilesDir, File(binary.localPath))) { "Temporary/external files cannot be published as durable backup binaries." }
-                val staged = stage(op, objects.size, File(binary.localPath), binary.sha256, binary.byteSize)
+                val source = File(binary.localPath)
+                check(if (transitionDirectory == null) isDurableBackupBinary(privateFilesDir, source)
+                    else source.isFile && source.canonicalPath.startsWith(transitionDirectory.canonicalPath + File.separator)) {
+                    "Binary source is outside the verified local capture."
+                }
+                val staged = stage(op, objects.size, source, binary.sha256, binary.byteSize)
                 val obj = newObject(ids[objects.size], op, objects.size, "BINARY", binary.attachmentId, staged, binary.sha256, binary.byteSize).also { objects += it }
                 binaries += BackupBinaryDescriptor(binary.attachmentId, obj.objectId, obj.sha256, obj.byteCount).validate()
                 onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, stagedCount))
@@ -174,7 +220,11 @@ internal class InternalBackupGraphWriter(
             listOf(GraphParent(binding.commitId, binding.commitRef())), binding.checkpoint(), GraphDelta(deltaId, binding.deltaHeadId, deltaObj.ref()))
         objects += byteObject(ids[objects.size], op, objects.size, "COMMIT", timing.local("commit.creation") { BackupGraphProtocol.encode(commit) })
         onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, objects.size, stagedCount))
-        return publication(op, batch.journal, binding, BackupGraphIntentCodec.batch(batch), commit).also { persist(it, objects) }
+        val frozen = JSONObject(BackupGraphIntentCodec.batch(batch))
+        if (transition != null) frozen.put("transition", true)
+            .put("transitionOldBinaries", JSONArray(transition.oldBinaryReferences.map { it.toJson() }))
+            .put("transitionCurrentAttachments", JSONArray(currentAttachmentIds))
+        return publication(op, batch.journal, binding, frozen.toString(), commit).also { persist(it, objects) }
     }
 
     private fun publication(op: String, snapshot: CapturedBackupChanges, binding: BackupGraphBinding?, frozen: String, commit: BackupGraphCommit) =
@@ -268,8 +318,24 @@ internal class InternalBackupGraphWriter(
         check(receipts.all { it.verifiedSha256 == it.sha256 && it.verifiedByteCount == it.byteCount }) { "Every dependency and commit requires byte verification." }
         validateIntent(p, receipts, commit)
         val snapshot = BackupGraphIntentCodec.snapshot(p)
+        val frozen = JSONObject(p.frozenBatchJson)
         if (rootProof != null) journal.establishVerifiedBaseline(rootProof.first, rootProof.second)
-        else journal.acknowledgeConfirmedDelta(snapshot, ConfirmedBackupCommit(p.accountScope, p.capturedGeneration,
+        else if (frozen.optBoolean("transition")) {
+            val delta = objects.single { it.role == "DELTA" }
+            val raw = JSONObject(File(delta.stagedPath).readText())
+            val changes = IncrementalBackupFormat.parseChanges(raw)
+            val resolved = BackupGraphIntentCodec.array(frozen.getJSONArray("transitionOldBinaries"))
+                .map(BackupBinaryDescriptor.Companion::parse).associateBy { it.attachmentId }.toMutableMap()
+            changes.filter { it.file == "attachments.json" && it.deleted }.forEach { resolved.remove(it.key.single()) }
+            parseBackupBinaries(raw, changes).forEach { resolved[it.attachmentId] = it }
+            val expectedIds = (0 until frozen.getJSONArray("transitionCurrentAttachments").length())
+                .map { frozen.getJSONArray("transitionCurrentAttachments").getString(it) }
+            check(expectedIds.size == expectedIds.toSet().size && resolved.keys == expectedIds.toSet())
+            journal.establishVerifiedTransition(snapshot, ConfirmedBackupCommit(p.accountScope, p.capturedGeneration,
+                commit.checkpoint.objectRef.cloudFileId, commit.checkpoint.objectRef.sha256, commit.checkpoint.checkpointId, commit.deltaHead),
+                resolved.values.map { BackupBinaryReference(p.accountScope, it.attachmentId, commit.checkpoint.checkpointId,
+                    commit.deltaHead, it.cloudFileId, it.size, it.sha256) })
+        } else journal.acknowledgeConfirmedDelta(snapshot, ConfirmedBackupCommit(p.accountScope, p.capturedGeneration,
             commit.checkpoint.objectRef.cloudFileId, commit.checkpoint.objectRef.sha256, commit.checkpoint.checkpointId, commit.deltaHead))
         val refs = if (rootProof == null) {
             val delta = objects.single { it.role == "DELTA" }
@@ -298,7 +364,7 @@ internal class InternalBackupGraphWriter(
         check(clock.originEpoch == p.capturedOriginEpoch && clock.generation >= p.capturedGeneration && clock.settingsToken == null && clock.suppressionDepth == 0)
         val expected = p.originalBindingJson?.let(BackupGraphIntentCodec::binding)
         check(dao.binding(p.accountScope, p.lineageId) == expected) { "Graph binding changed; reconciliation required." }
-        if (expected != null && JSONObject(p.commitJson).getString("kind") == "delta") {
+        if (expected != null && JSONObject(p.commitJson).getString("kind") == "delta" && !JSONObject(p.frozenBatchJson).optBoolean("transition")) {
             checkParent(expected, BackupGraphIntentCodec.snapshot(p))
         }
     }

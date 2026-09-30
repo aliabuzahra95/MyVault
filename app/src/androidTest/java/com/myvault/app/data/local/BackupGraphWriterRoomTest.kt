@@ -108,6 +108,64 @@ class BackupGraphWriterRoomTest {
         try { block(); fail("Expected safe refusal") } catch (_: IllegalStateException) { } catch (_: java.io.IOException) { }
     }
 
+    @Test fun invalidatedPhoneTransitionsByExactDeltaAndPreservesNewerEdit() = runBlocking {
+        Fixture().use { f ->
+            f.note("a", "Old العربية"); f.note("b", "Delete me"); f.note("c", "Unchanged"); f.note("n", "PDF host")
+            f.binary(4096)
+            f.writer().createRoot(f.prepared())
+            val old = f.binding()
+            f.edit("Current العربية", "a")
+            f.db.noteDao().deleteByIds(listOf("b"))
+            f.note("d", "New note")
+            f.binary(8192)
+            f.journal.invalidateBaseline("disposable_authoritative_transition")
+            val prepared = f.prepared()
+            val writer = f.writer { if (it == "BEFORE_COMPLETION") f.edit("N+1 stays pending", "a") }
+            val (result, diff) = writer.transition(prepared)
+            assertEquals(3, diff.upserts) // A, D, and changed attachment bytes.
+            assertEquals(1, diff.deletes)
+            assertEquals(1, diff.uploads)
+            val commit = f.graph(f.store.commits()).commits.getValue(result.commitId!!)
+            assertEquals(old.commitId, commit.parents.single().commitId)
+            assertEquals(old.checkpointId, commit.checkpoint.checkpointId)
+            assertEquals(8192L, f.read().binaries!!.single().size)
+            val notes = BackupGraphIntentCodec.array(JSONArray(f.read().files.getValue("notes.json"))).associateBy { it.getString("id") }
+            assertEquals(setOf("a", "c", "d", "n"), notes.keys)
+            assertEquals("Current العربية", notes.getValue("a").getString("bodyPlainText"))
+            assertEquals("Unchanged", notes.getValue("c").getString("bodyPlainText"))
+            assertEquals("N+1 stays pending", f.db.noteDao().getById("a")!!.bodyPlainText)
+            assertEquals(1, f.pending().size)
+            assertTrue(f.db.backupJournalDao().account(account)!!.trusted)
+            f.export("transition", JSONObject().put("previousTip", old.commitId).put("transitionTip", result.commitId))
+        }
+    }
+
+    @Test fun authoritativeTransitionRecoversFrozenIntentBeforeAndAfterCommit() = runBlocking {
+        for (stopAt in listOf("VERIFIED_DELTA", "BEFORE_COMPLETION")) Fixture().use { f ->
+            f.root()
+            val old = f.binding()
+            f.edit("Frozen transition العربية")
+            f.journal.invalidateBaseline("disposable_transition_recovery")
+            val prepared = f.prepared()
+            fails { f.writer { if (it == stopAt) error("Disposable process interruption") }.transition(prepared) }
+            assertEquals(old, f.binding())
+            assertFalse(f.db.backupJournalDao().account(account)!!.trusted)
+            val intent = f.db.backupGraphDao().unfinished(account).single()
+            val beforeRetry = f.store.commits().size
+            assertEquals(if (stopAt == "VERIFIED_DELTA") 1 else 2, beforeRetry)
+            f.edit("Newer N+1 العربية")
+            f.reopen()
+            val recovered = f.writer().resume(intent.operationId)
+            assertEquals(intent.operationId, recovered.commitId)
+            assertEquals(2, f.store.commits().size)
+            assertEquals("Frozen transition العربية", JSONObject(JSONArray(f.read().files.getValue("notes.json")).getJSONObject(0).toString()).getString("bodyPlainText"))
+            assertEquals("Newer N+1 العربية", f.db.noteDao().getById("n")!!.bodyPlainText)
+            assertEquals(1, f.pending().size)
+            assertTrue(f.db.backupJournalDao().account(account)!!.trusted)
+            assertEquals(0, f.writer().resume(intent.operationId).metrics.commitsCreated)
+        }
+    }
+
     @Test fun recoveryRequiresExactOriginalNamespaceAndPreservesNewerGeneration() = runBlocking {
         Fixture().use { f ->
             var proof = "verified-original-namespace"
@@ -441,7 +499,7 @@ class BackupGraphWriterRoomTest {
             f.reopen(); f.store.afterCreate=null
             f.writer().resume(p.operationId); assertEquals(2,f.store.commits().size); assertTrue(f.pending().isEmpty())
             assertEquals("COMMIT",f.store.events.last())
-            assertFalse(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
+            assertTrue(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
         }
     }
 

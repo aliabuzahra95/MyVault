@@ -195,10 +195,10 @@ class BackupLocalPrerequisitesTest {
         assertTrue(BackupBinarySchema.triggers[2].contains("AFTER DELETE ON attachments"))
         assertFalse(BackupBinarySchema.triggers.any { it.contains("cloudFileId") })
     }
-    @Test fun productionWriterGateAndRoutesRemainUnchanged() {
+    @Test fun graphWriterRouteEnabledWhileLegacyCompatibilityRemains() {
         assertFalse(IncrementalBackupPublicationEnabled)
-        assertFalse(BackupGraphPublicationEnabled)
-        assertFalse(BackupGraphTargetedRestoreEnabled)
+        assertTrue(BackupGraphPublicationEnabled)
+        assertTrue(BackupGraphTargetedRestoreEnabled)
         val drive = File(root(), "app/src/main/java/com/myvault/app/data/sync/GoogleDriveIncrementalSyncRepository.kt").readText()
         assertTrue(drive.contains("backupRepository.exportMetadataForDriveSync(")); assertTrue(drive.contains("backupRepository.restoreBackupFromFile("))
         assertTrue(drive.contains("if (BackupGraphPublicationEnabled)"))

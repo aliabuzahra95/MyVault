@@ -12,7 +12,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
-internal const val BackupGraphTargetedRestoreEnabled = false
+internal const val BackupGraphTargetedRestoreEnabled = true
 internal enum class GraphRestoreStatus { APPLIED, ALREADY_CURRENT, LOCAL_CHANGES, RECONCILIATION_REQUIRED, FORK, DIVERGENT, UNSUPPORTED, CORRUPT, MISSING_ANCESTRY, ACCOUNT_MISMATCH }
 internal data class GraphRestoreResult(val status: GraphRestoreStatus, val commitsApplied: Int = 0, val rowsWritten: Int = 0, val binariesDownloaded: Int = 0)
 

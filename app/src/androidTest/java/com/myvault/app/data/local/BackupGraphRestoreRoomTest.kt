@@ -34,6 +34,37 @@ class BackupGraphRestoreRoomTest {
     private suspend fun applied(f: BackupGraphWriterRoomTest.Fixture) = f.db.backupGraphRestoreDao().applied(f.ctx.accountScope,f.ctx.lineageId)
     private suspend fun fails(block: suspend () -> Unit) { var failed=false;try { block() } catch(_: IllegalStateException) { failed=true } catch(_: java.io.IOException) { failed=true };assertTrue(failed) }
 
+    @Test fun oldGraphDeviceAppliesAuthoritativePhoneTransitionExactly() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { source ->
+            source.note("a", "Old العربية"); source.note("b", "Deleted"); source.note("c", "Unchanged"); source.note("n", "PDF host")
+            source.binary(4096)
+            source.writer().createRoot(source.prepared())
+            target(source).use { receiver ->
+                assertEquals(GraphRestoreStatus.APPLIED, restorer(receiver).restore().status)
+                val previous = applied(receiver)!!.commitId
+                source.edit("Current العربية", "a")
+                source.db.noteDao().deleteByIds(listOf("b"))
+                source.note("d", "New")
+                source.binary(8192)
+                source.journal.invalidateBaseline("disposable_phone_authority")
+                val (published, diff) = source.writer().transition(source.prepared())
+                assertEquals(3, diff.upserts); assertEquals(1, diff.deletes); assertEquals(1, diff.uploads)
+                val plan = BackupGraph.discover(source.store.commits(), source.ctx.driveAccountId, source.ctx.lineageId).plan(previous)
+                assertEquals(listOf(published.commitId), plan.descendants.map { it.commitId })
+                val result = restorer(receiver).restore()
+                assertEquals(GraphRestoreStatus.APPLIED, result.status)
+                assertEquals(1, result.commitsApplied)
+                assertEquals(published.commitId, applied(receiver)!!.commitId)
+                assertEquals("Current العربية", receiver.db.noteDao().getById("a")!!.bodyPlainText)
+                assertNull(receiver.db.noteDao().getById("b"))
+                assertEquals("Unchanged", receiver.db.noteDao().getById("c")!!.bodyPlainText)
+                assertEquals("New", receiver.db.noteDao().getById("d")!!.bodyPlainText)
+                assertEquals(8192L, receiver.db.attachmentDao().getByIdIncludingDeleted("pdf")!!.sizeBytes)
+                assertTrue(receiver.pending().isEmpty())
+            }
+        }
+    }
+
     @Test fun ownPublicationIsAlreadyCurrentWithoutInventingRestoredPosition() = runBlocking {
         BackupGraphWriterRoomTest().Fixture().use { f ->
             f.root()
@@ -384,6 +415,6 @@ class BackupGraphRestoreRoomTest {
             for(table in listOf("backup_graph_applied_states","backup_graph_restores","backup_graph_restore_objects"))migrated.query("SELECT COUNT(*) FROM $table").use {it.moveToFirst();assertEquals(0,it.getInt(0))}
         }finally {room?.close();base.deleteDatabase(name)}
         BackupGraphWriterRoomTest().Fixture().use {assertEquals(36,it.db.openHelper.writableDatabase.version);assertTrue(it.db.backupGraphRestoreDao().unfinished().isEmpty())}
-        assertFalse(BackupGraphTargetedRestoreEnabled);assertFalse(BackupGraphPublicationEnabled);assertFalse(IncrementalBackupPublicationEnabled)
+        assertTrue(BackupGraphTargetedRestoreEnabled);assertTrue(BackupGraphPublicationEnabled);assertFalse(IncrementalBackupPublicationEnabled)
     }
 }

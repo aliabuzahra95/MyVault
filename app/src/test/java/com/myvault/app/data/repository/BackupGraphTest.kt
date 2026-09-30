@@ -148,8 +148,8 @@ class BackupGraphTest {
         println("Disposable graph benchmark: $performance")
     }
 
-    @Test fun publicationRemainsOffAndHistoricalSchema34RemainsAvailable() {
-        assertFalse(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
+    @Test fun graphPublicationEnabledAndHistoricalSchema34RemainsAvailable() {
+        assertTrue(BackupGraphPublicationEnabled); assertFalse(IncrementalBackupPublicationEnabled)
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir"))).absoluteFile) { it.parentFile }
             .first { File(it, "app/src/main/java/com/myvault/app/data/local/VaultDatabase.kt").exists() }
         val drive = File(root, "app/src/main/java/com/myvault/app/data/sync/GoogleDriveIncrementalSyncRepository.kt").readText()

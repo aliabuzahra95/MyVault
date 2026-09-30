@@ -104,6 +104,40 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         }
     }
 
+    /** Full but read-only old-tip/current-Vault comparison for explicit user review. */
+    suspend fun previewPhoneGraphTransition(): String = withContext(Dispatchers.IO) {
+        val account = driveAccountOrFailure() ?: return@withContext "Connect Google Drive first. Nothing was changed."
+        try {
+            val (driveId, api) = account.client.graphApi(account.email)
+            if (api.roots(BackupGraphNamespace).isEmpty()) {
+                check(database.backupGraphDao().unfinished(account.email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty()) {
+                    "An interrupted Backup or Restore must be recovered first."
+                }
+                val identity = IncrementalBackupFormat.sha256(driveId.toByteArray(Charsets.UTF_8))
+                val prior = GraphNamespaceEnrollment(File(context.filesDir, "backup-graph-enrollment/$identity.json"), api).load(account.email, driveId)
+                check(prior == null || api.metadata(prior.rootId)?.trashed != false) { "The saved graph still exists; nothing was reset." }
+                check(database.backupGraphDao().bindings(account.email).all { it.driveAccountId == driveId } &&
+                    database.backupGraphRestoreDao().appliedForAccount(account.email).all { it.driveAccountId == driveId })
+                return@withContext "Verified graph reset: no active graph folder is visible for this account.\nUse this phone as backup source to freeze and verify its entire current Vault in a new graph lineage. Existing Vault data, pending edits, old local proofs and the legacy backup will be preserved. This preview made no changes."
+            }
+            val store = openGraphStore(account.client, account.email, false)
+                ?: return@withContext "No existing graph needs a phone transition. Nothing was changed."
+            val writer = InternalBackupGraphWriter(database, backupJournal, pendingBackupCapture, context.filesDir,
+                File(context.filesDir, "backup-graph-publications"), store)
+            val prepared = baselinePreparer.prepare(account.email, persistFingerprints = false)
+            try {
+                val (tip, diff) = writer.previewTransition(prepared)
+                val notes = org.json.JSONArray(prepared.objects.single { it.backupEntry == "notes.json" }.file.readText()).length()
+                val folders = org.json.JSONArray(prepared.objects.single { it.backupEntry == "folders.json" }.file.readText()).length()
+                val attachments = prepared.objects.count { it.kind == "file" }
+                "Verified old graph tip: $tip\nCurrent phone snapshot: $notes notes, $folders folders, $attachments attachments.\nExact transition: ${diff.upserts} upserts, ${diff.deletes} deletes, ${diff.uploads} binary uploads.\nAmbiguity: none. This preview made no Drive changes, Restore, acknowledgement or trust change."
+            } finally { prepared.directory.deleteRecursively() }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            "Transition preview blocked: ${error.message ?: "verification failed"}. Nothing was uploaded or acknowledged."
+        }
+    }
+
     suspend fun prepareSignInIntent(): Intent {
         val client = GoogleSignIn.getClient(context, signInOptions())
         val intent = suspendCancellableCoroutine { continuation ->
@@ -115,32 +149,48 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         return intent
     }
 
-    private suspend fun openGraphStore(drive: DriveApiClient, email: String, allowEnrollment: Boolean): AccountBoundGraphStore? {
+    private suspend fun openGraphStore(drive: DriveApiClient, email: String, allowEnrollment: Boolean,
+        allowTestGraphRestart: Boolean = false): AccountBoundGraphStore? {
         val (driveId, api) = drive.graphApi(email)
         val identity = IncrementalBackupFormat.sha256(driveId.toByteArray(Charsets.UTF_8))
         val enrollment = GraphNamespaceEnrollment(File(context.filesDir, "backup-graph-enrollment/$identity.json"), api)
         val owned = enrollment.load(email, driveId)
         val roots = api.roots(BackupGraphNamespace)
         check(roots.size <= 1) { "Multiple graph namespaces require reconciliation." }
+        if (roots.isEmpty() && !allowEnrollment) {
+            check(database.backupGraphDao().unfinished(email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty()) {
+                "Recover the interrupted operation before selecting a historical backup."
+            }
+            return null
+        }
         val layout = if (owned != null) {
             check(roots.all { it.id == owned.rootId }) { "The graph namespace differs from this account's enrolled namespace." }
-            val established = database.backupGraphDao().bindings(email).isNotEmpty() ||
-                database.backupGraphRestoreDao().appliedForAccount(email).isNotEmpty() ||
+            val established = database.backupGraphDao().binding(email, owned.lineageId) != null ||
+                database.backupGraphRestoreDao().applied(email, owned.lineageId) != null ||
                 database.backupGraphDao().unfinished(email).isNotEmpty()
-            if (established) check(roots.size == 1) { "The enrolled graph root is no longer visible. It was not recreated." }
-            if (allowEnrollment && !established) enrollment.enroll(email, driveId) else owned
+            if (roots.isEmpty() && allowTestGraphRestart && (established || api.metadata(owned.rootId)?.trashed == true)) {
+                check(database.backupGraphDao().unfinished(email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty())
+                enrollment.enrollAfterTestGraphRemoval(email, driveId)
+            } else {
+                if (established) check(roots.size == 1) { "The previous graph is no longer visible. Preview the phone transition before explicitly starting a new graph." }
+                if (allowEnrollment && !established) enrollment.enroll(email, driveId) else owned
+            }
         } else if (roots.isNotEmpty()) {
             discoverGraphLayout(api, email, driveId) ?: error("Graph discovery did not complete.")
         } else {
-            check(database.backupGraphDao().bindings(email).isEmpty() && database.backupGraphRestoreDao().appliedForAccount(email).isEmpty()) {
+            val previousBindings = database.backupGraphDao().bindings(email)
+            val previousApplied = database.backupGraphRestoreDao().appliedForAccount(email)
+            check((previousBindings.isEmpty() && previousApplied.isEmpty()) || (allowTestGraphRestart &&
+                previousBindings.all { it.driveAccountId == driveId } && previousApplied.all { it.driveAccountId == driveId })) {
                 "The trusted graph namespace is not visible. No replacement baseline was created."
             }
             if (!allowEnrollment) return null
+            check(database.backupGraphDao().unfinished(email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty())
             // The initial operation is the only full-inventory path. Legacy data is inspected, never rewritten.
             val remote = drive.inspectGraphReadiness(email)
             val local = readLocalBackupReadiness(database, email)
             val decision = reconcileBackupGraph(local, driveId, remote.legacyVisible, remote.namespaceCount, null, emptyList())
-            check(decision.state in setOf(BackupGraphReadinessState.FIRST_BASELINE_REQUIRED, BackupGraphReadinessState.LEGACY_BASELINE_REQUIRED)) {
+            check(allowTestGraphRestart || decision.state in setOf(BackupGraphReadinessState.FIRST_BASELINE_REQUIRED, BackupGraphReadinessState.LEGACY_BASELINE_REQUIRED)) {
                 "Current Vault/Drive relationship requires reconciliation. Nothing was published."
             }
             enrollment.enroll(email, driveId)
@@ -151,7 +201,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private suspend fun runGraphBackup(drive: DriveApiClient, email: String, force: Boolean,
         onProgress: suspend (DriveRestoreProgress) -> Unit): DriveSyncResult = try {
         check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled) { "Backup/Restore must be enabled together." }
-        val store = openGraphStore(drive, email, true) ?: error("Graph enrollment is required.")
+        val store = openGraphStore(drive, email, true, allowTestGraphRestart = force) ?: error("Graph enrollment is required.")
         val writer = InternalBackupGraphWriter(database, backupJournal, pendingBackupCapture, context.filesDir,
             File(context.filesDir, "backup-graph-publications"), store, onProgress = { onProgress(it.toDriveProgress()) })
         val unfinished = database.backupGraphDao().unfinished(email)
@@ -161,16 +211,24 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             val applied = database.backupGraphRestoreDao().applied(email, store.context.lineageId)
             if (binding == null && applied == null) {
                 check(store.commits().isEmpty()) { "A graph already exists. Restore/reconcile it before creating a baseline." }
-                val prepared = baselinePreparer.prepare(email) { onProgress(it.toDriveProgress()) }
+                val prepared = baselinePreparer.prepare(email, onProgress = { onProgress(it.toDriveProgress()) })
                 try { writer.createRoot(prepared) } finally { prepared.directory.deleteRecursively() }
             } else {
-                check(!force) { "Force Backup is not available for graph backups. Normal Backup preserves immutable history and captures pending changes." }
-                if (trustedPublicationPosition(database, store.context) == null) {
-                    check(adoptVerifiedRestoredParent(database, store.context, store.commits())) {
-                        "A verified Restore or baseline is required before Backup. Local changes were preserved."
+                val trusted = trustedPublicationPosition(database, store.context)
+                if (force) {
+                    check(binding != null && applied == null && trusted == null) {
+                        "This phone is not in the exact invalidated-graph state required for an authoritative transition. Nothing was published."
                     }
+                    val prepared = baselinePreparer.prepare(email, onProgress = { onProgress(it.toDriveProgress()) })
+                    try { writer.transition(prepared).first } finally { prepared.directory.deleteRecursively() }
+                } else {
+                    if (trusted == null) {
+                        check(adoptVerifiedRestoredParent(database, store.context, store.commits())) {
+                            "This phone's graph proof is invalid. Use the explicit phone-as-source transition, or reconcile before Backup. Local changes were preserved."
+                        }
+                    }
+                    writer.publish()
                 }
-                writer.publish()
             }
         }
         if (result.forkDetected) DriveSyncResult.Conflict("Fork detected. Both immutable backups were preserved. Backup/Restore require reconciliation.")

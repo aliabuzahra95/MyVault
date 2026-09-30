@@ -167,6 +167,7 @@ fun SettingsScreen(
     onGoogleDriveConsentResult: (Boolean) -> Unit = {},
     onGoogleDrivePush: ((Intent) -> Unit) -> Unit = { _ -> },
     onGoogleDriveReadiness: ((String) -> Unit) -> Unit = { result -> result("Readiness check is unavailable.") },
+    onGoogleDriveTransitionPreview: ((String) -> Unit) -> Unit = { result -> result("Transition preview is unavailable.") },
     onGoogleDriveForcePush: ((Intent) -> Unit) -> Unit = { _ -> },
     onGoogleDrivePull: ((Intent) -> Unit) -> Unit = { _ -> },
     onBackupSettingsOpened: () -> Unit = {},
@@ -275,7 +276,9 @@ fun SettingsScreen(
             onLocalBackup = { backupLauncher.launch("my-vault-${System.currentTimeMillis()}.vaultbackup") },
             onLocalRestore = { restoreLauncher.launch(arrayOf("application/octet-stream", "application/zip", "*/*")) },
             onDrivePush = { onGoogleDrivePush { consentLauncher.launch(it) } },
+            onDriveForcePush = { onGoogleDriveForcePush { consentLauncher.launch(it) } },
             onReadiness = onGoogleDriveReadiness,
+            onTransitionPreview = onGoogleDriveTransitionPreview,
             onDrivePull = { driveRestoreConfirmOpen = true },
         )
         FrozenSettingsDestination.FormattingAccount -> FrozenFormattingAccountSettings(
@@ -640,7 +643,7 @@ private fun FrozenGoogleDriveSettings(preferences: VaultUserPreferences, state: 
 }
 
 @Composable
-private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDrivePull: () -> Unit, onReadiness: ((String) -> Unit) -> Unit) {
+private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state: DriveRestoreState, onBack: () -> Unit, onLocalBackup: () -> Unit, onLocalRestore: () -> Unit, onDrivePush: () -> Unit, onDriveForcePush: () -> Unit, onDrivePull: () -> Unit, onReadiness: ((String) -> Unit) -> Unit, onTransitionPreview: ((String) -> Unit) -> Unit) {
     val lastBackupAt = state.confirmedLastBackupAt(preferences.lastGoogleDriveSyncAt)
     val context = LocalContext.current
     var pendingOperation by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -657,7 +660,16 @@ private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state
         } else operation()
     }
     var checking by remember { mutableStateOf(false) }
+    var confirmPhoneAuthority by remember { mutableStateOf(false) }
+    var transitionReady by remember { mutableStateOf(false) }
+    LaunchedEffect(preferences.googleDriveAccountEmail) { transitionReady = false }
     var readinessMessage by remember { mutableStateOf<String?>(null) }
+    if (confirmPhoneAuthority) FrozenConfirmDialog(
+        "Use this phone as backup source?",
+        "Only continue if this phone has the Vault you want to keep. If a verified graph exists, MyVault will publish exact changes, including deletions. If you removed the test graph, it will create and verify a new full graph from this phone. Your Vault and legacy backup are preserved.",
+        "Use this phone", { confirmPhoneAuthority = false },
+        onConfirm = { confirmPhoneAuthority = false; startDriveOperation(onDriveForcePush) },
+    )
     readinessMessage?.let { message ->
         AlertDialog(onDismissRequest = { readinessMessage = null }, title = { Text("Backup readiness") },
             text = { Text(message, modifier = Modifier.verticalScroll(rememberScrollState())) }, confirmButton = { TextButton(onClick = { readinessMessage = null }) { Text("Close") } })
@@ -669,6 +681,11 @@ private fun FrozenBackupRestoreSettings(preferences: VaultUserPreferences, state
                 onReadiness { readinessMessage = it; checking = false }
             })
             FrozenSettingsRow(Icons.Rounded.Backup, "Back up now", value = "Last backup: ${lastBackupAt.displayBackupTime()}", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking && pendingOperation == null, onClick = { startDriveOperation(onDrivePush) })
+            FrozenSettingsRow(Icons.Rounded.Verified, "Preview phone transition", subtitle = "Compare this phone with the verified Drive graph", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking, onClick = {
+                checking = true; transitionReady = false
+                onTransitionPreview { result -> readinessMessage = result; transitionReady = result.startsWith("Verified old graph tip:") || result.startsWith("Verified graph reset:"); checking = false }
+            })
+            FrozenSettingsRow(Icons.Rounded.Verified, "Use this phone as backup source", subtitle = "One-time recovery after a verified preview", enabled = transitionReady && !state.active && !checking && pendingOperation == null, onClick = { confirmPhoneAuthority = true })
             FrozenSettingsRow(Icons.Rounded.Restore, "Restore from Drive", value = if (state.active) "In progress" else "Latest Drive backup", enabled = preferences.googleDriveAccountEmail.isNotBlank() && !state.active && !checking && pendingOperation == null, onClick = { startDriveOperation(onDrivePull) })
         }
         frozenSection("LOCAL BACKUP") {
