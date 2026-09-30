@@ -93,6 +93,12 @@ public final class ProductionVisibilityJavaInstrumentation extends Instrumentati
         }
         File database = context.getDatabasePath("my_vault.db");
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY)) {
+            long schemaVersion = scalar(db, "PRAGMA user_version");
+            boolean schemaIdentityMatches;
+            try (Cursor schema = db.rawQuery("SELECT identity_hash FROM room_master_table WHERE id=42", null)) {
+                if (!schema.moveToFirst()) throw new IllegalStateException("Room schema identity unavailable");
+                schemaIdentityMatches = "cdb3218e4fd474ff2027faa3b16889fb".equals(schema.getString(0));
+            }
             long[] clock = values(db, "SELECT originEpoch, suppressionDepth, CASE WHEN settingsToken IS NULL THEN 0 ELSE 1 END FROM backup_journal_state WHERE id=1");
             long bindings = scalar(db, "SELECT count(*) FROM backup_graph_bindings WHERE accountScope=?", account);
             long applied = scalar(db, "SELECT count(*) FROM backup_graph_applied_states WHERE accountScope=?", account);
@@ -102,7 +108,14 @@ public final class ProductionVisibilityJavaInstrumentation extends Instrumentati
             long invalidBinding = scalar(db, "SELECT count(*) FROM backup_graph_bindings b LEFT JOIN backup_tracking_accounts a ON a.accountScope=b.accountScope WHERE b.accountScope=? AND (a.trusted IS NULL OR a.trusted != 1 OR a.checkpointId != b.checkpointId OR a.headId != b.deltaHeadId OR a.manifestId != b.checkpointFileId OR a.manifestSha256 != b.checkpointSha256 OR b.originEpoch != (SELECT originEpoch FROM backup_journal_state WHERE id=1))", account);
             long[] proof = values(db, "SELECT COALESCE(a.trusted,0), CASE WHEN a.checkpointId=b.checkpointId THEN 1 ELSE 0 END, CASE WHEN a.headId=b.deltaHeadId THEN 1 ELSE 0 END, CASE WHEN a.manifestId=b.checkpointFileId THEN 1 ELSE 0 END, CASE WHEN a.manifestSha256=b.checkpointSha256 THEN 1 ELSE 0 END, b.originEpoch FROM backup_graph_bindings b LEFT JOIN backup_tracking_accounts a ON a.accountScope=b.accountScope WHERE b.accountScope=?", account);
             long mismatchedLineage = scalar(db, "SELECT count(*) FROM backup_graph_bindings b JOIN backup_graph_applied_states r ON b.accountScope=r.accountScope WHERE b.accountScope=? AND b.lineageId != r.lineageId", account);
-            return "READ_ONLY_BACKUP_DIAGNOSTIC originEpoch=" + clock[0]
+            long notes = scalar(db, "SELECT count(*) FROM notes");
+            long folders = scalar(db, "SELECT count(*) FROM folders");
+            long attachments = scalar(db, "SELECT count(*) FROM attachments");
+            long annotations = scalar(db, "SELECT count(*) FROM pdf_annotations");
+            return "READ_ONLY_BACKUP_DIAGNOSTIC schemaVersion=" + schemaVersion
+                    + " schemaIdentityMatches=" + schemaIdentityMatches + " originEpoch=" + clock[0]
+                    + " notes=" + notes + " folders=" + folders + " attachments=" + attachments
+                    + " pdfAnnotations=" + annotations
                     + " suppressionDepth=" + clock[1] + " settingsTokenPresent=" + clock[2]
                     + " bindings=" + bindings + " applied=" + applied
                     + " invalidBinding=" + invalidBinding + " mismatchedLineage=" + mismatchedLineage
