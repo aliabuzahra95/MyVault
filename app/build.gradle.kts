@@ -11,6 +11,7 @@ plugins {
 
 android {
     sourceSets.getByName("androidTest").assets.srcDir("schemas")
+    testBuildType = providers.gradleProperty("MYVAULT_TEST_BUILD_TYPE").orElse("debug").get()
     namespace = "com.myvault.app"
     compileSdk = 36
     compileSdkExtension = 19
@@ -93,7 +94,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = providers.gradleProperty("MYVAULT_TEST_INSTRUMENTATION_RUNNER")
+            .orElse("androidx.test.runner.AndroidJUnitRunner").get()
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
