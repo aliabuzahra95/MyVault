@@ -6,6 +6,8 @@ import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 
 import org.json.JSONObject;
@@ -22,7 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
 
-/** Read-only Drive probe for one already-owned disposable file; never opens Room or Vault files. */
+/** Disposable Drive probe and read-only backup-state diagnostic; never modifies Vault data. */
 public final class ProductionVisibilityJavaInstrumentation extends Instrumentation {
     private static final String SCOPE = "https://www.googleapis.com/auth/drive.file";
     private static final String ACCOUNT_ID = "14287589311515837545";
@@ -49,6 +51,10 @@ public final class ProductionVisibilityJavaInstrumentation extends Instrumentati
     @Override public void onStart() {
         super.onStart();
         try {
+            if ("readiness-diagnostic".equals(arguments.getString("visibilityPhase"))) {
+                finish(Activity.RESULT_OK, result(readinessDiagnostic()));
+                return;
+            }
             verify();
             finish(Activity.RESULT_OK, result("cleanup".equals(arguments.getString("visibilityPhase"))
                     ? "PASS: exact disposable Drive files and root deleted"
@@ -64,6 +70,60 @@ public final class ProductionVisibilityJavaInstrumentation extends Instrumentati
         Bundle result = new Bundle();
         result.putString("result", message);
         return result;
+    }
+
+    private String readinessDiagnostic() {
+        Context context = getTargetContext();
+        if (!"com.myvault.app".equals(context.getPackageName())) {
+            throw new IllegalStateException("Wrong target package");
+        }
+        SharedPreferences signIn = context.getSharedPreferences("com.google.android.gms.signin", Context.MODE_PRIVATE);
+        String selectedId = signIn.getString("defaultGoogleSignInAccount", null);
+        String selectedJson = selectedId == null ? null : signIn.getString("googleSignInAccount:" + selectedId, null);
+        if (selectedJson == null) throw new IllegalStateException("No selected Drive account");
+        String account;
+        try {
+            account = new JSONObject(selectedJson).getString("email").trim().toLowerCase(Locale.ROOT);
+        } catch (Exception error) {
+            throw new IllegalStateException("Selected account unreadable");
+        }
+        File database = context.getDatabasePath("my_vault.db");
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(database.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY)) {
+            long[] clock = values(db, "SELECT originEpoch, suppressionDepth, CASE WHEN settingsToken IS NULL THEN 0 ELSE 1 END FROM backup_journal_state WHERE id=1");
+            long bindings = scalar(db, "SELECT count(*) FROM backup_graph_bindings WHERE accountScope=?", account);
+            long applied = scalar(db, "SELECT count(*) FROM backup_graph_applied_states WHERE accountScope=?", account);
+            long publications = scalar(db, "SELECT count(*) FROM backup_graph_publications WHERE accountScope=? AND status != 'COMPLETE'", account);
+            long restores = scalar(db, "SELECT count(*) FROM backup_graph_restores WHERE status != 'COMPLETE'");
+            long accountRestores = scalar(db, "SELECT count(*) FROM backup_graph_restores WHERE accountScope=? AND status != 'COMPLETE'", account);
+            long invalidBinding = scalar(db, "SELECT count(*) FROM backup_graph_bindings b LEFT JOIN backup_tracking_accounts a ON a.accountScope=b.accountScope WHERE b.accountScope=? AND (a.trusted IS NULL OR a.trusted != 1 OR a.checkpointId != b.checkpointId OR a.headId != b.deltaHeadId OR a.manifestId != b.checkpointFileId OR a.manifestSha256 != b.checkpointSha256 OR b.originEpoch != (SELECT originEpoch FROM backup_journal_state WHERE id=1))", account);
+            long[] proof = values(db, "SELECT COALESCE(a.trusted,0), CASE WHEN a.checkpointId=b.checkpointId THEN 1 ELSE 0 END, CASE WHEN a.headId=b.deltaHeadId THEN 1 ELSE 0 END, CASE WHEN a.manifestId=b.checkpointFileId THEN 1 ELSE 0 END, CASE WHEN a.manifestSha256=b.checkpointSha256 THEN 1 ELSE 0 END, b.originEpoch FROM backup_graph_bindings b LEFT JOIN backup_tracking_accounts a ON a.accountScope=b.accountScope WHERE b.accountScope=?", account);
+            long mismatchedLineage = scalar(db, "SELECT count(*) FROM backup_graph_bindings b JOIN backup_graph_applied_states r ON b.accountScope=r.accountScope WHERE b.accountScope=? AND b.lineageId != r.lineageId", account);
+            return "READ_ONLY_BACKUP_DIAGNOSTIC originEpoch=" + clock[0]
+                    + " suppressionDepth=" + clock[1] + " settingsTokenPresent=" + clock[2]
+                    + " bindings=" + bindings + " applied=" + applied
+                    + " invalidBinding=" + invalidBinding + " mismatchedLineage=" + mismatchedLineage
+                    + " trusted=" + proof[0] + " checkpointMatch=" + proof[1] + " deltaHeadMatch=" + proof[2]
+                    + " checkpointObjectMatch=" + proof[3] + " checkpointHashMatch=" + proof[4]
+                    + " bindingOriginEpoch=" + proof[5]
+                    + " unfinishedPublications=" + publications + " unfinishedRestoresAll=" + restores
+                    + " unfinishedRestoresAccount=" + accountRestores;
+        }
+    }
+
+    private static long scalar(SQLiteDatabase db, String sql, String... args) {
+        try (Cursor cursor = db.rawQuery(sql, args)) {
+            if (!cursor.moveToFirst()) throw new IllegalStateException("Diagnostic query empty");
+            return cursor.getLong(0);
+        }
+    }
+
+    private static long[] values(SQLiteDatabase db, String sql, String... args) {
+        try (Cursor cursor = db.rawQuery(sql, args)) {
+            if (!cursor.moveToFirst()) throw new IllegalStateException("Journal state unavailable");
+            long[] result = new long[cursor.getColumnCount()];
+            for (int index = 0; index < result.length; index++) result[index] = cursor.getLong(index);
+            return result;
+        }
     }
 
     private void verify() throws Exception {
