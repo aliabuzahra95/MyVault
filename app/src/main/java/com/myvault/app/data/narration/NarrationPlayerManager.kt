@@ -3,6 +3,7 @@ package com.myvault.app.data.narration
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -57,6 +58,8 @@ class NarrationPlayerManager @Inject constructor(
     private var pendingStartSession: NarrationSession? = null
     private var pendingInitialPositionMs: Long = 0L
     private var lastProgressSavedAt = 0L
+    private var startupStartedAtMs: Long? = null
+    private var startupSourceId: String? = null
 
     private val _state = MutableStateFlow(NarrationUiState())
     val state: StateFlow<NarrationUiState> = _state.asStateFlow()
@@ -66,10 +69,12 @@ class NarrationPlayerManager @Inject constructor(
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_READY -> {
-                    updatePlaybackState(
-                        if (player?.isPlaying == true) NarrationPlaybackStatus.Playing else NarrationPlaybackStatus.Paused,
-                        if (player?.isPlaying == true) "Playing" else "Paused",
-                    )
+                    when {
+                        pendingSeekMs != null -> updatePlaybackState(NarrationPlaybackStatus.Generating, "Loading saved position...")
+                        player?.isPlaying == true -> updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+                        player?.playWhenReady == true -> updatePlaybackState(NarrationPlaybackStatus.Preparing, "Buffering narration...")
+                        else -> updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
+                    }
                 }
                 Player.STATE_BUFFERING -> {
                     updatePlaybackState(NarrationPlaybackStatus.Preparing, "Loading narration...")
@@ -95,6 +100,11 @@ class NarrationPlayerManager @Inject constructor(
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
+                startupStartedAtMs?.let { startedAt ->
+                    Log.d(Tag, "startup first-playing source=${startupSourceId.orEmpty().take(96)} elapsedMs=${SystemClock.elapsedRealtime() - startedAt}")
+                }
+                startupStartedAtMs = null
+                startupSourceId = null
                 startTicker()
                 updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
             } else {
@@ -150,6 +160,12 @@ class NarrationPlayerManager @Inject constructor(
         _state.value = _state.value.preparing(noteId, noteTitle, provider, voice)
     }
 
+    fun beginStartup(noteId: String) = runOnMain {
+        startupSourceId = noteId
+        startupStartedAtMs = SystemClock.elapsedRealtime()
+        Log.d(Tag, "startup begin source=${noteId.take(96)}")
+    }
+
     fun markGenerating(noteId: String, noteTitle: String, current: Int, total: Int, voice: String = NarrationConfig.DEFAULT_VOICE) = runOnMain {
         val status = _state.value.status
         if (status == NarrationPlaybackStatus.Playing || status == NarrationPlaybackStatus.Paused) {
@@ -174,11 +190,14 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     fun startStreaming(session: NarrationSession, totalChunks: Int, initialPositionMs: Long = 0L) = runOnMain {
+        val attachStartedAt = SystemClock.elapsedRealtime()
         stopInternal(resetState = false)
         activeSession = session
         _state.update { it.copy(provider = NarrationProvider.fromModel(session.model), voice = session.voice) }
         activeFiles = session.files
+        val durationStartedAt = SystemClock.elapsedRealtime()
         activeDurationsMs = session.files.map(::readDurationMs)
+        Log.d(Tag, "startup duration-scan source=${session.noteId.take(96)} files=${session.files.size} elapsedMs=${SystemClock.elapsedRealtime() - durationStartedAt}")
         expectedChunks = totalChunks.coerceAtLeast(session.files.size)
         streamingGeneration = totalChunks > session.files.size
         waitingForNextChunk = false
@@ -195,22 +214,35 @@ class NarrationPlayerManager @Inject constructor(
             // Service is starting up, stash pending session
             pendingStartSession = session
             pendingInitialPositionMs = initialPositionMs
-            markPreparing(session.noteId, session.noteTitle, session.voice)
+            markPreparing(session.noteId, session.noteTitle, session.voice, NarrationProvider.fromModel(session.model))
             return@runOnMain
         }
 
+        _state.update {
+            it.copy(
+                status = NarrationPlaybackStatus.Preparing,
+                label = if (initialPositionMs > 0L) "Loading saved position..." else "Buffering narration...",
+                noteId = session.noteId,
+                noteTitle = session.noteTitle,
+                provider = NarrationProvider.fromModel(session.model),
+                voice = session.voice,
+                totalChunks = expectedChunks,
+                error = null,
+            )
+        }
+        val mediaItemsStartedAt = SystemClock.elapsedRealtime()
         val mediaItems = activeFiles.map { file -> buildMediaItem(session, file) }
         p.setMediaItems(mediaItems)
         p.playbackParameters = PlaybackParameters(speed)
+        Log.d(Tag, "startup media-items source=${session.noteId.take(96)} count=${mediaItems.size} elapsedMs=${SystemClock.elapsedRealtime() - mediaItemsStartedAt}")
+        p.prepare()
 
         if (initialPositionMs > 0L) {
             seekTo(initialPositionMs)
         } else {
-            p.prepare()
             p.play()
         }
-
-        updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+        Log.d(Tag, "startup player-attached source=${session.noteId.take(96)} elapsedMs=${SystemClock.elapsedRealtime() - attachStartedAt}")
     }
 
     fun appendStreamingChunk(session: NarrationSession, totalChunks: Int) = runOnMain {
@@ -220,7 +252,11 @@ class NarrationPlayerManager @Inject constructor(
 
         val newFiles = session.files.drop(activeFiles.size)
         activeFiles = session.files
-        activeDurationsMs = session.files.map(::readDurationMs)
+        activeDurationsMs = if (activeDurationsMs.size + newFiles.size == session.files.size) {
+            activeDurationsMs + newFiles.map(::readDurationMs)
+        } else {
+            session.files.map(::readDurationMs)
+        }
         expectedChunks = totalChunks.coerceAtLeast(session.files.size)
         streamingGeneration = totalChunks > session.files.size
 
@@ -252,8 +288,13 @@ class NarrationPlayerManager @Inject constructor(
     fun finishStreaming(session: NarrationSession) = runOnMain {
         if (activeSession?.cacheKey != session.cacheKey) return@runOnMain
         activeSession = session
+        val newFiles = session.files.drop(activeFiles.size)
         activeFiles = session.files
-        activeDurationsMs = session.files.map(::readDurationMs)
+        activeDurationsMs = if (activeDurationsMs.size + newFiles.size == session.files.size) {
+            activeDurationsMs + newFiles.map(::readDurationMs)
+        } else {
+            session.files.map(::readDurationMs)
+        }
         expectedChunks = session.files.size
         streamingGeneration = false
         updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
@@ -282,8 +323,8 @@ class NarrationPlayerManager @Inject constructor(
         val p = player
         if (p != null) {
             p.playbackParameters = PlaybackParameters(speed)
+            updatePlaybackState(NarrationPlaybackStatus.Preparing, "Buffering narration...")
             p.play()
-            updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
             return@runOnMain
         }
         val session = activeSession ?: return@runOnMain
@@ -506,8 +547,12 @@ class NarrationPlayerManager @Inject constructor(
         pendingSeekMs = null
         pendingStartSession = null
         pendingInitialPositionMs = 0L
-        if (resetState) _state.value = NarrationUiState(speed = speed,
-            provider = _state.value.provider, voice = _state.value.voice)
+        if (resetState) {
+            startupStartedAtMs = null
+            startupSourceId = null
+            _state.value = NarrationUiState(speed = speed,
+                provider = _state.value.provider, voice = _state.value.voice)
+        }
     }
 
     private fun persistAzureProgress(force: Boolean = false) {

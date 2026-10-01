@@ -1,5 +1,7 @@
 package com.myvault.app.data.narration
 
+import android.os.SystemClock
+import android.util.Log
 import com.myvault.app.BuildConfig
 import com.myvault.app.data.openai.OpenAiFeature
 import com.myvault.app.data.openai.OpenAiRequestGuard
@@ -37,6 +39,7 @@ class TtsRepository @Inject constructor(
         // Speed is handled by MediaPlayer playback params so the same generated MP3 can be reused
         // across playback speeds without paying for another TTS request.
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, NarrationConfig.MODEL, normalizedVoice, 1f)
+        val cacheLookupStartedAt = SystemClock.elapsedRealtime()
         cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash)?.let {
             OpenAiRequestGuard.logCacheDecision(
                 featureName = OpenAiFeature.ListenMode,
@@ -46,9 +49,15 @@ class TtsRepository @Inject constructor(
                 characterCount = cleanText.length,
                 cacheStatus = "hit:session",
             )
+            Log.d(TimingTag, "cache-lookup source=${noteId.take(96)} result=complete-hit elapsedMs=${SystemClock.elapsedRealtime() - cacheLookupStartedAt}")
             onChunkReady(it, true, it.files.size)
             return@withContext it
         }
+
+        val chunkPlanStartedAt = SystemClock.elapsedRealtime()
+        val chunks = textPreparer.splitIntoChunks(cleanText)
+        if (chunks.isEmpty()) error("This note is empty.")
+        Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
         OpenAiRequestGuard.logCacheDecision(
             featureName = OpenAiFeature.ListenMode,
             endpointUrl = SpeechEndpoint,
@@ -59,15 +68,34 @@ class TtsRepository @Inject constructor(
         )
 
         var apiKey: String? = null
-
-        val chunks = textPreparer.splitIntoChunks(cleanText)
-        if (chunks.isEmpty()) error("This note is empty.")
-        val generatedFiles = mutableListOf<File>()
+        val generatedFiles = cacheManager.cachedChunkPrefix(
+            cacheKey = cacheKey,
+            totalChunks = chunks.size,
+            noteId = noteId,
+            model = NarrationConfig.MODEL,
+            voice = normalizedVoice,
+            minimumBytes = MinValidMp3Bytes,
+        ).toMutableList()
+        Log.d(TimingTag, "cache-lookup source=${noteId.take(96)} result=partial-hit cached=${generatedFiles.size}/${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - cacheLookupStartedAt}")
+        if (generatedFiles.isNotEmpty()) {
+            val cachedSession = NarrationSession(
+                cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash, generatedFiles.toList(),
+            )
+            val complete = generatedFiles.size == chunks.size
+            cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
+            onChunkReady(cachedSession, complete, chunks.size)
+            if (complete) return@withContext cachedSession
+        }
+        val firstMissingIndex = generatedFiles.size
         runCatching {
-            chunks.forEachIndexed { index, chunk ->
+            for (index in firstMissingIndex until chunks.size) {
                 coroutineContext.ensureActive()
-                val target = cacheManager.chunkFile(cacheKey, index)
-                if (target.exists() && target.length() >= MinValidMp3Bytes) {
+                val chunk = chunks[index]
+                val cachedTarget = if (index == firstMissingIndex) null else cacheManager.cachedChunkOrNull(
+                    cacheKey, index, noteId, NarrationConfig.MODEL, normalizedVoice, minimumBytes = MinValidMp3Bytes,
+                )
+                val target = cachedTarget ?: cacheManager.chunkFile(cacheKey, index)
+                if (cachedTarget != null) {
                     OpenAiRequestGuard.logCacheDecision(
                         featureName = OpenAiFeature.ListenMode,
                         endpointUrl = SpeechEndpoint,
@@ -92,7 +120,9 @@ class TtsRepository @Inject constructor(
                         characterCount = chunk.length,
                         cacheStatus = "miss:chunk-${index + 1}",
                     )
+                    val requestStartedAt = SystemClock.elapsedRealtime()
                     requestSpeechWithRetry(resolvedApiKey, chunk, normalizedVoice, target, index + 1)
+                    Log.d(TimingTag, "provider-request source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
                 }
                 generatedFiles += target
                 val partialSession = NarrationSession(
@@ -201,5 +231,6 @@ class TtsRepository @Inject constructor(
         const val MaxAttempts = 2
         const val MinValidMp3Bytes = 512L
         const val BufferSize = 32 * 1024
+        const val TimingTag = "MyVaultNarrationTiming"
     }
 }

@@ -1,6 +1,7 @@
 package com.myvault.app.data.narration
 
 import android.content.Context
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,15 +11,25 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class NarrationCacheManager @Inject constructor(
-    @param:ApplicationContext private val context: Context,
+class NarrationCacheManager private constructor(
+    private val rootDirectory: () -> File,
 ) {
-    private val rootDir: File by lazy { File(context.filesDir, "note_narration_cache").apply { mkdirs() } }
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(
+        { File(context.filesDir, "note_narration_cache") },
+    )
+
+    internal constructor(rootDir: File) : this({ rootDir })
+
+    private val rootDir: File by lazy { rootDirectory().apply { mkdirs() } }
 
     fun contentHash(text: String): String = sha256(text.toByteArray())
 
+    @Suppress("UNUSED_PARAMETER")
     fun cacheKey(noteId: String, contentHash: String, model: String, voice: String, speed: Float): String {
-        val speedKey = speed.toString().replace('.', '_')
+        // Synthesis bytes do not change with ExoPlayer playback speed. Keep the legacy 1.0
+        // namespace so existing caches remain valid while speed changes never trigger TTS.
+        val speedKey = "1_0"
         return listOf(noteId.safeFilePart(), model.safeFilePart(), voice.safeFilePart(), speedKey, contentHash.take(16)).joinToString("_")
     }
 
@@ -46,7 +57,11 @@ class NarrationCacheManager @Inject constructor(
             val files = buildList {
                 for (index in 0 until filesJson.length()) {
                     val file = File(dir, filesJson.getString(index))
-                    if (!file.exists() || file.length() < MinValidAudioBytes) return null
+                    if (!isValidChunk(file, MinValidAudioBytes)) {
+                        logCache(false, noteId, index, model, voice)
+                        return null
+                    }
+                    logCache(true, noteId, index, model, voice)
                     add(file)
                 }
             }
@@ -57,6 +72,49 @@ class NarrationCacheManager @Inject constructor(
             }
             NarrationSession(cacheKey, noteId, noteTitle, model, voice, speed, contentHash, files, cues)
         }.getOrNull()
+    }
+
+    fun cachedChunkPrefix(
+        cacheKey: String,
+        totalChunks: Int,
+        noteId: String,
+        model: String,
+        voice: String,
+        extension: String = "mp3",
+        minimumBytes: Long = MinValidAudioBytes,
+        requiredSidecarSuffix: String? = null,
+    ): List<File> {
+        val dir = sessionDir(cacheKey)
+        return buildList {
+            for (index in 0 until totalChunks) {
+                val stem = "chunk_${index.toString().padStart(3, '0')}"
+                val file = File(dir, "$stem.$extension")
+                val sidecarValid = requiredSidecarSuffix == null || File(dir, "$stem$requiredSidecarSuffix").exists()
+                val hit = isValidChunk(file, minimumBytes) && sidecarValid
+                logCache(hit, noteId, index, model, voice)
+                if (!hit) break
+                add(file)
+            }
+        }
+    }
+
+    fun cachedChunkOrNull(
+        cacheKey: String,
+        index: Int,
+        noteId: String,
+        model: String,
+        voice: String,
+        extension: String = "mp3",
+        minimumBytes: Long = MinValidAudioBytes,
+        requiredSidecarSuffix: String? = null,
+    ): File? {
+        val stem = "chunk_${index.toString().padStart(3, '0')}"
+        val dir = sessionDir(cacheKey)
+        val file = File(dir, "$stem.$extension")
+        val sidecarValid = requiredSidecarSuffix == null || File(dir, "$stem$requiredSidecarSuffix").exists()
+        val hit = isValidChunk(file, minimumBytes) && sidecarValid
+        logCache(hit, noteId, index, model, voice)
+        return file.takeIf { hit }
     }
 
     fun sessionDir(cacheKey: String): File = File(rootDir, cacheKey).apply { mkdirs() }
@@ -104,6 +162,20 @@ class NarrationCacheManager @Inject constructor(
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
+
+    private fun isValidChunk(file: File, minimumBytes: Long): Boolean =
+        file.exists() && file.length() >= minimumBytes
+
+    private fun logCache(hit: Boolean, noteId: String, index: Int, model: String, voice: String) {
+        runCatching {
+            Log.d(
+                CacheLogTag,
+                "CACHE ${if (hit) "HIT" else "MISS"} source=${noteId.take(96)} " +
+                    "chunk=${index + 1} provider=${NarrationProvider.fromModel(model).storedValue} " +
+                    "model=$model voice=$voice",
+            )
+        }
+    }
 }
 
 private fun JSONArray?.toNarrationCues(): List<NarrationCue> = buildList {
@@ -126,3 +198,4 @@ private fun JSONArray?.toNarrationCues(): List<NarrationCue> = buildList {
 
 private fun String.safeFilePart(): String = replace(Regex("[^A-Za-z0-9_.-]"), "_").take(80)
 private const val MinValidAudioBytes = 256L
+private const val CacheLogTag = "MyVaultNarrationCache"

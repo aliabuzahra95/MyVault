@@ -54,15 +54,9 @@ class DeviceTtsSynthesizer @Inject constructor(
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
     ): NarrationSession = withContext(Dispatchers.IO) {
-        val ready = ensureReady()
-        if (!ready) {
-            error("Device text-to-speech engine is not available on this device.")
-        }
-
         val cleanText = narrationText.trim()
         if (cleanText.isBlank()) error("This note is empty.")
 
-        val tts = textToSpeech ?: error("Device TTS is unavailable.")
         val contentHash = cacheManager.contentHash(cleanText)
         val clampedSpeed = speed.coerceIn(0.75f, 2.0f)
         val model = "device-tts-local"
@@ -78,14 +72,40 @@ class DeviceTtsSynthesizer @Inject constructor(
         val chunks = textPreparer.splitIntoChunks(cleanText, maxChars = DeviceChunkMaxChars)
         if (chunks.isEmpty()) error("This note is empty.")
 
-        val generatedFiles = mutableListOf<File>()
+        val generatedFiles = cacheManager.cachedChunkPrefix(
+            cacheKey = cacheKey,
+            totalChunks = chunks.size,
+            noteId = noteId,
+            model = model,
+            voice = voice,
+            extension = "wav",
+            minimumBytes = MinValidAudioBytes,
+        ).toMutableList()
+        if (generatedFiles.isNotEmpty()) {
+            val cachedSession = NarrationSession(
+                cacheKey, noteId, noteTitle, model, voice, clampedSpeed, contentHash, generatedFiles.toList(),
+            )
+            val complete = generatedFiles.size == chunks.size
+            cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
+            onChunkReady(cachedSession, complete, chunks.size)
+            if (complete) return@withContext cachedSession
+        }
+
+        val ready = ensureReady()
+        if (!ready) error("Device text-to-speech engine is not available on this device.")
+        val tts = textToSpeech ?: error("Device TTS is unavailable.")
         val dir = cacheManager.sessionDir(cacheKey)
+        val firstMissingIndex = generatedFiles.size
 
-        chunks.forEachIndexed { index, chunk ->
+        for (index in firstMissingIndex until chunks.size) {
             coroutineContext.ensureActive()
-            val chunkFile = File(dir, "chunk_${index.toString().padStart(3, '0')}.wav")
+            val chunk = chunks[index]
+            val cachedFile = if (index == firstMissingIndex) null else cacheManager.cachedChunkOrNull(
+                cacheKey, index, noteId, model, voice, extension = "wav", minimumBytes = MinValidAudioBytes,
+            )
+            val chunkFile = cachedFile ?: File(dir, "chunk_${index.toString().padStart(3, '0')}.wav")
 
-            if (chunkFile.exists() && chunkFile.length() >= MinValidAudioBytes) {
+            if (cachedFile != null) {
                 generatedFiles += chunkFile
             } else {
                 onChunkGenerating(index + 1, chunks.size)

@@ -43,7 +43,6 @@ class AzureTtsRepository @Inject constructor(
         val originalText = narrationText.trim()
         val cleanText = textPreparer.prepareAzureNarration(originalText)
         if (cleanText.isBlank()) error("This note is empty.")
-        if (apiKey.isBlank()) error("Azure Speech API key is missing. Add it in Settings.")
         val normalizedRegion = region.trim().lowercase()
         if (!normalizedRegion.matches(RegionPattern)) error("Azure Speech region is invalid.")
         val normalizedVoice = voice.ifBlank { AzureNarrationConfig.DEFAULT_VOICE }
@@ -64,16 +63,49 @@ class AzureTtsRepository @Inject constructor(
 
         val chunks = textPreparer.splitIntoChunks(cleanText)
         if (chunks.isEmpty()) error("This note is empty.")
-        val generatedFiles = mutableListOf<File>()
-        val generatedCues = mutableListOf<NarrationCue>()
-        var searchFrom = 0
-        chunks.forEachIndexed { index, chunk ->
+        var chunkSearchFrom = 0
+        val chunkTextStarts = chunks.map { chunk ->
+            val start = cleanText.indexOf(chunk, chunkSearchFrom).takeIf { it >= 0 } ?: chunkSearchFrom
+            chunkSearchFrom = (start + chunk.length).coerceAtMost(cleanText.length)
+            start
+        }
+        val generatedFiles = cacheManager.cachedChunkPrefix(
+            cacheKey = cacheKey,
+            totalChunks = chunks.size,
+            noteId = noteId,
+            model = model,
+            voice = normalizedVoice,
+            minimumBytes = MinValidMp3Bytes,
+            requiredSidecarSuffix = "_cues.json",
+        ).toMutableList()
+        val generatedCues = generatedFiles.indices.flatMap { index ->
+            File(cacheManager.sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}_cues.json").readCuesOrEmpty()
+        }.toMutableList()
+        if (generatedFiles.isNotEmpty()) {
+            val cachedSession = NarrationSession(
+                cacheKey, noteId, noteTitle, model, normalizedVoice, clampedSpeed, contentHash,
+                generatedFiles.toList(), generatedCues.toList(),
+            )
+            val complete = generatedFiles.size == chunks.size
+            cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
+            onChunkReady(cachedSession, complete, chunks.size)
+            if (complete) return@withContext cachedSession
+        }
+
+        if (apiKey.isBlank()) error("Azure Speech API key is missing. Add it in Settings.")
+        val firstMissingIndex = generatedFiles.size
+        for (index in firstMissingIndex until chunks.size) {
             coroutineContext.ensureActive()
-            val chunkTextStart = cleanText.indexOf(chunk, searchFrom).takeIf { it >= 0 } ?: searchFrom
-            searchFrom = (chunkTextStart + chunk.length).coerceAtMost(cleanText.length)
-            val target = cacheManager.chunkFile(cacheKey, index)
+            val chunk = chunks[index]
+            val chunkTextStart = chunkTextStarts[index]
             val chunkCueFile = File(cacheManager.sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}_cues.json")
-            if (!target.exists() || target.length() < MinValidMp3Bytes || !chunkCueFile.exists()) {
+            val cachedTarget = if (index == firstMissingIndex) null else cacheManager.cachedChunkOrNull(
+                cacheKey, index, noteId, model, normalizedVoice,
+                minimumBytes = MinValidMp3Bytes,
+                requiredSidecarSuffix = "_cues.json",
+            )
+            val target = cachedTarget ?: cacheManager.chunkFile(cacheKey, index)
+            if (cachedTarget == null) {
                 onChunkGenerating(index + 1, chunks.size)
                 val cues = requestSpeechWithRetry(
                     apiKey = apiKey.trim(),

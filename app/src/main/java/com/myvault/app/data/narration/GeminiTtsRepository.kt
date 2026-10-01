@@ -1,6 +1,8 @@
 package com.myvault.app.data.narration
 
+import android.os.SystemClock
 import android.util.Base64
+import android.util.Log
 import com.myvault.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -19,6 +21,7 @@ private const val ConnectTimeoutMs = 15_000
 private const val ReadTimeoutMs = 60_000
 private const val MaxAttempts = 3
 private const val MinValidAudioBytes = 512L
+private const val TimingTag = "MyVaultNarrationTiming"
 
 @Singleton
 class GeminiTtsRepository @Inject constructor(
@@ -47,29 +50,58 @@ class GeminiTtsRepository @Inject constructor(
 
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, effectiveModel, normalizedVoice, 1f)
 
+        val cacheLookupStartedAt = SystemClock.elapsedRealtime()
         cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, effectiveModel, normalizedVoice, clampedSpeed, contentHash)?.let {
+            Log.d(TimingTag, "cache-lookup source=${noteId.take(96)} result=complete-hit elapsedMs=${SystemClock.elapsedRealtime() - cacheLookupStartedAt}")
             onChunkReady(it, true, it.files.size)
             return@withContext it
         }
 
-        val resolvedApiKey = apiKeyOverride?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.GEMINI_API_KEY.trim().takeIf { it.isNotBlank() }
-            ?: error("Gemini narration is not configured. Add MYVAULT_GEMINI_API_KEY to local.properties or settings.")
-
+        val chunkPlanStartedAt = SystemClock.elapsedRealtime()
         val chunks = director.planToChunks(plan)
         if (chunks.isEmpty()) error("This content is empty.")
+        Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.fromModel(effectiveModel).storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
 
-        val generatedFiles = mutableListOf<File>()
+        val generatedFiles = cacheManager.cachedChunkPrefix(
+            cacheKey = cacheKey,
+            totalChunks = chunks.size,
+            noteId = noteId,
+            model = effectiveModel,
+            voice = normalizedVoice,
+            minimumBytes = MinValidAudioBytes,
+        ).toMutableList()
+        Log.d(TimingTag, "cache-lookup source=${noteId.take(96)} result=partial-hit cached=${generatedFiles.size}/${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - cacheLookupStartedAt}")
+        if (generatedFiles.isNotEmpty()) {
+            val cachedSession = NarrationSession(
+                cacheKey, noteId, noteTitle, effectiveModel, normalizedVoice, clampedSpeed, contentHash, generatedFiles.toList(),
+            )
+            val complete = generatedFiles.size == chunks.size
+            cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
+            onChunkReady(cachedSession, complete, chunks.size)
+            if (complete) return@withContext cachedSession
+        }
 
-        chunks.forEachIndexed { index, chunk ->
+        var resolvedApiKey: String? = null
+        val firstMissingIndex = generatedFiles.size
+
+        for (index in firstMissingIndex until chunks.size) {
             coroutineContext.ensureActive()
-            val target = cacheManager.chunkFile(cacheKey, index)
+            val chunk = chunks[index]
+            val cachedTarget = if (index == firstMissingIndex) null else cacheManager.cachedChunkOrNull(
+                cacheKey, index, noteId, effectiveModel, normalizedVoice, minimumBytes = MinValidAudioBytes,
+            )
+            val target = cachedTarget ?: cacheManager.chunkFile(cacheKey, index)
 
-            if (target.exists() && target.length() >= MinValidAudioBytes) {
-                // Cached chunk hit
-            } else {
+            if (cachedTarget == null) {
                 onChunkGenerating(index + 1, chunks.size)
-                requestSpeechWithRetry(resolvedApiKey, effectiveModel, chunk, normalizedVoice, target, index + 1)
+                val apiKey = resolvedApiKey ?: (
+                    apiKeyOverride?.takeIf { it.isNotBlank() }
+                        ?: BuildConfig.GEMINI_API_KEY.trim().takeIf { it.isNotBlank() }
+                        ?: error("Gemini narration is not configured. Add MYVAULT_GEMINI_API_KEY to local.properties or settings.")
+                    ).also { resolvedApiKey = it }
+                val requestStartedAt = SystemClock.elapsedRealtime()
+                requestSpeechWithRetry(apiKey, effectiveModel, chunk, normalizedVoice, target, index + 1)
+                Log.d(TimingTag, "provider-request source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
             }
 
             coroutineContext.ensureActive()

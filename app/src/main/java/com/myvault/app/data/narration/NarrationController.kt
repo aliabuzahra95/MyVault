@@ -1,5 +1,7 @@
 package com.myvault.app.data.narration
 
+import android.os.SystemClock
+import android.util.Log
 import com.myvault.app.data.preferences.VaultPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +73,7 @@ class NarrationController @Inject constructor(
 
         generationJob?.cancel()
         generationJob = scope.launch {
+            playerManager.beginStartup(noteId)
             val geminiSettings = preferences.geminiSpeechSettings.first()
             val voice = voiceOverride?.takeIf { it.isNotBlank() } ?: geminiSettings.voice
             val current = state.value
@@ -94,7 +97,9 @@ class NarrationController @Inject constructor(
             val request = NarrationRequest(noteId, noteTitle, body, voice, provider)
             lastRequest = request
 
+            val planStartedAt = SystemClock.elapsedRealtime()
             val plan = director.createPlan(noteId, noteTitle, body)
+            Log.d(TimingTag, "source-preparation source=${noteId.take(96)} provider=${provider.storedValue} elapsedMs=${SystemClock.elapsedRealtime() - planStartedAt}")
             if (plan.fullSpokenText.isBlank()) {
                 playerManager.showError(noteId, noteTitle, "This content is empty.")
                 return@launch
@@ -166,7 +171,10 @@ class NarrationController @Inject constructor(
         lastRequest = request
         generationJob?.cancel()
         generationJob = scope.launch {
+            playerManager.beginStartup(noteId)
+            val planStartedAt = SystemClock.elapsedRealtime()
             val plan = director.createPlan(noteId, noteTitle, body)
+            Log.d(TimingTag, "source-preparation source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} elapsedMs=${SystemClock.elapsedRealtime() - planStartedAt}")
             val narrationText = plan.fullSpokenText
             if (narrationText.isBlank()) {
                 playerManager.showError(request.noteId, request.title, "This note is empty.")
@@ -224,6 +232,7 @@ class NarrationController @Inject constructor(
         if (generationJob?.isActive == true) return
         generationJob?.cancel()
         generationJob = scope.launch {
+            playerManager.beginStartup(noteId)
             val settings = preferences.azureSpeechSettings.first()
             val voice = voiceOverride?.takeIf { it.isNotBlank() } ?: settings.voice
             val current = state.value
@@ -244,7 +253,9 @@ class NarrationController @Inject constructor(
             }
             val request = NarrationRequest(noteId, noteTitle, narrationBody, voice, NarrationProvider.Azure)
             lastRequest = request
+            val preparationStartedAt = SystemClock.elapsedRealtime()
             val narrationText = textPreparer.prepare(narrationTitle, request.body)
+            Log.d(TimingTag, "source-preparation source=${noteId.take(96)} provider=${NarrationProvider.Azure.storedValue} elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAt}")
             if (narrationText.isBlank()) {
                 playerManager.showError(request.noteId, request.title, "This note is empty.")
                 return@launch
@@ -308,7 +319,10 @@ class NarrationController @Inject constructor(
         lastRequest = request
         generationJob?.cancel()
         generationJob = scope.launch {
+            playerManager.beginStartup(noteId)
+            val planStartedAt = SystemClock.elapsedRealtime()
             val plan = director.createPlan(noteId, noteTitle, body)
+            Log.d(TimingTag, "source-preparation source=${noteId.take(96)} provider=${NarrationProvider.Device.storedValue} elapsedMs=${SystemClock.elapsedRealtime() - planStartedAt}")
             val narrationText = plan.fullSpokenText
             if (narrationText.isBlank()) {
                 playerManager.showError(noteId, noteTitle, "This note is empty.")
@@ -455,6 +469,7 @@ class NarrationController @Inject constructor(
 
     private companion object {
         const val DeviceNarrationVoice = "device"
+        const val TimingTag = "MyVaultNarrationTiming"
     }
 }
 
