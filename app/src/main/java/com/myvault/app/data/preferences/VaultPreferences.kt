@@ -224,6 +224,10 @@ class VaultPreferences @Inject constructor(
             )
         }
 
+    val openAiNarrationVoice: Flow<String> = context.vaultDataStore.data.map {
+        NarrationProvider.OpenAi.resolveVoice(it[Keys.OpenAiNarrationVoice])
+    }
+
     fun cachedStartupPreferences(): VaultUserPreferences =
         VaultUserPreferences(
             dashboardFontSize = startupCache.getString(Keys.CachedDashboardFontSize, null) ?: "medium",
@@ -288,6 +292,26 @@ class VaultPreferences @Inject constructor(
     suspend fun setNarrationProvider(provider: String) {
         context.vaultDataStore.edit { preferences ->
             preferences[Keys.NarrationProvider] = NarrationProvider.fromStoredValue(provider).storedValue
+        }
+    }
+
+    suspend fun setNarrationSelection(provider: NarrationProvider, voice: String) {
+        val selectedVoice = provider.resolveVoice(voice)
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.NarrationProvider] = provider.storedValue
+            when (provider) {
+                NarrationProvider.GeminiFlashLite, NarrationProvider.GeminiFlash -> {
+                    preferences[Keys.GeminiSpeechModel] = provider.defaultModel
+                    preferences[Keys.GeminiSpeechVoice] = selectedVoice
+                }
+                NarrationProvider.OpenAi -> preferences[Keys.OpenAiNarrationVoice] = selectedVoice
+                NarrationProvider.Azure -> {
+                    val key = if (selectedVoice in AzureNarrationConfig.ArabicVoiceOptions)
+                        Keys.AzureSpeechArabicVoice else Keys.AzureSpeechVoice
+                    preferences[key] = selectedVoice
+                }
+                NarrationProvider.Device -> Unit
+            }
         }
     }
 
@@ -653,6 +677,7 @@ class VaultPreferences @Inject constructor(
         val ShowFullFileTitles: Preferences.Key<Boolean> = booleanPreferencesKey("show_full_file_titles")
         val DefaultNoteView: Preferences.Key<String> = stringPreferencesKey("default_note_view")
         val NarrationProvider: Preferences.Key<String> = stringPreferencesKey("narration_provider")
+        val OpenAiNarrationVoice: Preferences.Key<String> = stringPreferencesKey("openai_narration_voice")
         val GeminiSpeechApiKey: Preferences.Key<String> = stringPreferencesKey("gemini_speech_api_key")
         val GeminiSpeechVoice: Preferences.Key<String> = stringPreferencesKey("gemini_speech_voice")
         val GeminiSpeechModel: Preferences.Key<String> = stringPreferencesKey("gemini_speech_model")

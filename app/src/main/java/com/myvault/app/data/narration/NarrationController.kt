@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -31,6 +32,8 @@ class NarrationController @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var generationJob: Job? = null
+    private var selectionJob: Job? = null
+    private var stoppingGeneration: Job? = null
     private var lastRequest: NarrationRequest? = null
 
     fun startListening(
@@ -49,7 +52,7 @@ class NarrationController @Inject constructor(
                 NarrationProvider.GeminiFlash -> startGemini(sourceId, title, text, GeminiNarrationConfig.MODEL_FLASH, voiceOverride, resume)
                 NarrationProvider.Azure -> startAzure(sourceId, title, text, voiceOverride, startOffset, resume)
                 NarrationProvider.Device -> startDevice(sourceId, title, text, resume = resume)
-                NarrationProvider.OpenAi -> start(sourceId, title, text, voiceOverride ?: NarrationConfig.DEFAULT_VOICE, resume = resume)
+                NarrationProvider.OpenAi -> start(sourceId, title, text, voiceOverride ?: preferences.openAiNarrationVoice.first(), resume = resume)
             }
         }
     }
@@ -83,7 +86,7 @@ class NarrationController @Inject constructor(
                         return@launch
                     }
                     NarrationPlaybackStatus.Preparing,
-                    NarrationPlaybackStatus.Generating -> return@launch
+                    NarrationPlaybackStatus.Generating -> Unit
                     else -> Unit
                 }
             }
@@ -97,7 +100,7 @@ class NarrationController @Inject constructor(
                 return@launch
             }
 
-            playerManager.markPreparing(noteId, noteTitle, voice)
+            playerManager.markPreparing(noteId, noteTitle, voice, provider)
             var playbackStarted = false
             runCatching {
                 geminiTtsRepository.generateNarrationProgressively(
@@ -109,9 +112,11 @@ class NarrationController @Inject constructor(
                     speed = state.value.speed,
                     apiKeyOverride = geminiSettings.apiKey.takeIf { it.isNotBlank() },
                     onChunkGenerating = { currentChunk, totalChunks ->
+                        coroutineContext.ensureActive()
                         playerManager.markGenerating(noteId, noteTitle, currentChunk, totalChunks, voice)
                     },
                     onChunkReady = { session, isComplete, totalChunks ->
+                        coroutineContext.ensureActive()
                         if (!playbackStarted) {
                             playbackStarted = true
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -123,6 +128,7 @@ class NarrationController @Inject constructor(
                     },
                 )
             }.onFailure { error ->
+                coroutineContext.ensureActive()
                 if (error is CancellationException) return@launch
                 playerManager.showError(noteId, noteTitle, error.message ?: "Couldn’t generate Gemini narration.")
             }
@@ -150,7 +156,7 @@ class NarrationController @Inject constructor(
                     return
                 }
                 NarrationPlaybackStatus.Preparing,
-                NarrationPlaybackStatus.Generating -> return
+                NarrationPlaybackStatus.Generating -> Unit
                 else -> Unit
             }
         }
@@ -166,7 +172,7 @@ class NarrationController @Inject constructor(
                 playerManager.showError(request.noteId, request.title, "This note is empty.")
                 return@launch
             }
-            playerManager.markPreparing(request.noteId, request.title, request.voice)
+            playerManager.markPreparing(request.noteId, request.title, request.voice, request.provider)
             var playbackStarted = false
             runCatching {
                 ttsRepository.generateNarrationProgressively(
@@ -176,9 +182,11 @@ class NarrationController @Inject constructor(
                     voice = request.voice,
                     speed = state.value.speed,
                     onChunkGenerating = { currentChunk, totalChunks ->
+                        coroutineContext.ensureActive()
                         playerManager.markGenerating(request.noteId, request.title, currentChunk, totalChunks, request.voice)
                     },
                     onChunkReady = { session, isComplete, totalChunks ->
+                        coroutineContext.ensureActive()
                         if (!playbackStarted) {
                             playbackStarted = true
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -190,6 +198,7 @@ class NarrationController @Inject constructor(
                     },
                 )
             }.onFailure { error ->
+                coroutineContext.ensureActive()
                 if (error is CancellationException) return@launch
                 playerManager.showError(
                     noteId = request.noteId,
@@ -229,7 +238,7 @@ class NarrationController @Inject constructor(
                         return@launch
                     }
                     NarrationPlaybackStatus.Preparing,
-                    NarrationPlaybackStatus.Generating -> return@launch
+                    NarrationPlaybackStatus.Generating -> Unit
                     else -> Unit
                 }
             }
@@ -240,7 +249,7 @@ class NarrationController @Inject constructor(
                 playerManager.showError(request.noteId, request.title, "This note is empty.")
                 return@launch
             }
-            playerManager.markPreparing(request.noteId, request.title, request.voice)
+            playerManager.markPreparing(request.noteId, request.title, request.voice, request.provider)
             var playbackStarted = false
             runCatching {
                 azureTtsRepository.generateNarrationProgressively(
@@ -253,9 +262,11 @@ class NarrationController @Inject constructor(
                     arabicVoice = settings.arabicVoice,
                     speed = state.value.speed,
                     onChunkGenerating = { currentChunk, totalChunks ->
+                        coroutineContext.ensureActive()
                         playerManager.markGenerating(request.noteId, request.title, currentChunk, totalChunks, request.voice)
                     },
                     onChunkReady = { session, isComplete, totalChunks ->
+                        coroutineContext.ensureActive()
                         if (!playbackStarted) {
                             playbackStarted = true
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -267,6 +278,7 @@ class NarrationController @Inject constructor(
                     },
                 )
             }.onFailure { error ->
+                coroutineContext.ensureActive()
                 if (error is CancellationException) return@launch
                 playerManager.showError(request.noteId, request.title, error.message ?: "Couldn’t generate Azure narration.")
             }
@@ -287,7 +299,7 @@ class NarrationController @Inject constructor(
                     return
                 }
                 NarrationPlaybackStatus.Preparing,
-                NarrationPlaybackStatus.Generating -> return
+                NarrationPlaybackStatus.Generating -> Unit
                 else -> Unit
             }
         }
@@ -302,7 +314,7 @@ class NarrationController @Inject constructor(
                 playerManager.showError(noteId, noteTitle, "This note is empty.")
                 return@launch
             }
-            playerManager.markPreparing(noteId, noteTitle, DeviceNarrationVoice)
+            playerManager.markPreparing(noteId, noteTitle, DeviceNarrationVoice, request.provider)
             var playbackStarted = false
             runCatching {
                 deviceTtsSynthesizer.synthesizeProgressively(
@@ -311,9 +323,11 @@ class NarrationController @Inject constructor(
                     narrationText = narrationText,
                     speed = state.value.speed,
                     onChunkGenerating = { currentChunk, totalChunks ->
+                        coroutineContext.ensureActive()
                         playerManager.markGenerating(request.noteId, request.title, currentChunk, totalChunks, request.voice)
                     },
                     onChunkReady = { session, isComplete, totalChunks ->
+                        coroutineContext.ensureActive()
                         if (!playbackStarted) {
                             playbackStarted = true
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -325,6 +339,7 @@ class NarrationController @Inject constructor(
                     },
                 )
             }.onFailure { error ->
+                coroutineContext.ensureActive()
                 if (error is CancellationException) return@launch
                 playerManager.showError(
                     noteId = request.noteId,
@@ -336,27 +351,45 @@ class NarrationController @Inject constructor(
     }
 
     fun restartWithVoice(voice: String) {
-        val request = lastRequest ?: return
-        stop(resetLastRequest = false)
-        when (request.provider) {
-            NarrationProvider.GeminiFlashLite -> startGemini(request.noteId, request.title, request.body, GeminiNarrationConfig.MODEL_FLASH_LITE, voice)
-            NarrationProvider.GeminiFlash -> startGemini(request.noteId, request.title, request.body, GeminiNarrationConfig.MODEL_FLASH, voice)
-            NarrationProvider.Azure -> startAzure(request.noteId, request.title, request.body, voice)
-            NarrationProvider.Device -> startDevice(request.noteId, request.title, request.body)
-            NarrationProvider.OpenAi -> start(request.noteId, request.title, request.body, voice)
-        }
+        val provider = lastRequest?.provider ?: return
+        if (voice !in provider.voiceOptions) return
+        restartSelection(provider, voice)
     }
 
     fun restartWithProvider(provider: NarrationProvider) {
+        restartSelection(provider)
+    }
+
+    private fun restartSelection(provider: NarrationProvider, voiceOverride: String? = null) {
         val request = lastRequest ?: return
+        selectionJob?.cancel()
+        val previousGeneration = generationJob ?: stoppingGeneration
+        stoppingGeneration = previousGeneration
         stop(resetLastRequest = false)
-        scope.launch { preferences.setNarrationProvider(provider.storedValue) }
-        when (provider) {
-            NarrationProvider.GeminiFlashLite -> startGemini(request.noteId, request.title, request.body, GeminiNarrationConfig.MODEL_FLASH_LITE)
-            NarrationProvider.GeminiFlash -> startGemini(request.noteId, request.title, request.body, GeminiNarrationConfig.MODEL_FLASH)
-            NarrationProvider.Device -> startDevice(request.noteId, request.title, request.body)
-            NarrationProvider.Azure -> startAzure(request.noteId, request.title, request.body)
-            NarrationProvider.OpenAi -> start(request.noteId, request.title, request.body)
+        val immediateVoice = provider.resolveVoice(voiceOverride ?: request.voice)
+        lastRequest = request.copy(provider = provider, voice = immediateVoice)
+        playerManager.markPreparing(request.noteId, request.title, immediateVoice, provider)
+        selectionJob = scope.launch {
+            // Finish cancelling the previous synthesis before reusing its cache/staging paths.
+            previousGeneration?.join()
+            if (stoppingGeneration === previousGeneration) stoppingGeneration = null
+            val voice = voiceOverride ?: when (provider) {
+                NarrationProvider.GeminiFlashLite, NarrationProvider.GeminiFlash -> preferences.geminiSpeechSettings.first().voice
+                NarrationProvider.OpenAi -> preferences.openAiNarrationVoice.first()
+                NarrationProvider.Azure -> preferences.azureSpeechSettings.first().voice
+                NarrationProvider.Device -> DeviceNarrationVoice
+            }
+            val selectedVoice = provider.resolveVoice(voice)
+            preferences.setNarrationSelection(provider, selectedVoice)
+            coroutineContext.ensureActive()
+            lastRequest = request.copy(provider = provider, voice = selectedVoice)
+            when (provider) {
+                NarrationProvider.GeminiFlashLite, NarrationProvider.GeminiFlash ->
+                    startGemini(request.noteId, request.title, request.body, provider.defaultModel, selectedVoice)
+                NarrationProvider.Device -> startDevice(request.noteId, request.title, request.body)
+                NarrationProvider.OpenAi -> start(request.noteId, request.title, request.body, selectedVoice)
+                NarrationProvider.Azure -> startAzure(request.noteId, request.title, request.body, selectedVoice)
+            }
         }
     }
 
@@ -373,6 +406,7 @@ class NarrationController @Inject constructor(
     }
 
     fun stop(resetLastRequest: Boolean = true) {
+        if (resetLastRequest) selectionJob?.cancel()
         generationJob?.cancel()
         generationJob = null
         playerManager.stop()

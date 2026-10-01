@@ -145,15 +145,9 @@ class NarrationPlayerManager @Inject constructor(
         return null
     }
 
-    fun markPreparing(noteId: String, noteTitle: String, voice: String = NarrationConfig.DEFAULT_VOICE) = runOnMain {
-        _state.value = NarrationUiState(
-            status = NarrationPlaybackStatus.Preparing,
-            noteId = noteId,
-            noteTitle = noteTitle,
-            label = "Preparing narration...",
-            speed = speed,
-            voice = voice,
-        )
+    fun markPreparing(noteId: String, noteTitle: String, voice: String = NarrationConfig.DEFAULT_VOICE,
+        provider: NarrationProvider = _state.value.provider) = runOnMain {
+        _state.value = _state.value.preparing(noteId, noteTitle, provider, voice)
     }
 
     fun markGenerating(noteId: String, noteTitle: String, current: Int, total: Int, voice: String = NarrationConfig.DEFAULT_VOICE) = runOnMain {
@@ -168,6 +162,7 @@ class NarrationPlayerManager @Inject constructor(
             noteTitle = noteTitle,
             label = if (total > 1) "Generating narration $current of $total..." else "Generating narration...",
             speed = speed,
+            provider = _state.value.provider,
             voice = voice,
             currentChunk = current,
             totalChunks = total,
@@ -181,6 +176,7 @@ class NarrationPlayerManager @Inject constructor(
     fun startStreaming(session: NarrationSession, totalChunks: Int, initialPositionMs: Long = 0L) = runOnMain {
         stopInternal(resetState = false)
         activeSession = session
+        _state.update { it.copy(provider = NarrationProvider.fromModel(session.model), voice = session.voice) }
         activeFiles = session.files
         activeDurationsMs = session.files.map(::readDurationMs)
         expectedChunks = totalChunks.coerceAtLeast(session.files.size)
@@ -375,6 +371,8 @@ class NarrationPlayerManager @Inject constructor(
             label = "Narration unavailable",
             error = message,
             speed = speed,
+            provider = _state.value.provider,
+            voice = _state.value.voice,
         )
     }
 
@@ -419,6 +417,7 @@ class NarrationPlayerManager @Inject constructor(
             label = label,
             error = null,
             speed = speed,
+            provider = session?.let { NarrationProvider.fromModel(it.model) } ?: _state.value.provider,
             voice = session?.voice ?: _state.value.voice,
             currentChunk = chunkIndex + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
@@ -482,6 +481,7 @@ class NarrationPlayerManager @Inject constructor(
             noteTitle = session?.noteTitle.orEmpty(),
             label = "Narration finished",
             speed = speed,
+            provider = session?.let { NarrationProvider.fromModel(it.model) } ?: _state.value.provider,
             voice = session?.voice ?: NarrationConfig.DEFAULT_VOICE,
             currentChunk = activeFiles.size,
             totalChunks = activeFiles.size,
@@ -506,7 +506,8 @@ class NarrationPlayerManager @Inject constructor(
         pendingSeekMs = null
         pendingStartSession = null
         pendingInitialPositionMs = 0L
-        if (resetState) _state.value = NarrationUiState(speed = speed)
+        if (resetState) _state.value = NarrationUiState(speed = speed,
+            provider = _state.value.provider, voice = _state.value.voice)
     }
 
     private fun persistAzureProgress(force: Boolean = false) {

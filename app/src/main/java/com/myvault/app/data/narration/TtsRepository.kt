@@ -31,9 +31,6 @@ class TtsRepository @Inject constructor(
     ): NarrationSession = withContext(Dispatchers.IO) {
         val cleanText = narrationText.trim()
         if (cleanText.isBlank()) error("This note is empty.")
-        if (cleanText.length > NarrationConfig.MAX_TOTAL_CHARS) {
-            error("This note is too long for Listen Mode. Please shorten it below ${NarrationConfig.MAX_TOTAL_CHARS} characters before generating narration.")
-        }
         val contentHash = cacheManager.contentHash(cleanText)
         val clampedSpeed = speed.coerceIn(0.75f, 1.5f)
         val normalizedVoice = voice.ifBlank { NarrationConfig.DEFAULT_VOICE }

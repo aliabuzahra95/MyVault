@@ -7,7 +7,6 @@ object NarrationConfig {
     const val DEFAULT_VOICE = "cedar"
     const val RESPONSE_FORMAT = "mp3"
     const val MAX_CHARS_PER_CHUNK = 1_400
-    const val MAX_TOTAL_CHARS = 25_000
     val VoiceOptions = listOf("cedar", "marin")
     val SpeedOptions = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2.0f)
 }
@@ -55,9 +54,30 @@ enum class NarrationProvider(
     val isCloud: Boolean
         get() = this != Device
 
+    val voiceOptions: List<String>
+        get() = when (this) {
+            GeminiFlashLite, GeminiFlash -> GeminiNarrationConfig.VoiceOptions
+            OpenAi -> NarrationConfig.VoiceOptions
+            Azure -> AzureNarrationConfig.VoiceOptions
+            Device -> emptyList()
+        }
+
+    fun resolveVoice(voice: String?): String = voice?.takeIf { it in voiceOptions } ?: when (this) {
+        GeminiFlashLite, GeminiFlash -> GeminiNarrationConfig.DEFAULT_VOICE
+        OpenAi -> NarrationConfig.DEFAULT_VOICE
+        Azure -> AzureNarrationConfig.DEFAULT_VOICE
+        Device -> "device"
+    }
+
     companion object {
         fun fromStoredValue(value: String): NarrationProvider =
             entries.firstOrNull { it.storedValue.equals(value, ignoreCase = true) } ?: GeminiFlashLite
+
+        fun fromModel(model: String): NarrationProvider = when {
+            model.startsWith("azure-speech-") -> Azure
+            model.startsWith("device-tts") -> Device
+            else -> entries.firstOrNull { it.defaultModel == model } ?: GeminiFlashLite
+        }
     }
 }
 
@@ -123,6 +143,17 @@ data class NarrationUiState(
         get() = status != NarrationPlaybackStatus.Idle
     val isPlaying: Boolean
         get() = status == NarrationPlaybackStatus.Playing
+
+    fun preparing(sourceId: String, title: String, provider: NarrationProvider, voice: String) =
+        NarrationUiState(
+            status = NarrationPlaybackStatus.Preparing,
+            noteId = sourceId,
+            noteTitle = title,
+            label = "Preparing narration...",
+            speed = speed,
+            provider = provider,
+            voice = provider.resolveVoice(voice),
+        )
 }
 
 data class NarrationCue(

@@ -39,9 +39,6 @@ class GeminiTtsRepository @Inject constructor(
     ): NarrationSession = withContext(Dispatchers.IO) {
         val cleanText = plan.fullSpokenText.trim()
         if (cleanText.isBlank()) error("This content is empty.")
-        if (cleanText.length > NarrationConfig.MAX_TOTAL_CHARS) {
-            error("This content is too long for Listen Mode. Please shorten it below ${NarrationConfig.MAX_TOTAL_CHARS} characters.")
-        }
 
         val contentHash = cacheManager.contentHash(cleanText)
         val clampedSpeed = speed.coerceIn(0.75f, 2.0f)
@@ -75,6 +72,7 @@ class GeminiTtsRepository @Inject constructor(
                 requestSpeechWithRetry(resolvedApiKey, effectiveModel, chunk, normalizedVoice, target, index + 1)
             }
 
+            coroutineContext.ensureActive()
             generatedFiles += target
             val partialSession = NarrationSession(
                 cacheKey = cacheKey,
