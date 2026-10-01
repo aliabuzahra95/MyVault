@@ -104,8 +104,9 @@ import com.myvault.app.ui.components.SectionLabel
 import com.myvault.app.ui.components.VaultModal
 import com.myvault.app.data.local.entity.AttachmentEntity
 import com.myvault.app.data.local.entity.pdfClipSourceOrNull
-import com.myvault.app.data.narration.NarrationConfig
 import com.myvault.app.data.narration.AzureNarrationProgress
+import com.myvault.app.data.narration.GeminiNarrationConfig
+import com.myvault.app.data.narration.NarrationConfig
 import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.data.repository.kindLabel
@@ -141,6 +142,7 @@ fun ReadingScreen(
     onPinnedChange: (Boolean) -> Unit = {},
     onFavouriteChange: (Boolean) -> Unit = {},
     onListenClick: (title: String, body: String, voice: String) -> Unit = { _, _, _ -> },
+    onGeminiListenClick: (title: String, body: String, model: String) -> Unit = { _, _, _ -> },
     onAzureListenClick: (title: String, body: String) -> Unit = { _, _ -> },
     onAzureResumeClick: (title: String, body: String) -> Unit = { _, _ -> },
     onDeviceListenClick: (title: String, body: String) -> Unit = { _, _ -> },
@@ -249,6 +251,17 @@ fun ReadingScreen(
     } else {
         0.dp
     }
+    val noteTitle = note?.title.orEmpty()
+    val startDefaultNarration = {
+        val provider = NarrationProvider.fromStoredValue(defaultNarrationProvider)
+        when (provider) {
+            NarrationProvider.GeminiFlashLite -> onGeminiListenClick(noteTitle, noteBodyText, GeminiNarrationConfig.MODEL_FLASH_LITE)
+            NarrationProvider.GeminiFlash -> onGeminiListenClick(noteTitle, noteBodyText, GeminiNarrationConfig.MODEL_FLASH)
+            NarrationProvider.Device -> onDeviceListenClick(noteTitle, noteBodyText)
+            NarrationProvider.OpenAi -> onListenClick(noteTitle, noteBodyText, selectedNarrationVoice)
+            NarrationProvider.Azure -> onAzureListenClick(noteTitle, noteBodyText)
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -273,13 +286,14 @@ fun ReadingScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .nestedScroll(userScrollConnection),
-            contentPadding = PaddingValues(bottom = 112.dp),
+            contentPadding = PaddingValues(bottom = 112.dp + if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
             item {
                 NoteWorkspaceHeader(
                     breadcrumb = noteBreadcrumb,
                     onMenuClick = onMenuClick,
+                    onListenClick = startDefaultNarration,
                     onMoreClick = { moreMenuOpen = true },
                 )
             }
@@ -453,17 +467,25 @@ fun ReadingScreen(
                 )
             }
             val choices = listOf(
+                NarrationProvider.GeminiFlashLite to {
+                    listenModeOpen = false
+                    onGeminiListenClick(noteTitle, noteBody, GeminiNarrationConfig.MODEL_FLASH_LITE)
+                },
+                NarrationProvider.GeminiFlash to {
+                    listenModeOpen = false
+                    onGeminiListenClick(noteTitle, noteBody, GeminiNarrationConfig.MODEL_FLASH)
+                },
                 NarrationProvider.Device to {
                     listenModeOpen = false
                     onDeviceListenClick(noteTitle, noteBody)
                 },
-                NarrationProvider.Azure to {
-                    listenModeOpen = false
-                    onAzureListenClick(noteTitle, noteBody)
-                },
                 NarrationProvider.OpenAi to {
                     listenModeOpen = false
                     onListenClick(noteTitle, noteBody, selectedNarrationVoice)
+                },
+                NarrationProvider.Azure to {
+                    listenModeOpen = false
+                    onAzureListenClick(noteTitle, noteBody)
                 },
             ).sortedByDescending { it.first.storedValue == defaultNarrationProvider }
             choices.forEach { (provider, action) ->
@@ -473,9 +495,11 @@ fun ReadingScreen(
                         icon = if (provider == NarrationProvider.Device) Icons.Rounded.PlayArrow else Icons.Rounded.AutoAwesome,
                         selected = provider.storedValue == defaultNarrationProvider,
                         subtitle = when (provider) {
-                            NarrationProvider.Device -> "Fast built-in phone voice. No network required."
-                            NarrationProvider.Azure -> "Azure ${azureNarrationVoice.ifBlank { "neural voice" }}. Uses cached audio."
+                            NarrationProvider.GeminiFlashLite -> "Fast, intelligent, ultra-low cost lecture voice. (Recommended)"
+                            NarrationProvider.GeminiFlash -> "High-fidelity, lecture-style speech."
+                            NarrationProvider.Device -> "Fast built-in phone voice. Free and offline."
                             NarrationProvider.OpenAi -> "Natural OpenAI voice. Uses cached audio when available."
+                            NarrationProvider.Azure -> "Azure ${azureNarrationVoice.ifBlank { "neural voice" }}. Uses cached audio."
                         },
                         onClick = action,
                     ),

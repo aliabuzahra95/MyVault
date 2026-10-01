@@ -79,6 +79,10 @@
             android:theme="@style/Theme.MyVault" />
         <service android:name=".data.quran.audio.QuranPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service
+            android:name=".data.narration.NarrationPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <service
             android:name=".data.quran.audio.QuranAudioDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

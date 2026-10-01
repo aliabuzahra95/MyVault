@@ -199,6 +199,8 @@ fun EditorScreen(
     autoFocusBody: Boolean = false,
     readingAnchor: NoteViewportAnchor? = null,
     openFormattingInitially: Boolean = false,
+    narrationMiniPlayerVisible: Boolean = false,
+    narrationMiniPlayerHeight: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
@@ -837,7 +839,11 @@ fun EditorScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.bg,
         bottomBar = {
-            Column(modifier = Modifier.imePadding()) {
+            Column(
+                modifier = Modifier
+                    .imePadding()
+                    .padding(bottom = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp)
+            ) {
                 if (colorToolbarOpen) {
                     InlineTextColorToolbar(
                         activeStyles = pendingInlineStyles + activeStylesForToolbar(safeBodyValue, styleMarks),
@@ -894,6 +900,7 @@ fun EditorScreen(
                         flushPendingBodySave()
                         onMenuClick()
                     },
+                    onListenClick = { onListenNote(title.text, bodyValue.text) },
                     onMoreClick = { moreMenuOpen = true },
                 )
 
@@ -1177,10 +1184,15 @@ fun EditorScreen(
                 NoteSheetSection(
                     label = "Note",
                     actions = listOf(
-                        NoteSheetAction("Listen", Icons.Rounded.PlayArrow, onClick = {
-                            moreMenuOpen = false
-                            onListenNote(title.text, bodyValue.text)
-                        }),
+                        NoteSheetAction(
+                            label = "Listen",
+                            icon = Icons.Rounded.PlayArrow,
+                            subtitle = "Read this note aloud",
+                            onClick = {
+                                moreMenuOpen = false
+                                onListenNote(title.text, bodyValue.text)
+                            },
+                        ),
                         NoteSheetAction(
                             label = if (isPinned) "Unpin" else "Pin",
                             icon = Icons.Rounded.PushPin,

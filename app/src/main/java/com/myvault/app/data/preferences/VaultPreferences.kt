@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.data.narration.AzureNarrationConfig
+import com.myvault.app.data.narration.GeminiNarrationConfig
 import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.quran.QuranRecentLocation
 import com.myvault.app.data.quran.QuranTranslationSource
@@ -56,7 +57,8 @@ data class VaultUserPreferences(
     val showFullNoteTitles: Boolean = false,
     val showFullFileTitles: Boolean = false,
     val defaultNoteView: String = "reading",
-    val narrationProvider: String = NarrationProvider.Device.storedValue,
+    val narrationProvider: String = NarrationProvider.GeminiFlashLite.storedValue,
+    val geminiNarrationVoice: String = GeminiNarrationConfig.DEFAULT_VOICE,
     val autoTagSuggestions: Boolean = true,
     val securityLockEnabled: Boolean = false,
     val securityLockTimeoutMs: Long = 30_000L,
@@ -91,6 +93,12 @@ data class AzureSpeechSettings(
     val region: String = AzureNarrationConfig.DEFAULT_REGION,
     val voice: String = AzureNarrationConfig.DEFAULT_VOICE,
     val arabicVoice: String = AzureNarrationConfig.DEFAULT_ARABIC_VOICE,
+)
+
+data class GeminiSpeechSettings(
+    val apiKey: String = "",
+    val voice: String = GeminiNarrationConfig.DEFAULT_VOICE,
+    val model: String = GeminiNarrationConfig.MODEL_FLASH_LITE,
 )
 
 @Singleton
@@ -142,7 +150,8 @@ class VaultPreferences @Inject constructor(
                 showFullNoteTitles = preferences[Keys.ShowFullNoteTitles] ?: false,
                 showFullFileTitles = preferences[Keys.ShowFullFileTitles] ?: false,
                 defaultNoteView = preferences[Keys.DefaultNoteView] ?: "reading",
-                narrationProvider = preferences[Keys.NarrationProvider] ?: NarrationProvider.Device.storedValue,
+                narrationProvider = preferences[Keys.NarrationProvider] ?: NarrationProvider.GeminiFlashLite.storedValue,
+                geminiNarrationVoice = preferences[Keys.GeminiSpeechVoice] ?: GeminiNarrationConfig.DEFAULT_VOICE,
                 autoTagSuggestions = preferences[Keys.AutoTagSuggestions] ?: true,
                 securityLockEnabled = preferences[Keys.SecurityLockEnabled] ?: false,
                 securityLockTimeoutMs = preferences[Keys.SecurityLockTimeoutMs] ?: 30_000L,
@@ -203,6 +212,15 @@ class VaultPreferences @Inject constructor(
                 arabicVoice = preferences[Keys.AzureSpeechArabicVoice]
                     ?: legacyVoice?.takeIf { it in AzureNarrationConfig.ArabicVoiceOptions }
                     ?: AzureNarrationConfig.DEFAULT_ARABIC_VOICE,
+            )
+        }
+
+    val geminiSpeechSettings: Flow<GeminiSpeechSettings> =
+        context.vaultDataStore.data.map { preferences ->
+            GeminiSpeechSettings(
+                apiKey = preferences[Keys.GeminiSpeechApiKey].orEmpty(),
+                voice = preferences[Keys.GeminiSpeechVoice] ?: GeminiNarrationConfig.DEFAULT_VOICE,
+                model = preferences[Keys.GeminiSpeechModel] ?: GeminiNarrationConfig.MODEL_FLASH_LITE,
             )
         }
 
@@ -279,6 +297,20 @@ class VaultPreferences @Inject constructor(
             preferences[Keys.AzureSpeechRegion] = region.trim().lowercase().ifBlank { AzureNarrationConfig.DEFAULT_REGION }
             preferences[Keys.AzureSpeechVoice] = voice.trim().ifBlank { AzureNarrationConfig.DEFAULT_VOICE }
             preferences[Keys.AzureSpeechArabicVoice] = arabicVoice.trim().ifBlank { AzureNarrationConfig.DEFAULT_ARABIC_VOICE }
+        }
+    }
+
+    suspend fun setGeminiSpeechSettings(apiKey: String, voice: String, model: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.GeminiSpeechApiKey] = apiKey.trim()
+            preferences[Keys.GeminiSpeechVoice] = voice.trim().ifBlank { GeminiNarrationConfig.DEFAULT_VOICE }
+            preferences[Keys.GeminiSpeechModel] = model.trim().ifBlank { GeminiNarrationConfig.MODEL_FLASH_LITE }
+        }
+    }
+
+    suspend fun setGeminiVoice(voice: String) {
+        context.vaultDataStore.edit { preferences ->
+            preferences[Keys.GeminiSpeechVoice] = voice.trim().ifBlank { GeminiNarrationConfig.DEFAULT_VOICE }
         }
     }
 
@@ -621,6 +653,9 @@ class VaultPreferences @Inject constructor(
         val ShowFullFileTitles: Preferences.Key<Boolean> = booleanPreferencesKey("show_full_file_titles")
         val DefaultNoteView: Preferences.Key<String> = stringPreferencesKey("default_note_view")
         val NarrationProvider: Preferences.Key<String> = stringPreferencesKey("narration_provider")
+        val GeminiSpeechApiKey: Preferences.Key<String> = stringPreferencesKey("gemini_speech_api_key")
+        val GeminiSpeechVoice: Preferences.Key<String> = stringPreferencesKey("gemini_speech_voice")
+        val GeminiSpeechModel: Preferences.Key<String> = stringPreferencesKey("gemini_speech_model")
         val AzureSpeechApiKey: Preferences.Key<String> = stringPreferencesKey("azure_speech_api_key")
         val AzureSpeechRegion: Preferences.Key<String> = stringPreferencesKey("azure_speech_region")
         val AzureSpeechVoice: Preferences.Key<String> = stringPreferencesKey("azure_speech_voice")

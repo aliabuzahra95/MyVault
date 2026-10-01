@@ -35,6 +35,14 @@ android {
             .get()
             .trim()
     }
+    val localGeminiApiKey = localProperties.getProperty("MYVAULT_GEMINI_API_KEY").orEmpty().trim()
+    val geminiApiKey = localGeminiApiKey.ifBlank {
+        providers.environmentVariable("GEMINI_API_KEY")
+            .orElse(providers.gradleProperty("MYVAULT_GEMINI_API_KEY"))
+            .orElse("")
+            .get()
+            .trim()
+    }
     val localKimiApiKey = localProperties.getProperty("MYVAULT_KIMI_API_KEY").orEmpty().trim()
     val kimiApiKey = localKimiApiKey.ifBlank {
         providers.environmentVariable("KIMI_API_KEY")
@@ -99,6 +107,7 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         buildConfigField("String", "OPENAI_API_KEY", "\"${openAiApiKey.escapedForBuildConfig()}\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "KIMI_API_KEY", "\"${kimiApiKey.escapedForBuildConfig()}\"")
         buildConfigField("String", "OPENAI_TRANSCRIBE_MODEL", "\"${openAiTranscribeModel.escapedForBuildConfig()}\"")
         buildConfigField("String", "NOTE_FORMATTING_KIMI_FAST_MODEL", "\"${noteFormattingKimiFastModel.escapedForBuildConfig()}\"")
@@ -128,6 +137,10 @@ android {
 
     kotlin {
         jvmToolchain(21)
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -163,6 +176,9 @@ dependencies {
     implementation(libs.azure.speech)
     implementation(libs.pdfbox.android)
     implementation(libs.material)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.common)
 
     ksp(libs.androidx.room.compiler)
     ksp(libs.hilt.compiler)

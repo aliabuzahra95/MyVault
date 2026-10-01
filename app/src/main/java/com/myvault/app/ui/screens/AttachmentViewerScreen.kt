@@ -70,6 +70,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Draw
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -1007,12 +1008,12 @@ private fun DocumentAttachmentViewer(
                     modifier = Modifier.align(Alignment.End),
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.VolumeUp,
+                        imageVector = Icons.Rounded.Headphones,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
-                        text = "Listen with Azure",
+                        text = "Listen",
                         modifier = Modifier.padding(start = VaultSpacing.xs),
                     )
                 }

@@ -161,6 +161,7 @@ fun VaultMobileWebShell(
     contentStartsInMenuBar: Boolean = false,
     menuVisible: Boolean = true,
     drawerGesturesEnabled: Boolean = true,
+    floatingOverlay: @Composable BoxScope.(drawerActive: Boolean) -> Unit = {},
     content: @Composable (onOpenNavigation: () -> Unit) -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -394,42 +395,47 @@ fun VaultMobileWebShell(
                 }
             }
         }
-        if (contentStartsInMenuBar) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(colors.bg)
-                    .statusBarsPadding(),
-            ) {
-                content { scope.launch { drawerState.open() } }
-                if (menuVisible) {
+        val drawerActive = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (contentStartsInMenuBar) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.bg)
+                        .statusBarsPadding(),
+                ) {
+                    content { scope.launch { drawerState.open() } }
+                    if (menuVisible) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .padding(horizontal = 12.dp),
+                            content = menuButton,
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.bg),
+                ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .statusBarsPadding()
                             .height(56.dp)
                             .padding(horizontal = 12.dp),
                         content = menuButton,
                     )
+                    Box(modifier = Modifier.weight(1f)) {
+                        content { scope.launch { drawerState.open() } }
+                    }
                 }
             }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(colors.bg),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .height(56.dp)
-                        .padding(horizontal = 12.dp),
-                    content = menuButton,
-                )
-                Box(modifier = Modifier.weight(1f)) {
-                    content { scope.launch { drawerState.open() } }
-                }
-            }
+
+            floatingOverlay(drawerActive)
         }
     }
 

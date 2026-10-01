@@ -32,11 +32,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.font.FontWeight
+import com.myvault.app.ui.theme.VaultThemeTokens
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -255,13 +268,20 @@ fun VaultNavHost(
     val latestBackupViewModel: SettingsViewModel = hiltViewModel()
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
+    var isManuallyTucked by rememberSaveable { mutableStateOf(false) }
+    var isDrawerOpenOrMoving by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val isImeVisible = WindowInsets.ime.getBottom(density) > 0
     val narrationMiniPlayerVisibility = remember { MutableTransitionState(false) }
     var narrationMiniPlayerHeightPx by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
     val narrationMiniPlayerHeight = with(density) { narrationMiniPlayerHeightPx.toDp() }
     val systemBottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LaunchedEffect(narrationState.isActive) {
-        narrationMiniPlayerVisibility.targetState = narrationState.isActive
+    LaunchedEffect(narrationState.noteId) {
+        isManuallyTucked = false
+    }
+    val shouldShowMiniPlayer = narrationState.isActive && !isManuallyTucked && !isImeVisible && !isDrawerOpenOrMoving
+    LaunchedEffect(shouldShowMiniPlayer) {
+        narrationMiniPlayerVisibility.targetState = shouldShowMiniPlayer
     }
     val narrationMiniPlayerOccupiesSpace =
         narrationMiniPlayerVisibility.currentState || narrationMiniPlayerVisibility.targetState
@@ -664,6 +684,91 @@ fun VaultNavHost(
             ) && !(currentRoute == VaultDestination.AttachmentViewer.route && attachmentViewerOwnsHeader) &&
                 !corpusSearchActive &&
                 !(currentRoute == VaultDestination.Knowledge.route && rootModes.getOrNull(selectedRootIndex) in setOf(VaultRootMode.Quran, VaultRootMode.Memorise)),
+            floatingOverlay = { drawerActive ->
+                LaunchedEffect(drawerActive) {
+                    isDrawerOpenOrMoving = drawerActive
+                }
+                AnimatedVisibility(
+                    visibleState = narrationMiniPlayerVisibility,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    enter = fadeIn(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)) +
+                        slideInVertically(
+                            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                            initialOffsetY = { it / 2 },
+                        ),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)) +
+                        slideOutVertically(
+                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            targetOffsetY = { it / 2 },
+                        ),
+                ) {
+                    NarrationMiniPlayer(
+                        state = narrationState,
+                        onPrimaryAction = {
+                            if (narrationState.status != NarrationPlaybackStatus.Preparing &&
+                                narrationState.status != NarrationPlaybackStatus.Generating
+                            ) {
+                                narrationViewModel.togglePlayback()
+                            }
+                        },
+                        onStop = narrationViewModel::stop,
+                        onRewind10 = narrationViewModel::rewind10s,
+                        onForward10 = narrationViewModel::forward10s,
+                        onSeek = narrationViewModel::seekTo,
+                        onSpeedChange = narrationViewModel::setSpeed,
+                        onProgressTick = narrationViewModel::refreshProgress,
+                        onProviderChange = narrationViewModel::restartWithProvider,
+                        onVoiceChange = narrationViewModel::restartWithVoice,
+                        onTuck = { isManuallyTucked = true },
+                        modifier = Modifier.onSizeChanged { narrationMiniPlayerHeightPx = it.height },
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = narrationState.isActive && isManuallyTucked && !isImeVisible && !drawerActive,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(end = 16.dp, bottom = 12.dp),
+                    enter = fadeIn(tween(160)) + slideInVertically(tween(200)) { it / 2 },
+                    exit = fadeOut(tween(140)) + slideOutVertically(tween(180)) { it / 2 },
+                ) {
+                    Surface(
+                        onClick = { isManuallyTucked = false },
+                        shape = CircleShape,
+                        color = VaultThemeTokens.colors.surface.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, VaultThemeTokens.colors.accent.copy(alpha = 0.45f)),
+                        shadowElevation = 6.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Headphones,
+                                contentDescription = "Restore playback controls",
+                                modifier = Modifier.size(16.dp),
+                                tint = VaultThemeTokens.colors.accent,
+                            )
+                            Text(
+                                text = if (narrationState.status == NarrationPlaybackStatus.Playing) "Playing" else "Paused",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = VaultThemeTokens.colors.text,
+                            )
+                            Icon(
+                                Icons.Rounded.KeyboardArrowUp,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = VaultThemeTokens.colors.textSecondary,
+                            )
+                        }
+                    }
+                }
+            },
         ) { onOpenNavigation ->
         NavHost(
             navController = navController,
@@ -1460,7 +1565,10 @@ fun VaultNavHost(
                 onClearFormattingResult = viewModel::clearFormattingResult,
                 onPreserveFormattingOriginal = viewModel::preserveFormattingOriginal,
                 onListenNote = { title, body ->
+                    isManuallyTucked = false
                     when (preferences.narrationProvider) {
+                        com.myvault.app.data.narration.NarrationProvider.GeminiFlashLite.storedValue -> viewModel.startGeminiNarration(title, body, com.myvault.app.data.narration.GeminiNarrationConfig.MODEL_FLASH_LITE)
+                        com.myvault.app.data.narration.NarrationProvider.GeminiFlash.storedValue -> viewModel.startGeminiNarration(title, body, com.myvault.app.data.narration.GeminiNarrationConfig.MODEL_FLASH)
                         com.myvault.app.data.narration.NarrationProvider.Azure.storedValue -> viewModel.startAzureNarration(title, body)
                         com.myvault.app.data.narration.NarrationProvider.OpenAi.storedValue -> viewModel.startNarration(title, body)
                         else -> viewModel.startDeviceNarration(title, body)
@@ -1500,6 +1608,8 @@ fun VaultNavHost(
                 autoFocusBody = backStackEntry.arguments?.getBoolean("quickFocus") == true,
                 readingAnchor = backStackEntry.savedStateHandle.get<NoteViewportAnchor>("readingAnchor"),
                 openFormattingInitially = backStackEntry.savedStateHandle.get<Boolean>("openFormatting") == true,
+                narrationMiniPlayerVisible = narrationMiniPlayerOccupiesSpace,
+                narrationMiniPlayerHeight = narrationOccupiedBottom,
             )
         }
         composable(
@@ -1546,10 +1656,26 @@ fun VaultNavHost(
                 },
                 onPinnedChange = viewModel::setPinned,
                 onFavouriteChange = viewModel::setFavourite,
-                onListenClick = viewModel::startNarration,
-                onAzureListenClick = viewModel::startAzureNarration,
-                onAzureResumeClick = viewModel::resumeAzureNarration,
-                onDeviceListenClick = viewModel::startDeviceNarration,
+                onListenClick = { title, body, voice ->
+                    isManuallyTucked = false
+                    viewModel.startNarration(title, body, voice)
+                },
+                onGeminiListenClick = { title, body, model ->
+                    isManuallyTucked = false
+                    viewModel.startGeminiNarration(title, body, model)
+                },
+                onAzureListenClick = { title, body ->
+                    isManuallyTucked = false
+                    viewModel.startAzureNarration(title, body)
+                },
+                onAzureResumeClick = { title, body ->
+                    isManuallyTucked = false
+                    viewModel.resumeAzureNarration(title, body)
+                },
+                onDeviceListenClick = { title, body ->
+                    isManuallyTucked = false
+                    viewModel.startDeviceNarration(title, body)
+                },
                 defaultNarrationProvider = preferences.narrationProvider,
                 onDeleteNote = {
                     viewModel.deleteNote {
@@ -1751,9 +1877,18 @@ fun VaultNavHost(
                 onSelectSecondaryPdf = viewModel::selectSecondaryPdf,
                 onClearSecondaryPdf = viewModel::clearSecondaryPdf,
                 onSecondaryPdfProgressChanged = viewModel::updateSecondaryPdfProgress,
-                onStartDevicePdfNarration = viewModel::startDeviceNarration,
-                onStartOpenAiPdfNarration = viewModel::startOpenAiNarration,
-                onStartAzurePdfNarration = viewModel::startAzureNarration,
+                onStartDevicePdfNarration = {
+                    isManuallyTucked = false
+                    viewModel.startDeviceNarration()
+                },
+                onStartOpenAiPdfNarration = {
+                    isManuallyTucked = false
+                    viewModel.startOpenAiNarration()
+                },
+                onStartAzurePdfNarration = {
+                    isManuallyTucked = false
+                    viewModel.startAzureNarration()
+                },
                 onDeleteAttachment = {
                     viewModel.deleteAttachment {
                         Toast.makeText(context, "Attachment deleted", Toast.LENGTH_SHORT).show()
@@ -1765,7 +1900,10 @@ fun VaultNavHost(
                         Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
                     }
                 },
-                onAzureListenClick = viewModel::startAzureNarration,
+                onAzureListenClick = {
+                    isManuallyTucked = false
+                    viewModel.startNarration()
+                },
                 onAzureResumeClick = viewModel::resumeAzureNarration,
                 onAzureListenFromHere = viewModel::startAzureNarrationFromSelection,
                 narrationMiniPlayerVisible = narrationMiniPlayerOccupiesSpace,
@@ -2075,38 +2213,6 @@ fun VaultNavHost(
                         else -> Unit
                     }
                 },
-            )
-        }
-        AnimatedVisibility(
-            visibleState = narrationMiniPlayerVisibility,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
-            enter = fadeIn(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)) +
-                slideInVertically(
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                    initialOffsetY = { it / 2 },
-                ),
-            exit = fadeOut(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)) +
-                slideOutVertically(
-                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                    targetOffsetY = { it / 2 },
-                ),
-        ) {
-            NarrationMiniPlayer(
-                state = narrationState,
-                onPrimaryAction = {
-                    if (narrationState.status != NarrationPlaybackStatus.Preparing &&
-                        narrationState.status != NarrationPlaybackStatus.Generating
-                    ) {
-                        narrationViewModel.togglePlayback()
-                    }
-                },
-                onStop = narrationViewModel::stop,
-                onSeek = narrationViewModel::seekTo,
-                onProgressTick = narrationViewModel::refreshProgress,
-                modifier = Modifier.onSizeChanged { narrationMiniPlayerHeightPx = it.height },
             )
         }
     }

@@ -297,20 +297,36 @@ class NoteViewModel @Inject constructor(
     }
 
 
+    fun startListening(title: String, body: String, provider: com.myvault.app.data.narration.NarrationProvider? = null) {
+        narrationController.startListening(noteId, title, body, provider, resume = true)
+    }
+
     fun startNarration(title: String, body: String, voice: String = NarrationConfig.DEFAULT_VOICE) {
-        narrationController.start(noteId, title, body, voice)
+        narrationController.start(noteId, title, body, voice, resume = true)
+    }
+
+    fun startDeviceNarration(title: String) {
+        narrationController.startDevice(noteId, title, uiState.value.note?.bodyPlainText.orEmpty())
     }
 
     fun startDeviceNarration(title: String, body: String) {
-        narrationController.startDevice(noteId, title, body)
+        narrationController.startDevice(noteId, title, body, resume = true)
+    }
+
+    fun startGeminiNarration(title: String, body: String, model: String = com.myvault.app.data.narration.GeminiNarrationConfig.MODEL_FLASH_LITE) {
+        narrationController.startGemini(noteId, title, body, model, resume = true)
+    }
+
+    fun resumeNarration(title: String, body: String) {
+        narrationController.startListening(noteId, title, body, resume = true)
     }
 
     fun startAzureNarration(title: String, body: String) {
-        narrationController.startAzure(noteId, title, body)
+        narrationController.startAzure(noteId, title, body, resume = true)
     }
 
     fun resumeAzureNarration(title: String, body: String) {
-        narrationController.startAzure(noteId, title, body, resume = true)
+        narrationController.startListening(noteId, title, body, resume = true)
     }
 
     fun startAzureNarrationFromSelection(title: String, body: String, startOffset: Int) {

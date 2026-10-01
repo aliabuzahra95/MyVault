@@ -13,6 +13,7 @@ import com.myvault.app.data.local.entity.PdfAnnotationEntity
 import com.myvault.app.data.local.entity.PdfAnnotationSegmentEntity
 import com.myvault.app.data.local.entity.PdfReadingProgressEntity
 import com.myvault.app.data.narration.NarrationController
+import com.myvault.app.data.narration.NarrationProvider
 import com.myvault.app.data.repository.AttachmentRepository
 import com.myvault.app.data.repository.DocumentTextExtractor
 import com.myvault.app.data.repository.KnowledgeRepository
@@ -270,18 +271,32 @@ class AttachmentViewerViewModel @Inject constructor(
         }
     }
 
+    fun startNarration(provider: NarrationProvider? = null, selection: String? = null) {
+        val file = attachment.value ?: return
+        val text = selection?.trim().takeUnless { it.isNullOrBlank() } ?: documentText.value.text
+        if (text.isBlank()) return
+        narrationController.startListening("attachment:${file.id}", file.fileName, text, provider, resume = selection.isNullOrBlank())
+    }
+
+    fun startGeminiNarration(model: String = com.myvault.app.data.narration.GeminiNarrationConfig.MODEL_FLASH_LITE) {
+        val file = attachment.value ?: return
+        val text = documentText.value.text
+        if (text.isBlank()) return
+        narrationController.startGemini("attachment:${file.id}", file.fileName, text, model, resume = true)
+    }
+
     fun startAzureNarration() {
         val file = attachment.value ?: return
         val text = documentText.value.text
         if (text.isBlank()) return
-        narrationController.startAzure("attachment:${file.id}", file.fileName, text)
+        narrationController.startAzure("attachment:${file.id}", file.fileName, text, resume = true)
     }
 
     fun resumeAzureNarration() {
         val file = attachment.value ?: return
         val text = documentText.value.text
         if (text.isBlank()) return
-        narrationController.startAzure("attachment:${file.id}", file.fileName, text, resume = true)
+        narrationController.startListening("attachment:${file.id}", file.fileName, text, resume = true)
     }
 
     fun startAzureNarrationFromSelection(startOffset: Int) {

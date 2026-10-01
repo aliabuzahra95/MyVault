@@ -46,7 +46,7 @@ class NarrationCacheManager @Inject constructor(
             val files = buildList {
                 for (index in 0 until filesJson.length()) {
                     val file = File(dir, filesJson.getString(index))
-                    if (!file.exists() || file.length() < MinValidMp3Bytes) return null
+                    if (!file.exists() || file.length() < MinValidAudioBytes) return null
                     add(file)
                 }
             }
@@ -125,4 +125,4 @@ private fun JSONArray?.toNarrationCues(): List<NarrationCue> = buildList {
 }
 
 private fun String.safeFilePart(): String = replace(Regex("[^A-Za-z0-9_.-]"), "_").take(80)
-private const val MinValidMp3Bytes = 512L
+private const val MinValidAudioBytes = 256L

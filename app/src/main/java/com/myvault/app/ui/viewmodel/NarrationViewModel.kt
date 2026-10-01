@@ -27,6 +27,14 @@ class NarrationViewModel @Inject constructor(
         narrationController.seekTo(positionMs)
     }
 
+    fun rewind10s() {
+        narrationController.rewind10s()
+    }
+
+    fun forward10s() {
+        narrationController.forward10s()
+    }
+
     fun skipBy(deltaMs: Long) {
         narrationController.skipBy(deltaMs)
     }
@@ -41,5 +49,9 @@ class NarrationViewModel @Inject constructor(
 
     fun restartWithVoice(voice: String) {
         narrationController.restartWithVoice(voice)
+    }
+
+    fun restartWithProvider(provider: com.myvault.app.data.narration.NarrationProvider) {
+        narrationController.restartWithProvider(provider)
     }
 }

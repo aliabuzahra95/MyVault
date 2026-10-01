@@ -168,6 +168,7 @@ class TtsRepository @Inject constructor(
                 .put("model", NarrationConfig.MODEL)
                 .put("voice", voice)
                 .put("input", input)
+                .put("instructions", "Speak in a calm, clear lecture pace suitable for study notes.")
                 .put("response_format", NarrationConfig.RESPONSE_FORMAT)
                 .toString()
             connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }

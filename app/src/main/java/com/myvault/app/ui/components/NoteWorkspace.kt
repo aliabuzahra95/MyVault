@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.Icon
@@ -35,6 +36,7 @@ fun NoteWorkspaceHeader(
     breadcrumb: String,
     onMenuClick: () -> Unit,
     onMoreClick: () -> Unit,
+    onListenClick: (() -> Unit)? = null,
     status: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -70,6 +72,18 @@ fun NoteWorkspaceHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        if (onListenClick != null) {
+            Surface(
+                onClick = onListenClick,
+                modifier = Modifier.size(40.dp),
+                color = Color.Transparent,
+                shape = VaultShapes.sm,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Headphones, "Listen", modifier = Modifier.size(20.dp), tint = colors.accent)
+                }
+            }
         }
         Surface(
             onClick = onMoreClick,

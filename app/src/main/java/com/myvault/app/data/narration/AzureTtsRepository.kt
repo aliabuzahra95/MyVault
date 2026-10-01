@@ -22,12 +22,11 @@ private data class WordBoundary(
     val text: String,
 )
 
-private data class LanguageSegment(val text: String, val isArabic: Boolean)
-
 @Singleton
 class AzureTtsRepository @Inject constructor(
     private val cacheManager: NarrationCacheManager,
     private val textPreparer: NoteNarrationTextPreparer,
+    private val segmenter: BilingualTextSegmenter,
 ) {
     suspend fun generateNarrationProgressively(
         noteId: String,
@@ -167,7 +166,13 @@ class AzureTtsRepository @Inject constructor(
                     text = event.text.orEmpty(),
                 )
             }
-            val result = synthesizer.SpeakSsmlAsync(buildMixedLanguageSsml(text, voice, arabicVoice)).get()
+            val result = synthesizer.SpeakSsmlAsync(
+                segmenter.buildMultilingualSsml(
+                    text = text,
+                    englishVoice = voice,
+                    arabicVoice = arabicVoice,
+                ),
+            ).get()
             val bytes = result.audioData ?: error("Azure Speech returned no audio.")
             FileOutputStream(target).use { output ->
                 output.write(bytes)
@@ -250,59 +255,6 @@ private fun buildSentenceCues(
         if (nextStart == null) cue else cue.copy(endMs = nextStart.coerceAtLeast(cue.startMs + 1L))
     }
 }
-
-private fun buildMixedLanguageSsml(text: String, englishVoice: String, arabicVoice: String): String {
-    val segments = splitLanguageSegments(text)
-    return buildString {
-        append("""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-AU">""")
-        segments.forEach { segment ->
-            val voice = if (segment.isArabic) arabicVoice else englishVoice
-            append("""<voice name="${voice.xmlEscape()}">${segment.text.xmlEscape()}</voice>""")
-        }
-        append("</speak>")
-    }
-}
-
-private fun splitLanguageSegments(text: String): List<LanguageSegment> {
-    val raw = Regex("[^.!?؟\\n]+[.!?؟]?|\\n+").findAll(text)
-        .map { it.value }
-        .filter { it.isNotEmpty() }
-        .toList()
-    val result = mutableListOf<LanguageSegment>()
-    raw.forEach { value ->
-        val arabic = value.count { it.isArabicLetter() }
-        val latin = value.count { it.isLatinLetter() }
-        val isArabic = when {
-            arabic > latin -> true
-            latin > arabic -> false
-            else -> result.lastOrNull()?.isArabic ?: false
-        }
-        val previous = result.lastOrNull()
-        if (previous?.isArabic == isArabic) {
-            result[result.lastIndex] = previous.copy(text = previous.text + value)
-        } else {
-            result += LanguageSegment(value, isArabic)
-        }
-    }
-    return result.ifEmpty { listOf(LanguageSegment(text, false)) }
-}
-
-private fun Char.isArabicLetter(): Boolean =
-    this in '\u0600'..'\u06FF' ||
-        this in '\u0750'..'\u077F' ||
-        this in '\u08A0'..'\u08FF' ||
-        this in '\uFB50'..'\uFDFF' ||
-        this in '\uFE70'..'\uFEFF'
-
-private fun Char.isLatinLetter(): Boolean =
-    this in 'A'..'Z' || this in 'a'..'z'
-
-private fun String.xmlEscape(): String =
-    replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&apos;")
 
 private fun List<NarrationCue>.toCueJson(): String = JSONArray().apply {
     forEach { cue ->
