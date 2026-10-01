@@ -23,6 +23,7 @@ class DeviceTtsSynthesizer @Inject constructor(
     private val cacheManager: NarrationCacheManager,
     private val textPreparer: NoteNarrationTextPreparer,
     private val segmenter: BilingualTextSegmenter,
+    private val cueBuilder: NarrationCueBuilder,
 ) {
     private var textToSpeech: TextToSpeech? = null
     private var isInitialized = false
@@ -63,12 +64,6 @@ class DeviceTtsSynthesizer @Inject constructor(
         val voice = "device"
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, model, voice, 1f)
 
-        // Check if full session is already cached
-        cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, model, voice, clampedSpeed, contentHash)?.let {
-            onChunkReady(it, true, it.files.size)
-            return@withContext it
-        }
-
         val chunks = textPreparer.splitIntoChunks(cleanText, maxChars = DeviceChunkMaxChars)
         if (chunks.isEmpty()) error("This note is empty.")
 
@@ -81,9 +76,15 @@ class DeviceTtsSynthesizer @Inject constructor(
             extension = "wav",
             minimumBytes = MinValidAudioBytes,
         ).toMutableList()
+        val generatedCues = generatedFiles.flatMapIndexed { index, file ->
+            cacheManager.readChunkCues(cacheKey, index).ifEmpty {
+                cueBuilder.buildEstimatedCues(index, chunks[index], file).also { cacheManager.writeChunkCues(cacheKey, index, it) }
+            }
+        }.toMutableList()
         if (generatedFiles.isNotEmpty()) {
             val cachedSession = NarrationSession(
-                cacheKey, noteId, noteTitle, model, voice, clampedSpeed, contentHash, generatedFiles.toList(),
+                cacheKey, noteId, noteTitle, model, voice, clampedSpeed, contentHash,
+                generatedFiles.toList(), generatedCues.toList(), totalChunks = chunks.size,
             )
             val complete = generatedFiles.size == chunks.size
             cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
@@ -116,6 +117,10 @@ class DeviceTtsSynthesizer @Inject constructor(
                 generatedFiles += chunkFile
             }
 
+            generatedCues += cacheManager.readChunkCues(cacheKey, index).ifEmpty {
+                cueBuilder.buildEstimatedCues(index, chunk, chunkFile).also { cacheManager.writeChunkCues(cacheKey, index, it) }
+            }
+
             val session = NarrationSession(
                 cacheKey = cacheKey,
                 noteId = noteId,
@@ -125,6 +130,8 @@ class DeviceTtsSynthesizer @Inject constructor(
                 speed = clampedSpeed,
                 contentHash = contentHash,
                 files = generatedFiles.toList(),
+                cues = generatedCues.toList(),
+                totalChunks = chunks.size,
             )
             cacheManager.writeManifest(session, isComplete = index == chunks.lastIndex, totalChunks = chunks.size)
             onChunkReady(session, index == chunks.lastIndex, chunks.size)
@@ -139,6 +146,8 @@ class DeviceTtsSynthesizer @Inject constructor(
             speed = clampedSpeed,
             contentHash = contentHash,
             files = generatedFiles.toList(),
+            cues = generatedCues.toList(),
+            totalChunks = chunks.size,
         ).also { cacheManager.writeManifest(it, isComplete = true, totalChunks = generatedFiles.size) }
     }
 

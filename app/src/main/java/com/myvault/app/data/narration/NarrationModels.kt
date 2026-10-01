@@ -176,4 +176,47 @@ data class NarrationSession(
     val contentHash: String,
     val files: List<File>,
     val cues: List<NarrationCue> = emptyList(),
+    val chunkIndices: List<Int> = files.indices.toList(),
+    val totalChunks: Int = files.size,
+    val demandDriven: Boolean = false,
 )
+
+internal const val NarrationTargetChunkMs = 120_000L
+internal const val NarrationPrefetchLeadMs = 25_000L
+internal const val CloudNarrationChunkChars = 1_800
+
+internal object NarrationDemandPolicy {
+    fun chunkForPosition(positionMs: Long, totalChunks: Int): Int =
+        (positionMs.coerceAtLeast(0L) / NarrationTargetChunkMs)
+            .toInt()
+            .coerceIn(0, (totalChunks - 1).coerceAtLeast(0))
+
+    fun prefetchAtMs(durationMs: Long): Long = minOf(
+        100_000L,
+        (durationMs - NarrationPrefetchLeadMs).coerceAtLeast((durationMs * 3L) / 4L),
+    )
+
+    fun shouldPrefetch(positionMs: Long, durationMs: Long): Boolean =
+        durationMs > 0L && positionMs >= prefetchAtMs(durationMs)
+
+    fun activeCue(cues: List<NarrationCue>, chunkIndex: Int, positionMs: Long): NarrationCue? =
+        cues.lastOrNull { cue -> cue.chunkIndex == chunkIndex && positionMs >= cue.startMs }
+            ?.takeIf { cue -> positionMs <= cue.endMs + 180L }
+}
+
+internal class NarrationChunkRequestTracker {
+    private val pending = mutableSetOf<Int>()
+
+    @Synchronized
+    fun tryStart(chunkIndex: Int): Boolean = pending.add(chunkIndex)
+
+    @Synchronized
+    fun complete(chunkIndex: Int) {
+        pending.remove(chunkIndex)
+    }
+
+    @Synchronized
+    fun clear() {
+        pending.clear()
+    }
+}

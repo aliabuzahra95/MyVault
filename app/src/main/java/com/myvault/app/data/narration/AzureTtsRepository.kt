@@ -37,6 +37,7 @@ class AzureTtsRepository @Inject constructor(
         voice: String,
         arabicVoice: String,
         speed: Float = 1f,
+        requestedChunkIndex: Int = 0,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
     ): NarrationSession = withContext(Dispatchers.IO) {
@@ -53,15 +54,7 @@ class AzureTtsRepository @Inject constructor(
         val model = "azure-speech-$normalizedRegion-mixed-$normalizedArabicVoice-$CleanupVersion"
         val clampedSpeed = speed.coerceIn(0.75f, 1.5f)
         val cacheKey = cacheManager.cacheKey("azure", contentHash, model, normalizedVoice, 1f)
-        cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, model, normalizedVoice, clampedSpeed, contentHash)?.let {
-            if (it.cues.isNotEmpty()) {
-                onChunkReady(it, true, it.files.size)
-                return@withContext it
-            }
-            cacheManager.clearSession(cacheKey)
-        }
-
-        val chunks = textPreparer.splitIntoChunks(cleanText)
+        val chunks = textPreparer.splitIntoChunks(cleanText, CloudNarrationChunkChars)
         if (chunks.isEmpty()) error("This note is empty.")
         var chunkSearchFrom = 0
         val chunkTextStarts = chunks.map { chunk ->
@@ -69,75 +62,60 @@ class AzureTtsRepository @Inject constructor(
             chunkSearchFrom = (start + chunk.length).coerceAtMost(cleanText.length)
             start
         }
-        val generatedFiles = cacheManager.cachedChunkPrefix(
-            cacheKey = cacheKey,
-            totalChunks = chunks.size,
-            noteId = noteId,
-            model = model,
-            voice = normalizedVoice,
+        val index = requestedChunkIndex.coerceIn(0, chunks.lastIndex)
+        val chunk = chunks[index]
+        val chunkTextStart = chunkTextStarts[index]
+        val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk, model, normalizedVoice)
+        android.util.Log.d(TimingTag, "chunk-requested source=${noteId.take(96)} provider=azure chunk=${index + 1}/${chunks.size}")
+        val legacyTarget = cacheManager.cachedChunkOrNull(
+            cacheKey, index, noteId, model, normalizedVoice,
             minimumBytes = MinValidMp3Bytes,
             requiredSidecarSuffix = "_cues.json",
-        ).toMutableList()
-        val generatedCues = generatedFiles.indices.flatMap { index ->
-            File(cacheManager.sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}_cues.json").readCuesOrEmpty()
-        }.toMutableList()
-        if (generatedFiles.isNotEmpty()) {
-            val cachedSession = NarrationSession(
-                cacheKey, noteId, noteTitle, model, normalizedVoice, clampedSpeed, contentHash,
-                generatedFiles.toList(), generatedCues.toList(),
-            )
-            val complete = generatedFiles.size == chunks.size
-            cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
-            onChunkReady(cachedSession, complete, chunks.size)
-            if (complete) return@withContext cachedSession
-        }
-
-        if (apiKey.isBlank()) error("Azure Speech API key is missing. Add it in Settings.")
-        val firstMissingIndex = generatedFiles.size
-        for (index in firstMissingIndex until chunks.size) {
-            coroutineContext.ensureActive()
-            val chunk = chunks[index]
-            val chunkTextStart = chunkTextStarts[index]
-            val chunkCueFile = File(cacheManager.sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}_cues.json")
-            val cachedTarget = if (index == firstMissingIndex) null else cacheManager.cachedChunkOrNull(
-                cacheKey, index, noteId, model, normalizedVoice,
-                minimumBytes = MinValidMp3Bytes,
-                requiredSidecarSuffix = "_cues.json",
-            )
-            val target = cachedTarget ?: cacheManager.chunkFile(cacheKey, index)
-            if (cachedTarget == null) {
-                onChunkGenerating(index + 1, chunks.size)
-                val cues = requestSpeechWithRetry(
-                    apiKey = apiKey.trim(),
-                    region = normalizedRegion,
-                    voice = normalizedVoice,
-                    arabicVoice = normalizedArabicVoice,
-                    text = chunk,
-                    target = target,
-                    partNumber = index + 1,
-                    chunkIndex = index,
-                    chunkTextStart = chunkTextStart,
-                ).withDisplayText(originalText, textPreparer)
-                chunkCueFile.writeText(cues.toCueJson())
-            }
-            val chunkCues = chunkCueFile.readCuesOrEmpty()
-            generatedCues += chunkCues
-            generatedFiles += target
-            val session = NarrationSession(
-                cacheKey = cacheKey,
-                noteId = noteId,
-                noteTitle = noteTitle,
-                model = model,
+        )
+        val cachedTarget = legacyTarget ?: cacheManager.cachedChunkOrNull(
+            chunkCacheKey, 0, noteId, model, normalizedVoice,
+            minimumBytes = MinValidMp3Bytes,
+            requiredSidecarSuffix = "_cues.json",
+        )
+        val cueCacheKey = if (legacyTarget != null) cacheKey else chunkCacheKey
+        val cueCacheIndex = if (legacyTarget != null) index else 0
+        val chunkCueFile = cacheManager.chunkCueFile(cueCacheKey, cueCacheIndex)
+        val target = cachedTarget ?: cacheManager.chunkFile(chunkCacheKey, 0)
+        if (cachedTarget == null) {
+            if (apiKey.isBlank()) error("Azure Speech API key is missing. Add it in Settings.")
+            onChunkGenerating(index + 1, chunks.size)
+            android.util.Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val cues = requestSpeechWithRetry(
+                apiKey = apiKey.trim(),
+                region = normalizedRegion,
                 voice = normalizedVoice,
-                speed = clampedSpeed,
-                contentHash = contentHash,
-                files = generatedFiles.toList(),
-                cues = generatedCues.toList(),
-            )
-            cacheManager.writeManifest(session, isComplete = index == chunks.lastIndex, totalChunks = chunks.size)
-            onChunkReady(session, index == chunks.lastIndex, chunks.size)
+                arabicVoice = normalizedArabicVoice,
+                text = chunk,
+                target = target,
+                partNumber = index + 1,
+                chunkIndex = index,
+                chunkTextStart = chunkTextStart,
+            ).withDisplayText(originalText, textPreparer)
+            chunkCueFile.writeText(cues.toCueJson())
+            android.util.Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt} bytes=${target.length()}")
         }
-        NarrationSession(cacheKey, noteId, noteTitle, model, normalizedVoice, clampedSpeed, contentHash, generatedFiles, generatedCues)
+        coroutineContext.ensureActive()
+        val cues = chunkCueFile.readCuesOrEmpty().map { it.copy(chunkIndex = index) }
+        NarrationSession(
+            cacheKey = cacheKey,
+            noteId = noteId,
+            noteTitle = noteTitle,
+            model = model,
+            voice = normalizedVoice,
+            speed = clampedSpeed,
+            contentHash = contentHash,
+            files = listOf(target),
+            cues = cues,
+            chunkIndices = listOf(index),
+            totalChunks = chunks.size,
+            demandDriven = true,
+        ).also { session -> onChunkReady(session, index == chunks.lastIndex, chunks.size) }
     }
 
     private fun requestSpeechWithRetry(
@@ -223,6 +201,7 @@ class AzureTtsRepository @Inject constructor(
         const val MinValidMp3Bytes = 512L
         const val TicksPerMillisecond = 10_000L
         const val CleanupVersion = "cleanup-v1"
+        const val TimingTag = "MyVaultNarrationTiming"
     }
 }
 

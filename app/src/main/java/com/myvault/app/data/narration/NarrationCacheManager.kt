@@ -25,6 +25,9 @@ class NarrationCacheManager private constructor(
 
     fun contentHash(text: String): String = sha256(text.toByteArray())
 
+    fun renditionChunkKey(noteId: String, chunkText: String, model: String, voice: String): String =
+        cacheKey(noteId, contentHash("$ChunkCacheVersion:$chunkText"), model, voice, 1f)
+
     @Suppress("UNUSED_PARAMETER")
     fun cacheKey(noteId: String, contentHash: String, model: String, voice: String, speed: Float): String {
         // Synthesis bytes do not change with ExoPlayer playback speed. Keep the legacy 1.0
@@ -121,6 +124,31 @@ class NarrationCacheManager private constructor(
 
     fun chunkFile(cacheKey: String, index: Int): File = File(sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}.mp3")
 
+    fun chunkCueFile(cacheKey: String, index: Int): File =
+        File(sessionDir(cacheKey), "chunk_${index.toString().padStart(3, '0')}_cues.json")
+
+    fun readChunkCues(cacheKey: String, index: Int): List<NarrationCue> = runCatching {
+        JSONArray(chunkCueFile(cacheKey, index).readText()).toNarrationCues()
+    }.getOrDefault(emptyList())
+
+    fun writeChunkCues(cacheKey: String, index: Int, cues: List<NarrationCue>) {
+        val json = JSONArray().apply {
+            cues.forEach { cue ->
+                put(
+                    JSONObject()
+                        .put("chunkIndex", cue.chunkIndex)
+                        .put("startMs", cue.startMs)
+                        .put("endMs", cue.endMs)
+                        .put("textStart", cue.textStart)
+                        .put("textEnd", cue.textEnd)
+                        .put("text", cue.text)
+                        .put("displayText", cue.displayText),
+                )
+            }
+        }
+        chunkCueFile(cacheKey, index).writeText(json.toString())
+    }
+
     fun writeManifest(session: NarrationSession, isComplete: Boolean = true, totalChunks: Int = session.files.size) {
         val dir = sessionDir(session.cacheKey)
         val files = JSONArray().apply {
@@ -175,6 +203,10 @@ class NarrationCacheManager private constructor(
                     "model=$model voice=$voice",
             )
         }
+    }
+
+    private companion object {
+        const val ChunkCacheVersion = "chunk-v1"
     }
 }
 

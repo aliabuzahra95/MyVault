@@ -59,9 +59,23 @@ internal class VaultRichTextVisualTransformation(
     private val marks: List<VaultStyleMark>,
     private val noteLinks: List<VaultNoteLink> = emptyList(),
     private val colors: VaultColors,
+    private val activeNarrationText: String = "",
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val display = buildVaultDisplayText(text.text, marks, noteLinks, colors)
+        val annotated = buildVaultAnnotatedString(text.text, marks, noteLinks, colors)
+        val activeStart = activeNarrationText.takeIf { it.isNotBlank() }?.let(text.text::indexOf) ?: -1
+        val highlighted = if (activeStart >= 0) {
+            AnnotatedString.Builder(annotated).apply {
+                addStyle(
+                    SpanStyle(background = colors.accent.copy(alpha = 0.22f)),
+                    activeStart,
+                    (activeStart + activeNarrationText.length).coerceAtMost(text.length),
+                )
+            }.toAnnotatedString()
+        } else {
+            annotated
+        }
+        val display = highlighted.withVaultBidiIsolation()
         return TransformedText(display.text, display.offsetMapping)
     }
 }

@@ -150,6 +150,7 @@ import com.myvault.app.data.formatting.NoteFormattingAction
 import com.myvault.app.data.formatting.NoteFormattingModel
 import com.myvault.app.data.formatting.NoteFormattingProvider
 import com.myvault.app.data.formatting.NoteFormattingUiState
+import com.myvault.app.data.narration.NarrationUiState
 import com.myvault.app.ui.viewmodel.NoteUiState
 import com.myvault.app.ui.viewmodel.NoteTableUiState
 import kotlinx.coroutines.FlowPreview
@@ -201,6 +202,7 @@ fun EditorScreen(
     openFormattingInitially: Boolean = false,
     narrationMiniPlayerVisible: Boolean = false,
     narrationMiniPlayerHeight: androidx.compose.ui.unit.Dp = 0.dp,
+    narrationState: NarrationUiState = NarrationUiState(),
 ) {
     val colors = VaultThemeTokens.colors
     val context = LocalContext.current
@@ -310,6 +312,9 @@ fun EditorScreen(
         )
     }
     val safeBodyValue = sanitizeVaultTextFieldValue(bodyValue)
+    val activeNarrationText = narrationState.activeSentence.takeIf {
+        narrationState.noteId == noteId && it.isNotBlank()
+    }.orEmpty()
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     val currentImeBottom by rememberUpdatedState(imeBottom)
@@ -382,6 +387,24 @@ fun EditorScreen(
         val delta = noteCaretScrollDelta(requestedRect.top, requestedRect.bottom,
             bodyEditorScrollState.value, bodyEditorScrollState.viewportSize)
         if (delta != 0) bodyEditorScrollState.scrollTo(bodyEditorScrollState.value + delta)
+    }
+    LaunchedEffect(activeNarrationText, bodyTextLayoutResult, bodyEditorScrollState.viewportSize) {
+        if (activeNarrationText.isBlank() || safeBodyValue.text.isEmpty() || bodyFocused) return@LaunchedEffect
+        val textLayout = bodyTextLayoutResult ?: return@LaunchedEffect
+        if (textLayout.layoutInput.text.text != safeBodyValue.text) return@LaunchedEffect
+        val start = safeBodyValue.text.indexOf(activeNarrationText)
+        if (start < 0) return@LaunchedEffect
+        val end = (start + activeNarrationText.length - 1).coerceIn(start, safeBodyValue.text.lastIndex)
+        val top = textLayout.getBoundingBox(start).top
+        val bottom = textLayout.getBoundingBox(end).bottom
+        val viewport = bodyEditorScrollState.viewportSize.toFloat().coerceAtLeast(1f)
+        val current = bodyEditorScrollState.value.toFloat()
+        val comfortableTop = current + viewport * 0.18f
+        val comfortableBottom = current + viewport * 0.78f
+        if (top < comfortableTop || bottom > comfortableBottom) {
+            val target = (top - viewport * 0.24f).toInt().coerceIn(0, bodyEditorScrollState.maxValue)
+            bodyEditorScrollState.animateScrollTo(target)
+        }
     }
     val activeTools = buildSet {
         addAll(activeVaultToolsForSelection(safeBodyValue, styleMarks, pendingInlineStyles))
@@ -987,8 +1010,8 @@ fun EditorScreen(
                                         textDirection = vaultDefaultTextDirection(),
                                     ),
                                     cursorBrush = SolidColor(colors.accent),
-                                    visualTransformation = remember(styleMarks, noteLinks, colors) {
-                                        VaultRichTextVisualTransformation(styleMarks, noteLinks, colors)
+                                    visualTransformation = remember(styleMarks, noteLinks, colors, activeNarrationText) {
+                                        VaultRichTextVisualTransformation(styleMarks, noteLinks, colors, activeNarrationText)
                                     },
                                     maxLines = Int.MAX_VALUE,
                                     onTextLayout = { bodyTextLayoutResult = it },

@@ -85,5 +85,45 @@ class NarrationPersistentCacheTest {
         )
     }
 
+    @Test
+    fun unchangedChunkSurvivesEditsElsewhereButChangedChunkDoesNot() {
+        val manager = NarrationCacheManager(newRoot())
+        val unchangedBefore = manager.renditionChunkKey(
+            "note-4b", "An unchanged paragraph.", GeminiNarrationConfig.MODEL_FLASH_LITE, "Puck",
+        )
+        val unchangedAfter = manager.renditionChunkKey(
+            "note-4b", "An unchanged paragraph.", GeminiNarrationConfig.MODEL_FLASH_LITE, "Puck",
+        )
+        val changed = manager.renditionChunkKey(
+            "note-4b", "An edited paragraph.", GeminiNarrationConfig.MODEL_FLASH_LITE, "Puck",
+        )
+
+        assertEquals(unchangedBefore, unchangedAfter)
+        assertNotEquals(unchangedBefore, changed)
+    }
+
+    @Test
+    fun farSeekCanReuseOneCachedChunkWithoutGeneratingEarlierChunks() {
+        val root = newRoot()
+        val manager = NarrationCacheManager(root)
+        val hash = manager.contentHash("A long unchanged source")
+        val key = manager.cacheKey("note-5", hash, GeminiNarrationConfig.MODEL_FLASH_LITE, "Puck", 1f)
+        val sought = manager.chunkFile(key, 7).apply { writeBytes(ByteArray(1_024) { 7 }) }
+
+        val reconstructed = NarrationCacheManager(root)
+        assertEquals(
+            sought,
+            reconstructed.cachedChunkOrNull(
+                key,
+                7,
+                "note-5",
+                GeminiNarrationConfig.MODEL_FLASH_LITE,
+                "Puck",
+                minimumBytes = 512L,
+            ),
+        )
+        assertTrue(!manager.chunkFile(key, 0).exists())
+    }
+
     private fun newRoot(): File = Files.createTempDirectory("myvault-narration-cache-").toFile().also(roots::add)
 }

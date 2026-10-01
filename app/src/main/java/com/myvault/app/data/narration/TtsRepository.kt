@@ -21,6 +21,7 @@ import kotlin.coroutines.coroutineContext
 class TtsRepository @Inject constructor(
     private val cacheManager: NarrationCacheManager,
     private val textPreparer: NoteNarrationTextPreparer,
+    private val cueBuilder: NarrationCueBuilder,
 ) {
     suspend fun generateNarrationProgressively(
         noteId: String,
@@ -28,6 +29,7 @@ class TtsRepository @Inject constructor(
         narrationText: String,
         voice: String = NarrationConfig.DEFAULT_VOICE,
         speed: Float = 1f,
+        requestedChunkIndex: Int = 0,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
     ): NarrationSession = withContext(Dispatchers.IO) {
@@ -39,108 +41,57 @@ class TtsRepository @Inject constructor(
         // Speed is handled by MediaPlayer playback params so the same generated MP3 can be reused
         // across playback speeds without paying for another TTS request.
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, NarrationConfig.MODEL, normalizedVoice, 1f)
-        val cacheLookupStartedAt = SystemClock.elapsedRealtime()
-        cacheManager.cachedSessionOrNull(cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash)?.let {
+        val chunkPlanStartedAt = SystemClock.elapsedRealtime()
+        val chunks = textPreparer.splitIntoChunks(cleanText, CloudNarrationChunkChars)
+        if (chunks.isEmpty()) error("This note is empty.")
+        Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
+        val index = requestedChunkIndex.coerceIn(0, chunks.lastIndex)
+        val chunk = chunks[index]
+        val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk, NarrationConfig.MODEL, normalizedVoice)
+        Log.d(TimingTag, "chunk-requested source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} chunk=${index + 1}/${chunks.size}")
+        val legacyTarget = cacheManager.cachedChunkOrNull(
+            cacheKey, index, noteId, NarrationConfig.MODEL, normalizedVoice, minimumBytes = MinValidMp3Bytes,
+        )
+        val cachedTarget = legacyTarget ?: cacheManager.cachedChunkOrNull(
+            chunkCacheKey, 0, noteId, NarrationConfig.MODEL, normalizedVoice, minimumBytes = MinValidMp3Bytes,
+        )
+        val cueCacheKey = if (legacyTarget != null) cacheKey else chunkCacheKey
+        val cueCacheIndex = if (legacyTarget != null) index else 0
+        val target = cachedTarget ?: cacheManager.chunkFile(chunkCacheKey, 0)
+        if (cachedTarget == null) {
+            onChunkGenerating(index + 1, chunks.size)
+            val apiKey = BuildConfig.OPENAI_API_KEY.trim().takeIf { it.isNotBlank() }
+                ?: error("OpenAI narration is not configured. Add MYVAULT_OPENAI_API_KEY to the project or build environment.")
+            OpenAiRequestGuard.validateAndLogRequest(
+                featureName = OpenAiFeature.ListenMode,
+                endpointUrl = SpeechEndpoint,
+                model = NarrationConfig.MODEL,
+                noteId = noteId,
+                characterCount = chunk.length,
+                cacheStatus = "miss:chunk-${index + 1}",
+            )
+            Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
+            val requestStartedAt = SystemClock.elapsedRealtime()
+            requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
+            Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
+        } else {
             OpenAiRequestGuard.logCacheDecision(
                 featureName = OpenAiFeature.ListenMode,
                 endpointUrl = SpeechEndpoint,
                 model = NarrationConfig.MODEL,
                 noteId = noteId,
-                characterCount = cleanText.length,
-                cacheStatus = "hit:session",
+                characterCount = chunk.length,
+                cacheStatus = "hit:chunk-${index + 1}",
             )
-            Log.d(TimingTag, "cache-lookup source=${noteId.take(96)} result=complete-hit elapsedMs=${SystemClock.elapsedRealtime() - cacheLookupStartedAt}")
-            onChunkReady(it, true, it.files.size)
-            return@withContext it
         }
-
-        val chunkPlanStartedAt = SystemClock.elapsedRealtime()
-        val chunks = textPreparer.splitIntoChunks(cleanText)
-        if (chunks.isEmpty()) error("This note is empty.")
-        Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
-        OpenAiRequestGuard.logCacheDecision(
-            featureName = OpenAiFeature.ListenMode,
-            endpointUrl = SpeechEndpoint,
-            model = NarrationConfig.MODEL,
-            noteId = noteId,
-            characterCount = cleanText.length,
-            cacheStatus = "miss:session",
-        )
-
-        var apiKey: String? = null
-        val generatedFiles = cacheManager.cachedChunkPrefix(
-            cacheKey = cacheKey,
-            totalChunks = chunks.size,
-            noteId = noteId,
-            model = NarrationConfig.MODEL,
-            voice = normalizedVoice,
-            minimumBytes = MinValidMp3Bytes,
-        ).toMutableList()
-        Log.d(TimingTag, "cache-lookup source=${noteId.take(96)} result=partial-hit cached=${generatedFiles.size}/${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - cacheLookupStartedAt}")
-        if (generatedFiles.isNotEmpty()) {
-            val cachedSession = NarrationSession(
-                cacheKey, noteId, noteTitle, NarrationConfig.MODEL, normalizedVoice, clampedSpeed, contentHash, generatedFiles.toList(),
-            )
-            val complete = generatedFiles.size == chunks.size
-            cacheManager.writeManifest(cachedSession, isComplete = complete, totalChunks = chunks.size)
-            onChunkReady(cachedSession, complete, chunks.size)
-            if (complete) return@withContext cachedSession
-        }
-        val firstMissingIndex = generatedFiles.size
-        runCatching {
-            for (index in firstMissingIndex until chunks.size) {
-                coroutineContext.ensureActive()
-                val chunk = chunks[index]
-                val cachedTarget = if (index == firstMissingIndex) null else cacheManager.cachedChunkOrNull(
-                    cacheKey, index, noteId, NarrationConfig.MODEL, normalizedVoice, minimumBytes = MinValidMp3Bytes,
-                )
-                val target = cachedTarget ?: cacheManager.chunkFile(cacheKey, index)
-                if (cachedTarget != null) {
-                    OpenAiRequestGuard.logCacheDecision(
-                        featureName = OpenAiFeature.ListenMode,
-                        endpointUrl = SpeechEndpoint,
-                        model = NarrationConfig.MODEL,
-                        noteId = noteId,
-                        characterCount = chunk.length,
-                        cacheStatus = "hit:chunk-${index + 1}",
-                    )
-                } else {
-                    onChunkGenerating(index + 1, chunks.size)
-                    val resolvedApiKey = apiKey ?: BuildConfig.OPENAI_API_KEY.trim().also { resolved ->
-                        if (resolved.isBlank()) {
-                            error("OpenAI narration is not configured. Add MYVAULT_OPENAI_API_KEY to the project or build environment.")
-                        }
-                        apiKey = resolved
-                    }
-                    OpenAiRequestGuard.validateAndLogRequest(
-                        featureName = OpenAiFeature.ListenMode,
-                        endpointUrl = SpeechEndpoint,
-                        model = NarrationConfig.MODEL,
-                        noteId = noteId,
-                        characterCount = chunk.length,
-                        cacheStatus = "miss:chunk-${index + 1}",
-                    )
-                    val requestStartedAt = SystemClock.elapsedRealtime()
-                    requestSpeechWithRetry(resolvedApiKey, chunk, normalizedVoice, target, index + 1)
-                    Log.d(TimingTag, "provider-request source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
+        coroutineContext.ensureActive()
+        val cues = cacheManager.readChunkCues(cueCacheKey, cueCacheIndex)
+            .map { it.copy(chunkIndex = index) }
+            .ifEmpty {
+                cueBuilder.buildEstimatedCues(index, chunk, target).also {
+                    cacheManager.writeChunkCues(cueCacheKey, cueCacheIndex, it)
                 }
-                generatedFiles += target
-                val partialSession = NarrationSession(
-                    cacheKey = cacheKey,
-                    noteId = noteId,
-                    noteTitle = noteTitle,
-                    model = NarrationConfig.MODEL,
-                    voice = normalizedVoice,
-                    speed = clampedSpeed,
-                    contentHash = contentHash,
-                    files = generatedFiles.toList(),
-                )
-                cacheManager.writeManifest(partialSession, isComplete = index == chunks.lastIndex, totalChunks = chunks.size)
-                onChunkReady(partialSession, index == chunks.lastIndex, chunks.size)
             }
-        }.onFailure { error ->
-            throw error
-        }
         NarrationSession(
             cacheKey = cacheKey,
             noteId = noteId,
@@ -149,8 +100,12 @@ class TtsRepository @Inject constructor(
             voice = normalizedVoice,
             speed = clampedSpeed,
             contentHash = contentHash,
-            files = generatedFiles.toList(),
-        ).also { cacheManager.writeManifest(it, isComplete = true, totalChunks = generatedFiles.size) }
+            files = listOf(target),
+            cues = cues,
+            chunkIndices = listOf(index),
+            totalChunks = chunks.size,
+            demandDriven = true,
+        ).also { session -> onChunkReady(session, index == chunks.lastIndex, chunks.size) }
     }
 
     private fun requestSpeechWithRetry(apiKey: String, input: String, voice: String, target: File, partNumber: Int) {

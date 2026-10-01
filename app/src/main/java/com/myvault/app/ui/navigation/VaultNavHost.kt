@@ -1557,6 +1557,7 @@ fun VaultNavHost(
             EditorScreen(
                 uiState = uiState,
                 formattingState = formattingState,
+                narrationState = narrationState,
                 onBackClick = { navController.popBackStack() },
                 onMenuClick = onOpenNavigation,
                 onTitleChange = viewModel::updateTitle,
