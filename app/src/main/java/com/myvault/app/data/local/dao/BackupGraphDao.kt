@@ -50,7 +50,7 @@ suspend fun BackupGraphDao.readPublication(scope: String, operation: String): Ba
     val meta = publicationMetadata(scope, operation) ?: return null
     val builder = StringBuilder()
     var offset = 1
-    val chunkSize = 500000
+    val chunkSize = 25000
     while(true) {
         val chunk = frozenBatchChunk(scope, operation, offset, chunkSize) ?: break
         builder.append(chunk)

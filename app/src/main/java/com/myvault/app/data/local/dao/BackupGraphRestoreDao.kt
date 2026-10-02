@@ -47,7 +47,7 @@ suspend fun BackupGraphRestoreDao.readIntent(scope: String, operation: String): 
     val meta = intentMetadata(scope, operation) ?: return null
     val builder = StringBuilder()
     var offset = 1
-    val chunkSize = 500000
+    val chunkSize = 25000
     while(true) {
         val chunk = frozenChangesChunk(scope, operation, offset, chunkSize) ?: break
         builder.append(chunk)
