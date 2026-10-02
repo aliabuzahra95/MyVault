@@ -117,6 +117,7 @@ class NarrationPlayerManager @Inject constructor(
                 updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
             } else {
                 stopTicker()
+        watchdogJob?.cancel()
                 val currentStatus = _state.value.status
                 if (currentStatus == NarrationPlaybackStatus.Playing) {
                     updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
@@ -169,6 +170,7 @@ class NarrationPlayerManager @Inject constructor(
 
     fun detachPlayer() {
         stopTicker()
+        watchdogJob?.cancel()
         player?.removeListener(playerListener)
         player = null
     }
@@ -218,6 +220,7 @@ class NarrationPlayerManager @Inject constructor(
         val attachStartedAt = SystemClock.elapsedRealtime()
         stopInternal(resetState = false)
         activeSession = session
+        activeChunkPlans = session.chunkPlans
         _state.update { it.copy(provider = NarrationProvider.fromModel(session.model), voice = session.voice) }
         activeFiles = session.files
         activeChunkIndices = session.chunkIndices.takeIf { it.size == session.files.size } ?: session.files.indices.toList()
@@ -226,13 +229,33 @@ class NarrationPlayerManager @Inject constructor(
         activeDurationsMs = session.files.map(::readDurationMs)
         Log.d(Tag, "startup duration-scan source=${session.noteId.take(96)} files=${session.files.size} elapsedMs=${SystemClock.elapsedRealtime() - durationStartedAt}")
         expectedChunks = maxOf(totalChunks, session.totalChunks, session.files.size)
-        activeChunkPlans = session.chunkPlans
         demandDriven = session.demandDriven
         streamingGeneration = if (demandDriven) {
             (activeChunkIndices.lastOrNull() ?: 0) < expectedChunks - 1
         } else {
             totalChunks > session.files.size
         }
+        
+        // Recalculate timeline on startup
+        if (activeChunkPlans.isNotEmpty()) {
+            val newPlans = activeChunkPlans.toMutableList()
+            for (idx in activeChunkIndices.indices) {
+                val logicalIdx = activeChunkIndices[idx]
+                val dur = activeDurationsMs.getOrNull(idx) ?: continue
+                val plan = newPlans.getOrNull(logicalIdx)
+                if (plan != null) {
+                    newPlans[logicalIdx] = plan.copy(actualDurationMs = dur)
+                }
+            }
+            var currentStart = 0L
+            for (i in newPlans.indices) {
+                val pt = newPlans[i]
+                newPlans[i] = pt.copy(actualStartMs = currentStart)
+                currentStart += pt.actualDurationMs ?: pt.estimatedDurationMs
+            }
+            activeChunkPlans = newPlans
+        }
+
         activeChunkIndices.forEach(requestedChunks::complete)
         waitingForNextChunk = false
         activeChunkIndex = 0
@@ -245,7 +268,6 @@ class NarrationPlayerManager @Inject constructor(
 
         val p = ensurePlayerOrStartService()
         if (p == null) {
-            // Service is starting up, stash pending session
             pendingStartSession = session
             pendingInitialPositionMs = initialPositionMs
             markPreparing(session.noteId, session.noteTitle, session.voice, NarrationProvider.fromModel(session.model))
@@ -279,6 +301,7 @@ class NarrationPlayerManager @Inject constructor(
         Log.d(Tag, "startup player-attached source=${session.noteId.take(96)} elapsedMs=${SystemClock.elapsedRealtime() - attachStartedAt}")
     }
 
+
     fun acceptDemandChunk(session: NarrationSession, initialPositionMs: Long = 0L) = runOnMain {
         val chunkIndex = session.chunkIndices.firstOrNull() ?: return@runOnMain
         requestedChunks.complete(chunkIndex)
@@ -289,24 +312,59 @@ class NarrationPlayerManager @Inject constructor(
         }
         if (chunkIndex in activeChunkIndices) return@runOnMain
 
-        val pendingTarget = pendingSeekMs?.let { NarrationDemandPolicy.chunkForPosition(it, activeChunkPlans) }
-        if (pendingTarget == chunkIndex) {
-            startStreaming(session, session.totalChunks, pendingSeekMs ?: 0L)
-            return@runOnMain
-        }
-
-        val lastChunk = activeChunkIndices.lastOrNull() ?: -1
-        if (chunkIndex != lastChunk + 1) return@runOnMain
         activeSession = current.copy(cues = (activeCues + session.cues).distinctBy { cue -> cue.chunkIndex to cue.startMs })
         activeCues = activeSession?.cues.orEmpty()
-        activeFiles = activeFiles + session.files
-        activeChunkIndices = activeChunkIndices + chunkIndex
-        activeDurationsMs = activeDurationsMs + session.files.map(::readDurationMs)
+        activeChunkPlans = session.chunkPlans
+
+        val p = player ?: return@runOnMain
+        val file = session.files.first()
+        val dur = readDurationMs(file)
+
+        var insertIdx = activeChunkIndices.indexOfFirst { it > chunkIndex }
+        if (insertIdx == -1) insertIdx = activeChunkIndices.size
+        
+        activeChunkIndices = activeChunkIndices.take(insertIdx) + listOf(chunkIndex) + activeChunkIndices.drop(insertIdx)
+        activeFiles = activeFiles.take(insertIdx) + listOf(file) + activeFiles.drop(insertIdx)
+        activeDurationsMs = activeDurationsMs.take(insertIdx) + listOf(dur) + activeDurationsMs.drop(insertIdx)
+        p.addMediaItem(insertIdx, buildMediaItem(session, file))
+        
         expectedChunks = maxOf(expectedChunks, session.totalChunks)
         streamingGeneration = chunkIndex < expectedChunks - 1
 
-        val p = player
-        if (p != null) p.addMediaItems(session.files.map { buildMediaItem(session, it) })
+        val newPlans = activeChunkPlans.toMutableList()
+        val plan = newPlans.getOrNull(chunkIndex)
+        if (plan != null) {
+            newPlans[chunkIndex] = plan.copy(actualDurationMs = dur)
+            var currentStart = 0L
+            for (i in newPlans.indices) {
+                val pt = newPlans[i]
+                newPlans[i] = pt.copy(actualStartMs = currentStart)
+                currentStart += pt.actualDurationMs ?: pt.estimatedDurationMs
+            }
+            activeChunkPlans = newPlans
+        }
+
+        val pending = pendingSeekMs
+        if (pending != null) {
+            val pendingTarget = NarrationDemandPolicy.chunkForPosition(pending, activeChunkPlans)
+            if (pendingTarget == chunkIndex) {
+                val targetPlan = activeChunkPlans.getOrNull(pendingTarget)
+                val chunkStartMs = targetPlan?.actualStartMs ?: targetPlan?.estimatedStartMs ?: 0L
+                val localTarget = (pending - chunkStartMs).coerceIn(0L, dur.coerceAtLeast(0L))
+                pendingSeekMs = null
+                waitingForNextChunk = false
+                p.seekTo(insertIdx, localTarget)
+                p.play()
+            }
+        } else if (waitingForNextChunk && p.playbackState == Player.STATE_ENDED) {
+            val nextExpected = (activeChunkIndices.getOrNull(activeChunkIndex) ?: activeChunkIndex) + 1
+            if (chunkIndex == nextExpected) {
+                waitingForNextChunk = false
+                p.seekToNextMediaItem()
+                p.play()
+            }
+        }
+        
         _state.update {
             it.copy(
                 totalChunks = expectedChunks,
@@ -314,12 +372,10 @@ class NarrationPlayerManager @Inject constructor(
                 error = null,
             )
         }
-        if (waitingForNextChunk && p != null && p.playbackState == Player.STATE_ENDED) {
-            waitingForNextChunk = false
-            p.seekToNextMediaItem()
-            p.play()
-        }
+        
+        resumePendingSeekIfReady()
     }
+
 
     fun appendStreamingChunk(session: NarrationSession, totalChunks: Int) = runOnMain {
         val current = activeSession
@@ -459,7 +515,8 @@ class NarrationPlayerManager @Inject constructor(
             if (playlistIndex >= 0) {
                 val plan = activeChunkPlans.getOrNull(targetChunk)
                 val chunkStartMs = plan?.actualStartMs ?: plan?.estimatedStartMs ?: 0L
-                val localPosition = (target - chunkStartMs).coerceAtLeast(0L)
+                val actualDur = plan?.actualDurationMs ?: activeDurationsMs.getOrNull(playlistIndex) ?: 1L
+                val localPosition = (target - chunkStartMs).coerceIn(0L, actualDur)
                 pendingSeekMs = null
                 waitingForNextChunk = false
                 player?.seekTo(playlistIndex, localPosition)
@@ -474,7 +531,7 @@ class NarrationPlayerManager @Inject constructor(
                         error = null,
                     )
                 }
-                updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+                updatePlaybackState(NarrationPlaybackStatus.Preparing, "Buffering narration...")
             } else {
                 pendingSeekMs = target
                 waitingForNextChunk = true
@@ -494,26 +551,9 @@ class NarrationPlayerManager @Inject constructor(
         }
         if (activeDurationsMs.size != activeFiles.size) activeDurationsMs = activeFiles.map(::readDurationMs)
         val generatedDuration = activeDurationsMs.sum().takeIf { it > 0L } ?: return@runOnMain
-        val estimatedDuration = estimatedTotalDurationMs().takeIf { it > 0L } ?: generatedDuration
-        val target = totalPositionMs.coerceIn(0L, (estimatedDuration - 250L).coerceAtLeast(0L))
-
-        if (target >= generatedDuration && streamingGeneration) {
-            pendingSeekMs = target
-            waitingForNextChunk = true
-            player?.pause()
-            _state.value = _state.value.copy(
-                status = NarrationPlaybackStatus.Generating,
-                label = "Loading selected position...",
-                totalPositionMs = target,
-                totalDurationMs = estimatedDuration,
-                totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
-                error = null,
-            )
-            return@runOnMain
-        }
-        pendingSeekMs = null
-        seekWithinGenerated(target.coerceAtMost((generatedDuration - 250L).coerceAtLeast(0L)))
+        seekWithinGenerated(totalPositionMs.coerceIn(0L, (generatedDuration - 250L).coerceAtLeast(0L)))
     }
+
 
     fun setSpeed(newSpeed: Float) = runOnMain {
         speed = newSpeed.coerceIn(0.75f, 2.0f)
@@ -571,6 +611,7 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     private fun stopTicker() {
+        watchdogJob?.cancel()
         tickerJob?.cancel()
         tickerJob = null
     }
@@ -687,6 +728,7 @@ class NarrationPlayerManager @Inject constructor(
             progressStore.clear(session.noteId)
         }
         stopTicker()
+        watchdogJob?.cancel()
         _state.value = NarrationUiState(
             status = NarrationPlaybackStatus.Stopped,
             noteId = session?.noteId,
@@ -704,6 +746,7 @@ class NarrationPlayerManager @Inject constructor(
 
     private fun stopInternal(resetState: Boolean) {
         stopTicker()
+        watchdogJob?.cancel()
         player?.run {
             stop()
             clearMediaItems()

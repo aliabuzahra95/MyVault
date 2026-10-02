@@ -119,7 +119,7 @@ class NarrationDirector @Inject constructor(
         fun flush() {
             val text = currentChunkText.toString().trim()
             if (text.isNotBlank()) {
-                val words = text.split("\\s+".toRegex()).size
+                val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size
                 val estimatedDur = words * 400L
                 chunks += NarrationChunkPlan(
                     index = chunks.size,
@@ -141,7 +141,7 @@ class NarrationDirector @Inject constructor(
                 flush()
                 val subParts = splitOversizedText(unitText, maxCharsPerChunk)
                 subParts.forEach { sub ->
-                    val w = sub.split("\\s+".toRegex()).size
+                    val w = sub.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size
                     val d = w * 400L
                     chunks += NarrationChunkPlan(
                         index = chunks.size,
