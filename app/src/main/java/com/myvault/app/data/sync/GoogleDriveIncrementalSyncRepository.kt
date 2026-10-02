@@ -272,8 +272,17 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             check(database.backupGraphDao().unfinishedMetadata(email).isEmpty()) { "Recover the unfinished Backup before Restore." }
             val restoring = "Checking graph backup and missing updates"
             onProgress(DriveRestoreProgress(DriveRestoreStage.Preparing, restoring, detail = restoring))
+            var binaryCount = 0
             val result = InternalBackupGraphRestore(database, backupJournal, context.filesDir,
-                File(context.filesDir, "backup-graph-restores"), store, GraphRestorePreferences(preferences)).restore()
+                File(context.filesDir, "backup-graph-restores"), store, GraphRestorePreferences(preferences), boundary = { state ->
+                when (state) {
+                    "INTENT_PERSISTED" -> onProgress(DriveRestoreProgress(DriveRestoreStage.Preparing, "Fetching updates...", detail = "Updates metadata mapped"))
+                    "BEFORE_BINARY_DOWNLOAD" -> onProgress(DriveRestoreProgress(DriveRestoreStage.Downloading, "Downloading vault files...", detail = "Downloading attachments..."))
+                    "BINARY_DOWNLOADED" -> { binaryCount++; onProgress(DriveRestoreProgress(DriveRestoreStage.Downloading, "Downloading vault files...", detail = "Downloaded $binaryCount files so far")) }
+                    "SETTINGS_APPLYING" -> onProgress(DriveRestoreProgress(DriveRestoreStage.RestoringDatabase, "Restoring settings...", detail = "Applying preferences"))
+                    "BEFORE_ROOM_APPLY" -> onProgress(DriveRestoreProgress(DriveRestoreStage.RestoringDatabase, "Restoring database...", detail = "Merging remote updates into local database"))
+                }
+            }).restore()
             when (result.status) {
                 GraphRestoreStatus.APPLIED -> DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates.")
                 GraphRestoreStatus.ALREADY_CURRENT -> DriveSyncResult.Success("Already up to date.")
