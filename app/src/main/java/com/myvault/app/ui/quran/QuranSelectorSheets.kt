@@ -702,7 +702,7 @@ private fun QuranAyahSearchResultRow(
             }
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -727,20 +727,22 @@ private fun QuranAyahSearchResultRow(
                             fontFamily = QuranSelectorUthmaniHafsFamily,
                             textDirection = TextDirection.ContentOrRtl,
                             fontWeight = FontWeight.W400,
+                            fontSize = 18.sp,
                         ),
                         color = colors.textMuted,
                     )
                 }
                 Text(
                     text = result.arabicText,
-                    style = MaterialTheme.typography.bodyMedium.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy(
                         fontFamily = QuranSelectorUthmaniHafsFamily,
                         textDirection = TextDirection.Rtl,
-                        lineHeight = 27.sp,
+                        fontSize = 22.sp,
+                        lineHeight = 42.sp,
                     ),
-                    color = colors.textSecondary,
+                    color = colors.text,
                     textAlign = TextAlign.Right,
-                    maxLines = 4,
+                    maxLines = 6,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(),
                 )
