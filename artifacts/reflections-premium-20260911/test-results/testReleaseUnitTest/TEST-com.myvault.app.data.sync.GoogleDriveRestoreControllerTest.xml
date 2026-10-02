@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.sync.GoogleDriveRestoreControllerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.042Z" hostname="Mac-2.modem" time="0.003">
+  <properties/>
+  <testcase name="tracked work wins over stale historical records" classname="com.myvault.app.data.sync.GoogleDriveRestoreControllerTest" time="0.002"/>
+  <testcase name="worker progress restores operation counts and percentage" classname="com.myvault.app.data.sync.GoogleDriveRestoreControllerTest" time="0.0"/>
+  <testcase name="active work is recovered when controller has no tracked id" classname="com.myvault.app.data.sync.GoogleDriveRestoreControllerTest" time="0.0"/>
+  <testcase name="active state blocks duplicate operation" classname="com.myvault.app.data.sync.GoogleDriveRestoreControllerTest" time="0.0"/>
+  <testcase name="successful worker output restores completion timestamp" classname="com.myvault.app.data.sync.GoogleDriveRestoreControllerTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

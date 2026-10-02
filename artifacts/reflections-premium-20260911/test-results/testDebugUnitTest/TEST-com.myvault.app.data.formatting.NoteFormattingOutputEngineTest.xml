@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.293Z" hostname="Mac-2.modem" time="0.022">
+  <properties/>
+  <testcase name="intelligentStructureReturnsEditorHtmlWithoutMarkdownFence" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.006"/>
+  <testcase name="longNotesAreSplitIntoBoundedFormattingChunksWithoutLosingEndpoints" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.003"/>
+  <testcase name="structureOnlyRejectsShortenedOutputAndRestoresEverySourceSegment" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.007"/>
+  <testcase name="retainedActionsContainOnlyTheFourFormattingWorkflows" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.0"/>
+  <testcase name="intelligentStructureKeepsSafeAdditiveHeadings" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.0"/>
+  <testcase name="intelligentStructureRejectsSummariesAndRestoresTheCompleteOriginal" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.002"/>
+  <testcase name="structureOnlyPreservesSafeCompleteHtml" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.0"/>
+  <testcase name="intelligentStructureRejectsOneMissingRepeatedWordOccurrence" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.001"/>
+  <testcase name="everyFormattingProviderReceivesTheEditorHtmlPromptContract" classname="com.myvault.app.data.formatting.NoteFormattingOutputEngineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

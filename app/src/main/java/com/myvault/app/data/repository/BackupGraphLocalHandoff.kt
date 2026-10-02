@@ -32,7 +32,7 @@ internal suspend fun adoptVerifiedRestoredParent(
         val clock = db.backupJournalDao().clock()
         check(restored.driveAccountId == context.driveAccountId && restored.originEpoch == clock.originEpoch)
         check(clock.settingsToken == null && clock.suppressionDepth == 0)
-        check(db.backupGraphRestoreDao().unfinished().isEmpty() && db.backupGraphDao().unfinished(context.accountScope).isEmpty())
+        check(db.backupGraphRestoreDao().unfinishedMetadata().isEmpty() && db.backupGraphDao().unfinishedMetadata(context.accountScope).isEmpty())
         val commit = graph.commits[restored.commitId] ?: error("Restored graph position is missing.")
         check(graph.tips.single() == restored.commitId) { "Restore newer graph changes before Backup." }
         val ref = GraphObjectRef(restored.commitFileId, restored.commitSha256, restored.commitSize)

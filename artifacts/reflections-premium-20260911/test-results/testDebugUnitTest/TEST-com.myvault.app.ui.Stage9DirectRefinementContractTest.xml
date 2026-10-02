@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.Stage9DirectRefinementContractTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.663Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="Tafsir uses a dismissible sheet with an independently scrolling body" classname="com.myvault.app.ui.Stage9DirectRefinementContractTest" time="0.0"/>
+  <testcase name="editor exposes compact style tokens without removing style choices" classname="com.myvault.app.ui.Stage9DirectRefinementContractTest" time="0.0"/>
+  <testcase name="reciter changes cancel stale preparation and retain one selected source" classname="com.myvault.app.ui.Stage9DirectRefinementContractTest" time="0.0"/>
+  <testcase name="note attachments remain compact and visible in reading and editing" classname="com.myvault.app.ui.Stage9DirectRefinementContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

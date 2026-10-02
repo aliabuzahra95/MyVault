@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.527Z" hostname="Mac-2.modem" time="0.015">
+  <properties/>
+  <testcase name="marksOnlyAffectedAyahAsNeedingReviewWhenWordIsMissing" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.002"/>
+  <testcase name="acceptsAdDuhaGoogleTranscriptStyleWithoutFalseMissingWords" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.005"/>
+  <testcase name="savesAndRestoresSurahAttempt" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.002"/>
+  <testcase name="analysesPerfectShortSurahAsPassed" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.001"/>
+  <testcase name="continuousAttemptPersistsScopedResultsWithoutChangingSurahMetadata" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.001"/>
+  <testcase name="acceptsAtTinGoogleTranscriptStyleWithoutFalseMissingWords" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.003"/>
+  <testcase name="continueRevisionDoesNotMarkUnattemptedRemainingAyahsMissing" classname="com.myvault.app.data.quran.memorization.QuranSurahMemorizationTestEngineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

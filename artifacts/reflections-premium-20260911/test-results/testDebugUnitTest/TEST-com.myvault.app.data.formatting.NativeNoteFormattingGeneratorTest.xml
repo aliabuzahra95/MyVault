@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.214Z" hostname="Mac-2.modem" time="0.078">
+  <properties/>
+  <testcase name="ChatGptFormattingPayloadContainsOnlyFormattingActionsAndModels" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.006"/>
+  <testcase name="structureOnlyReportsRejectedProviderContentWithoutSilentFallback" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.02"/>
+  <testcase name="invalidOutputGetsOnlyOneBoundedRetryFromTheOriginal" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.006"/>
+  <testcase name="validatedNumberedListsDoNotPassThroughHeuristicRepair" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.002"/>
+  <testcase name="KimiFormattingPayloadKeepsTheProvenRequestShape" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.001"/>
+  <testcase name="longIntelligentStructureUsesOnePlanThenBoundedChunks" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.03"/>
+  <testcase name="everyRetainedActionAndProviderUsesTheNativeFormattingGateway" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.01"/>
+  <testcase name="rateLimitErrorsDoNotExposeProviderAccountIdentifiers" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.0"/>
+  <testcase name="intelligentStructureReportsRejectedProviderContentWithoutSilentFallback" classname="com.myvault.app.data.formatting.NativeNoteFormattingGeneratorTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

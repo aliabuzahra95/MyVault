@@ -93,5 +93,5 @@ internal suspend fun readLocalBackupReadiness(db: VaultDatabase, email: String, 
         publication?.driveAccountId ?: restored?.driveAccountId ?: binding?.driveAccountId,
         publication != null || restored?.originEpoch == clock.originEpoch,
         bindings.size > 1 || applied.size > 1 || binding != null && restored != null && binding.lineageId != restored.lineageId || clock.settingsToken != null || clock.suppressionDepth != 0 ||
-            db.backupGraphDao().unfinished(account).isNotEmpty() || db.backupGraphRestoreDao().unfinished().isNotEmpty())
+            db.backupGraphDao().unfinishedMetadata(account).isNotEmpty() || db.backupGraphRestoreDao().unfinishedMetadata().isNotEmpty())
 }

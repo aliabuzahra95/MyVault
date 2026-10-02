@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.BackupCompatibilityPolicyTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.962Z" hostname="Mac-2.modem" time="0.0">
+  <properties/>
+  <testcase name="oldAskAiMetadataIsIgnoredWithoutRemovingSupportedBackupEntries" classname="com.myvault.app.data.repository.BackupCompatibilityPolicyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.BackupAttachmentResilienceTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.958Z" hostname="Mac-2.modem" time="0.003">
+  <properties/>
+  <testcase name="restoreSkipsClaimedAttachmentsMissingFromZip" classname="com.myvault.app.data.repository.BackupAttachmentResilienceTest" time="0.002"/>
+  <testcase name="oldBackupWithMissingFileRestoresOtherData" classname="com.myvault.app.data.repository.BackupAttachmentResilienceTest" time="0.0"/>
+  <testcase name="missingFileIsNotClaimedByNewBackupMetadata" classname="com.myvault.app.data.repository.BackupAttachmentResilienceTest" time="0.0"/>
+  <testcase name="restoreSkipsAttachmentsThatWereMissingWhenBackupWasCreated" classname="com.myvault.app.data.repository.BackupAttachmentResilienceTest" time="0.0"/>
+  <testcase name="existingFileIsClaimedByNewBackupMetadata" classname="com.myvault.app.data.repository.BackupAttachmentResilienceTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

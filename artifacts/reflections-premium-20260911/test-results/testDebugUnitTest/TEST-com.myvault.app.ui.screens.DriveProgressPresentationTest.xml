@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.screens.DriveProgressPresentationTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.815Z" hostname="Mac-2.modem" time="0.0">
+  <properties/>
+  <testcase name="measurable upload presents real object percentage" classname="com.myvault.app.ui.screens.DriveProgressPresentationTest" time="0.0"/>
+  <testcase name="failed backup retains previous successful timestamp" classname="com.myvault.app.ui.screens.DriveProgressPresentationTest" time="0.0"/>
+  <testcase name="unmeasurable preparation remains indeterminate" classname="com.myvault.app.ui.screens.DriveProgressPresentationTest" time="0.0"/>
+  <testcase name="confirmed backup completion presents success and immediate timestamp" classname="com.myvault.app.ui.screens.DriveProgressPresentationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

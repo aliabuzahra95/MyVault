@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.VaultMobileWebNavigationContractTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.079Z" hostname="Mac-2.modem" time="0.021">
+  <properties/>
+  <testcase name="root pager only changes from navigation selections" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.001"/>
+  <testcase name="Islamic Corpus destinations keep their required order" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.0"/>
+  <testcase name="frozen shell owns responsive explorer workspace chooser and compact utility" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.001"/>
+  <testcase name="drawer swipe stays enabled except while the PDF reader is open" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.001"/>
+  <testcase name="dashboard precedes the ordered destinations without redundant headings" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.0"/>
+  <testcase name="explorer move choices exclude the selected folder and descendants" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.0"/>
+  <testcase name="workspace changes recreate pager state before page sets are exchanged" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.0"/>
+  <testcase name="global search result rows leave room for title and directory" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.001"/>
+  <testcase name="one shared mobile web drawer serves Islamic Corpus and Personal pagers" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.012"/>
+  <testcase name="one native action host manages every explorer content family" classname="com.myvault.app.ui.VaultMobileWebNavigationContractTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

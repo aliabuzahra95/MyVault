@@ -1,0 +1,29 @@
+Archive:  artifacts/stage-10/evidence/android-production-backup.vaultbackup
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       65  08-28-2026 20:59   manifest.json
+     1144  08-28-2026 20:59   settings.json
+      235  08-28-2026 20:59   courses.json
+      266  08-28-2026 20:59   course_concept_cards.json
+        2  08-28-2026 20:59   course_folders.json
+        2  08-28-2026 20:59   course_notes.json
+        2  08-28-2026 20:59   course_sticky_notes.json
+     2599  08-28-2026 20:59   folders.json
+      190  08-28-2026 20:59   folder_sticky_notes.json
+     5070  08-28-2026 20:59   notes.json
+     1877  08-28-2026 20:59   blocks.json
+        2  08-28-2026 20:59   tags.json
+        2  08-28-2026 20:59   note_tags.json
+        2  08-28-2026 20:59   note_tables.json
+      655  08-28-2026 20:59   note_versions.json
+     3718  08-28-2026 20:59   attachments.json
+      321  08-28-2026 20:59   pdf_reading_progress.json
+     6104  08-28-2026 20:59   pdf_annotations.json
+     7311  08-28-2026 20:59   pdf_annotation_geometry.json
+      265  08-28-2026 20:59   source_backlinks.json
+       92  08-28-2026 20:59   knowledge_tags.json
+        2  08-28-2026 20:59   knowledge_tag_links.json
+    24656  08-28-2026 20:59   files/663b10eb-06e6-4324-b0b2-c58e6e2ff34e
+    30795  08-28-2026 20:59   files/dbe88e2d-236c-49e4-8d27-12f18dba6d86
+---------                     -------
+    85377                     24 files

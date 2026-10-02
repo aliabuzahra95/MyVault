@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.930Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="unknownTranscriptScoresZero" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <testcase name="repeatedWordsAffectTheScore" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <testcase name="oneMissingWordInVeryShortAyahIsSevere" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.001"/>
+  <testcase name="oneMissingWordInLongAyahIsProportional" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <testcase name="mixedMistakesScorePoorly" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <testcase name="perfectRecitationScoresExcellent" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <testcase name="extraWordsAffectTheScore" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <testcase name="scoringIsDeterministic" classname="com.myvault.app.data.quran.memorization.QuranMemorizationScoreEngineTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

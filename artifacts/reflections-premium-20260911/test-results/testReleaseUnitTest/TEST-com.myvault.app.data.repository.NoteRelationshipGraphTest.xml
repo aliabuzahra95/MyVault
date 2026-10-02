@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.NoteRelationshipGraphTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.988Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="withMissingFolders_distinguishesOrphansFromValidRootNotes" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.001"/>
+  <testcase name="sanitizedForAvailableFolders_preservesRootAndValidFolderNotes" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.0"/>
+  <testcase name="sanitizedForPersistence_detachesCyclesWithoutDroppingNotes" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.0"/>
+  <testcase name="sanitizedForAvailableFolders_recoversOrphansWithoutDroppingHierarchy" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.0"/>
+  <testcase name="descendantIds_stopsSafelyWhenCorruptDataContainsCycle" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.0"/>
+  <testcase name="descendantIds_returnsEntireNestedBranchInTreeOrder" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.0"/>
+  <testcase name="sanitizedForPersistence_detachesMissingParentAndCrossFolderRelationships" classname="com.myvault.app.data.repository.NoteRelationshipGraphTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

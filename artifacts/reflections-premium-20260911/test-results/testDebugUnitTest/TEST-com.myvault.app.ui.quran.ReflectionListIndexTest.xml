@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.quran.ReflectionListIndexTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.695Z" hostname="Mac-2.modem" time="0.117">
+  <properties/>
+  <testcase name="largeCollectionFiltersWithoutLosingStableIdentity" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.101"/>
+  <testcase name="surahSheetUsesCompleteCatalogIncludingSurahsWithoutReflections" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="quranGroupsUseNumericIdentityAndPreserveStableRecords" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.0"/>
+  <testcase name="surahSearchHandlesFormattingAndLongVowels" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="surahSheetSearchAcceptsTransliterationArabicAndNumberWithoutRewritingNames" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.004"/>
+  <testcase name="bodySearchIncludesTheEntireReflectionNotOnlyThePreview" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="arabicDiacriticsAndMixedContentRemainSearchableAndUnchanged" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.0"/>
+  <testcase name="searchAndSurahFilterAreCombined" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="dateGroupsFollowFirstOccurrenceAndSortWithinEachSurah" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="emptyCopyDistinguishesCollectionSearchAndSelectedSurah" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.0"/>
+  <testcase name="numericAyahSearchIsExactAndSupportsArabicDigits" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="legacyZeroTimestampsAndSameTimeTiesKeepExistingIdFallback" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.0"/>
+  <testcase name="allSortsUseExistingTimeOrNumericQuranIdentity" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="rebuiltIndexReflectsAddEditDeleteAndEmptyCollections" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <testcase name="filterSortAndClearFilterKeepConsistentGroupsAndSummaries" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.002"/>
+  <testcase name="sameAyahHasIndependentStableIdsAndDeterministicTies" classname="com.myvault.app.ui.quran.ReflectionListIndexTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

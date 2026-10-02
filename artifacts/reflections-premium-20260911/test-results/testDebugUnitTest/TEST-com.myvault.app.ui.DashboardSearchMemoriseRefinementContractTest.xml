@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.DashboardSearchMemoriseRefinementContractTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.649Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="Dashboard records opens and renders four fixed category slots" classname="com.myvault.app.ui.DashboardSearchMemoriseRefinementContractTest" time="0.001"/>
+  <testcase name="Quran search and whole Surah navigation use exact existing routes" classname="com.myvault.app.ui.DashboardSearchMemoriseRefinementContractTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

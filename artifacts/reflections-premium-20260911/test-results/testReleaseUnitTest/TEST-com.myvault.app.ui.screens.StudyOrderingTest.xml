@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.screens.StudyOrderingTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.248Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="nestedMixedMoveNeverReparentsOrChangesTimestamps" classname="com.myvault.app.ui.screens.StudyOrderingTest" time="0.0"/>
+  <testcase name="automaticModesKeepManualOrderAndUseRealSeparateTimestamps" classname="com.myvault.app.ui.screens.StudyOrderingTest" time="0.001"/>
+  <testcase name="allLevelsSortAndArabicEnglishTiesAreDeterministic" classname="com.myvault.app.ui.screens.StudyOrderingTest" time="0.0"/>
+  <testcase name="pinnedPreviewFlagDoesNotRewriteManualIndices" classname="com.myvault.app.ui.screens.StudyOrderingTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

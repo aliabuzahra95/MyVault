@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.sync.GoogleDriveAuthenticationTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.616Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="ordinary authentication messages are not remote consent responses" classname="com.myvault.app.data.sync.GoogleDriveAuthenticationTest" time="0.001"/>
+  <testcase name="remote comparison uses only current account manifest version" classname="com.myvault.app.data.sync.GoogleDriveAuthenticationTest" time="0.0"/>
+  <testcase name="non authentication errors never refresh the token" classname="com.myvault.app.data.sync.GoogleDriveAuthenticationTest" time="0.0"/>
+  <testcase name="remote consent response is recognized regardless of case" classname="com.myvault.app.data.sync.GoogleDriveAuthenticationTest" time="0.0"/>
+  <testcase name="unauthorized response refreshes the token only once" classname="com.myvault.app.data.sync.GoogleDriveAuthenticationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

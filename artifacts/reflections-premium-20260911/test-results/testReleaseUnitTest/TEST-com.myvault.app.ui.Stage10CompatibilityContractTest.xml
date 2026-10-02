@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.Stage10CompatibilityContractTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.073Z" hostname="Mac-2.modem" time="0.002">
+  <properties/>
+  <testcase name="dormant memorisation repeat choices remain engine only" classname="com.myvault.app.ui.Stage10CompatibilityContractTest" time="0.001"/>
+  <testcase name="batch pin remains workspace wide and selection controls stay reachable" classname="com.myvault.app.ui.Stage10CompatibilityContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

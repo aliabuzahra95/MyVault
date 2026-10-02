@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.QuranTajweedRulesTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.792Z" hostname="Mac-2.modem" time="0.0">
+  <properties/>
+  <testcase name="shared Tajweed palette includes every production category in both themes" classname="com.myvault.app.data.quran.QuranTajweedRulesTest" time="0.0"/>
+  <testcase name="grey Tajweed rules share the exact production grey mapping" classname="com.myvault.app.data.quran.QuranTajweedRulesTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

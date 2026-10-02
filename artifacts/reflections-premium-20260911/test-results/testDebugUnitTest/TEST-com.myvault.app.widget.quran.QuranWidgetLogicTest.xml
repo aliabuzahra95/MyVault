@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.widget.quran.QuranWidgetLogicTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:29.031Z" hostname="Mac-2.modem" time="0.007">
+  <properties/>
+  <testcase name="previous and next Surah stay inside the canonical catalog" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.003"/>
+  <testcase name="Surah search handles blank and unmatched queries" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.001"/>
+  <testcase name="invalid widget locations use a safe canonical fallback" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.001"/>
+  <testcase name="responsive buckets adapt across width and height" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.0"/>
+  <testcase name="Surah search matches number transliteration and Arabic name" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.002"/>
+  <testcase name="display preferences remain isolated when one widget state changes" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.0"/>
+  <testcase name="Arabic font levels stay readable and adapt by widget size" classname="com.myvault.app.widget.quran.QuranWidgetLogicTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

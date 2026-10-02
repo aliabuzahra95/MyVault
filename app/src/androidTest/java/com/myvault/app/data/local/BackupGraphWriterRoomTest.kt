@@ -7,6 +7,7 @@ import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.myvault.app.data.local.entity.*
+import com.myvault.app.data.local.dao.readPublication
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.*
 import kotlinx.coroutines.runBlocking
@@ -191,7 +192,7 @@ class BackupGraphWriterRoomTest {
             assertEquals(original.operationId, result.commitId)
             assertEquals(pending, f.pending())
             assertEquals("N+1 remains local العربية", f.db.noteDao().getById("n")!!.bodyPlainText)
-            assertEquals("COMPLETE", f.db.backupGraphDao().publication(account, original.operationId)!!.status)
+            assertEquals("COMPLETE", f.db.backupGraphDao().readPublication(account, original.operationId)!!.status)
             assertEquals(0, writer().resume(original.operationId).metrics.commitsCreated)
         }
     }
@@ -213,7 +214,7 @@ class BackupGraphWriterRoomTest {
                     events += progress
                     if (progress.stage == GraphBackupStage.COMPLETE) {
                         val binding = f.binding()
-                        assertEquals("COMPLETE", f.db.backupGraphDao().publication(account,binding.commitId)!!.status)
+                        assertEquals("COMPLETE", f.db.backupGraphDao().readPublication(account,binding.commitId)!!.status)
                         assertTrue(f.pending().isEmpty())
                     }
                 })
@@ -365,7 +366,7 @@ class BackupGraphWriterRoomTest {
             f.writer().publish(); assertTrue(f.pending().isEmpty())
             f.note("two"); f.note("three"); f.edit("One more")
             val three = f.writer().publish(); assertEquals(3,three.metrics.pendingRows); assertEquals(3,three.metrics.payloadRows)
-            val intent = f.db.backupGraphDao().publication(account,three.operationId!!)!!
+            val intent = f.db.backupGraphDao().readPublication(account,three.operationId!!)!!
             assertEquals(3,BackupGraphIntentCodec.records(intent.frozenBatchJson).size)
             f.db.noteDao().updateDeletedAt(listOf("two"),100,100)
             f.writer().publish()
@@ -373,7 +374,7 @@ class BackupGraphWriterRoomTest {
             val trashed = (0 until trashedRows.length()).map(trashedRows::getJSONObject).single { it.getString("id") == "two" }
             assertEquals(100L, trashed.getLong("deletedAt"))
             f.db.noteDao().deleteByIds(listOf("two")); val deletion = f.writer().publish()
-            val deleted = BackupGraphIntentCodec.records(f.db.backupGraphDao().publication(account,deletion.operationId!!)!!.frozenBatchJson).single()
+            val deleted = BackupGraphIntentCodec.records(f.db.backupGraphDao().readPublication(account,deletion.operationId!!)!!.frozenBatchJson).single()
             assertEquals(listOf("two"),deleted.key); assertEquals("DELETE",deleted.operation); assertNull(deleted.payloadJson)
             assertEquals(2,JSONArray(f.read().files.getValue("notes.json")).length())
             assertTrue(f.writer().publish().alreadyBackedUp) // Absence cannot invent another deletion.
@@ -422,7 +423,7 @@ class BackupGraphWriterRoomTest {
             val filesBefore = f.store.commits().size
             f.reopen()
             val result = f.writer().resume(p.first)
-            assertEquals(p.first,result.commitId); assertTrue(f.pending().isEmpty()); assertEquals("COMPLETE",f.db.backupGraphDao().publication(account,p.first)!!.status)
+            assertEquals(p.first,result.commitId); assertTrue(f.pending().isEmpty()); assertEquals("COMPLETE",f.db.backupGraphDao().readPublication(account,p.first)!!.status)
             val binding = f.binding(); f.writer().resume(p.first); assertEquals(binding,f.binding())
             if(point in listOf("CREATED_COMMIT","VERIFIED_COMMIT","COMMIT_VERIFIED","BEFORE_COMPLETION","IN_COMPLETION_TRANSACTION","COMPLETE")) assertEquals(filesBefore,f.store.commits().size)
             assertEquals(2,f.store.commits().size)
@@ -579,7 +580,7 @@ class BackupGraphWriterRoomTest {
         }
         Fixture().use { f ->
             f.root(); f.edit("Unsupported graph blocks ordinary publication")
-            val raw=JSONObject(f.db.backupGraphDao().publication(account,f.binding().commitId)!!.commitJson)
+            val raw=JSONObject(f.db.backupGraphDao().readPublication(account,f.binding().commitId)!!.commitJson)
                 .put("commitId",UUID.randomUUID().toString()).put("requiredReaders",JSONArray(listOf(BackupGraphCapability,"future-reader")))
             val file=File(f.root,"unsupported.json").apply { writeText(raw.toString()) }
             f.store.create("unsupported-commit","COMMIT",file)

@@ -114,15 +114,11 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             val local = readLocalBackupReadiness(database, account.email, includeHasData = false)
             val readiness = reconcileBackupGraph(local, store.context.driveAccountId, false, 1, graph, objects)
             val tip = graph.tips.singleOrNull()
-            val notice = latestBackupNotice(
+            latestBackupNotice(
                 readiness.state,
                 tip,
-                preferences.lastNotifiedGraphTip(account.email, store.context.lineageId),
+                null,
             )
-            if (notice?.remoteCommitId != null) {
-                preferences.markGraphTipNotified(account.email, store.context.lineageId, notice.remoteCommitId)
-            }
-            notice
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -140,7 +136,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         try {
             val (driveId, api) = account.client.graphApi(account.email)
             if (api.roots(BackupGraphNamespace).isEmpty()) {
-                check(database.backupGraphDao().unfinished(account.email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty()) {
+                check(database.backupGraphDao().unfinishedMetadata(account.email).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty()) {
                     "An interrupted Backup or Restore must be recovered first."
                 }
                 val identity = IncrementalBackupFormat.sha256(driveId.toByteArray(Charsets.UTF_8))
@@ -188,7 +184,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val roots = api.roots(BackupGraphNamespace)
         check(roots.size <= 1) { "Multiple graph namespaces require reconciliation." }
         if (roots.isEmpty() && !allowEnrollment) {
-            check(database.backupGraphDao().unfinished(email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty()) {
+            check(database.backupGraphDao().unfinishedMetadata(email).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty()) {
                 "Recover the interrupted operation before selecting a historical backup."
             }
             return null
@@ -197,9 +193,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             check(roots.all { it.id == owned.rootId }) { "The graph namespace differs from this account's enrolled namespace." }
             val established = database.backupGraphDao().binding(email, owned.lineageId) != null ||
                 database.backupGraphRestoreDao().applied(email, owned.lineageId) != null ||
-                database.backupGraphDao().unfinished(email).isNotEmpty()
+                database.backupGraphDao().unfinishedMetadata(email).isNotEmpty()
             if (roots.isEmpty() && allowTestGraphRestart && (established || api.metadata(owned.rootId)?.trashed == true)) {
-                check(database.backupGraphDao().unfinished(email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty())
+                check(database.backupGraphDao().unfinishedMetadata(email).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty())
                 enrollment.enrollAfterTestGraphRemoval(email, driveId)
             } else {
                 if (established) check(roots.size == 1) { "The previous graph is no longer visible. Preview the phone transition before explicitly starting a new graph." }
@@ -215,7 +211,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 "The trusted graph namespace is not visible. No replacement baseline was created."
             }
             if (!allowEnrollment) return null
-            check(database.backupGraphDao().unfinished(email).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty())
+            check(database.backupGraphDao().unfinishedMetadata(email).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty())
             // The initial operation is the only full-inventory path. Legacy data is inspected, never rewritten.
             val remote = drive.inspectGraphReadiness(email)
             val local = readLocalBackupReadiness(database, email)
@@ -234,9 +230,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         val store = openGraphStore(drive, email, true, allowTestGraphRestart = force) ?: error("Graph enrollment is required.")
         val writer = InternalBackupGraphWriter(database, backupJournal, pendingBackupCapture, context.filesDir,
             File(context.filesDir, "backup-graph-publications"), store, onProgress = { onProgress(it.toDriveProgress()) })
-        val unfinished = database.backupGraphDao().unfinished(email)
+        val unfinished = database.backupGraphDao().unfinishedMetadata(email)
         val result = if (unfinished.isNotEmpty()) writer.publish() else {
-            check(database.backupGraphRestoreDao().unfinished().isEmpty()) { "Complete the interrupted Restore before Backup." }
+            check(database.backupGraphRestoreDao().unfinishedMetadata().isEmpty()) { "Complete the interrupted Restore before Backup." }
             val binding = database.backupGraphDao().binding(email, store.context.lineageId)
             val applied = database.backupGraphRestoreDao().applied(email, store.context.lineageId)
             if (binding == null && applied == null) {
@@ -273,7 +269,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         check(BackupGraphPublicationEnabled && BackupGraphTargetedRestoreEnabled) { "Backup/Restore must be enabled together." }
         val store = openGraphStore(drive, email, false)
         if (store == null) null else {
-            check(database.backupGraphDao().unfinished(email).isEmpty()) { "Recover the unfinished Backup before Restore." }
+            check(database.backupGraphDao().unfinishedMetadata(email).isEmpty()) { "Recover the unfinished Backup before Restore." }
             val restoring = "Checking graph backup and missing updates"
             onProgress(DriveRestoreProgress(DriveRestoreStage.Preparing, restoring, detail = restoring))
             val result = InternalBackupGraphRestore(database, backupJournal, context.filesDir,

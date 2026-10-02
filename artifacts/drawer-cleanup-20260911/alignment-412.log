@@ -1,0 +1,237 @@
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+com.myvault.app.ui.screens.DrawerCleanupDeviceTest:
+INSTRUMENTATION_STATUS: test=searchHeaderWorksFromEveryDrawerContext
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=searchHeaderWorksFromEveryDrawerContext
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=productionRootsOpenExistingSearchAndFooterSettings
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=productionRootsOpenExistingSearchAndFooterSettings
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=folderTitleChevronAndPlusStayIndependentAcrossNavigation
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=folderTitleChevronAndPlusStayIndependentAcrossNavigation
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=headerFooterOrderThemesNamesAndWorkspaceRemainUsable
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=headerFooterOrderThemesNamesAndWorkspaceRemainUsable
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=drawerClosesWithBackOutsideTapSwipeAndSelection
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerCleanupDeviceTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=drawerClosesWithBackOutsideTapSwipeAndSelection
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerProfilePersistenceTest
+INSTRUMENTATION_STATUS: current=6
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+com.myvault.app.ui.screens.DrawerProfilePersistenceTest:
+INSTRUMENTATION_STATUS: test=cachedPhotoSurvivesOfflineAndCannotLeakToAnotherAccount
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerProfilePersistenceTest
+INSTRUMENTATION_STATUS: current=6
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=cachedPhotoSurvivesOfflineAndCannotLeakToAnotherAccount
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerProfilePersistenceTest
+INSTRUMENTATION_STATUS: current=7
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=namesPersistIndependentlyAndCanResetToFallback
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerProfilePersistenceTest
+INSTRUMENTATION_STATUS: current=7
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=namesPersistIndependentlyAndCanResetToFallback
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerProfilePersistenceTest
+INSTRUMENTATION_STATUS: current=8
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=nameSurvivesProcessDeath
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.DrawerProfilePersistenceTest
+INSTRUMENTATION_STATUS: current=8
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=nameSurvivesProcessDeath
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.ReflectionsPortDeviceTest
+INSTRUMENTATION_STATUS: current=9
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+com.myvault.app.ui.screens.ReflectionsPortDeviceTest:
+INSTRUMENTATION_STATUS: test=compactListThemesSearchFilterSortAndLivePresentationUpdates
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.ReflectionsPortDeviceTest
+INSTRUMENTATION_STATUS: current=9
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=compactListThemesSearchFilterSortAndLivePresentationUpdates
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.ReflectionsPortDeviceTest
+INSTRUMENTATION_STATUS: current=10
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=productionDrawerPlacesReflectionsBetweenQuranAndMemorise
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.ReflectionsPortDeviceTest
+INSTRUMENTATION_STATUS: current=10
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=productionDrawerPlacesReflectionsBetweenQuranAndMemorise
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.ReflectionsPortDeviceTest
+INSTRUMENTATION_STATUS: current=11
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=explicitReflectionOpensExistingSheetWithExactIdAndCanonicalAyah
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.ReflectionsPortDeviceTest
+INSTRUMENTATION_STATUS: current=11
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=explicitReflectionOpensExistingSheetWithExactIdAndCanonicalAyah
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.RootNavigationTest
+INSTRUMENTATION_STATUS: current=12
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stream=
+com.myvault.app.ui.screens.RootNavigationTest:
+INSTRUMENTATION_STATUS: test=initializationError
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.myvault.app.ui.screens.RootNavigationTest
+INSTRUMENTATION_STATUS: current=12
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=12
+INSTRUMENTATION_STATUS: stack=java.lang.RuntimeException: Failed loading specified test class 'com.myvault.app.ui.screens.RootNavigationTest'
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:50)
+	at androidx.test.internal.runner.TestLoader.getRunnersFor(TestLoader.java:64)
+	at androidx.test.internal.runner.TestRequestBuilder.build(TestRequestBuilder.java:842)
+	at androidx.test.runner.AndroidJUnitRunner.buildRequest(AndroidJUnitRunner.java:672)
+	at androidx.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:453)
+	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2597)
+Caused by: java.lang.ClassNotFoundException: com.myvault.app.ui.screens.RootNavigationTest
+	at java.lang.Class.classForName(Native Method)
+	at java.lang.Class.forName(Class.java:597)
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:44)
+	... 5 more
+Caused by: java.lang.ClassNotFoundException: Didn't find class "com.myvault.app.ui.screens.RootNavigationTest" on path: DexPathList[[zip file "/system/framework/android.test.runner.jar", zip file "/system/framework/android.test.mock.jar", zip file "/system/framework/android.test.base.jar", zip file "/data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/base.apk", zip file "/data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/base.apk"],nativeLibraryDirectories=[/data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/lib/arm64, /data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/lib/arm64, /data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/base.apk!/lib/arm64-v8a, /data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/base.apk!/lib/arm64-v8a, /system/lib64, /system_ext/lib64]]
+	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+	... 8 more
+
+INSTRUMENTATION_STATUS: stream=
+Error in initializationError(com.myvault.app.ui.screens.RootNavigationTest):
+java.lang.RuntimeException: Failed loading specified test class 'com.myvault.app.ui.screens.RootNavigationTest'
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:50)
+	at androidx.test.internal.runner.TestLoader.getRunnersFor(TestLoader.java:64)
+	at androidx.test.internal.runner.TestRequestBuilder.build(TestRequestBuilder.java:842)
+	at androidx.test.runner.AndroidJUnitRunner.buildRequest(AndroidJUnitRunner.java:672)
+	at androidx.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:453)
+	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2597)
+Caused by: java.lang.ClassNotFoundException: com.myvault.app.ui.screens.RootNavigationTest
+	at java.lang.Class.classForName(Native Method)
+	at java.lang.Class.forName(Class.java:597)
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:44)
+	... 5 more
+Caused by: java.lang.ClassNotFoundException: Didn't find class "com.myvault.app.ui.screens.RootNavigationTest" on path: DexPathList[[zip file "/system/framework/android.test.runner.jar", zip file "/system/framework/android.test.mock.jar", zip file "/system/framework/android.test.base.jar", zip file "/data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/base.apk", zip file "/data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/base.apk"],nativeLibraryDirectories=[/data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/lib/arm64, /data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/lib/arm64, /data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/base.apk!/lib/arm64-v8a, /data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/base.apk!/lib/arm64-v8a, /system/lib64, /system_ext/lib64]]
+	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+	... 8 more
+
+INSTRUMENTATION_STATUS: test=initializationError
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 93.159
+There was 1 failure:
+1) initializationError(com.myvault.app.ui.screens.RootNavigationTest)
+java.lang.RuntimeException: Failed loading specified test class 'com.myvault.app.ui.screens.RootNavigationTest'
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:50)
+	at androidx.test.internal.runner.TestLoader.getRunnersFor(TestLoader.java:64)
+	at androidx.test.internal.runner.TestRequestBuilder.build(TestRequestBuilder.java:842)
+	at androidx.test.runner.AndroidJUnitRunner.buildRequest(AndroidJUnitRunner.java:672)
+	at androidx.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:453)
+	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2597)
+Caused by: java.lang.ClassNotFoundException: com.myvault.app.ui.screens.RootNavigationTest
+	at java.lang.Class.classForName(Native Method)
+	at java.lang.Class.forName(Class.java:597)
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:44)
+	... 5 more
+Caused by: java.lang.ClassNotFoundException: Didn't find class "com.myvault.app.ui.screens.RootNavigationTest" on path: DexPathList[[zip file "/system/framework/android.test.runner.jar", zip file "/system/framework/android.test.mock.jar", zip file "/system/framework/android.test.base.jar", zip file "/data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/base.apk", zip file "/data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/base.apk"],nativeLibraryDirectories=[/data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/lib/arm64, /data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/lib/arm64, /data/app/~~2nQF1OxNk3GRnunr0kUz6w==/com.myvault.app.test-Ta6DHWwt3wSYeVroviL4KA==/base.apk!/lib/arm64-v8a, /data/app/~~kPGmYEwrgonNwObJJKZLmA==/com.myvault.app--Q0zgSL3rZLqBHKwlOJt5A==/base.apk!/lib/arm64-v8a, /system/lib64, /system_ext/lib64]]
+	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+	... 8 more
+
+FAILURES!!!
+Tests run: 12,  Failures: 1
+
+
+INSTRUMENTATION_CODE: -1

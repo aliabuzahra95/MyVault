@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.PdfAnnotationPreservationContractTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.990Z" hostname="Mac-2.modem" time="0.005">
+  <properties/>
+  <testcase name="draw highlight is one shot and has no persistent exit control" classname="com.myvault.app.data.repository.PdfAnnotationPreservationContractTest" time="0.002"/>
+  <testcase name="viewer cleanup deletes only ids proven genuinely invalid" classname="com.myvault.app.data.repository.PdfAnnotationPreservationContractTest" time="0.002"/>
+  <testcase name="historic text boxes are compatibility-valid instead of blanket deleted" classname="com.myvault.app.data.repository.PdfAnnotationPreservationContractTest" time="0.0"/>
+  <testcase name="historic text box creation stays unavailable in the frozen reader" classname="com.myvault.app.data.repository.PdfAnnotationPreservationContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

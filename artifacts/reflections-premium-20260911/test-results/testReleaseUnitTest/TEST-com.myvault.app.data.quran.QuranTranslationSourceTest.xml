@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.QuranTranslationSourceTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.793Z" hostname="Mac-2.modem" time="0.029">
+  <properties/>
+  <testcase name="storedValuesRestoreKnownTranslationSources" classname="com.myvault.app.data.quran.QuranTranslationSourceTest" time="0.0"/>
+  <testcase name="groupedTafsirResponsePrefersMostCompleteMatchingEntry" classname="com.myvault.app.data.quran.QuranTranslationSourceTest" time="0.001"/>
+  <testcase name="bundledMaududiParserPreservesPipesInsideTranslationText" classname="com.myvault.app.data.quran.QuranTranslationSourceTest" time="0.0"/>
+  <testcase name="missingOrUnknownValuesSafelyUseSahihInternational" classname="com.myvault.app.data.quran.QuranTranslationSourceTest" time="0.0"/>
+  <testcase name="bundledMaududiTranslationContainsEveryVerseAndSourceAttribution" classname="com.myvault.app.data.quran.QuranTranslationSourceTest" time="0.028"/>
+  <testcase name="groupedTafsirResponseSkipsEmptyPlaceholderForSameResource" classname="com.myvault.app.data.quran.QuranTranslationSourceTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

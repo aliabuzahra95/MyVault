@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.widget.quran.QuranWidgetCanonicalSourceTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.948Z" hostname="Mac-2.modem" time="0.063">
+  <properties/>
+  <testcase name="known widget references retain canonical Arabic without duplicate verse digits" classname="com.myvault.app.widget.quran.QuranWidgetCanonicalSourceTest" time="0.04"/>
+  <testcase name="widget Surahs are built directly from the canonical reader asset" classname="com.myvault.app.widget.quran.QuranWidgetCanonicalSourceTest" time="0.023"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

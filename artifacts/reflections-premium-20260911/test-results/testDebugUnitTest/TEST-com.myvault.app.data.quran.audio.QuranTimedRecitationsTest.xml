@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.428Z" hostname="Mac-2.modem" time="0.054">
+  <properties/>
+  <testcase name="olderFullSurahDownloadInfersMissingEndsWithoutRedownload" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.002"/>
+  <testcase name="missingOrOverlappingMp3QuranTimingsFailClosed" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.005"/>
+  <testcase name="liveMp3QuranSamplesExcludePreambleAndKeepExactSource" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.032"/>
+  <testcase name="liveFoundationSamplesUseTheirOwnRecordingAndCompleteTimings" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.011"/>
+  <testcase name="completedFullSurahDownloadReusesPersistedExactBoundaries" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.0"/>
+  <testcase name="overlappingAlternativeRecordingIsNotSilentlyRepaired" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.003"/>
+  <testcase name="everyWidgetReciterHasARealContinuousSource" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.001"/>
+  <testcase name="requestedRecitersHaveDistinctVerifiedSourceMappings" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.0"/>
+  <testcase name="requestedRecitersRemainSelectableWhenCatalogIsUnavailableWithoutRemovingExistingOnes" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.0"/>
+  <testcase name="incompleteOrVerseByVerseMetadataCannotMasqueradeAsOfflineSurah" classname="com.myvault.app.data.quran.audio.QuranTimedRecitationsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

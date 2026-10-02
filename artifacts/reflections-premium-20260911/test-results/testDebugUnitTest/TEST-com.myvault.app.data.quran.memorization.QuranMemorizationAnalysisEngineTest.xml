@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" tests="54" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.490Z" hostname="Mac-2.modem" time="0.034">
+  <properties/>
+  <testcase name="doesNotAcceptInsertedDefiniteArticleForShortDangerousWord" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.004"/>
+  <testcase name="logsPerfectRecitationAttempt" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.002"/>
+  <testcase name="repeatedFalaNearAyahBoundaryDoesNotCreateFalseMissingWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.002"/>
+  <testcase name="repeatedCommonWordNearAyahBoundaryDoesNotCorruptNextAyah" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="droppedHamzatWaslDoesNotMatchAtStartOfAttempt" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesFinalAlifMaqsurahWithDaggerAlifAgainstGoogleImlaSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="marksLowConfidenceMatchedWordsAsUnknown" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="doesNotMatchGenuinelyDifferentWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="guardedSimilarityDoesNotAcceptNonFinalHaaDifference" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="handlesLongAyahWithMultipleConsecutiveFailures" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.002"/>
+  <testcase name="definiteArticleWaslIsNotAcceptedAsDroppedWrittenAlif" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesShortSurahWordsWithWasla" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesPrayerAndZakahWhenGoogleUsesFinalHaaImlaSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesWawDaggerAlifRasmAgainstGoogleImlaSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesPauseWhenGoogleWritesFinalAlifMaqsurahAsAlif" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesTaMarbutaWhenGoogleWritesFinalHaa" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="guardedSimilarityAcceptsFinalHaaPronounDroppedByTranscript" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesUthmaniAyatRasmAgainstGoogleImlaSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="marksSkippedOfficialWordAsMissing" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="countsWordsOutsideTheAyahSequenceAsExtra" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="attemptHistoryKeepsOnlyMostRecentFiftyAttempts" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.002"/>
+  <testcase name="acceptsGoogleInsertedDefiniteArticleForTanweenNoun" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="handlesVeryShortAyah" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="guardedSimilarityDoesNotAcceptShortDangerousWeakLetterOmission" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesJoinedYaAyyuhaWhenGoogleSplitsItIntoTwoWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="guardedSimilarityDoesNotAcceptMultipleWeakLetterOmissions" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="connectedHamzatWaslSpokenFormMatchesWithoutChangingDisplayedWord" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="alignmentPathMarksMissingWordWithoutShiftingFollowingWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="doesNotAcceptUthmaniWawAlifFormWhereModernArabicRequiresAlif" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="doesNotAcceptUthmaniZakahWawFormWhereModernArabicRequiresAlif" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="doesNotTreatDifferentPronounInBiIdhnihiAsMatch" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesHamzaCarrierVariationsDeterministically" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesPauseWhenGoogleDropsFinalTanweenAlif" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="guardedSimilarityAcceptsSingleWeakLetterTranscriptOmission" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesDaggerAlifRasmAgainstGoogleImlaSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.002"/>
+  <testcase name="doesNotAcceptMissingDaggerAlifWhereModernArabicRequiresIt" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="doesNotTreatUnrelatedFinalHaaWordAsTaMarbutaMatch" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesAlLaylWhenQpcShaddaDropsTheRootLam" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesSmallYaAndSmallWawQpcMarksAgainstModernSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesPrayerAndZakahWithCommonPrefixedFinalHaaTranscriptForms" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="alignmentPathMarksInsertedWordWithoutShiftingFollowingWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesOtherFinalAlifMaqsurahDaggerWordsWithoutOneOffFixes" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="doesNotAllowPauseEndingRulesToAcceptDifferentWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesContractedLamWhenGoogleSplitsItIntoTwoWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="imlaeiCorpusDoesNotAllowDifferentWordsToPass" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="hamzatQatIsNeverAcceptedAsDroppedHamzatWasl" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="imlaeiCorpusMatchesKnownAsrSpellingsWithoutChangingDisplayedWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="logsFailedTranscriptionAttemptWithoutAnalysis" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="marksRepeatedOfficialWordAsRepeatedWithoutCountingItAsExtra" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesAlFatihahOpeningWordsWithoutChangingDisplayedText" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="matchesJoinedVocativeYaWhenGoogleSplitsItIntoTwoWords" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="matchesAyatAlKursiUthmaniFormsAgainstGoogleImlaSpelling" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <testcase name="exposesComparisonDiagnosticsForFailedMatches" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.0"/>
+  <testcase name="logsAttemptDiagnosticsThatAgreeWithMissingExtraAndRepeatedCounts" classname="com.myvault.app.data.quran.memorization.QuranMemorizationAnalysisEngineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

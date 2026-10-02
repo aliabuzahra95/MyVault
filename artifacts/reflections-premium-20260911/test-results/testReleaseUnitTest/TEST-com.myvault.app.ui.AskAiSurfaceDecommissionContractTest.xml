@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.046Z" hostname="Mac-2.modem" time="0.008">
+  <properties/>
+  <testcase name="shared workspace screens do not mount conversational AI" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.001"/>
+  <testcase name="dead chat helpers and legacy Home AI model fields stay removed" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.001"/>
+  <testcase name="retained formatting no longer invokes the legacy conversation repository" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.0"/>
+  <testcase name="retired shared conversational runtime stays removed" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.001"/>
+  <testcase name="retained Supabase function accepts formatting actions only" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.0"/>
+  <testcase name="retired conversational presentation files stay removed" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.0"/>
+  <testcase name="Quran AI Listen remains protected behind the Memorise handoff" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.001"/>
+  <testcase name="conversational Ask AI is not reachable from the navigation graph" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.0"/>
+  <testcase name="note surfaces retain formatting and remove chat launchers" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.003"/>
+  <testcase name="retired conversational storage is removed by the compatibility migration" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.001"/>
+  <testcase name="pdf activity selection keeps study note action without Ask AI" classname="com.myvault.app.ui.AskAiSurfaceDecommissionContractTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

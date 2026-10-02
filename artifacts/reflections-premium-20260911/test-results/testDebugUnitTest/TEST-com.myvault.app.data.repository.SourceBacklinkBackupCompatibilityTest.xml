@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.SourceBacklinkBackupCompatibilityTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.580Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="restorePreservesPdfDocumentCoordinates" classname="com.myvault.app.data.repository.SourceBacklinkBackupCompatibilityTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

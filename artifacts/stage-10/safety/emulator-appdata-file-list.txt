@@ -1,0 +1,13 @@
+./cache/my_vault.db.lck
+./databases/my_vault.db
+./databases/my_vault.db-shm
+./databases/my_vault.db-wal
+./files/datastore/vault_preferences.preferences_pb
+./files/emergency_backups/before-permanent-delete-note-1787816985239.vaultbackup
+./files/profileInstalled
+./no_backup/androidx.work.workdb
+./no_backup/androidx.work.workdb-shm
+./no_backup/androidx.work.workdb-wal
+./shared_prefs/home_startup_snapshot.xml
+./shared_prefs/library_startup_snapshot.xml
+./shared_prefs/vault_startup_preferences.xml

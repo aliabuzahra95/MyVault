@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.widget.note.NoteWidgetLogicTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.312Z" hostname="Mac-2.modem" time="0.003">
+  <properties/>
+  <testcase name="quickNoteUsesCompactLayoutUntilFullWideLabelFits" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.001"/>
+  <testcase name="deletedAndUnsupportedNotesAreNotOffered" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.001"/>
+  <testcase name="longBodyIsSplitWithoutDroppingParagraphsOrListMarkers" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.0"/>
+  <testcase name="widgetUsesExactEditorRouteIncludingQuickFocus" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.001"/>
+  <testcase name="textSizeAndResponsiveBucketsStayBounded" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.0"/>
+  <testcase name="studyAndCourseNotesRetainReadableLocationAndCourseIdentity" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.0"/>
+  <testcase name="quickCreateWaitsForUnlockAndRejectsRapidDuplicateTap" classname="com.myvault.app.widget.note.NoteWidgetLogicTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

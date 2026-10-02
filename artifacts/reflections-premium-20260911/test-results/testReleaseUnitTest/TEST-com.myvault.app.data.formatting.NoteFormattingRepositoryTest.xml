@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.formatting.NoteFormattingRepositoryTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.757Z" hostname="Mac-2.modem" time="0.007">
+  <properties/>
+  <testcase name="providerFailureIsWrappedWithoutLosingUsefulMessage" classname="com.myvault.app.data.formatting.NoteFormattingRepositoryTest" time="0.001"/>
+  <testcase name="allRetainedActionsAndProvidersCrossTheProviderNeutralBoundary" classname="com.myvault.app.data.formatting.NoteFormattingRepositoryTest" time="0.004"/>
+  <testcase name="emptyNoteIsRejectedBeforeProviderInvocation" classname="com.myvault.app.data.formatting.NoteFormattingRepositoryTest" time="0.0"/>
+  <testcase name="emptyProviderOutputBecomesFormattingSpecificFailure" classname="com.myvault.app.data.formatting.NoteFormattingRepositoryTest" time="0.001"/>
+  <testcase name="formattingRepositoryPassesRequestAndProgressWithoutChatState" classname="com.myvault.app.data.formatting.NoteFormattingRepositoryTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

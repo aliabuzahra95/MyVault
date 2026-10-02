@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.NavigationDrawerCoursesRefinementContractTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.063Z" hostname="Mac-2.modem" time="0.003">
+  <properties/>
+  <testcase name="drawer footer is Settings Backup Theme and reuses production backup" classname="com.myvault.app.ui.NavigationDrawerCoursesRefinementContractTest" time="0.0"/>
+  <testcase name="Study and Library corpus folder rows use one toggle target with independent add" classname="com.myvault.app.ui.NavigationDrawerCoursesRefinementContractTest" time="0.001"/>
+  <testcase name="normal Library folder callbacks reveal inline while legacy route remains" classname="com.myvault.app.ui.NavigationDrawerCoursesRefinementContractTest" time="0.001"/>
+  <testcase name="drawer folder row toggles while content rows open" classname="com.myvault.app.ui.NavigationDrawerCoursesRefinementContractTest" time="0.0"/>
+  <testcase name="Course cards are compact and sticky notes precede full Course notes" classname="com.myvault.app.ui.NavigationDrawerCoursesRefinementContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

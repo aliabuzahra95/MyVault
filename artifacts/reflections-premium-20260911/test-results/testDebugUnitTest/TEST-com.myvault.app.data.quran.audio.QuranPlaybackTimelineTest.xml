@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.385Z" hostname="Mac-2.modem" time="0.042">
+  <properties/>
+  <testcase name="switching to single finishes currently playing ayah" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.01"/>
+  <testcase name="missing duplicate out of order and negative intervals rejected" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.001"/>
+  <testcase name="seek resets stop target independent of speed or wall time" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.001"/>
+  <testcase name="live Fatiha metadata uses milliseconds and matches decoded recording duration" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.001"/>
+  <testcase name="manually paused mode switch requests no seek or resume" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.0"/>
+  <testcase name="different track and duration cannot reuse timings" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.002"/>
+  <testcase name="other live candidates require full canonical coverage" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.025"/>
+  <testcase name="single pauses at exact boundary continuous crosses without another resource" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.0"/>
+  <testcase name="continue after automatic boundary uses next ayah but never wraps" classname="com.myvault.app.data.quran.audio.QuranPlaybackTimelineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

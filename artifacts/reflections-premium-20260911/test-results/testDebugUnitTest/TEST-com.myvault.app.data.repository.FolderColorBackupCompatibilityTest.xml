@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.FolderColorBackupCompatibilityTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.572Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="optionalColorFieldDoesNotChangeLegacyFolderKeys" classname="com.myvault.app.data.repository.FolderColorBackupCompatibilityTest" time="0.001"/>
+  <testcase name="newBackup_roundTripsSemanticFolderColor" classname="com.myvault.app.data.repository.FolderColorBackupCompatibilityTest" time="0.0"/>
+  <testcase name="legacyBackup_withoutFolderColorRestoresNeutralDefault" classname="com.myvault.app.data.repository.FolderColorBackupCompatibilityTest" time="0.0"/>
+  <testcase name="unknownFolderColorRestoresNeutralDefault" classname="com.myvault.app.data.repository.FolderColorBackupCompatibilityTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

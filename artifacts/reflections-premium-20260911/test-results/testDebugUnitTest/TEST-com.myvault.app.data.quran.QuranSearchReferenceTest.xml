@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.quran.QuranSearchReferenceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.347Z" hostname="Mac-2.modem" time="0.003">
+  <properties/>
+  <testcase name="English and Arabic Surah names resolve without punctuation dependence" classname="com.myvault.app.data.quran.QuranSearchReferenceTest" time="0.003"/>
+  <testcase name="invalid free text is not misread as a reference" classname="com.myvault.app.data.quran.QuranSearchReferenceTest" time="0.0"/>
+  <testcase name="numeric and labelled references resolve to exact ayah" classname="com.myvault.app.data.quran.QuranSearchReferenceTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

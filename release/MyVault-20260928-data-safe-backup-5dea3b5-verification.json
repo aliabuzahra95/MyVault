@@ -1,0 +1,41 @@
+{
+  "sourceRepository": "/Users/aliah/Desktop/Current Projects/MyVault Complete Before Tutor",
+  "sourceBranch": "frozen-design-master-port",
+  "sourceCommit": "5dea3b5be53ad0a9cf427488047f1b48da5f4e70",
+  "sourceTree": "0313550c9687a1e0ddbb28e760a96ad2cd738a5d",
+  "apk": "MyVault-20260928-data-safe-backup-5dea3b5-PRE-RELEASE-signed.apk",
+  "apkSizeBytes": 54271444,
+  "apkSha256": "08e03b646e5a2e1043671b851510d5344a1ad31282b8228677753d1d84d29ef3",
+  "package": "com.myvault.app",
+  "versionCode": 1,
+  "versionName": "0.1.0",
+  "signerSha256": "5d33f907db32d404352fc160fbd0e7b27d648a50f97c648536211d68cf5e80a3",
+  "signatureVerified": true,
+  "verifiedSignatureScheme": "v3",
+  "zipAlignmentVerified": true,
+  "compiledRoomDatabaseVersion": 32,
+  "room31And32UserTableDefinitionsAndIdentityMatch": true,
+  "sqliteMigrationFixturePopulatedUserTablesPreserved": 20,
+  "sqliteMigrationFixtureIntegrity": "ok before and after",
+  "backupContentVerification": "SHA-256 retained",
+  "restoreSemantics": "Existing merge/upsert behavior retained; identical notes/folders skipped; no deletion of extra local records added",
+  "builds": ["debug", "release with R8"],
+  "targetedTestsPassed": [
+    "VaultMigrationChainTest",
+    "RestoreChangedRowsTest",
+    "BackupAttachmentResilienceTest",
+    "BackupCompatibilityPolicyTest",
+    "DriveBackupPublisherTest",
+    "GoogleDriveRestoreControllerTest"
+  ],
+  "productionUserDataTouched": false,
+  "physicalSamsungTestPerformed": false,
+  "liveDriveBackupRestoreTestPerformed": false,
+  "driveFileId": "1eJysQCe0sWuREGXeFLk9oG8vlQ3wC4pS",
+  "driveUrl": "https://drive.google.com/file/d/1eJysQCe0sWuREGXeFLk9oG8vlQ3wC4pS/view?usp=drivesdk",
+  "driveUploadVerifiedByDownloadAndSha256": true,
+  "unsafeDriveArtifactIdsLabelledDoNotInstall": [
+    "1MMDuMAi8J54pdax5I6pyZZlIvWZmYlyo",
+    "1XdAhLo3JMSJM41PViQRjYbi7ge7CUaIu"
+  ]
+}

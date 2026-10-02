@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.formatting.FormattingTextContractTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.427Z" hostname="Mac-2.modem" time="0.222">
+  <properties/>
+  <testcase name="alterationsToArabicQuotesNumbersUrlsOrOrderAreRejected" classname="com.myvault.app.data.formatting.FormattingTextContractTest" time="0.081"/>
+  <testcase name="markupEntitiesAndListBulletsArePresentationOnly" classname="com.myvault.app.data.formatting.FormattingTextContractTest" time="0.005"/>
+  <testcase name="representativeFixturesSurviveBothModesAndEveryProviderBoundary" classname="com.myvault.app.data.formatting.FormattingTextContractTest" time="0.128"/>
+  <testcase name="unsafeOrMalformedMarkupCannotReachPreview" classname="com.myvault.app.data.formatting.FormattingTextContractTest" time="0.006"/>
+  <testcase name="cancellationIsNotTurnedIntoUserFacingFailure" classname="com.myvault.app.data.formatting.FormattingTextContractTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

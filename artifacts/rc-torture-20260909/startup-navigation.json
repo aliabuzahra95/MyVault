@@ -1,0 +1,200 @@
+[
+  {
+    "workflow": "cold launch",
+    "cycle": 1,
+    "result": "PASS",
+    "activity_ms": 119,
+    "dashboard_observed_within_ms": 3197
+  },
+  {
+    "workflow": "home and resume",
+    "cycle": 1,
+    "result": "PASS",
+    "launch": "Starting: Intent { cmp=com.myvault.app/.MainActivity }\nWarning: Activity not started, its current task has been brought to the front\nStatus: ok\nLaunchState: HOT\nActivity: com.myvault.app/.MainActivity\nTotalTime: 24\nWaitTime: 26\nComplete"
+  },
+  {
+    "workflow": "cold launch",
+    "cycle": 2,
+    "result": "PASS",
+    "activity_ms": 84,
+    "dashboard_observed_within_ms": 3220
+  },
+  {
+    "workflow": "home and resume",
+    "cycle": 2,
+    "result": "PASS",
+    "launch": "Starting: Intent { cmp=com.myvault.app/.MainActivity }\nWarning: Activity not started, its current task has been brought to the front\nStatus: ok\nLaunchState: HOT\nActivity: com.myvault.app/.MainActivity\nTotalTime: 27\nWaitTime: 28\nComplete"
+  },
+  {
+    "workflow": "cold launch",
+    "cycle": 3,
+    "result": "PASS",
+    "activity_ms": 121,
+    "dashboard_observed_within_ms": 3284
+  },
+  {
+    "workflow": "home and resume",
+    "cycle": 3,
+    "result": "PASS",
+    "launch": "Starting: Intent { cmp=com.myvault.app/.MainActivity }\nWarning: Activity not started, its current task has been brought to the front\nStatus: ok\nLaunchState: HOT\nActivity: com.myvault.app/.MainActivity\nTotalTime: 32\nWaitTime: 32\nComplete"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Study",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Library",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Qur'an",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Dashboard",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Courses",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Search",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Memorise",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 1,
+    "destination": "Settings",
+    "result": "PASS"
+  },
+  {
+    "workflow": "root Back",
+    "cycle": 1,
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Study",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Library",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Qur'an",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Dashboard",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Courses",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Search",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Memorise",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 2,
+    "destination": "Settings",
+    "result": "PASS"
+  },
+  {
+    "workflow": "root Back",
+    "cycle": 2,
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Study",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Library",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Qur'an",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Dashboard",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Courses",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Search",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Memorise",
+    "result": "PASS"
+  },
+  {
+    "workflow": "drawer switch",
+    "cycle": 3,
+    "destination": "Settings",
+    "result": "PASS"
+  },
+  {
+    "workflow": "root Back",
+    "cycle": 3,
+    "result": "PASS"
+  }
+]

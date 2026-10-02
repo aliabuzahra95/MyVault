@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.777Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="webStyleDirectRectangleUsesZeroBasedPageIndexWithoutConversion" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.001"/>
+  <testcase name="highlightWithANoteBelongsToBothSupportedActivityCategories" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <testcase name="unknownAnnotationTypeIsNotAcceptedAsSupportedContent" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <testcase name="multiRectangleHighlightAppearsOnEveryRepresentedPage" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <testcase name="validSegmentsRemainOrderedAcrossPages" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <testcase name="invalidExtensionFallsBackWithoutDiscardingParent" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <testcase name="restoredGeometryKeepsHighlightVisibleWhenLegacyRectangleIsUnavailable" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <testcase name="missingSegmentsFallsBackToLegacyParentRectangle" classname="com.myvault.app.data.local.entity.PdfAnnotationGeometryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

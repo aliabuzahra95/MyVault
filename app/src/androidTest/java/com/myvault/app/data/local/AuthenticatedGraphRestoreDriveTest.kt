@@ -74,7 +74,7 @@ class AuthenticatedGraphRestoreDriveTest {
                 val recovered=measured("process-recovery");assertEquals(0,recovered.binariesDownloaded)
                 val after=target.db.backupGraphRestoreDao().applied(store.context.accountScope,store.context.lineageId)!!
                 assertNotEquals(before.commitId,after.commitId);assertEquals(source.binding().commitId,after.commitId)
-                assertEquals("COMPLETE",target.db.backupGraphRestoreDao().intent(store.context.accountScope,pending.operationId)!!.status)
+                assertEquals("COMPLETE",target.db.backupGraphRestoreDao().readIntent(store.context.accountScope,pending.operationId)!!.status)
                 assertTrue(target.pending().isEmpty());assertEquals(GraphRestoreStatus.ALREADY_CURRENT,measured("after-recovery-current").status)
             }
         }finally {source.db.close();target.db.close()}

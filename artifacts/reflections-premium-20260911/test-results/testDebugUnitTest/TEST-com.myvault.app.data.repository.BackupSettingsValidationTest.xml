@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.BackupSettingsValidationTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.552Z" hostname="Mac-2.modem" time="0.016">
+  <properties/>
+  <testcase name="validBackupSettingsConvertToPreferences" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.002"/>
+  <testcase name="mismatchedQuranSurahAttemptIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <testcase name="unsafeLibraryDisplayScopeIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <testcase name="duplicateExpandedFolderStateIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.001"/>
+  <testcase name="backedUpQuranMemorizationAttemptsAreSortedAndCapped" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.012"/>
+  <testcase name="legacySettingsRemainValidWithoutThemeModeV2" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <testcase name="mismatchedQuranMemorizationAttemptIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.001"/>
+  <testcase name="unsupportedQuranTranslationSourceIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <testcase name="unknownThemeModeV2RemainsAdditiveForSafeResolverFallback" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <testcase name="invalidQuranBookmarkIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <testcase name="mismatchedQuranMemorizationRecordIsRejectedBeforeRestore" classname="com.myvault.app.data.repository.BackupSettingsValidationTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -3,6 +3,7 @@ package com.myvault.app.data.repository
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.entity.*
+import com.myvault.app.data.local.dao.readIntent
 import com.myvault.app.data.preferences.VaultPreferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.withLock
@@ -57,12 +58,12 @@ internal class InternalBackupGraphRestore(
     }
     private suspend fun run(): GraphRestoreResult {
         val c = context
-        val outstanding = dao.unfinished()
+        val outstanding = dao.unfinishedMetadata()
         if (outstanding.any { it.accountScope != c.accountScope || it.lineageId != c.lineageId || it.driveAccountId != c.driveAccountId }) throw Blocked(GraphRestoreStatus.ACCOUNT_MISMATCH)
         check(outstanding.size <= 1) { "Ambiguous Restore intent." }
         journal.registerAccount(c.accountScope)
         var committed = 0; var written = 0; var downloaded = 0
-        outstanding.singleOrNull()?.let { val result = resume(it); committed++; written += result.first; downloaded += result.second }
+        outstanding.singleOrNull()?.let { val result = resume(it.operationId); committed++; written += result.first; downloaded += result.second }
         val (objects, graph) = inventory(); allowed(graph)
         val applied = dao.applied(c.accountScope, c.lineageId)
         val publication = trustedPublicationPosition(db, c)
@@ -97,14 +98,14 @@ internal class InternalBackupGraphRestore(
             val receipt = objects.single { BackupGraphProtocol.parse(it).commitId == commit.commitId }
             val intent = prepare(commit, receipt.objectRef, publication.takeIf { index == 0 })
             boundary("INTENT_PERSISTED")
-            val result = resume(intent); committed++; written += result.first; downloaded += result.second
+            val result = resume(intent.operationId); committed++; written += result.first; downloaded += result.second
         }
         return GraphRestoreResult(GraphRestoreStatus.APPLIED, committed, written, downloaded)
     }
 
     private suspend fun checkNoLocalChanges() {
         if (db.backupJournalDao().pending(context.accountScope).isNotEmpty()) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
-        if (db.backupGraphDao().unfinished(context.accountScope).isNotEmpty()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+        if (db.backupGraphDao().unfinishedMetadata(context.accountScope).isNotEmpty()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
     }
     private fun hasUserRows(): Boolean = BackupRecordKeys.keys.any { group ->
         db.openHelper.readableDatabase.query("SELECT 1 FROM `${backupRecordTable(group)}` LIMIT 1").use { it.moveToFirst() }
@@ -167,7 +168,7 @@ internal class InternalBackupGraphRestore(
         val operation = UUID.randomUUID().toString()
         val settingsBefore = if (changes.any { it.file == "settings.json" }) settings.read().toString() else null
         return db.withTransaction {
-            check(dao.unfinished().isEmpty()) { "Another Restore intent requires recovery first." }
+            check(dao.unfinishedMetadata().isEmpty()) { "Another Restore intent requires recovery first." }
             checkNoLocalChanges()
             val clock = db.backupJournalDao().clock(); check(clock.suppressionDepth == 0 && clock.settingsToken == null)
             val original = dao.applied(context.accountScope,context.lineageId)
@@ -211,8 +212,8 @@ internal class InternalBackupGraphRestore(
         checkNoLocalChanges()
         check(clock.suppressionDepth == 0 && clock.settingsToken in listOf(null,"graph-restore:${intent.operationId}"))
     }
-    private suspend fun resume(original: BackupGraphRestore): Pair<Int,Int> {
-        val intent = dao.intent(context.accountScope,original.operationId) ?: error("Restore intent is missing.")
+    private suspend fun resume(operationId: String): Pair<Int,Int> {
+        val intent = dao.readIntent(context.accountScope,operationId) ?: error("Restore intent is missing.")
         if (intent.status == "COMPLETE") return 0 to 0
         guard(intent)
         check(IncrementalBackupFormat.sha256(intent.frozenChangesJson.toByteArray()) == intent.frozenChangesSha256)

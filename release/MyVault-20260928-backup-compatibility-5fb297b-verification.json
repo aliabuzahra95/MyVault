@@ -1,0 +1,56 @@
+{
+  "status": "PRE-RELEASE compatibility groundwork; incremental publication disabled",
+  "androidCommit": "5fb297b5ae91f1aa64a42d0d6f34a674ef37bd47",
+  "androidTree": "defa9653bb985fe9f3b3fbd59c262d8964ea28e3",
+  "androidRecoveryTag": "recovery-before-incremental-backup-20260928-125935",
+  "webCommit": "c42b69972cef84d432ef497d73fa9a53a7a97244",
+  "webRecoveryTag": "recovery-before-backup-compatibility-20260928-web",
+  "commitsPushed": false,
+  "webDeployment": {
+    "id": "dpl_2VcVfwQDTiXzAKjXKb95YQsygtyM",
+    "status": "READY",
+    "url": "https://myvault-web.vercel.app",
+    "liveAsset": "/assets/index-CxjvtlPH.js",
+    "readerAndWriterGuardMarkersVerified": true,
+    "freshBrowserSmokePassed": true
+  },
+  "apk": {
+    "file": "MyVault-20260928-backup-compatibility-5fb297b-PRE-RELEASE-signed.apk",
+    "package": "com.myvault.app",
+    "versionCode": 1,
+    "versionName": "0.1.0",
+    "minSdk": 29,
+    "signingScheme": "v3",
+    "signerSha256": "5d33f907db32d404352fc160fbd0e7b27d648a50f97c648536211d68cf5e80a3",
+    "sha256": "44df71772f68f49c2b24965c0aea09cc36764a6b8a7d593b1c82bb1cf95e2343",
+    "size": 54386329,
+    "driveFileId": "1CTnUN6-CGOQAUME2wNL0oVkzDHaozfqe",
+    "driveUrl": "https://drive.google.com/file/d/1CTnUN6-CGOQAUME2wNL0oVkzDHaozfqe/view?usp=drivesdk",
+    "uploadedBytesDownloadedAndMatched": true,
+    "embeddedGitRevisionMatched": true
+  },
+  "room": { "version": 32, "schemaChanged": false, "userDatabaseOpened": false },
+  "validation": {
+    "jbrMajorVersion": 21,
+    "androidTargetedTestsPassed": 43,
+    "androidTestsSkipped": 0,
+    "debugBuildPassed": true,
+    "releaseR8BuildPassed": true,
+    "webTypecheckAndBuildPassed": true,
+    "historicalAndBidirectionalFixtureCompatibilityPassed": true,
+    "coalescingZeroChangeThreeDeltaAndRetryTestsPassed": true,
+    "webIndexedDbExactDeletionAccountIsolationAndRepeatPassed": true,
+    "disposableSchema32SqliteIntegrityAndUnrelated20TablesPassed": true,
+    "diffChecksPassed": true,
+    "physicalSamsungTestPerformed": false,
+    "authenticatedDriveBackupRoundTripPerformed": false,
+    "realVaultOrDriveBackupModified": false
+  },
+  "remaining": [
+    "Durable change journal, baseline and generation-safe acknowledgement",
+    "Manual Backup integration with delta and binary transport",
+    "Applied-head persistence and targeted incremental Room restore",
+    "Disposable Android runtime and authenticated Drive acceptance",
+    "Upgrade all participating older clients before explicitly enabling publication"
+  ]
+}

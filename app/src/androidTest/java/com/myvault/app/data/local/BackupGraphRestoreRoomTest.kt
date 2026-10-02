@@ -141,7 +141,7 @@ class BackupGraphRestoreRoomTest {
             assertEquals(1, result.rowsWritten)
             assertEquals(pending, f.pending())
             assertEquals("Resumed exact descendant", f.db.noteDao().getById("n")!!.bodyPlainText)
-            assertEquals("COMPLETE", f.db.backupGraphRestoreDao().intent(f.ctx.accountScope, intent.operationId)!!.status)
+            assertEquals("COMPLETE", f.db.backupGraphRestoreDao().readIntent(f.ctx.accountScope, intent.operationId)!!.status)
         }
     }
 
@@ -416,5 +416,21 @@ class BackupGraphRestoreRoomTest {
         }finally {room?.close();base.deleteDatabase(name)}
         BackupGraphWriterRoomTest().Fixture().use {assertEquals(36,it.db.openHelper.writableDatabase.version);assertTrue(it.db.backupGraphRestoreDao().unfinished().isEmpty())}
         assertTrue(BackupGraphTargetedRestoreEnabled);assertTrue(BackupGraphPublicationEnabled);assertFalse(IncrementalBackupPublicationEnabled)
+}
+
+    @Test fun hugePayloadCursorWindowDoesNotCrashFreshRestore() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { source ->
+            val builder = StringBuilder()
+            while (builder.length < 4_000_000) {
+                builder.append("A".repeat(10_000))
+            }
+            source.db.noteDao().insert(NoteEntity(id="huge-note", folderId="root", title="Huge", body=builder.toString(), pinned=false, trash=null, created=0, updated=0, displayOrder=0))
+            source.writer().publish()
+            target(source).use { target ->
+                val r = restorer(target, source.publicationStore)
+                assertEquals(GraphRestoreStatus.APPLIED, r.restore().status)
+                assertEquals(builder.toString(), target.db.noteDao().note("huge-note")!!.body)
+            }
+        }
     }
 }

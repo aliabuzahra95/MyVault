@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.widget.note.NoteWidgetContractTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.923Z" hostname="Mac-2.modem" time="0.019">
+  <properties/>
+  <testcase name="noteViewerUsesScrollableCollectionAndExplicitEntryActions" classname="com.myvault.app.widget.note.NoteWidgetContractTest" time="0.0"/>
+  <testcase name="quickNoteLayoutsAreCreationOnlyAndContainNoVisibleSettingsGear" classname="com.myvault.app.widget.note.NoteWidgetContractTest" time="0.012"/>
+  <testcase name="manifestRegistersBothUserFacingWidgetsAndConfiguration" classname="com.myvault.app.widget.note.NoteWidgetContractTest" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.PdfAnnotationRepositoryTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.579Z" hostname="Mac-2.modem" time="0.0">
+  <properties/>
+  <testcase name="isValidPdfAnnotationRect_rejectsImpossibleRectangles" classname="com.myvault.app.data.repository.PdfAnnotationRepositoryTest" time="0.0"/>
+  <testcase name="sanitizedPdfAnnotationColor_fallsBackForUnknownColours" classname="com.myvault.app.data.repository.PdfAnnotationRepositoryTest" time="0.0"/>
+  <testcase name="sanitizedPdfTextBoxBackground_allowsKnownBackgrounds" classname="com.myvault.app.data.repository.PdfAnnotationRepositoryTest" time="0.0"/>
+  <testcase name="sanitizedPdfAnnotationColor_allowsKnownColours" classname="com.myvault.app.data.repository.PdfAnnotationRepositoryTest" time="0.0"/>
+  <testcase name="sanitizedPdfTextBoxBackground_fallsBackForUnknownBackgrounds" classname="com.myvault.app.data.repository.PdfAnnotationRepositoryTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

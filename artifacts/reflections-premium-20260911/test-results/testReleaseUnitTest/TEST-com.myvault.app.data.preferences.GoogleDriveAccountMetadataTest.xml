@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.779Z" hostname="Mac-2.modem" time="0.005">
+  <properties/>
+  <testcase name="account metadata round trips independently" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.004"/>
+  <testcase name="unattributed legacy globals are not assigned to active account" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.0"/>
+  <testcase name="unknown account does not inherit another account metadata" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.001"/>
+  <testcase name="successful backup timestamp survives account scoped persistence" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.0"/>
+  <testcase name="encoded entries do not expose account email" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.0"/>
+  <testcase name="malformed and negative metadata is ignored" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.0"/>
+  <testcase name="account identity is case insensitive and trimmed" classname="com.myvault.app.data.preferences.GoogleDriveAccountMetadataTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

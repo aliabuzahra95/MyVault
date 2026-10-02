@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.screens.PdfAnnotationPreviewRendererTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.839Z" hostname="Mac-2.modem" time="0.003">
+  <properties/>
+  <testcase name="tallRegionIsBoundedAndMarkedAsPartial" classname="com.myvault.app.ui.screens.PdfAnnotationPreviewRendererTest" time="0.0"/>
+  <testcase name="multiRectanglePlanUsesOrderedSegmentsWithoutChangingGeometry" classname="com.myvault.app.ui.screens.PdfAnnotationPreviewRendererTest" time="0.0"/>
+  <testcase name="cacheIdentityChangesForColourGeometryAndFileVersion" classname="com.myvault.app.ui.screens.PdfAnnotationPreviewRendererTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

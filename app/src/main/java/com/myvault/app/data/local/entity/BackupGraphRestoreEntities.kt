@@ -26,3 +26,11 @@ data class BackupGraphRestoreObject(
     val cloudFileId: String, val sha256: String, val byteCount: Long,
     val stagingPath: String, val destinationPath: String, val status: String,
 )
+
+data class BackupGraphRestoreMetadata(
+    val accountScope: String, val operationId: String, val lineageId: String, val driveAccountId: String,
+    val originalAppliedJson: String?, val capturedGeneration: Long, val capturedOriginEpoch: Long,
+    val commitJson: String, val commitFileId: String, val commitSha256: String, val commitSize: Long,
+    val frozenChangesSha256: String,
+    val settingsBeforeJson: String?, val settingsPhase: String, val status: String,
+)

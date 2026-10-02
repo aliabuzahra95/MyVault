@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.ui.DashboardStartupRoutingContractTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:45.056Z" hostname="Mac-2.modem" time="0.001">
+  <properties/>
+  <testcase name="dashboard is the true initial route without a post-launch redirect" classname="com.myvault.app.ui.DashboardStartupRoutingContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.repository.DashboardAvailableActivityTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:44.984Z" hostname="Mac-2.modem" time="0.002">
+  <properties/>
+  <testcase name="missing or deleted parent is not offered as a valid target" classname="com.myvault.app.data.repository.DashboardAvailableActivityTest" time="0.0"/>
+  <testcase name="personal note title and current folder replace stale Study metadata" classname="com.myvault.app.data.repository.DashboardAvailableActivityTest" time="0.001"/>
+  <testcase name="deleted file is removed and surviving PDF preserves exact page" classname="com.myvault.app.data.repository.DashboardAvailableActivityTest" time="0.001"/>
+  <testcase name="move into course resolves exact current course and deduplicates old category" classname="com.myvault.app.data.repository.DashboardAvailableActivityTest" time="0.0"/>
+  <testcase name="deleted note disappears from Continue and recents without destroying history" classname="com.myvault.app.data.repository.DashboardAvailableActivityTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

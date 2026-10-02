@@ -19,9 +19,23 @@ interface BackupGraphDao {
     @Insert suspend fun insertPublication(publication: BackupGraphPublication)
     @Insert suspend fun insertObjects(objects: List<BackupGraphPublicationObject>)
     @Query("SELECT * FROM backup_graph_publications WHERE accountScope=:scope AND operationId=:operation")
-    suspend fun publication(scope: String, operation: String): BackupGraphPublication?
+    suspend fun publicationFull(scope: String, operation: String): BackupGraphPublication?
+
+    @Query("SELECT accountScope, operationId, lineageId, driveAccountId, capturedGeneration, capturedOriginEpoch, originalAccountJson, originalBindingJson, commitJson, status FROM backup_graph_publications WHERE accountScope=:scope AND operationId=:operation")
+    suspend fun publicationMetadata(scope: String, operation: String): com.myvault.app.data.local.entity.BackupGraphPublicationMetadata?
+
+    @Query("SELECT SUBSTR(frozenBatchJson, :offset, :length) FROM backup_graph_publications WHERE accountScope=:scope AND operationId=:operation")
+    suspend fun frozenBatchChunk(scope: String, operation: String, offset: Int, length: Int): String?
+
+    @Query("SELECT COUNT(*) FROM backup_graph_publications WHERE accountScope=:scope AND status != 'COMPLETE'")
+    suspend fun unfinishedCount(scope: String): Int
+
     @Query("SELECT * FROM backup_graph_publications WHERE accountScope=:scope AND status != 'COMPLETE'")
     suspend fun unfinished(scope: String): List<BackupGraphPublication>
+
+    @Query("SELECT accountScope, operationId, lineageId, driveAccountId, capturedGeneration, capturedOriginEpoch, originalAccountJson, originalBindingJson, commitJson, status FROM backup_graph_publications WHERE accountScope=:scope AND status != 'COMPLETE'")
+    suspend fun unfinishedMetadata(scope: String): List<com.myvault.app.data.local.entity.BackupGraphPublicationMetadata>
+
     @Query("SELECT * FROM backup_graph_publication_objects WHERE accountScope=:scope AND operationId=:operation ORDER BY ordinal")
     suspend fun objects(scope: String, operation: String): List<BackupGraphPublicationObject>
     @Query("SELECT * FROM backup_graph_publication_objects WHERE accountScope=:scope AND objectId=:objectId")
@@ -30,4 +44,30 @@ interface BackupGraphDao {
     suspend fun receipt(scope: String, operation: String, objectId: String, hash: String, size: Long): Int
     @Query("UPDATE backup_graph_publications SET status=:status WHERE accountScope=:scope AND operationId=:operation")
     suspend fun status(scope: String, operation: String, status: String)
+}
+
+suspend fun BackupGraphDao.readPublication(scope: String, operation: String): BackupGraphPublication? {
+    val meta = publicationMetadata(scope, operation) ?: return null
+    val builder = StringBuilder()
+    var offset = 1
+    val chunkSize = 500000
+    while(true) {
+        val chunk = frozenBatchChunk(scope, operation, offset, chunkSize) ?: break
+        builder.append(chunk)
+        if (chunk.length < chunkSize) break
+        offset += chunkSize
+    }
+    return BackupGraphPublication(
+        accountScope = meta.accountScope,
+        operationId = meta.operationId,
+        lineageId = meta.lineageId,
+        driveAccountId = meta.driveAccountId,
+        capturedGeneration = meta.capturedGeneration,
+        capturedOriginEpoch = meta.capturedOriginEpoch,
+        originalAccountJson = meta.originalAccountJson,
+        originalBindingJson = meta.originalBindingJson,
+        frozenBatchJson = builder.toString(),
+        commitJson = meta.commitJson,
+        status = meta.status
+    )
 }

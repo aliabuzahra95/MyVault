@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.widget.quran.QuranWidgetContractTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:29.011Z" hostname="Mac-2.modem" time="0.02">
+  <properties/>
+  <testcase name="widget is resizable and registered as a lazy collection" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.003"/>
+  <testcase name="widget settings and search use the existing collection architecture" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.001"/>
+  <testcase name="each widget owns selection mode and anchor keys" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.0"/>
+  <testcase name="header has play immediately before far-right settings and no open control" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.012"/>
+  <testcase name="widget rows expose translation and larger picker typography" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.004"/>
+  <testcase name="widget exact location enters the existing Quran route" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.0"/>
+  <testcase name="routine refresh keeps stable adapter identity and does not force a scroll" classname="com.myvault.app.widget.quran.QuranWidgetContractTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

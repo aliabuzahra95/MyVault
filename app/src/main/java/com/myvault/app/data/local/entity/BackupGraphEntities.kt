@@ -49,3 +49,16 @@ data class BackupGraphPublicationObject(
     val verifiedSha256: String?,
     val verifiedByteCount: Long?,
 )
+
+data class BackupGraphPublicationMetadata(
+    val accountScope: String,
+    val operationId: String,
+    val lineageId: String,
+    val driveAccountId: String,
+    val capturedGeneration: Long,
+    val capturedOriginEpoch: Long,
+    val originalAccountJson: String,
+    val originalBindingJson: String?,
+    val commitJson: String,
+    val status: String,
+)

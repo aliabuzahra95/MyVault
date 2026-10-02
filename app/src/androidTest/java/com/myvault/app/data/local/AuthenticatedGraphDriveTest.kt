@@ -131,7 +131,7 @@ class AuthenticatedGraphDriveTest {
                 assertEquals(GraphWriterMetrics(1,1,0,0,1,1),measured("metadata-only") { f.writer().publish() }.metrics)
                 f.db.noteDao().deleteByIds(listOf("two"))
                 val deletion = measured("delete") { f.writer().publish() }; assertEquals(1,deletion.metrics.pendingRows)
-                val change = BackupGraphIntentCodec.records(f.db.backupGraphDao().publication(account,deletion.operationId!!)!!.frozenBatchJson).single()
+                val change = BackupGraphIntentCodec.records(f.db.backupGraphDao().readPublication(account,deletion.operationId!!)!!.frozenBatchJson).single()
                 assertEquals(listOf("two"),change.key); assertEquals("DELETE",change.operation)
                 assertEquals(2,JSONArray(read(store).files.getValue("notes.json")).length())
                 val parent = f.binding(); f.binary(3072,"new-attachment")

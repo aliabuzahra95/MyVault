@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.myvault.app.data.sync.GoogleDriveManifestRepairTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-11T03:42:28.617Z" hostname="Mac-2.modem" time="0.0">
+  <properties/>
+  <testcase name="replacementAttachmentIdIsUsedWhenFileStillExistsByName" classname="com.myvault.app.data.sync.GoogleDriveManifestRepairTest" time="0.0"/>
+  <testcase name="uploadedMetadataMustMatchBothManifestSizeAndChecksum" classname="com.myvault.app.data.sync.GoogleDriveManifestRepairTest" time="0.0"/>
+  <testcase name="metadataIsReuploadedEvenWhenTheOldManifestClaimsItIsUnchanged" classname="com.myvault.app.data.sync.GoogleDriveManifestRepairTest" time="0.0"/>
+  <testcase name="staleAttachmentIdIsNotReusedWhenDriveFileIsMissing" classname="com.myvault.app.data.sync.GoogleDriveManifestRepairTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

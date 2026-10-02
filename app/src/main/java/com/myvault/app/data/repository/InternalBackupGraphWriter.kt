@@ -3,6 +3,7 @@ package com.myvault.app.data.repository
 import androidx.room.withTransaction
 import com.myvault.app.data.local.VaultDatabase
 import com.myvault.app.data.local.entity.*
+import com.myvault.app.data.local.dao.readPublication
 import com.myvault.app.data.preferences.normalizeGoogleDriveAccount
 import org.json.JSONArray
 import org.json.JSONObject
@@ -58,7 +59,7 @@ internal class InternalBackupGraphWriter(
     private suspend fun publishInternal(): GraphWriterResult {
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
-        val unfinished = dao.unfinished(c.accountScope)
+        val unfinished = dao.unfinishedMetadata(c.accountScope)
         if (unfinished.isNotEmpty()) {
             check(unfinished.size == 1) { "Ambiguous pending publication; reconciliation required." }
             return resume(unfinished.single().operationId)
@@ -91,7 +92,7 @@ internal class InternalBackupGraphWriter(
     suspend fun previewTransition(prepared: PreparedBackupBaseline): Pair<String, BackupGraphTransition> {
         val c = context
         check(prepared.journal.account.accountScope == c.accountScope && !prepared.journal.account.trusted)
-        check(dao.unfinished(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty())
+        check(dao.unfinishedMetadata(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty())
         val binding = dao.binding(c.accountScope, c.lineageId) ?: error("Existing graph binding is required.")
         val graph = checkedGraph(binding)
         check(graph.plan().deltas.size < 4096) { "Existing delta epoch is full; transition cannot be represented." }
@@ -130,7 +131,7 @@ internal class InternalBackupGraphWriter(
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
         check(prepared.journal.account.accountScope == c.accountScope)
-        check(dao.unfinished(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinished().isEmpty()) {
+        check(dao.unfinishedMetadata(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty()) {
             "Recover the existing operation before creating a checkpoint."
         }
         val parentCommit = if (parent == null) {
@@ -234,7 +235,7 @@ internal class InternalBackupGraphWriter(
             BackupGraphProtocol.utf8(BackupGraphProtocol.encode(commit)), "PREPARED")
 
     private suspend fun persist(p: BackupGraphPublication, objects: List<BackupGraphPublicationObject>) = database.withTransaction {
-        check(dao.unfinished(p.accountScope).isEmpty()) { "Only one unfinished publication per local account is allowed." }
+        check(dao.unfinishedMetadata(p.accountScope).isEmpty()) { "Only one unfinished publication per local account is allowed." }
         validateOriginal(p)
         check(objects.map { it.objectId }.distinct().size == objects.size)
         objects.forEach { check(dao.objectsWithId(p.accountScope, it.objectId).isEmpty()) { "Intended object ID is already assigned." } }
@@ -244,7 +245,7 @@ internal class InternalBackupGraphWriter(
     suspend fun resume(operation: String): GraphWriterResult {
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
-        val p = dao.publication(c.accountScope, operation) ?: error("No operation for this account.")
+        val p = dao.readPublication(c.accountScope, operation) ?: error("No operation for this account.")
         check(p.driveAccountId == c.driveAccountId && p.lineageId == c.lineageId)
         val frozenNamespace = JSONObject(p.frozenBatchJson).let { if (it.isNull("namespaceProof") || !it.has("namespaceProof")) null else it.getString("namespaceProof") }
         check(frozenNamespace == store.namespaceProof) { "Publication recovery requires its original verified namespace." }
@@ -309,7 +310,7 @@ internal class InternalBackupGraphWriter(
 
     private suspend fun complete(p: BackupGraphPublication, objects: List<BackupGraphPublicationObject>, commit: BackupGraphCommit,
         rootProof: Pair<PreparedBackupBaseline, VerifiedBackupBaseline>?) = database.withTransaction {
-        val persisted = dao.publication(context.accountScope, p.operationId)!!
+        val persisted = dao.readPublication(context.accountScope, p.operationId)!!
         if (persisted.status == "COMPLETE") return@withTransaction
         check(persisted.copy(status = p.status) == p) { "Publication intent changed." }
         validateOriginal(p)
