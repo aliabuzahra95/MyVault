@@ -369,8 +369,17 @@ internal fun QuranSurahSelectorOverlay(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
+                        val countText = if (ayahResults.isNotEmpty()) {
+                            val surahCount = (filtered.map { it.num } + ayahResults.map { it.surah.num }).distinct().size
+                            val surahLabel = if (surahCount == 1) "1 Surah" else "$surahCount Surahs"
+                            val ayahLabel = if (ayahResults.size == 1) "1 Verse" else "${ayahResults.size} Verses"
+                            "$surahLabel • $ayahLabel"
+                        } else {
+                            val surahCount = filtered.size
+                            if (surahCount == 1) "1 Surah" else "$surahCount Surahs"
+                        }
                         Text(
-                            text = "${filtered.size} Surahs",
+                            text = countText,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                             color = colors.textSecondary,
                         )
@@ -392,7 +401,7 @@ internal fun QuranSurahSelectorOverlay(
                     if (ayahResults.isNotEmpty()) {
                         item(key = "ayah_results_label") {
                             JuzDivider(juzNumber = 0, label = "Ayah results (${ayahResults.size})")
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(6.dp))
                         }
                         items(
                             items = ayahResults,
@@ -403,6 +412,10 @@ internal fun QuranSurahSelectorOverlay(
                                 result = result,
                                 onClick = { onSelectAyah("${result.surah.num}:${result.ayahNumber}") },
                             )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        item(key = "ayah_results_bottom_spacer") {
+                            Spacer(Modifier.height(4.dp))
                         }
                     }
                     juzGroups.forEach { (juz, surahs) ->
@@ -656,7 +669,7 @@ private fun QuranAyahSearchResultRow(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         color = colors.surface,
-        border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.72f)),
+        border = BorderStroke(1.dp, colors.accentBorder.copy(alpha = 0.28f)),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
@@ -677,7 +690,7 @@ private fun QuranAyahSearchResultRow(
                     .size(38.dp)
                     .clip(CircleShape)
                     .background(colors.accentSoft)
-                    .border(1.dp, colors.accentBorder, CircleShape),
+                    .border(1.dp, colors.accentBorder.copy(alpha = 0.35f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
