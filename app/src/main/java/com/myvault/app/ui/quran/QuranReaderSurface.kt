@@ -58,6 +58,7 @@ internal fun QuranReaderSurface(
     uiState: QuranReaderUiState,
     onOpenNavigation: () -> Unit,
     onOpenSelector: () -> Unit,
+    onOpenSearch: () -> Unit = onOpenSelector,
     onSetArabicFontPercent: (Int) -> Unit,
     onSetTranslationFontPercent: (Int) -> Unit,
     onSetTranslationEnabled: (Boolean) -> Unit,
@@ -185,6 +186,7 @@ internal fun QuranReaderSurface(
                 currentAyah = currentAyah,
                 onOpenNavigation = onOpenNavigation,
                 onOpenSelector = onOpenSelector,
+                onOpenSearch = onOpenSearch,
                 onOpenOverflow = { overflowOpen = true },
             )
             uiState.audioStatusMessage?.let { status ->

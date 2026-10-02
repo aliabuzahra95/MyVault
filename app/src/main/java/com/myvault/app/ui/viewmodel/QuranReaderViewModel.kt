@@ -9,6 +9,7 @@ import com.myvault.app.data.quran.QuranAyah
 import com.myvault.app.data.quran.QuranReflectionRepository
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.QuranTextRepository
+import com.myvault.app.data.quran.QuranCorpusSearchItem
 import com.myvault.app.data.quran.QuranTranslationSource
 import com.myvault.app.data.quran.MUKHTASAR_TAFSIR_ID
 import com.myvault.app.data.quran.audio.AudioMiniPlayerUiState
@@ -440,6 +441,8 @@ class QuranReaderViewModel @Inject constructor(
     }
 
     suspend fun getAyahSearchIndex(): Map<String, String> = quranTextRepository.getAyahSearchIndex()
+
+    suspend fun getCorpusSearchIndex(): List<QuranCorpusSearchItem> = quranTextRepository.getCorpusSearchIndex()
 
     fun startMemorizingAyah(ayah: QuranAyah) {
         updateMemorizationRecord(ayah) { existing, now ->

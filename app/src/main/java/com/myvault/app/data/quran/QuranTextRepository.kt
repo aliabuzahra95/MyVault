@@ -32,6 +32,8 @@ class QuranTextRepository @Inject constructor(
     private var tafsirByVerse: Map<String, String>? = null
     private var tafsirSources: List<TafsirSourceUiModel>? = null
     private var localSearchIndex: List<Pair<SurahInfo, QuranAyah>>? = null
+    private var corpusSearchIndex: List<QuranCorpusSearchItem>? = null
+    private val corpusSearchMutex = Mutex()
     private val remoteTafsirCache = LruCache<String, String>(48)
 
     suspend fun searchLocalCorpus(query: String, limit: Int = 20): List<QuranSearchResult> = withContext(Dispatchers.IO) {
@@ -58,20 +60,61 @@ class QuranTextRepository @Inject constructor(
         }
         if (hits.size >= limit) return@withContext hits.take(limit)
 
-        val corpus = localSearchIndex ?: searchMutex.withLock {
-            localSearchIndex ?: quranCatalog.flatMap { surah ->
-                getSurahAyahs(surah.num).map { surah to it }
-            }.also { localSearchIndex = it }
-        }
-        for ((surah, ayah) in corpus) {
-                if (ayah.arabicText.normalizedQuranSearchText().contains(normalizedQuery) ||
-                    ayah.translation.normalizedQuranSearchText().contains(normalizedQuery)
-                ) {
-                    if (hits.none { it.verseKey == ayah.verseKey }) hits += ayah.toSearchResult(surah)
-                    if (hits.size >= limit) return@withContext hits
+        val corpus = getCorpusSearchIndex()
+        val isArabic = trimmed.any { it in '\u0600'..'\u06FF' }
+        val normAr1 = normalizeQuranArabicText(trimmed, expandDaggerAlif = true)
+        val normAr2 = normalizeQuranArabicText(trimmed, expandDaggerAlif = false)
+        val normAr3 = normAr1.replace('ء', 'و').replace('ئ', 'ي')
+        val normEn = trimmed.lowercase()
+
+        for (item in corpus) {
+            val matches = if (isArabic) {
+                (normAr1.isNotBlank() && item.normalizedArabic.contains(normAr1)) ||
+                    (normAr2.isNotBlank() && item.normalizedArabic.contains(normAr2)) ||
+                    (normAr3.isNotBlank() && item.normalizedArabic.contains(normAr3))
+            } else {
+                (normEn.length >= 2 && item.normalizedTranslation.contains(normEn)) ||
+                    (normEn.length >= 2 && item.surah.name.lowercase().contains(normEn))
+            }
+            if (matches) {
+                if (hits.none { it.verseKey == item.verseKey }) {
+                    hits += QuranSearchResult(
+                        verseKey = item.verseKey,
+                        surahName = item.surah.name,
+                        reference = "${item.surah.num}:${item.ayahNumber}",
+                        snippet = item.arabicText.take(96).ifBlank { item.translation.take(140) },
+                    )
                 }
+                if (hits.size >= limit) return@withContext hits
+            }
         }
         hits
+    }
+
+    suspend fun getCorpusSearchIndex(): List<QuranCorpusSearchItem> {
+        corpusSearchIndex?.let { return it }
+        return corpusSearchMutex.withLock {
+            corpusSearchIndex ?: withContext(Dispatchers.Default) {
+                val arabicIndex = getAyahSearchIndex()
+                val translationIndex = runCatching { loadSahihTranslationSource() }.getOrDefault(emptyMap())
+                val catalogByNum = quranCatalog.associateBy { it.num }
+                arabicIndex.mapNotNull { (verseKey, arabicText) ->
+                    val surahNum = verseKey.substringBefore(':').toIntOrNull() ?: return@mapNotNull null
+                    val ayahNum = verseKey.substringAfter(':').toIntOrNull() ?: return@mapNotNull null
+                    val surah = catalogByNum[surahNum] ?: return@mapNotNull null
+                    val translation = translationIndex[verseKey]?.text.orEmpty()
+                    QuranCorpusSearchItem(
+                        surah = surah,
+                        ayahNumber = ayahNum,
+                        verseKey = verseKey,
+                        arabicText = arabicText,
+                        normalizedArabic = arabicText.toNormalizedQuranCorpusForms(),
+                        translation = translation,
+                        normalizedTranslation = translation.lowercase(),
+                    )
+                }
+            }.also { corpusSearchIndex = it }
+        }
     }
 
     suspend fun getAyahSearchIndex(): Map<String, String> {
@@ -511,14 +554,47 @@ private fun SurahInfo.matchesSearchName(normalizedQuery: String): Boolean {
     }
 }
 
-private fun String.normalizedQuranSearchText(): String =
-    java.text.Normalizer.normalize(lowercase(), java.text.Normalizer.Form.NFD)
-        .replace(Regex("\\p{M}+"), "")
-        .replace('ٱ', 'ا')
+internal fun normalizeQuranArabicText(value: String, expandDaggerAlif: Boolean): String {
+    var text = value.replace("\u0640", "")
+    text = text.replace("و\u0670ة", "اة")
+        .replace("و\u0670ت", "ات")
+        .replace("وة", "اة")
+        .replace("وت", "ات")
+    text = if (expandDaggerAlif) {
+        text.replace('\u0670', 'ا')
+    } else {
+        text.replace("\u0670", "")
+    }
+    text = text.replace(Regex("[\\u064B-\\u065F\\u06D6-\\u06ED\\u0610-\\u061A]"), "")
+    text = text.replace('ٱ', 'ا')
         .replace('آ', 'ا')
         .replace('أ', 'ا')
         .replace('إ', 'ا')
-        .replace(Regex("[^\\p{L}\\p{N}]+"), "")
+    text = text.replace("ءا", "ا")
+    text = text.replace('ؤ', 'ء')
+        .replace('ئ', 'ء')
+    text = text.replace('ى', 'ي')
+    text = text.replace('ة', 'ه')
+    text = text.replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+    text = text.replace(Regex("[\\d٠-٩]+"), " ")
+    return text.replace(Regex("\\s+"), " ").trim()
+}
+
+internal fun String.toNormalizedQuranCorpusForms(): String {
+    val n1 = normalizeQuranArabicText(this, expandDaggerAlif = true)
+    val n2 = normalizeQuranArabicText(this, expandDaggerAlif = false)
+    val n1Fixed = n1
+        .replace("الرحمان", "الرحمن")
+        .replace("هاذا", "هذا")
+        .replace("ذالك", "ذلك")
+        .replace("السموات", "السماوات")
+        .replace("الاه", "اله")
+    val n3 = n1.replace('ء', 'و').replace('ئ', 'ي')
+    return "$n1 $n1Fixed $n2 $n3"
+}
+
+private fun String.normalizedQuranSearchText(): String =
+    normalizeQuranArabicText(this, expandDaggerAlif = true)
 
 private fun QuranAyah.toSearchResult(surah: SurahInfo): QuranSearchResult = QuranSearchResult(
     verseKey = verseKey,

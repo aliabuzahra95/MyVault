@@ -106,6 +106,16 @@ data class TafsirSourceUiModel(
     val name: String,
 )
 
+data class QuranCorpusSearchItem(
+    val surah: SurahInfo,
+    val ayahNumber: Int,
+    val verseKey: String,
+    val arabicText: String,
+    val normalizedArabic: String,
+    val translation: String,
+    val normalizedTranslation: String,
+)
+
 data class QuranReaderUiState(
     val selectedSurah: SurahInfo = quranCatalog.first(),
     val ayahs: List<QuranAyah> = emptyList(),

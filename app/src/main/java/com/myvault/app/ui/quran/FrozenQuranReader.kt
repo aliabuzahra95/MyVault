@@ -57,6 +57,7 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -105,6 +106,7 @@ internal fun FrozenQuranTopBar(
     currentAyah: Int,
     onOpenNavigation: () -> Unit,
     onOpenSelector: () -> Unit,
+    onOpenSearch: () -> Unit,
     onOpenOverflow: () -> Unit,
 ) {
     val colors = VaultThemeTokens.colors
@@ -152,6 +154,7 @@ internal fun FrozenQuranTopBar(
                 color = colors.textMuted,
             )
         }
+        FrozenQuranIconButton(Icons.Rounded.Search, "Search Qur'an", onOpenSearch)
         FrozenQuranIconButton(Icons.Rounded.MoreVert, "Qur'an options", onOpenOverflow)
     }
 }

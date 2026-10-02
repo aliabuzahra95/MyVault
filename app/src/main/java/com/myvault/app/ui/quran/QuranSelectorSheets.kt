@@ -58,6 +58,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -67,7 +70,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.R
+import com.myvault.app.data.quran.QuranCorpusSearchItem
 import com.myvault.app.data.quran.SurahInfo
+import com.myvault.app.data.quran.normalizeQuranArabicText
+import com.myvault.app.data.quran.parseQuranSearchReference
 import com.myvault.app.data.quran.quranCatalog
 import com.myvault.app.ui.components.IconBtn
 import com.myvault.app.ui.theme.VaultThemeTokens
@@ -80,10 +86,11 @@ private val QuranSelectorEnglishFamily = FontFamily(
     Font(R.font.plus_jakarta_sans_medium, weight = FontWeight.Medium),
     Font(R.font.plus_jakarta_sans_semi_bold, weight = FontWeight.SemiBold),
 )
-private data class QuranAyahSelectorResult(
+internal data class QuranAyahSelectorResult(
     val surah: SurahInfo,
     val ayahNumber: Int,
     val arabicText: String,
+    val translation: String = "",
 )
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -239,6 +246,8 @@ internal fun QuranSurahSelectorOverlay(
     search: String,
     typeFilter: String,
     loadAyahSearchIndex: suspend () -> Map<String, String>,
+    loadCorpusSearchIndex: (suspend () -> List<QuranCorpusSearchItem>)? = null,
+    autoFocusSearch: Boolean = false,
     onSearchChange: (String) -> Unit,
     onTypeFilterChange: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -248,13 +257,33 @@ internal fun QuranSurahSelectorOverlay(
     val colors = VaultThemeTokens.colors
     val listState: LazyListState = rememberLazyListState()
     var ayahSearchIndex by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var corpusSearchIndex by remember { mutableStateOf<List<QuranCorpusSearchItem>>(emptyList()) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     LaunchedEffect(visible) {
-        if (visible && ayahSearchIndex.isEmpty()) {
-            ayahSearchIndex = loadAyahSearchIndex()
+        if (visible) {
+            if (ayahSearchIndex.isEmpty()) {
+                ayahSearchIndex = loadAyahSearchIndex()
+            }
+            if (loadCorpusSearchIndex != null && corpusSearchIndex.isEmpty()) {
+                corpusSearchIndex = loadCorpusSearchIndex()
+            }
         }
     }
-    val ayahResults = remember(search, typeFilter, ayahSearchIndex) {
-        buildQuranAyahSelectorResults(search, typeFilter, ayahSearchIndex)
+
+    LaunchedEffect(visible, autoFocusSearch) {
+        if (visible && autoFocusSearch) {
+            delay(150)
+            runCatching {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            }
+        }
+    }
+
+    val ayahResults = remember(search, typeFilter, ayahSearchIndex, corpusSearchIndex) {
+        buildQuranAyahSelectorResults(search, typeFilter, ayahSearchIndex, corpusSearchIndex)
     }
     val filtered = remember(search, typeFilter) {
         quranCatalog.filter { surah ->
@@ -333,6 +362,7 @@ internal fun QuranSurahSelectorOverlay(
                     QuranSearchBar(
                         query = search,
                         onQueryChange = onSearchChange,
+                        focusRequester = focusRequester,
                     )
                     QuranTypeFilters(selected = typeFilter, onSelected = onTypeFilterChange)
                     Row(
@@ -361,7 +391,7 @@ internal fun QuranSurahSelectorOverlay(
                 ) {
                     if (ayahResults.isNotEmpty()) {
                         item(key = "ayah_results_label") {
-                            JuzDivider(juzNumber = 0, label = "Ayah results")
+                            JuzDivider(juzNumber = 0, label = "Ayah results (${ayahResults.size})")
                             Spacer(Modifier.height(2.dp))
                         }
                         items(
@@ -401,6 +431,7 @@ internal fun QuranSurahSelectorOverlay(
 private fun QuranSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
+    focusRequester: FocusRequester? = null,
 ) {
     val colors = VaultThemeTokens.colors
     Row(
@@ -417,7 +448,7 @@ private fun QuranSearchBar(
             imageVector = Icons.Rounded.Search,
             contentDescription = "Search",
             tint = colors.textSecondary,
-            modifier = Modifier.size(14.dp),
+            modifier = Modifier.size(16.dp),
         )
         BasicTextField(
             value = query,
@@ -425,11 +456,13 @@ private fun QuranSearchBar(
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
             cursorBrush = SolidColor(colors.accent),
             singleLine = true,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
                     Text(
-                        text = "Search by name, Arabic, or number...",
+                        text = "Search surah, verse (e.g. 2:255), or words...",
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.textMuted,
                     )
@@ -437,6 +470,16 @@ private fun QuranSearchBar(
                 inner()
             },
         )
+        if (query.isNotEmpty()) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Clear search",
+                tint = colors.textSecondary,
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable { onQueryChange("") },
+            )
+        }
     }
 }
 
@@ -688,6 +731,19 @@ private fun QuranAyahSearchResultRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (result.translation.isNotBlank()) {
+                    Text(
+                        text = result.translation,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = QuranSelectorEnglishFamily,
+                            lineHeight = 18.sp,
+                        ),
+                        color = colors.textSecondary.copy(alpha = 0.85f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
     }
@@ -697,17 +753,88 @@ private fun buildQuranAyahSelectorResults(
     query: String,
     typeFilter: String,
     ayahSearchIndex: Map<String, String>,
+    corpusSearchIndex: List<QuranCorpusSearchItem> = emptyList(),
 ): List<QuranAyahSelectorResult> {
-    if (ayahSearchIndex.isEmpty()) return emptyList()
-    val numbers = Regex("\\d+").findAll(query).mapNotNull { it.value.toIntOrNull() }.toList()
-    if (numbers.size < 2) return emptyList()
-    val surahNumber = numbers[0]
-    val ayahNumber = numbers[1]
-    val surah = quranCatalog.firstOrNull { it.num == surahNumber } ?: return emptyList()
-    if (typeFilter != "All" && surah.type != typeFilter) return emptyList()
-    if (ayahNumber !in 1..surah.ayat) return emptyList()
-    val verseKey = "$surahNumber:$ayahNumber"
-    val text = ayahSearchIndex[verseKey].orEmpty()
-    if (text.isBlank()) return emptyList()
-    return listOf(QuranAyahSelectorResult(surah = surah, ayahNumber = ayahNumber, arabicText = text))
+    val trimmed = query.trim()
+    if (trimmed.isBlank()) return emptyList()
+
+    // 1. Direct reference search (e.g. "2:255", "18 10", "Baqarah 255")
+    parseQuranSearchReference(trimmed)?.let { (surahNumber, ayahNumber) ->
+        val surah = quranCatalog.firstOrNull { it.num == surahNumber }
+        if (surah != null && (typeFilter == "All" || surah.type == typeFilter) && ayahNumber in 1..surah.ayat) {
+            val corpusItem = corpusSearchIndex.firstOrNull { it.verseKey == "$surahNumber:$ayahNumber" }
+            val arabic = corpusItem?.arabicText ?: ayahSearchIndex["$surahNumber:$ayahNumber"].orEmpty()
+            val translation = corpusItem?.translation.orEmpty()
+            if (arabic.isNotBlank()) {
+                return listOf(
+                    QuranAyahSelectorResult(
+                        surah = surah,
+                        ayahNumber = ayahNumber,
+                        arabicText = arabic,
+                        translation = translation,
+                    )
+                )
+            }
+        }
+    }
+
+    // 2. Direct regex numbers fallback (e.g. user typed "2 255")
+    val numbers = Regex("\\d+").findAll(trimmed).mapNotNull { it.value.toIntOrNull() }.toList()
+    if (numbers.size >= 2) {
+        val surahNumber = numbers[0]
+        val ayahNumber = numbers[1]
+        val surah = quranCatalog.firstOrNull { it.num == surahNumber }
+        if (surah != null && (typeFilter == "All" || surah.type == typeFilter) && ayahNumber in 1..surah.ayat) {
+            val corpusItem = corpusSearchIndex.firstOrNull { it.verseKey == "$surahNumber:$ayahNumber" }
+            val text = corpusItem?.arabicText ?: ayahSearchIndex["$surahNumber:$ayahNumber"].orEmpty()
+            val translation = corpusItem?.translation.orEmpty()
+            if (text.isNotBlank()) {
+                return listOf(
+                    QuranAyahSelectorResult(
+                        surah = surah,
+                        ayahNumber = ayahNumber,
+                        arabicText = text,
+                        translation = translation,
+                    )
+                )
+            }
+        }
+    }
+
+    // 3. Full Quran corpus search (Arabic without diacritics or English translation)
+    if (corpusSearchIndex.isNotEmpty()) {
+        val isArabic = trimmed.any { it in '\u0600'..'\u06FF' }
+        val normAr1 = normalizeQuranArabicText(trimmed, expandDaggerAlif = true)
+        val normAr2 = normalizeQuranArabicText(trimmed, expandDaggerAlif = false)
+        val normAr3 = normAr1.replace('ء', 'و').replace('ئ', 'ي')
+        val normEn = trimmed.lowercase()
+
+        val results = mutableListOf<QuranAyahSelectorResult>()
+        val maxResults = 50
+
+        for (item in corpusSearchIndex) {
+            if (typeFilter != "All" && item.surah.type != typeFilter) continue
+
+            val matches = if (isArabic) {
+                (normAr1.isNotBlank() && item.normalizedArabic.contains(normAr1)) ||
+                    (normAr2.isNotBlank() && item.normalizedArabic.contains(normAr2)) ||
+                    (normAr3.isNotBlank() && item.normalizedArabic.contains(normAr3))
+            } else {
+                normEn.length >= 2 && item.normalizedTranslation.contains(normEn)
+            }
+
+            if (matches) {
+                results += QuranAyahSelectorResult(
+                    surah = item.surah,
+                    ayahNumber = item.ayahNumber,
+                    arabicText = item.arabicText,
+                    translation = item.translation,
+                )
+                if (results.size >= maxResults) break
+            }
+        }
+        return results
+    }
+
+    return emptyList()
 }

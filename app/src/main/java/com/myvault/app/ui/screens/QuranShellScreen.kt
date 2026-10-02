@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.myvault.app.data.quran.QuranAyah
+import com.myvault.app.data.quran.QuranCorpusSearchItem
 import com.myvault.app.data.quran.QuranReaderUiState
 import com.myvault.app.data.quran.QuranTranslationSource
 import com.myvault.app.data.quran.audio.AudioReciterUiModel
@@ -71,6 +72,7 @@ fun QuranShellScreen(
     onRefreshAudioDownloads: (AudioReciterUiModel) -> Unit,
     onDownloadSurahAudio: (AudioReciterUiModel, Int) -> Unit,
     loadAyahSearchIndex: suspend () -> Map<String, String>,
+    loadCorpusSearchIndex: (suspend () -> List<QuranCorpusSearchItem>)? = null,
     onMemoriseFromHere: (QuranAyah) -> Unit,
     onPendingScrollHandled: () -> Unit,
     showNavigationHeader: Boolean = true,
@@ -83,13 +85,18 @@ fun QuranShellScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var typeFilter by rememberSaveable { mutableStateOf("All") }
     var selectorOpen by rememberSaveable { mutableStateOf(false) }
+    var searchFocused by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uiState.pendingScrollVerseKey) {
-        if (uiState.pendingScrollVerseKey != null) selectorOpen = false
+        if (uiState.pendingScrollVerseKey != null) {
+            selectorOpen = false
+            searchFocused = false
+        }
     }
 
     BackHandler(enabled = selectorOpen) {
         selectorOpen = false
+        searchFocused = false
     }
 
     Box(
@@ -122,7 +129,14 @@ fun QuranShellScreen(
             QuranReaderSurface(
                 uiState = uiState,
                 onOpenNavigation = onOpenNavigation,
-                onOpenSelector = { selectorOpen = true },
+                onOpenSelector = {
+                    selectorOpen = true
+                    searchFocused = false
+                },
+                onOpenSearch = {
+                    selectorOpen = true
+                    searchFocused = true
+                },
                 onSetArabicFontPercent = onSetArabicFontPercent,
                 onSetTranslationFontPercent = onSetTranslationFontPercent,
                 onSetTranslationEnabled = onSetTranslationEnabled,
@@ -167,16 +181,23 @@ fun QuranShellScreen(
             search = search,
             typeFilter = typeFilter,
             loadAyahSearchIndex = loadAyahSearchIndex,
+            loadCorpusSearchIndex = loadCorpusSearchIndex,
+            autoFocusSearch = searchFocused,
             onSearchChange = { search = it },
             onTypeFilterChange = { typeFilter = it },
-            onDismiss = { selectorOpen = false },
+            onDismiss = {
+                selectorOpen = false
+                searchFocused = false
+            },
             onSelect = { surah ->
                 onSelectSurah(surah.num)
                 selectorOpen = false
+                searchFocused = false
             },
             onSelectAyah = { verseKey ->
                 onOpenBookmark(verseKey)
                 selectorOpen = false
+                searchFocused = false
             },
         )
     }
