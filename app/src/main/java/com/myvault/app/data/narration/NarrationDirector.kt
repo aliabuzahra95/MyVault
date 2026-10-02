@@ -108,30 +108,49 @@ class NarrationDirector @Inject constructor(
      * Splits a NarrationPlan into sized chunks aligned strictly at NarrationUnit boundaries.
      * Never splits inside a heading, list item, or Arabic quote unless a single unit exceeds maxChars.
      */
-    fun planToChunks(plan: NarrationPlan, maxCharsPerChunk: Int = GeminiNarrationConfig.MAX_CHARS_PER_CHUNK): List<String> {
+    fun planToChunks(plan: NarrationPlan, maxCharsPerChunk: Int = GeminiNarrationConfig.MAX_CHARS_PER_CHUNK): List<NarrationChunkPlan> {
         if (plan.units.isEmpty()) return emptyList()
 
-        val chunks = mutableListOf<String>()
-        val currentChunkText = StringBuilder()
+        val chunks = mutableListOf<NarrationChunkPlan>()
+        val currentChunkText = java.lang.StringBuilder()
+        var currentChunkStartMs = 0L
+        var accumulatedGlobalMs = 0L
 
         fun flush() {
             val text = currentChunkText.toString().trim()
             if (text.isNotBlank()) {
-                chunks += text
+                val words = text.split("\\s+".toRegex()).size
+                val estimatedDur = words * 400L
+                chunks += NarrationChunkPlan(
+                    index = chunks.size,
+                    text = text,
+                    estimatedStartMs = currentChunkStartMs,
+                    estimatedDurationMs = estimatedDur
+                )
+                accumulatedGlobalMs += estimatedDur
             }
             currentChunkText.clear()
+            currentChunkStartMs = accumulatedGlobalMs
         }
 
         for (unit in plan.units) {
             val unitText = unit.spokenText.trim()
             if (unitText.isBlank()) continue
 
-            // If a single unit exceeds the chunk capacity (e.g. very long uninterrupted essay paragraph)
             if (unitText.length > maxCharsPerChunk) {
                 flush()
                 val subParts = splitOversizedText(unitText, maxCharsPerChunk)
                 subParts.forEach { sub ->
-                    chunks += sub
+                    val w = sub.split("\\s+".toRegex()).size
+                    val d = w * 400L
+                    chunks += NarrationChunkPlan(
+                        index = chunks.size,
+                        text = sub,
+                        estimatedStartMs = currentChunkStartMs,
+                        estimatedDurationMs = d
+                    )
+                    accumulatedGlobalMs += d
+                    currentChunkStartMs = accumulatedGlobalMs
                 }
                 continue
             }

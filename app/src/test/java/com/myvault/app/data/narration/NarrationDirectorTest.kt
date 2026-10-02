@@ -149,8 +149,8 @@ class NarrationDirectorTest {
         assertTrue(chunks.size >= 2)
         // Verify no chunk starts with partial sentence or broken words
         chunks.forEach { chunk ->
-            assertFalse(chunk.startsWith("."))
-            assertFalse(chunk.startsWith(" "))
+            assertFalse(chunk.text.startsWith("."))
+            assertFalse(chunk.text.startsWith(" "))
         }
     }
 }

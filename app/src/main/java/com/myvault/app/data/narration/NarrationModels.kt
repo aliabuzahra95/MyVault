@@ -166,6 +166,15 @@ data class NarrationCue(
     val displayText: String = text,
 )
 
+data class NarrationChunkPlan(
+    val index: Int,
+    val text: String,
+    val estimatedStartMs: Long,
+    val estimatedDurationMs: Long,
+    val actualStartMs: Long? = null,
+    val actualDurationMs: Long? = null,
+)
+
 data class NarrationSession(
     val cacheKey: String,
     val noteId: String,
@@ -179,25 +188,23 @@ data class NarrationSession(
     val chunkIndices: List<Int> = files.indices.toList(),
     val totalChunks: Int = files.size,
     val demandDriven: Boolean = false,
+    val chunkPlans: List<NarrationChunkPlan> = emptyList(),
 )
 
-internal const val NarrationTargetChunkMs = 120_000L
-internal const val NarrationPrefetchLeadMs = 25_000L
 internal const val CloudNarrationChunkChars = 1_800
 
 internal object NarrationDemandPolicy {
-    fun chunkForPosition(positionMs: Long, totalChunks: Int): Int =
-        (positionMs.coerceAtLeast(0L) / NarrationTargetChunkMs)
-            .toInt()
-            .coerceIn(0, (totalChunks - 1).coerceAtLeast(0))
-
-    fun prefetchAtMs(durationMs: Long): Long = minOf(
-        100_000L,
-        (durationMs - NarrationPrefetchLeadMs).coerceAtLeast((durationMs * 3L) / 4L),
-    )
-
-    fun shouldPrefetch(positionMs: Long, durationMs: Long): Boolean =
-        durationMs > 0L && positionMs >= prefetchAtMs(durationMs)
+    fun chunkForPosition(positionMs: Long, plans: List<NarrationChunkPlan>): Int {
+        val target = positionMs.coerceAtLeast(0L)
+        for (i in plans.indices) {
+            val start = plans[i].actualStartMs ?: plans[i].estimatedStartMs
+            val dur = plans[i].actualDurationMs ?: plans[i].estimatedDurationMs
+            if (target >= start && target < start + dur) {
+                return i
+            }
+        }
+        return (plans.size - 1).coerceAtLeast(0)
+    }
 
     fun activeCue(cues: List<NarrationCue>, chunkIndex: Int, positionMs: Long): NarrationCue? =
         cues.lastOrNull { cue -> cue.chunkIndex == chunkIndex && positionMs >= cue.startMs }

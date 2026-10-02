@@ -18,8 +18,8 @@ class NarrationSelectionRegressionTest {
         for (provider in listOf(NarrationProvider.GeminiFlashLite, NarrationProvider.GeminiFlash)) {
             val chunks = director.planToChunks(plan)
             assertTrue(chunks.size > 1)
-            assertTrue(chunks.all { it.length <= GeminiNarrationConfig.MAX_CHARS_PER_CHUNK })
-            assertEquals(plan.units.map { it.spokenText }.joinToString(" ").words(), chunks.joinToString(" ").words())
+            assertTrue(chunks.all { it.text.length <= GeminiNarrationConfig.MAX_CHARS_PER_CHUNK })
+            assertEquals(plan.units.map { it.spokenText }.joinToString(" ").words(), chunks.joinToString(" ") { it.text }.words())
             assertEquals(provider, NarrationProvider.fromModel(provider.defaultModel))
         }
     }

@@ -115,6 +115,7 @@ class AzureTtsRepository @Inject constructor(
             chunkIndices = listOf(index),
             totalChunks = chunks.size,
             demandDriven = true,
+            chunkPlans = chunks.mapIndexed { i, t -> NarrationChunkPlan(i, t, 0L, (t.split("\\s+".toRegex()).size * 400L)) },
         ).also { session -> onChunkReady(session, index == chunks.lastIndex, chunks.size) }
     }
 

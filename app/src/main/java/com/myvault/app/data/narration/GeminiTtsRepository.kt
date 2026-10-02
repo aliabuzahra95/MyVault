@@ -58,7 +58,7 @@ class GeminiTtsRepository @Inject constructor(
         Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.fromModel(effectiveModel).storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
         val index = requestedChunkIndex.coerceIn(0, chunks.lastIndex)
         val chunk = chunks[index]
-        val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk, effectiveModel, normalizedVoice)
+        val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk.text, effectiveModel, normalizedVoice)
         Log.d(TimingTag, "chunk-requested source=${noteId.take(96)} provider=${NarrationProvider.fromModel(effectiveModel).storedValue} chunk=${index + 1}/${chunks.size}")
         val legacyTarget = cacheManager.cachedChunkOrNull(
             cacheKey, index, noteId, effectiveModel, normalizedVoice, minimumBytes = MinValidAudioBytes,
@@ -76,14 +76,14 @@ class GeminiTtsRepository @Inject constructor(
                 ?: error("Gemini narration is not configured. Add MYVAULT_GEMINI_API_KEY to local.properties or settings.")
             Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
             val requestStartedAt = SystemClock.elapsedRealtime()
-            requestSpeechWithRetry(apiKey, effectiveModel, chunk, normalizedVoice, target, index + 1)
+            requestSpeechWithRetry(apiKey, effectiveModel, chunk.text, normalizedVoice, target, index + 1)
             Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
         }
         coroutineContext.ensureActive()
         val cues = cacheManager.readChunkCues(cueCacheKey, cueCacheIndex)
             .map { it.copy(chunkIndex = index) }
             .ifEmpty {
-                cueBuilder.buildEstimatedCues(index, chunk, target).also {
+                cueBuilder.buildEstimatedCues(index, chunk.text, target).also {
                     cacheManager.writeChunkCues(cueCacheKey, cueCacheIndex, it)
                 }
             }
@@ -100,6 +100,7 @@ class GeminiTtsRepository @Inject constructor(
             chunkIndices = listOf(index),
             totalChunks = chunks.size,
             demandDriven = true,
+            chunkPlans = chunks,
         )
         onChunkReady(session, index == chunks.lastIndex, chunks.size)
         session
