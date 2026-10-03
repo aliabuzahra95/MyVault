@@ -52,15 +52,20 @@ class NarrationPlayerManager @Inject constructor(
     private var activeCues: List<NarrationCue> = emptyList()
     private var expectedChunks: Int = 0
     private var activeChunkIndex: Int = 0
+    private var lastTransitionChunk: Int? = null
     private var activeSession: NarrationSession? = null
     private var activeChunkPlans: List<NarrationChunkPlan> = emptyList()
     private var watchdogJob: Job? = null
     private var speed = 1f
     private var streamingGeneration = false
     private var waitingForNextChunk = false
-    private var pendingSeekMs: Long? = null
+    private var playbackRequested = false
+    private val pendingSeek = NarrationPendingSeek()
+    private val pendingSeekMs: Long? get() = pendingSeek.positionMs
+    private val bufferScheduler = NarrationBufferScheduler()
+    private var bufferRequest: Int? = null
     private var demandDriven = false
-    private var chunkRequestListener: ((Int) -> Unit)? = null
+    private var chunkRequestListener: ((Int, Boolean) -> Unit)? = null
     private val requestedChunks = NarrationChunkRequestTracker()
     private var pendingStartSession: NarrationSession? = null
     private var pendingInitialPositionMs: Long = 0L
@@ -76,9 +81,14 @@ class NarrationPlayerManager @Inject constructor(
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_READY -> {
+                    learnPlayerDuration()
+                    resumePendingSeekIfReady()
                     when {
-                        pendingSeekMs != null -> updatePlaybackState(NarrationPlaybackStatus.Generating, "Loading saved position...")
-                        player?.isPlaying == true -> updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+                        pendingSeekMs != null && playbackRequested -> updatePlaybackState(NarrationPlaybackStatus.Generating, "Loading saved position...")
+                        player?.isPlaying == true -> {
+                            watchdogJob?.cancel()
+                            updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
+                        }
                         player?.playWhenReady == true -> updatePlaybackState(NarrationPlaybackStatus.Preparing, "Buffering narration...")
                         else -> updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
                     }
@@ -87,7 +97,12 @@ class NarrationPlayerManager @Inject constructor(
                     updatePlaybackState(NarrationPlaybackStatus.Preparing, "Loading narration...")
                 }
                 Player.STATE_ENDED -> {
-                    if (streamingGeneration && activeChunkIndex + 1 >= activeFiles.size) {
+                    activeChunkIndex = player?.currentMediaItemIndex?.coerceAtLeast(0) ?: activeChunkIndex
+                    val current = activeChunkIndices.getOrNull(activeChunkIndex) ?: activeChunkIndex
+                    if (pendingSeekMs != null) {
+                        resumePendingSeekIfReady()
+                        pendingSeek.target?.let { requestChunk(it.chunkIndex, "pending-seek", priority = true) }
+                    } else if (streamingGeneration && current < expectedChunks - 1) {
                         waitingForNextChunk = true
                         _state.update {
                             it.copy(
@@ -95,7 +110,15 @@ class NarrationPlayerManager @Inject constructor(
                                 label = "Preparing next part...",
                             )
                         }
-                        requestChunk((activeChunkIndices.getOrNull(activeChunkIndex) ?: activeChunkIndex) + 1, "playback-ended")
+                        val next = activeChunkIndices.indexOf(current + 1)
+                        if (next >= 0) {
+                            waitingForNextChunk = false
+                            player?.seekTo(next, 0L)
+                            player?.prepare()
+                            player?.play()
+                        } else {
+                            requestChunk(current + 1, "playback-ended", priority = true)
+                        }
                     } else {
                         onNarrationCompleted()
                     }
@@ -108,6 +131,7 @@ class NarrationPlayerManager @Inject constructor(
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
+                watchdogJob?.cancel()
                 startupStartedAtMs?.let { startedAt ->
                     Log.d(Tag, "startup first-playing source=${startupSourceId.orEmpty().take(96)} elapsedMs=${SystemClock.elapsedRealtime() - startedAt}")
                 }
@@ -117,9 +141,8 @@ class NarrationPlayerManager @Inject constructor(
                 updatePlaybackState(NarrationPlaybackStatus.Playing, "Playing")
             } else {
                 stopTicker()
-        watchdogJob?.cancel()
                 val currentStatus = _state.value.status
-                if (currentStatus == NarrationPlaybackStatus.Playing) {
+                if (currentStatus == NarrationPlaybackStatus.Playing && player?.playWhenReady != true) {
                     updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
                 }
             }
@@ -127,7 +150,17 @@ class NarrationPlayerManager @Inject constructor(
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val currentPlayer = player ?: return
+            val previousLogical = lastTransitionChunk
             activeChunkIndex = currentPlayer.currentMediaItemIndex.coerceAtLeast(0)
+            val currentLogical = activeChunkIndices.getOrNull(activeChunkIndex)
+            lastTransitionChunk = currentLogical
+            if (demandDriven && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+                previousLogical != null && currentLogical != previousLogical + 1) {
+                // A far-seek cached item must not let automatic playback jump over missing text.
+                val plan = activeChunkPlans.getOrNull(previousLogical + 1)
+                if (plan != null) seekTo(plan.actualStartMs ?: plan.estimatedStartMs)
+                return
+            }
             Log.d(Tag, "current-playback-chunk chunk=${(activeChunkIndices.getOrNull(activeChunkIndex) ?: activeChunkIndex) + 1}")
             updatePlaybackState(_state.value.status, _state.value.label)
         }
@@ -152,16 +185,17 @@ class NarrationPlayerManager @Inject constructor(
         }
     }
 
-    fun setChunkRequestListener(listener: ((Int) -> Unit)?) {
+    fun setChunkRequestListener(listener: ((Int, Boolean) -> Unit)?) {
         chunkRequestListener = listener
     }
 
-    fun releaseChunkRequest(chunkIndex: Int) = runOnMain {
+    fun releaseChunkRequest(chunkIndex: Int, failed: Boolean = true) = runOnMain {
         requestedChunks.complete(chunkIndex)
-        if (waitingForNextChunk && pendingSeekMs != null) {
-            val pendingTarget = NarrationDemandPolicy.chunkForPosition(pendingSeekMs!!, activeChunkPlans)
+        if (bufferRequest == chunkIndex) bufferRequest = null
+        if (failed && waitingForNextChunk && pendingSeekMs != null) {
+            val pendingTarget = pendingSeek.target?.chunkIndex
             if (pendingTarget == chunkIndex) {
-                pendingSeekMs = null
+                pendingSeek.clear()
                 waitingForNextChunk = false
                 updatePlaybackState(NarrationPlaybackStatus.Error, "Generation failed")
             }
@@ -191,6 +225,7 @@ class NarrationPlayerManager @Inject constructor(
         startupSourceId = noteId
         startupStartedAtMs = SystemClock.elapsedRealtime()
         Log.d(Tag, "startup begin source=${noteId.take(96)}")
+        startWatchdog(0L)
     }
 
     fun markGenerating(noteId: String, noteTitle: String, current: Int, total: Int, voice: String = NarrationConfig.DEFAULT_VOICE) = runOnMain {
@@ -199,17 +234,17 @@ class NarrationPlayerManager @Inject constructor(
             _state.update { it.copy(totalChunks = total.takeIf { v -> v > 0 } ?: it.totalChunks) }
             return@runOnMain
         }
-        _state.value = NarrationUiState(
+        _state.update { it.copy(
             status = NarrationPlaybackStatus.Generating,
             noteId = noteId,
             noteTitle = noteTitle,
             label = if (total > 1) "Generating narration $current of $total..." else "Generating narration...",
             speed = speed,
-            provider = _state.value.provider,
             voice = voice,
             currentChunk = current,
             totalChunks = total,
-        )
+            error = null,
+        ) }
     }
 
     fun play(session: NarrationSession) {
@@ -220,6 +255,7 @@ class NarrationPlayerManager @Inject constructor(
         val attachStartedAt = SystemClock.elapsedRealtime()
         stopInternal(resetState = false)
         activeSession = session
+        playbackRequested = true
         activeChunkPlans = session.chunkPlans
         _state.update { it.copy(provider = NarrationProvider.fromModel(session.model), voice = session.voice) }
         activeFiles = session.files
@@ -231,34 +267,17 @@ class NarrationPlayerManager @Inject constructor(
         expectedChunks = maxOf(totalChunks, session.totalChunks, session.files.size)
         demandDriven = session.demandDriven
         streamingGeneration = if (demandDriven) {
-            (activeChunkIndices.lastOrNull() ?: 0) < expectedChunks - 1
+            activeChunkIndices.size < expectedChunks
         } else {
             totalChunks > session.files.size
         }
         
-        // Recalculate timeline on startup
-        if (activeChunkPlans.isNotEmpty()) {
-            val newPlans = activeChunkPlans.toMutableList()
-            for (idx in activeChunkIndices.indices) {
-                val logicalIdx = activeChunkIndices[idx]
-                val dur = activeDurationsMs.getOrNull(idx) ?: continue
-                val plan = newPlans.getOrNull(logicalIdx)
-                if (plan != null) {
-                    newPlans[logicalIdx] = plan.copy(actualDurationMs = dur)
-                }
-            }
-            var currentStart = 0L
-            for (i in newPlans.indices) {
-                val pt = newPlans[i]
-                newPlans[i] = pt.copy(actualStartMs = currentStart)
-                currentStart += pt.actualDurationMs ?: pt.estimatedDurationMs
-            }
-            activeChunkPlans = newPlans
-        }
+        refreshTimeline()
 
         activeChunkIndices.forEach(requestedChunks::complete)
         waitingForNextChunk = false
         activeChunkIndex = 0
+        lastTransitionChunk = activeChunkIndices.firstOrNull()
         speed = session.speed
 
         if (activeFiles.isEmpty()) {
@@ -268,7 +287,7 @@ class NarrationPlayerManager @Inject constructor(
 
         val p = ensurePlayerOrStartService()
         if (p == null) {
-            pendingStartSession = session
+            pendingStartSession = activeSession?.copy(files = activeFiles, chunkIndices = activeChunkIndices, cues = activeCues)
             pendingInitialPositionMs = initialPositionMs
             markPreparing(session.noteId, session.noteTitle, session.voice, NarrationProvider.fromModel(session.model))
             return@runOnMain
@@ -292,12 +311,15 @@ class NarrationPlayerManager @Inject constructor(
         p.playbackParameters = PlaybackParameters(speed)
         Log.d(Tag, "startup media-items source=${session.noteId.take(96)} count=${mediaItems.size} elapsedMs=${SystemClock.elapsedRealtime() - mediaItemsStartedAt}")
         p.prepare()
+        startWatchdog(initialPositionMs)
 
         if (initialPositionMs > 0L) {
-            seekTo(initialPositionMs)
+            seekTo(initialPositionMs, session.resumeTarget)
         } else {
             p.play()
+            checkAndFillBuffer()
         }
+        activeSession = activeSession?.copy(resumeTarget = null)
         Log.d(Tag, "startup player-attached source=${session.noteId.take(96)} elapsedMs=${SystemClock.elapsedRealtime() - attachStartedAt}")
     }
 
@@ -305,65 +327,50 @@ class NarrationPlayerManager @Inject constructor(
     fun acceptDemandChunk(session: NarrationSession, initialPositionMs: Long = 0L) = runOnMain {
         val chunkIndex = session.chunkIndices.firstOrNull() ?: return@runOnMain
         requestedChunks.complete(chunkIndex)
+        if (bufferRequest == chunkIndex) bufferRequest = null
         val current = activeSession
         if (current?.cacheKey != session.cacheKey || activeFiles.isEmpty()) {
             startStreaming(session, session.totalChunks, initialPositionMs)
             return@runOnMain
         }
-        if (chunkIndex in activeChunkIndices) return@runOnMain
+        val insertIdx = NarrationTimeline.insertionIndex(activeChunkIndices, chunkIndex) ?: return@runOnMain
 
+        // Merge incoming plans only if we have none yet (first chunk). Never overwrite known actuals.
+        if (activeChunkPlans.isEmpty()) activeChunkPlans = session.chunkPlans
         activeSession = current.copy(cues = (activeCues + session.cues).distinctBy { cue -> cue.chunkIndex to cue.startMs })
         activeCues = activeSession?.cues.orEmpty()
-        activeChunkPlans = session.chunkPlans
 
-        val p = player ?: return@runOnMain
+        val p = player
         val file = session.files.first()
         val dur = readDurationMs(file)
 
-        var insertIdx = activeChunkIndices.indexOfFirst { it > chunkIndex }
-        if (insertIdx == -1) insertIdx = activeChunkIndices.size
+        // Insert in canonical order
+        // If inserting before the currently playing item, bump activeChunkIndex
+        if (insertIdx <= activeChunkIndex) activeChunkIndex++
         
         activeChunkIndices = activeChunkIndices.take(insertIdx) + listOf(chunkIndex) + activeChunkIndices.drop(insertIdx)
         activeFiles = activeFiles.take(insertIdx) + listOf(file) + activeFiles.drop(insertIdx)
         activeDurationsMs = activeDurationsMs.take(insertIdx) + listOf(dur) + activeDurationsMs.drop(insertIdx)
-        p.addMediaItem(insertIdx, buildMediaItem(session, file))
+        p?.addMediaItem(insertIdx, buildMediaItem(session, file))
+        activeChunkIndex = p?.currentMediaItemIndex?.coerceAtLeast(0) ?: activeChunkIndex
         
         expectedChunks = maxOf(expectedChunks, session.totalChunks)
-        streamingGeneration = chunkIndex < expectedChunks - 1
+        streamingGeneration = activeChunkIndices.size < expectedChunks
 
-        val newPlans = activeChunkPlans.toMutableList()
-        val plan = newPlans.getOrNull(chunkIndex)
-        if (plan != null) {
-            newPlans[chunkIndex] = plan.copy(actualDurationMs = dur)
-            var currentStart = 0L
-            for (i in newPlans.indices) {
-                val pt = newPlans[i]
-                newPlans[i] = pt.copy(actualStartMs = currentStart)
-                currentStart += pt.actualDurationMs ?: pt.estimatedDurationMs
-            }
-            activeChunkPlans = newPlans
-        }
+        // Rebuild timeline using ALL known durations (preserves previously learned actuals)
+        refreshTimeline()
 
-        val pending = pendingSeekMs
-        if (pending != null) {
-            val pendingTarget = NarrationDemandPolicy.chunkForPosition(pending, activeChunkPlans)
-            if (pendingTarget == chunkIndex) {
-                val targetPlan = activeChunkPlans.getOrNull(pendingTarget)
-                val chunkStartMs = targetPlan?.actualStartMs ?: targetPlan?.estimatedStartMs ?: 0L
-                val localTarget = (pending - chunkStartMs).coerceIn(0L, dur.coerceAtLeast(0L))
-                pendingSeekMs = null
-                waitingForNextChunk = false
-                p.seekTo(insertIdx, localTarget)
-                p.play()
-            }
-        } else if (waitingForNextChunk && p.playbackState == Player.STATE_ENDED) {
+        if (pendingSeekMs == null && waitingForNextChunk && p?.playbackState == Player.STATE_ENDED) {
             val nextExpected = (activeChunkIndices.getOrNull(activeChunkIndex) ?: activeChunkIndex) + 1
             if (chunkIndex == nextExpected) {
                 waitingForNextChunk = false
-                p.seekToNextMediaItem()
-                p.play()
+                p.seekTo(insertIdx, 0L)
+                p.prepare()
+                if (playbackRequested) p.play()
             }
         }
+        activeSession = activeSession?.copy(files = activeFiles, chunkIndices = activeChunkIndices, chunkPlans = activeChunkPlans)
+        if (p == null) pendingStartSession = activeSession
         
         _state.update {
             it.copy(
@@ -374,6 +381,7 @@ class NarrationPlayerManager @Inject constructor(
         }
         
         resumePendingSeekIfReady()
+        checkAndFillBuffer()
     }
 
 
@@ -393,6 +401,7 @@ class NarrationPlayerManager @Inject constructor(
         }
         expectedChunks = totalChunks.coerceAtLeast(session.files.size)
         streamingGeneration = totalChunks > session.files.size
+        refreshTimeline()
 
         val p = player
         if (p != null && newFiles.isNotEmpty()) {
@@ -433,6 +442,7 @@ class NarrationPlayerManager @Inject constructor(
         }
         expectedChunks = session.files.size
         streamingGeneration = false
+        refreshTimeline()
         updatePlaybackState(_state.value.status, _state.value.label.ifBlank { "Playing" })
         resumePendingSeekIfReady(force = true)
     }
@@ -447,20 +457,33 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     fun pause() = runOnMain {
+        playbackRequested = false
+        watchdogJob?.cancel()
         val p = player
-        if (p != null && p.isPlaying) {
-            p.pause()
-        }
+        p?.pause()
         updatePlaybackState(NarrationPlaybackStatus.Paused, "Paused")
         persistAzureProgress(force = true)
     }
 
     fun resume() = runOnMain {
+        playbackRequested = true
         val p = player
         if (p != null) {
             p.playbackParameters = PlaybackParameters(speed)
             updatePlaybackState(NarrationPlaybackStatus.Preparing, "Buffering narration...")
+            if (pendingSeekMs != null) {
+                startWatchdog(pendingSeekMs!!)
+                resumePendingSeekIfReady()
+                pendingSeek.target?.let { requestChunk(it.chunkIndex, "resume", priority = true) }
+                return@runOnMain
+            }
+            if (demandDriven && p.playbackState == Player.STATE_ENDED) {
+                seekTo(globalPositionMs())
+                return@runOnMain
+            }
+            if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()
+            checkAndFillBuffer()
             return@runOnMain
         }
         val session = activeSession ?: return@runOnMain
@@ -483,10 +506,10 @@ class NarrationPlayerManager @Inject constructor(
         seekTo((currentPos + 10_000L).coerceAtMost((totalDur - 250L).coerceAtLeast(0L)))
     }
 
-    fun seekTo(totalPositionMs: Long) = runOnMain {
+    private fun startWatchdog(totalPositionMs: Long) {
         watchdogJob?.cancel()
         watchdogJob = scope.launch {
-            kotlinx.coroutines.delay(10_000L)
+            delay(10_000L)
             if (_state.value.status == NarrationPlaybackStatus.Generating || _state.value.status == NarrationPlaybackStatus.Preparing) {
                 val p = player
                 Log.e(Tag, """
@@ -500,58 +523,53 @@ class NarrationPlayerManager @Inject constructor(
                     playWhenReady: ${p?.playWhenReady}
                     ui state: ${_state.value.status}
                     activeChunkIndices: $activeChunkIndices
+                    bufferRequest: $bufferRequest
+                    requestedChunks: ${requestedChunks.snapshot()}
                 """.trimIndent())
-                if (pendingSeekMs != null) {
-                    showError(activeSession?.noteId, activeSession?.noteTitle.orEmpty(), "Narration startup timed out (10s).")
-                }
+                _state.update { it.copy(label = "Still preparing narration. You can retry if this continues.") }
             }
         }
+    }
+
+    fun seekTo(totalPositionMs: Long, canonicalTarget: NarrationSeekTarget? = null) = runOnMain {
         if (activeFiles.isEmpty() && activeChunkPlans.isEmpty()) return@runOnMain
+        playbackRequested = true
+        startWatchdog(totalPositionMs)
+        bufferScheduler.reset()
         if (demandDriven) {
             val totalDuration = estimatedTotalDurationMs().coerceAtLeast(1L)
             val target = totalPositionMs.coerceIn(0L, (totalDuration - 250L).coerceAtLeast(0L))
-            val targetChunk = NarrationDemandPolicy.chunkForPosition(target, activeChunkPlans)
-            val playlistIndex = activeChunkIndices.indexOf(targetChunk)
-            if (playlistIndex >= 0) {
-                val plan = activeChunkPlans.getOrNull(targetChunk)
-                val chunkStartMs = plan?.actualStartMs ?: plan?.estimatedStartMs ?: 0L
-                val actualDur = plan?.actualDurationMs ?: activeDurationsMs.getOrNull(playlistIndex) ?: 1L
-                val localPosition = (target - chunkStartMs).coerceIn(0L, actualDur)
-                pendingSeekMs = null
-                waitingForNextChunk = false
-                player?.seekTo(playlistIndex, localPosition)
-                player?.play()
-                activeChunkIndex = playlistIndex
-                _state.update {
-                    it.copy(
-                        status = NarrationPlaybackStatus.Preparing,
-                        label = "Buffering narration...",
-                        currentChunk = targetChunk + 1,
-                        totalPositionMs = target,
-                        error = null,
-                    )
-                }
-                updatePlaybackState(NarrationPlaybackStatus.Preparing, "Buffering narration...")
-            } else {
-                pendingSeekMs = target
-                waitingForNextChunk = true
-                player?.pause()
-                _state.update {
-                    it.copy(
-                        status = NarrationPlaybackStatus.Generating,
-                        label = "Generating part ${targetChunk + 1}...",
-                        currentChunk = targetChunk + 1,
-                        totalPositionMs = target,
-                        error = null,
-                    )
-                }
-                requestChunk(targetChunk, "seek")
+            if (canonicalTarget != null) pendingSeek.requestTarget(target, canonicalTarget)
+            else pendingSeek.request(target, activeChunkPlans)
+            val targetChunk = pendingSeek.target!!.chunkIndex
+            waitingForNextChunk = true
+            player?.pause()
+            _state.update {
+                it.copy(
+                    status = NarrationPlaybackStatus.Generating,
+                    label = "Loading part ${targetChunk + 1}...",
+                    currentChunk = targetChunk + 1,
+                    totalPositionMs = target,
+                    activeSentence = "",
+                    error = null,
+                )
             }
+            resumePendingSeekIfReady()
+            if (pendingSeekMs != null) requestChunk(targetChunk, "seek", priority = true)
+            checkAndFillBuffer()
             return@runOnMain
         }
         if (activeDurationsMs.size != activeFiles.size) activeDurationsMs = activeFiles.map(::readDurationMs)
         val generatedDuration = activeDurationsMs.sum().takeIf { it > 0L } ?: return@runOnMain
-        seekWithinGenerated(totalPositionMs.coerceIn(0L, (generatedDuration - 250L).coerceAtLeast(0L)))
+        if (streamingGeneration && totalPositionMs >= generatedDuration) {
+            pendingSeek.requestStreaming(totalPositionMs)
+            waitingForNextChunk = true
+            player?.pause()
+            updatePlaybackState(NarrationPlaybackStatus.Generating, "Loading saved position...")
+        } else {
+            pendingSeek.clear()
+            seekWithinGenerated(totalPositionMs.coerceIn(0L, (generatedDuration - 250L).coerceAtLeast(0L)))
+        }
     }
 
 
@@ -611,12 +629,48 @@ class NarrationPlayerManager @Inject constructor(
     }
 
     private fun stopTicker() {
-        watchdogJob?.cancel()
         tickerJob?.cancel()
         tickerJob = null
     }
 
+    private fun refreshTimeline() {
+        if (activeChunkPlans.isEmpty()) return
+        val knownDurations = mutableMapOf<Int, Long>()
+        for (i in activeChunkIndices.indices) {
+            val logicalIdx = activeChunkIndices[i]
+            val dur = activeDurationsMs.getOrNull(i) ?: continue
+            if (dur > 0L) knownDurations[logicalIdx] = dur
+        }
+        activeChunkPlans = NarrationTimeline.rebuild(activeChunkPlans, knownDurations)
+        activeSession = activeSession?.copy(chunkPlans = activeChunkPlans)
+    }
+
+    private fun learnPlayerDuration() {
+        val p = player ?: return
+        val index = p.currentMediaItemIndex
+        val duration = p.duration.takeIf { it > 0L } ?: return
+        if (index !in activeDurationsMs.indices || activeDurationsMs[index] == duration) return
+        activeDurationsMs = activeDurationsMs.toMutableList().also { it[index] = duration }
+        refreshTimeline()
+    }
+
+    private fun checkAndFillBuffer() {
+        if (!demandDriven || pendingSeekMs != null || bufferRequest != null) return
+        val status = _state.value.status
+        if (status != NarrationPlaybackStatus.Playing && status != NarrationPlaybackStatus.Generating && status != NarrationPlaybackStatus.Preparing) return
+
+        val p = player
+        val playlistIndex = p?.currentMediaItemIndex?.coerceAtLeast(0) ?: activeChunkIndex
+        val chunkPosition = p?.currentPosition?.coerceAtLeast(0L) ?: 0L
+
+        val next = bufferScheduler.nextChunk(activeChunkIndices, activeDurationsMs, playlistIndex, chunkPosition, expectedChunks)
+            ?: return
+        bufferRequest = next
+        requestChunk(next, "buffer-refill")
+    }
+
     private fun updatePlaybackState(status: NarrationPlaybackStatus, label: String) {
+        learnPlayerDuration()
         val p = player
         val session = activeSession
         val playlistIndex = p?.currentMediaItemIndex?.coerceAtLeast(0) ?: activeChunkIndex
@@ -628,39 +682,10 @@ class NarrationPlayerManager @Inject constructor(
             ?: 0L
 
         val globalPos = pendingSeekMs ?: globalPositionMs(chunkPosition)
-        val activeCue = NarrationDemandPolicy.activeCue(activeCues, chunkIndex, chunkPosition)
+        val activeCue = if (pendingSeekMs == null) NarrationDemandPolicy.activeCue(activeCues, chunkIndex, chunkPosition) else null
         val activeSentence = activeCue?.displayText.orEmpty()
         if (activeCue != null && activeSentence != _state.value.activeSentence) {
             Log.d(Tag, "highlight-segment source=${session?.noteId.orEmpty().take(96)} chunk=${chunkIndex + 1} start=${activeCue.textStart} end=${activeCue.textEnd}")
-        }
-
-        if (demandDriven && (status == NarrationPlaybackStatus.Playing || status == NarrationPlaybackStatus.Generating || status == NarrationPlaybackStatus.Preparing)) {
-            var contiguousPlayableMs = chunkDuration - chunkPosition
-            for (i in playlistIndex + 1 until activeChunkIndices.size) {
-                if (activeChunkIndices[i] == activeChunkIndices[i - 1] + 1) {
-                    contiguousPlayableMs += activeDurationsMs[i]
-                } else {
-                    break // gap found
-                }
-            }
-            if (contiguousPlayableMs < 0L) contiguousPlayableMs = 0L
-
-            if (contiguousPlayableMs <= 150_000L) {
-                var nextNeeded = (activeChunkIndices.getOrNull(playlistIndex) ?: activeChunkIndex) + 1
-                var targetBufferMs = contiguousPlayableMs
-                while (nextNeeded < expectedChunks && targetBufferMs < 240_000L) {
-                    if (nextNeeded !in activeChunkIndices) {
-                        requestChunk(nextNeeded, "buffer-refill")
-                        // Estimate added buffer to stop requesting once we queue enough
-                        targetBufferMs += activeChunkPlans.getOrNull(nextNeeded)?.estimatedDurationMs ?: 120_000L
-                    } else {
-                        // Already downloaded, just add its actual duration to target
-                        val idx = activeChunkIndices.indexOf(nextNeeded)
-                        if (idx >= 0) targetBufferMs += activeDurationsMs.getOrNull(idx) ?: 120_000L
-                    }
-                    nextNeeded++
-                }
-            }
         }
 
         _state.value = _state.value.copy(
@@ -680,6 +705,7 @@ class NarrationPlayerManager @Inject constructor(
             totalDurationMs = estimatedTotalDurationMs().takeIf { it > 0L } ?: chunkDuration,
             activeSentence = activeSentence,
         )
+        checkAndFillBuffer()
         persistAzureProgress()
     }
 
@@ -695,12 +721,14 @@ class NarrationPlayerManager @Inject constructor(
             }
             accumulated += duration
         }
-        val chunkOffset = (target - accumulated).coerceAtLeast(0L)
+        val chunkOffset = NarrationTimeline.safeLocalOffset(target - accumulated, activeDurationsMs[targetChunk])
         val p = player
         if (p != null) {
             p.seekTo(targetChunk, chunkOffset)
+            if (p.playbackState == Player.STATE_ENDED || p.playbackState == Player.STATE_IDLE) p.prepare()
             if (!p.isPlaying) p.play()
         }
+        updatePlaybackState(if (p?.isPlaying == true) NarrationPlaybackStatus.Playing else NarrationPlaybackStatus.Preparing, "Buffering narration...")
         activeChunkIndex = targetChunk
         _state.update {
             it.copy(
@@ -714,9 +742,25 @@ class NarrationPlayerManager @Inject constructor(
 
     private fun resumePendingSeekIfReady(force: Boolean = false) {
         val target = pendingSeekMs ?: return
+        if (demandDriven) {
+            val p = player ?: return
+            val resolved = pendingSeek.resolve(activeChunkIndices, activeDurationsMs) ?: return
+            waitingForNextChunk = false
+            activeChunkIndex = resolved.playlistIndex
+            p.seekTo(resolved.playlistIndex, resolved.offsetMs)
+            if (p.playbackState == Player.STATE_ENDED || p.playbackState == Player.STATE_IDLE) p.prepare()
+            if (playbackRequested) p.play() else p.pause()
+            val status = when {
+                !playbackRequested -> NarrationPlaybackStatus.Paused
+                p.isPlaying -> NarrationPlaybackStatus.Playing
+                else -> NarrationPlaybackStatus.Preparing
+            }
+            updatePlaybackState(status, if (status == NarrationPlaybackStatus.Paused) "Paused" else "Buffering narration...")
+            return
+        }
         val generatedDuration = activeDurationsMs.sum()
         if (force || generatedDuration > target) {
-            pendingSeekMs = null
+            pendingSeek.clear()
             waitingForNextChunk = false
             seekWithinGenerated(target.coerceAtMost((generatedDuration - 250L).coerceAtLeast(0L)))
         }
@@ -757,10 +801,15 @@ class NarrationPlayerManager @Inject constructor(
         activeCues = emptyList()
         expectedChunks = 0
         activeChunkIndex = 0
+        lastTransitionChunk = null
         activeSession = null
         streamingGeneration = false
         waitingForNextChunk = false
-        pendingSeekMs = null
+        playbackRequested = false
+        pendingSeek.clear()
+        bufferRequest = null
+        bufferScheduler.reset()
+        activeChunkPlans = emptyList()
         pendingStartSession = null
         pendingInitialPositionMs = 0L
         demandDriven = false
@@ -821,7 +870,7 @@ class NarrationPlayerManager @Inject constructor(
         return activeDurationsMs.take(activeChunkIndex).sum() + chunkPositionMs
     }
 
-    private fun requestChunk(chunkIndex: Int, reason: String) {
+    private fun requestChunk(chunkIndex: Int, reason: String, priority: Boolean = false) {
         if (!demandDriven || chunkIndex !in 0 until expectedChunks) return
         if (chunkIndex in activeChunkIndices || !requestedChunks.tryStart(chunkIndex)) {
             Log.d(Tag, "duplicate-request-prevented chunk=${chunkIndex + 1} reason=$reason")
@@ -834,7 +883,7 @@ class NarrationPlayerManager @Inject constructor(
             showError(activeSession?.noteId, activeSession?.noteTitle.orEmpty(), "Narration chunk loader is unavailable.")
             return
         }
-        listener(chunkIndex)
+        listener(chunkIndex, priority)
     }
 
     private fun readDurationMs(file: File): Long {

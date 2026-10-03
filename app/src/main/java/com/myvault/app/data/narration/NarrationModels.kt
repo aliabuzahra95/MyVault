@@ -189,6 +189,7 @@ data class NarrationSession(
     val totalChunks: Int = files.size,
     val demandDriven: Boolean = false,
     val chunkPlans: List<NarrationChunkPlan> = emptyList(),
+    val resumeTarget: NarrationSeekTarget? = null,
 )
 
 internal const val CloudNarrationChunkChars = 1_800
@@ -200,10 +201,10 @@ internal object NarrationDemandPolicy {
             val start = plans[i].actualStartMs ?: plans[i].estimatedStartMs
             val dur = plans[i].actualDurationMs ?: plans[i].estimatedDurationMs
             if (target >= start && target < start + dur) {
-                return i
+                return plans[i].index
             }
         }
-        return (plans.size - 1).coerceAtLeast(0)
+        return plans.lastOrNull()?.index ?: 0
     }
 
     fun activeCue(cues: List<NarrationCue>, chunkIndex: Int, positionMs: Long): NarrationCue? =
@@ -221,6 +222,9 @@ internal class NarrationChunkRequestTracker {
     fun complete(chunkIndex: Int) {
         pending.remove(chunkIndex)
     }
+
+    @Synchronized
+    fun snapshot(): Set<Int> = pending.toSet()
 
     @Synchronized
     fun clear() {

@@ -1,12 +1,16 @@
 package com.myvault.app.data.narration
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,11 +26,74 @@ class NarrationCacheManager private constructor(
     internal constructor(rootDir: File) : this({ rootDir })
 
     private val rootDir: File by lazy { rootDirectory().apply { mkdirs() } }
+    private val generationLocks = ConcurrentHashMap<String, Mutex>()
+
+    suspend fun <T> withChunkLock(cacheKey: String, action: suspend () -> T): T =
+        generationLocks.computeIfAbsent(cacheKey) { Mutex() }.withLock { action() }
 
     fun contentHash(text: String): String = sha256(text.toByteArray())
 
     fun renditionChunkKey(noteId: String, chunkText: String, model: String, voice: String): String =
         cacheKey(noteId, contentHash("$ChunkCacheVersion:$chunkText"), model, voice, 1f)
+
+    @Synchronized
+    fun restoreTimeline(cacheKey: String, plans: List<NarrationChunkPlan>,
+        noteId: String? = null, model: String = "", voice: String = ""): List<NarrationChunkPlan> {
+        val durations = readDurations(cacheKey).toMutableMap()
+        // Existing audio predates the duration ledger. Its persisted cues retain measured timing.
+        if (noteId != null) {
+            plans.filter { it.index !in durations }.forEach { plan ->
+                val chunkKey = renditionChunkKey(noteId, plan.text, model, voice)
+                val legacyFile = chunkFile(cacheKey, plan.index)
+                val chunkFile = chunkFile(chunkKey, 0)
+                val cues = when {
+                    isValidChunk(legacyFile, MinValidAudioBytes) -> readChunkCues(cacheKey, plan.index)
+                    isValidChunk(chunkFile, MinValidAudioBytes) -> readChunkCues(chunkKey, 0)
+                    else -> emptyList()
+                }
+                cues.maxOfOrNull { it.endMs }?.takeIf { it > 0L }?.let { durations[plan.index] = it }
+            }
+        }
+        return NarrationTimeline.rebuild(plans, durations)
+    }
+
+    @Synchronized
+    fun recordDuration(cacheKey: String, chunkIndex: Int, file: File): Map<Int, Long> {
+        val durations = readDurations(cacheKey).toMutableMap()
+        val duration = runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            } finally {
+                retriever.release()
+            }
+        }.getOrNull()
+        if (duration != null && duration > 0L) {
+            return recordKnownDuration(cacheKey, chunkIndex, duration)
+        }
+        return durations
+    }
+
+    @Synchronized
+    internal fun recordKnownDuration(cacheKey: String, chunkIndex: Int, durationMs: Long): Map<Int, Long> {
+        val durations = readDurations(cacheKey).toMutableMap()
+        if (durationMs <= 0L) return durations
+        durations[chunkIndex] = durationMs
+        val target = File(sessionDir(cacheKey), "durations.json")
+        val temp = File(target.parentFile, "durations.json.tmp")
+        temp.writeText(JSONObject(durations.mapKeys { it.key.toString() }).toString())
+        check(temp.renameTo(target)) { "Could not save narration timing." }
+        return durations
+    }
+
+    private fun readDurations(cacheKey: String): Map<Int, Long> = runCatching {
+        val json = JSONObject(File(sessionDir(cacheKey), "durations.json").readText())
+        json.keys().asSequence().mapNotNull { key ->
+            val index = key.toIntOrNull() ?: return@mapNotNull null
+            json.optLong(key).takeIf { it > 0L }?.let { index to it }
+        }.toMap()
+    }.getOrDefault(emptyMap())
 
     @Suppress("UNUSED_PARAMETER")
     fun cacheKey(noteId: String, contentHash: String, model: String, voice: String, speed: Float): String {

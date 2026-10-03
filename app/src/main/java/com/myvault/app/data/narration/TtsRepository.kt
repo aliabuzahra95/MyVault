@@ -30,6 +30,7 @@ class TtsRepository @Inject constructor(
         voice: String = NarrationConfig.DEFAULT_VOICE,
         speed: Float = 1f,
         requestedChunkIndex: Int = 0,
+        resumeProgress: NarrationProgress? = null,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
     ): NarrationSession = withContext(Dispatchers.IO) {
@@ -45,7 +46,12 @@ class TtsRepository @Inject constructor(
         val chunks = textPreparer.splitIntoChunks(cleanText, CloudNarrationChunkChars)
         if (chunks.isEmpty()) error("This note is empty.")
         Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
-        val index = requestedChunkIndex.coerceIn(0, chunks.lastIndex)
+        val plans = cacheManager.restoreTimeline(cacheKey, NarrationTimeline.plansForTexts(chunks), noteId, NarrationConfig.MODEL, normalizedVoice)
+        val resumeTarget = if (requestedChunkIndex < 0) {
+            val position = resumeProgress?.takeIf { it.cacheKey == cacheKey && !it.isStaleFor(contentHash) }?.positionMs ?: 0L
+            NarrationTimeline.seekTarget(position, plans)
+        } else null
+        val index = resumeTarget?.chunkIndex ?: requestedChunkIndex.coerceIn(0, chunks.lastIndex)
         val chunk = chunks[index]
         val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk, NarrationConfig.MODEL, normalizedVoice)
         Log.d(TimingTag, "chunk-requested source=${noteId.take(96)} provider=${NarrationProvider.OpenAi.storedValue} chunk=${index + 1}/${chunks.size}")
@@ -58,31 +64,34 @@ class TtsRepository @Inject constructor(
         val cueCacheKey = if (legacyTarget != null) cacheKey else chunkCacheKey
         val cueCacheIndex = if (legacyTarget != null) index else 0
         val target = cachedTarget ?: cacheManager.chunkFile(chunkCacheKey, 0)
-        if (cachedTarget == null) {
-            onChunkGenerating(index + 1, chunks.size)
-            val apiKey = BuildConfig.OPENAI_API_KEY.trim().takeIf { it.isNotBlank() }
-                ?: error("OpenAI narration is not configured. Add MYVAULT_OPENAI_API_KEY to the project or build environment.")
-            OpenAiRequestGuard.validateAndLogRequest(
-                featureName = OpenAiFeature.ListenMode,
-                endpointUrl = SpeechEndpoint,
-                model = NarrationConfig.MODEL,
-                noteId = noteId,
-                characterCount = chunk.length,
-                cacheStatus = "miss:chunk-${index + 1}",
-            )
-            Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
-            val requestStartedAt = SystemClock.elapsedRealtime()
-            requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
-            Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
-        } else {
-            OpenAiRequestGuard.logCacheDecision(
-                featureName = OpenAiFeature.ListenMode,
-                endpointUrl = SpeechEndpoint,
-                model = NarrationConfig.MODEL,
-                noteId = noteId,
-                characterCount = chunk.length,
-                cacheStatus = "hit:chunk-${index + 1}",
-            )
+        cacheManager.withChunkLock(chunkCacheKey) {
+            coroutineContext.ensureActive()
+            if (cachedTarget == null && (!target.exists() || target.length() < MinValidMp3Bytes)) {
+                onChunkGenerating(index + 1, chunks.size)
+                val apiKey = BuildConfig.OPENAI_API_KEY.trim().takeIf { it.isNotBlank() }
+                    ?: error("OpenAI narration is not configured. Add MYVAULT_OPENAI_API_KEY to the project or build environment.")
+                OpenAiRequestGuard.validateAndLogRequest(
+                    featureName = OpenAiFeature.ListenMode,
+                    endpointUrl = SpeechEndpoint,
+                    model = NarrationConfig.MODEL,
+                    noteId = noteId,
+                    characterCount = chunk.length,
+                    cacheStatus = "miss:chunk-${index + 1}",
+                )
+                Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
+                val requestStartedAt = SystemClock.elapsedRealtime()
+                requestSpeechWithRetry(apiKey, chunk, normalizedVoice, target, index + 1)
+                Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
+            } else {
+                OpenAiRequestGuard.logCacheDecision(
+                    featureName = OpenAiFeature.ListenMode,
+                    endpointUrl = SpeechEndpoint,
+                    model = NarrationConfig.MODEL,
+                    noteId = noteId,
+                    characterCount = chunk.length,
+                    cacheStatus = "hit:chunk-${index + 1}",
+                )
+            }
         }
         coroutineContext.ensureActive()
         val cues = cacheManager.readChunkCues(cueCacheKey, cueCacheIndex)
@@ -105,6 +114,8 @@ class TtsRepository @Inject constructor(
             chunkIndices = listOf(index),
             totalChunks = chunks.size,
             demandDriven = true,
+            chunkPlans = NarrationTimeline.rebuild(plans, cacheManager.recordDuration(cacheKey, index, target)),
+            resumeTarget = resumeTarget,
         ).also { session -> onChunkReady(session, index == chunks.lastIndex, chunks.size) }
     }
 

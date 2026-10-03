@@ -38,6 +38,7 @@ class AzureTtsRepository @Inject constructor(
         arabicVoice: String,
         speed: Float = 1f,
         requestedChunkIndex: Int = 0,
+        resumeProgress: NarrationProgress? = null,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
     ): NarrationSession = withContext(Dispatchers.IO) {
@@ -62,7 +63,12 @@ class AzureTtsRepository @Inject constructor(
             chunkSearchFrom = (start + chunk.length).coerceAtMost(cleanText.length)
             start
         }
-        val index = requestedChunkIndex.coerceIn(0, chunks.lastIndex)
+        val plans = cacheManager.restoreTimeline(cacheKey, NarrationTimeline.plansForTexts(chunks), noteId, model, normalizedVoice)
+        val resumeTarget = if (requestedChunkIndex < 0) {
+            val position = resumeProgress?.takeIf { it.cacheKey == cacheKey && !it.isStaleFor(contentHash) }?.positionMs ?: 0L
+            NarrationTimeline.seekTarget(position, plans)
+        } else null
+        val index = resumeTarget?.chunkIndex ?: requestedChunkIndex.coerceIn(0, chunks.lastIndex)
         val chunk = chunks[index]
         val chunkTextStart = chunkTextStarts[index]
         val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk, model, normalizedVoice)
@@ -81,24 +87,27 @@ class AzureTtsRepository @Inject constructor(
         val cueCacheIndex = if (legacyTarget != null) index else 0
         val chunkCueFile = cacheManager.chunkCueFile(cueCacheKey, cueCacheIndex)
         val target = cachedTarget ?: cacheManager.chunkFile(chunkCacheKey, 0)
-        if (cachedTarget == null) {
-            if (apiKey.isBlank()) error("Azure Speech API key is missing. Add it in Settings.")
-            onChunkGenerating(index + 1, chunks.size)
-            android.util.Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
-            val startedAt = android.os.SystemClock.elapsedRealtime()
-            val cues = requestSpeechWithRetry(
-                apiKey = apiKey.trim(),
-                region = normalizedRegion,
-                voice = normalizedVoice,
-                arabicVoice = normalizedArabicVoice,
-                text = chunk,
-                target = target,
-                partNumber = index + 1,
-                chunkIndex = index,
-                chunkTextStart = chunkTextStart,
-            ).withDisplayText(originalText, textPreparer)
-            chunkCueFile.writeText(cues.toCueJson())
-            android.util.Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt} bytes=${target.length()}")
+        cacheManager.withChunkLock(chunkCacheKey) {
+            coroutineContext.ensureActive()
+            if (cachedTarget == null && (!target.exists() || target.length() < MinValidMp3Bytes || !chunkCueFile.exists())) {
+                if (apiKey.isBlank()) error("Azure Speech API key is missing. Add it in Settings.")
+                onChunkGenerating(index + 1, chunks.size)
+                android.util.Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
+                val startedAt = android.os.SystemClock.elapsedRealtime()
+                val cues = requestSpeechWithRetry(
+                    apiKey = apiKey.trim(),
+                    region = normalizedRegion,
+                    voice = normalizedVoice,
+                    arabicVoice = normalizedArabicVoice,
+                    text = chunk,
+                    target = target,
+                    partNumber = index + 1,
+                    chunkIndex = index,
+                    chunkTextStart = chunkTextStart,
+                ).withDisplayText(originalText, textPreparer)
+                chunkCueFile.writeText(cues.toCueJson())
+                android.util.Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${android.os.SystemClock.elapsedRealtime() - startedAt} bytes=${target.length()}")
+            }
         }
         coroutineContext.ensureActive()
         val cues = chunkCueFile.readCuesOrEmpty().map { it.copy(chunkIndex = index) }
@@ -115,7 +124,8 @@ class AzureTtsRepository @Inject constructor(
             chunkIndices = listOf(index),
             totalChunks = chunks.size,
             demandDriven = true,
-            chunkPlans = chunks.mapIndexed { i, t -> NarrationChunkPlan(i, t, 0L, (t.split("\\s+".toRegex()).size * 400L)) },
+            chunkPlans = NarrationTimeline.rebuild(plans, cacheManager.recordDuration(cacheKey, index, target)),
+            resumeTarget = resumeTarget,
         ).also { session -> onChunkReady(session, index == chunks.lastIndex, chunks.size) }
     }
 

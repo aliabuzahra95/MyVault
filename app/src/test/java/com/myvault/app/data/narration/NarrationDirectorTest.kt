@@ -133,6 +133,15 @@ class NarrationDirectorTest {
     }
 
     @Test
+    fun testCanonicalChunksAndWordEstimatesDoNotDependOnPlanUnitIds() {
+        val text = (1..100).joinToString(" ") { "word" }
+        val first = director.planToChunks(director.createPlan("word-count", "", text))
+        val rebuilt = director.planToChunks(director.createPlan("word-count", "", text))
+        assertEquals(40_000L, first.sumOf { it.estimatedDurationMs })
+        assertEquals(first, rebuilt)
+    }
+
+    @Test
     fun testChunkingAlongUnitBoundaries() {
         val content = buildString {
             append("## Overview\n")

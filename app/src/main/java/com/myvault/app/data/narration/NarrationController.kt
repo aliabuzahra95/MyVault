@@ -10,10 +10,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,7 +43,9 @@ class NarrationController @Inject constructor(
     private var lastRequest: NarrationRequest? = null
     private val demandLock = Any()
     private val demandJobs = mutableMapOf<Int, Job>()
+    private val runningDemandChunks = mutableSetOf<Int>()
     private var demandChunkLoader: (suspend (Int) -> Unit)? = null
+    private val demandSlots = Semaphore(2)
 
     init {
         playerManager.setChunkRequestListener(::requestDemandChunk)
@@ -116,6 +121,7 @@ class NarrationController @Inject constructor(
             playerManager.markPreparing(noteId, noteTitle, voice, provider)
             var firstDelivery = true
             val loader: suspend (Int) -> Unit = { requestedChunk ->
+                val requestContext = currentCoroutineContext()
                 geminiTtsRepository.generateNarrationProgressively(
                     noteId = noteId,
                     noteTitle = noteTitle,
@@ -125,12 +131,13 @@ class NarrationController @Inject constructor(
                     speed = state.value.speed,
                     apiKeyOverride = geminiSettings.apiKey.takeIf { it.isNotBlank() },
                     requestedChunkIndex = requestedChunk,
+                    resumeProgress = progressStore.getUnified(noteId).takeIf { resume },
                     onChunkGenerating = { currentChunk, totalChunks ->
-                        coroutineContext.ensureActive()
+                        requestContext.ensureActive()
                         playerManager.markGenerating(noteId, noteTitle, currentChunk, totalChunks, voice)
                     },
                     onChunkReady = { session, _, _ ->
-                        coroutineContext.ensureActive()
+                        requestContext.ensureActive()
                         if (firstDelivery) {
                             firstDelivery = false
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -142,7 +149,7 @@ class NarrationController @Inject constructor(
                 )
             }
             installDemandLoader(loader)
-            runDemandChunk(0, loader, noteId, noteTitle, "Couldn’t generate Gemini narration.")
+            runDemandChunk(if (resume) -1 else 0, loader, noteId, noteTitle, "Couldn’t generate Gemini narration.")
         }
     }
 
@@ -189,6 +196,7 @@ class NarrationController @Inject constructor(
             playerManager.markPreparing(request.noteId, request.title, request.voice, request.provider)
             var firstDelivery = true
             val loader: suspend (Int) -> Unit = { requestedChunk ->
+                val requestContext = currentCoroutineContext()
                 ttsRepository.generateNarrationProgressively(
                     noteId = request.noteId,
                     noteTitle = request.title,
@@ -196,12 +204,13 @@ class NarrationController @Inject constructor(
                     voice = request.voice,
                     speed = state.value.speed,
                     requestedChunkIndex = requestedChunk,
+                    resumeProgress = progressStore.getUnified(noteId).takeIf { resume },
                     onChunkGenerating = { currentChunk, totalChunks ->
-                        coroutineContext.ensureActive()
+                        requestContext.ensureActive()
                         playerManager.markGenerating(request.noteId, request.title, currentChunk, totalChunks, request.voice)
                     },
                     onChunkReady = { session, _, _ ->
-                        coroutineContext.ensureActive()
+                        requestContext.ensureActive()
                         if (firstDelivery) {
                             firstDelivery = false
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -213,7 +222,7 @@ class NarrationController @Inject constructor(
                 )
             }
             installDemandLoader(loader)
-            runDemandChunk(0, loader, request.noteId, request.title, "Couldn’t generate narration.")
+            runDemandChunk(if (resume) -1 else 0, loader, request.noteId, request.title, "Couldn’t generate narration.")
         }
     }
 
@@ -263,6 +272,7 @@ class NarrationController @Inject constructor(
             playerManager.markPreparing(request.noteId, request.title, request.voice, request.provider)
             var firstDelivery = true
             val loader: suspend (Int) -> Unit = { requestedChunk ->
+                val requestContext = currentCoroutineContext()
                 azureTtsRepository.generateNarrationProgressively(
                     noteId = request.noteId,
                     noteTitle = request.title,
@@ -273,12 +283,13 @@ class NarrationController @Inject constructor(
                     arabicVoice = settings.arabicVoice,
                     speed = state.value.speed,
                     requestedChunkIndex = requestedChunk,
+                    resumeProgress = progressStore.getUnified(noteId).takeIf { resume },
                     onChunkGenerating = { currentChunk, totalChunks ->
-                        coroutineContext.ensureActive()
+                        requestContext.ensureActive()
                         playerManager.markGenerating(request.noteId, request.title, currentChunk, totalChunks, request.voice)
                     },
                     onChunkReady = { session, _, _ ->
-                        coroutineContext.ensureActive()
+                        requestContext.ensureActive()
                         if (firstDelivery) {
                             firstDelivery = false
                             val resumePosition = playerManager.resumePositionFor(session).takeIf { resume } ?: 0L
@@ -290,7 +301,7 @@ class NarrationController @Inject constructor(
                 )
             }
             installDemandLoader(loader)
-            runDemandChunk(0, loader, request.noteId, request.title, "Couldn’t generate Azure narration.")
+            runDemandChunk(if (resume) -1 else 0, loader, request.noteId, request.title, "Couldn’t generate Azure narration.")
         }
     }
 
@@ -383,7 +394,18 @@ class NarrationController @Inject constructor(
         oldJobs.forEach(Job::cancel)
     }
 
-    private fun requestDemandChunk(chunkIndex: Int) {
+    private fun requestDemandChunk(chunkIndex: Int, priority: Boolean) {
+        if (priority) {
+            val obsolete = synchronized(demandLock) {
+                demandJobs.filterKeys { it != chunkIndex && it !in runningDemandChunks }.toMap().also { jobs ->
+                    jobs.keys.forEach(demandJobs::remove)
+                }
+            }
+            obsolete.forEach { (index, job) ->
+                job.cancel()
+                playerManager.releaseChunkRequest(index, failed = false)
+            }
+        }
         val loader = synchronized(demandLock) {
             if (demandJobs[chunkIndex]?.isActive == true) {
                 Log.d(TimingTag, "duplicate-request-prevented chunk=${chunkIndex + 1} controller=true")
@@ -394,15 +416,25 @@ class NarrationController @Inject constructor(
         val source = lastRequest
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                runDemandChunk(
-                    chunkIndex = chunkIndex,
-                    loader = loader,
-                    noteId = source?.noteId.orEmpty(),
-                    noteTitle = source?.title.orEmpty(),
-                    fallbackMessage = "Couldn’t generate the requested narration part.",
-                )
+                demandSlots.withPermit {
+                    currentCoroutineContext().ensureActive()
+                    synchronized(demandLock) { runningDemandChunks.add(chunkIndex) }
+                    runDemandChunk(
+                        chunkIndex = chunkIndex,
+                        loader = loader,
+                        noteId = source?.noteId.orEmpty(),
+                        noteTitle = source?.title.orEmpty(),
+                        fallbackMessage = "Couldn’t generate the requested narration part.",
+                    )
+                }
             } finally {
-                synchronized(demandLock) { demandJobs.remove(chunkIndex) }
+                val ownJob = currentCoroutineContext()[Job]
+                synchronized(demandLock) {
+                    if (demandJobs[chunkIndex] === ownJob) {
+                        demandJobs.remove(chunkIndex)
+                        runningDemandChunks.remove(chunkIndex)
+                    }
+                }
             }
         }
         synchronized(demandLock) { demandJobs[chunkIndex] = job }
@@ -421,6 +453,7 @@ class NarrationController @Inject constructor(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            currentCoroutineContext().ensureActive()
             playerManager.releaseChunkRequest(chunkIndex)
             playerManager.showError(noteId, noteTitle, error.message?.takeIf { it.isNotBlank() } ?: fallbackMessage)
         }

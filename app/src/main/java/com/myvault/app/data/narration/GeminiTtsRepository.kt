@@ -38,6 +38,7 @@ class GeminiTtsRepository @Inject constructor(
         voice: String = GeminiNarrationConfig.DEFAULT_VOICE,
         speed: Float = 1f,
         requestedChunkIndex: Int = 0,
+        resumeProgress: NarrationProgress? = null,
         apiKeyOverride: String? = null,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
@@ -53,10 +54,14 @@ class GeminiTtsRepository @Inject constructor(
         val cacheKey = cacheManager.cacheKey(noteId, contentHash, effectiveModel, normalizedVoice, 1f)
 
         val chunkPlanStartedAt = SystemClock.elapsedRealtime()
-        val chunks = director.planToChunks(plan)
+        val chunks = cacheManager.restoreTimeline(cacheKey, director.planToChunks(plan), noteId, effectiveModel, normalizedVoice)
         if (chunks.isEmpty()) error("This content is empty.")
         Log.d(TimingTag, "chunk-planning source=${noteId.take(96)} provider=${NarrationProvider.fromModel(effectiveModel).storedValue} chunks=${chunks.size} elapsedMs=${SystemClock.elapsedRealtime() - chunkPlanStartedAt}")
-        val index = requestedChunkIndex.coerceIn(0, chunks.lastIndex)
+        val resumeTarget = if (requestedChunkIndex < 0) {
+            val position = resumeProgress?.takeIf { it.cacheKey == cacheKey && !it.isStaleFor(contentHash) }?.positionMs ?: 0L
+            NarrationTimeline.seekTarget(position, chunks)
+        } else null
+        val index = resumeTarget?.chunkIndex ?: requestedChunkIndex.coerceIn(0, chunks.lastIndex)
         val chunk = chunks[index]
         val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk.text, effectiveModel, normalizedVoice)
         Log.d(TimingTag, "chunk-requested source=${noteId.take(96)} provider=${NarrationProvider.fromModel(effectiveModel).storedValue} chunk=${index + 1}/${chunks.size}")
@@ -69,15 +74,18 @@ class GeminiTtsRepository @Inject constructor(
         val cueCacheKey = if (legacyTarget != null) cacheKey else chunkCacheKey
         val cueCacheIndex = if (legacyTarget != null) index else 0
         val target = cachedTarget ?: cacheManager.chunkFile(chunkCacheKey, 0)
-        if (cachedTarget == null) {
-            onChunkGenerating(index + 1, chunks.size)
-            val apiKey = apiKeyOverride?.takeIf { it.isNotBlank() }
-                ?: BuildConfig.GEMINI_API_KEY.trim().takeIf { it.isNotBlank() }
-                ?: error("Gemini narration is not configured. Add MYVAULT_GEMINI_API_KEY to local.properties or settings.")
-            Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
-            val requestStartedAt = SystemClock.elapsedRealtime()
-            requestSpeechWithRetry(apiKey, effectiveModel, chunk.text, normalizedVoice, target, index + 1)
-            Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
+        cacheManager.withChunkLock(chunkCacheKey) {
+            coroutineContext.ensureActive()
+            if (cachedTarget == null && (!target.exists() || target.length() < MinValidAudioBytes)) {
+                onChunkGenerating(index + 1, chunks.size)
+                val apiKey = apiKeyOverride?.takeIf { it.isNotBlank() }
+                    ?: BuildConfig.GEMINI_API_KEY.trim().takeIf { it.isNotBlank() }
+                    ?: error("Gemini narration is not configured. Add MYVAULT_GEMINI_API_KEY to local.properties or settings.")
+                Log.d(TimingTag, "generation-started source=${noteId.take(96)} chunk=${index + 1}")
+                val requestStartedAt = SystemClock.elapsedRealtime()
+                requestSpeechWithRetry(apiKey, effectiveModel, chunk.text, normalizedVoice, target, index + 1)
+                Log.d(TimingTag, "generation-completed source=${noteId.take(96)} chunk=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - requestStartedAt} bytes=${target.length()}")
+            }
         }
         coroutineContext.ensureActive()
         val cues = cacheManager.readChunkCues(cueCacheKey, cueCacheIndex)
@@ -100,7 +108,8 @@ class GeminiTtsRepository @Inject constructor(
             chunkIndices = listOf(index),
             totalChunks = chunks.size,
             demandDriven = true,
-            chunkPlans = chunks,
+            chunkPlans = NarrationTimeline.rebuild(chunks, cacheManager.recordDuration(cacheKey, index, target)),
+            resumeTarget = resumeTarget,
         )
         onChunkReady(session, index == chunks.lastIndex, chunks.size)
         session

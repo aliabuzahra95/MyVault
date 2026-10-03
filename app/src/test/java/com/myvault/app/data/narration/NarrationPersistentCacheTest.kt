@@ -7,6 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 
 class NarrationPersistentCacheTest {
     private val roots = mutableListOf<File>()
@@ -40,6 +44,40 @@ class NarrationPersistentCacheTest {
 
         assertEquals(listOf(first.name, second.name), playablePrefix.map(File::getName))
         assertTrue(playablePrefix.size < 4)
+    }
+
+    @Test
+    fun overlappingRequestsSynthesizeOnlyOneCopyOfTheSameChunk() = runBlocking {
+        val manager = NarrationCacheManager(newRoot())
+        val target = manager.chunkFile("same-rendition", 0)
+        var generations = 0
+        List(4) {
+            async {
+                manager.withChunkLock("same-rendition") {
+                    if (!target.exists()) {
+                        generations++
+                        delay(10L)
+                        target.writeBytes(ByteArray(1_024))
+                    }
+                }
+            }
+        }.awaitAll()
+        assertEquals(1, generations)
+    }
+
+    @Test
+    fun measuredTimelineSurvivesRestartAndProviderNamespacesRemainIndependent() {
+        val root = newRoot()
+        val manager = NarrationCacheManager(root)
+        val plans = NarrationTimeline.plansForTexts(listOf("First paragraph", "Second paragraph"))
+        manager.recordKnownDuration("gemini-puck", 0, 83_000L)
+        manager.recordKnownDuration("gemini-puck", 1, 60_000L)
+        manager.recordKnownDuration("openai-cedar", 0, 40_000L)
+        val reconstructed = NarrationCacheManager(root)
+        val restored = reconstructed.restoreTimeline("gemini-puck", plans)
+        assertEquals(83_000L, restored[1].actualStartMs)
+        assertEquals(60_000L, restored[1].actualDurationMs)
+        assertEquals(40_000L, reconstructed.restoreTimeline("openai-cedar", plans)[1].actualStartMs)
     }
 
     @Test
