@@ -263,6 +263,7 @@ class NarrationController @Inject constructor(
             val request = NarrationRequest(noteId, noteTitle, narrationBody, voice, NarrationProvider.Azure)
             lastRequest = request
             val preparationStartedAt = SystemClock.elapsedRealtime()
+            val narrationPlan = director.createPlan(noteId, narrationTitle, request.body)
             val narrationText = textPreparer.prepare(narrationTitle, request.body)
             Log.d(TimingTag, "source-preparation source=${noteId.take(96)} provider=${NarrationProvider.Azure.storedValue} elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAt}")
             if (narrationText.isBlank()) {
@@ -277,6 +278,7 @@ class NarrationController @Inject constructor(
                     noteId = request.noteId,
                     noteTitle = request.title,
                     narrationText = narrationText,
+                    narrationPlan = narrationPlan,
                     apiKey = settings.apiKey,
                     region = settings.region,
                     voice = request.voice,

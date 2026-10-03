@@ -27,6 +27,7 @@ class AzureTtsRepository @Inject constructor(
     private val cacheManager: NarrationCacheManager,
     private val textPreparer: NoteNarrationTextPreparer,
     private val segmenter: BilingualTextSegmenter,
+    private val director: NarrationDirector,
 ) {
     suspend fun generateNarrationProgressively(
         noteId: String,
@@ -39,11 +40,19 @@ class AzureTtsRepository @Inject constructor(
         speed: Float = 1f,
         requestedChunkIndex: Int = 0,
         resumeProgress: NarrationProgress? = null,
+        narrationPlan: NarrationPlan? = null,
         onChunkGenerating: (current: Int, total: Int) -> Unit = { _, _ -> },
         onChunkReady: (session: NarrationSession, isComplete: Boolean, totalChunks: Int) -> Unit,
     ): NarrationSession = withContext(Dispatchers.IO) {
         val originalText = narrationText.trim()
-        val cleanText = textPreparer.prepareAzureNarration(originalText)
+        val units = (narrationPlan ?: director.createPlan(noteId, "", originalText)).units.mapNotNull { unit ->
+            val cleaned = textPreparer.prepareAzureNarration(unit.spokenText)
+            cleaned.takeIf { it.isNotBlank() }?.let {
+                unit.copy(spokenText = it,
+                    pauseBeforeMs = if (unit.type == NarrationUnitType.Title) maxOf(500L, unit.pauseBeforeMs) else unit.pauseBeforeMs)
+            }
+        }
+        val cleanText = units.joinToString("\n\n") { it.spokenText }
         if (cleanText.isBlank()) error("This note is empty.")
         val normalizedRegion = region.trim().lowercase()
         if (!normalizedRegion.matches(RegionPattern)) error("Azure Speech region is invalid.")
@@ -51,8 +60,11 @@ class AzureTtsRepository @Inject constructor(
         val normalizedArabicVoice = arabicVoice.ifBlank { AzureNarrationConfig.DEFAULT_ARABIC_VOICE }
         val originalHash = cacheManager.contentHash(originalText)
         val cleanedHash = cacheManager.contentHash(cleanText)
-        val contentHash = cacheManager.contentHash("$originalHash:$cleanedHash:$CleanupVersion")
-        val model = "azure-speech-$normalizedRegion-mixed-$normalizedArabicVoice-$CleanupVersion"
+        val structuralHash = cacheManager.contentHash(units.joinToString("\n") {
+            "${it.type}:${it.language}:${it.pauseBeforeMs}:${it.pauseAfterMs}:${it.spokenText}"
+        })
+        val contentHash = cacheManager.contentHash("$originalHash:$cleanedHash:$structuralHash:$CleanupVersion:${AzureNarrationSsml.CacheVersion}")
+        val model = "azure-speech-$normalizedRegion-mixed-$normalizedArabicVoice-$CleanupVersion-${AzureNarrationSsml.CacheVersion}"
         val clampedSpeed = speed.coerceIn(0.75f, 1.5f)
         val cacheKey = cacheManager.cacheKey("azure", contentHash, model, normalizedVoice, 1f)
         val chunks = textPreparer.splitIntoChunks(cleanText, CloudNarrationChunkChars)
@@ -71,7 +83,11 @@ class AzureTtsRepository @Inject constructor(
         val index = resumeTarget?.chunkIndex ?: requestedChunkIndex.coerceIn(0, chunks.lastIndex)
         val chunk = chunks[index]
         val chunkTextStart = chunkTextStarts[index]
-        val chunkCacheKey = cacheManager.renditionChunkKey(noteId, chunk, model, normalizedVoice)
+        val ssml = AzureNarrationSsml.build(
+            AzureNarrationSsml.chunkUnits(units, chunkTextStart, chunkTextStart + chunk.length),
+            segmenter, normalizedVoice, normalizedArabicVoice,
+        )
+        val chunkCacheKey = cacheManager.renditionChunkKey(noteId, ssml, model, normalizedVoice)
         android.util.Log.d(TimingTag, "chunk-requested source=${noteId.take(96)} provider=azure chunk=${index + 1}/${chunks.size}")
         val legacyTarget = cacheManager.cachedChunkOrNull(
             cacheKey, index, noteId, model, normalizedVoice,
@@ -100,6 +116,7 @@ class AzureTtsRepository @Inject constructor(
                     voice = normalizedVoice,
                     arabicVoice = normalizedArabicVoice,
                     text = chunk,
+                    ssml = ssml,
                     target = target,
                     partNumber = index + 1,
                     chunkIndex = index,
@@ -135,6 +152,7 @@ class AzureTtsRepository @Inject constructor(
         voice: String,
         arabicVoice: String,
         text: String,
+        ssml: String,
         target: File,
         partNumber: Int,
         chunkIndex: Int,
@@ -144,7 +162,7 @@ class AzureTtsRepository @Inject constructor(
         repeat(MaxAttempts) { attempt ->
             val temp = File(target.parentFile, "${target.name}.tmp").apply { delete() }
             runCatching {
-                val cues = requestSpeechOnce(apiKey, region, voice, arabicVoice, text, temp, chunkIndex, chunkTextStart)
+                val cues = requestSpeechOnce(apiKey, region, voice, arabicVoice, text, ssml, temp, chunkIndex, chunkTextStart)
                 if (temp.length() < MinValidMp3Bytes) error("Azure Speech returned empty audio for part $partNumber.")
                 if (target.exists()) target.delete()
                 if (!temp.renameTo(target)) {
@@ -167,6 +185,7 @@ class AzureTtsRepository @Inject constructor(
         voice: String,
         arabicVoice: String,
         text: String,
+        ssml: String,
         target: File,
         chunkIndex: Int,
         chunkTextStart: Int,
@@ -187,13 +206,7 @@ class AzureTtsRepository @Inject constructor(
                     text = event.text.orEmpty(),
                 )
             }
-            val result = synthesizer.SpeakSsmlAsync(
-                segmenter.buildMultilingualSsml(
-                    text = text,
-                    englishVoice = voice,
-                    arabicVoice = arabicVoice,
-                ),
-            ).get()
+            val result = synthesizer.SpeakSsmlAsync(ssml).get()
             val bytes = result.audioData ?: error("Azure Speech returned no audio.")
             FileOutputStream(target).use { output ->
                 output.write(bytes)
