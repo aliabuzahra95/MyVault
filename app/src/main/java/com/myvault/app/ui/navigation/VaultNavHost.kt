@@ -39,10 +39,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
@@ -74,6 +77,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -106,6 +110,9 @@ import com.myvault.app.data.sync.DriveRestoreStage
 import com.myvault.app.data.sync.DriveSyncOperation
 import com.myvault.app.data.sync.LatestBackupNotice
 import com.myvault.app.data.sync.LatestBackupNoticeKind
+import com.myvault.app.data.sync.PassiveBackupPresentation
+import com.myvault.app.data.preferences.normalizeGoogleDriveAccount
+import kotlinx.coroutines.delay
 import com.myvault.app.ui.components.NarrationMiniPlayer
 import com.myvault.app.ui.components.VaultExplorerActionHost
 import com.myvault.app.ui.components.VaultExplorerMoveTarget
@@ -265,6 +272,7 @@ fun VaultNavHost(
     var pendingSettingsSection by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLatestBackupNotice by remember { mutableStateOf<LatestBackupNotice?>(null) }
     var foregroundLatestBackupNotice by remember { mutableStateOf<LatestBackupNotice?>(null) }
+    var showLatestBackupBanner by remember { mutableStateOf(false) }
     val latestBackupViewModel: SettingsViewModel = hiltViewModel()
     val narrationViewModel: NarrationViewModel = hiltViewModel()
     val narrationState by narrationViewModel.narrationState.collectAsStateWithLifecycle()
@@ -297,6 +305,18 @@ fun VaultNavHost(
     }
     val shellViewModel: ShellPreferencesViewModel = hiltViewModel()
     val preferences by shellViewModel.userPreferences.collectAsStateWithLifecycle()
+    val latestBackupAccount by rememberUpdatedState(normalizeGoogleDriveAccount(preferences.googleDriveAccountEmail))
+    LaunchedEffect(latestBackupAccount) {
+        foregroundLatestBackupNotice = null
+        pendingLatestBackupNotice = null
+        showLatestBackupBanner = false
+    }
+    LaunchedEffect(showLatestBackupBanner) {
+        if (showLatestBackupBanner) {
+            delay(4_000)
+            showLatestBackupBanner = false
+        }
+    }
     val drawerIdentity by shellViewModel.drawerIdentity.collectAsStateWithLifecycle()
     val driveRestoreState by shellViewModel.driveRestoreState.collectAsStateWithLifecycle()
     var previousBackupActive by remember { mutableStateOf(false) }
@@ -517,8 +537,14 @@ fun VaultNavHost(
     DisposableEffect(lifecycleOwner, latestBackupViewModel, latestBackupChecksEnabled) {
         val observer = LifecycleEventObserver { _, event ->
             dispatchLatestBackupLifecycleCheck(event, latestBackupChecksEnabled) {
-                latestBackupViewModel.checkForLatestGraphBackup { notice ->
-                    if (notice != null) foregroundLatestBackupNotice = notice
+                latestBackupViewModel.checkForLatestGraphBackupPassively { result ->
+                    if (result.accountEmail == latestBackupAccount) {
+                        when (result.presentation) {
+                            PassiveBackupPresentation.PROMPT -> foregroundLatestBackupNotice = result.notice
+                            PassiveBackupPresentation.LATEST_BANNER -> showLatestBackupBanner = true
+                            PassiveBackupPresentation.QUIET -> Unit
+                        }
+                    }
                 }
             }
         }
@@ -527,9 +553,10 @@ fun VaultNavHost(
     }
 
     foregroundLatestBackupNotice?.let { notice ->
+        LaunchedEffect(notice) { latestBackupViewModel.markLatestBackupNoticeShown(notice) }
         AlertDialog(
             onDismissRequest = { foregroundLatestBackupNotice = null },
-            title = { Text(if (notice.kind == LatestBackupNoticeKind.BLOCKED) "Backup needs attention" else "Newer backup available") },
+            title = { Text("New backup available") },
             text = { Text(notice.message) },
             confirmButton = {
                 TextButton(onClick = {
@@ -687,6 +714,31 @@ fun VaultNavHost(
             floatingOverlay = { drawerActive ->
                 LaunchedEffect(drawerActive) {
                     isDrawerOpenOrMoving = drawerActive
+                }
+                AnimatedVisibility(
+                    visible = showLatestBackupBanner && !drawerActive && !isImeVisible,
+                    modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
+                        .padding(top = 56.dp, start = 20.dp, end = 20.dp),
+                    enter = fadeIn(tween(160)),
+                    exit = fadeOut(tween(160)),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = VaultThemeTokens.colors.surface,
+                        border = BorderStroke(1.dp, VaultThemeTokens.colors.success.copy(alpha = 0.18f)),
+                        shadowElevation = 2.dp,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Rounded.CheckCircle, contentDescription = null,
+                                tint = VaultThemeTokens.colors.success, modifier = Modifier.size(18.dp))
+                            Text("You have the latest backup", style = MaterialTheme.typography.bodySmall,
+                                color = VaultThemeTokens.colors.text)
+                        }
+                    }
                 }
                 AnimatedVisibility(
                     visibleState = narrationMiniPlayerVisibility,

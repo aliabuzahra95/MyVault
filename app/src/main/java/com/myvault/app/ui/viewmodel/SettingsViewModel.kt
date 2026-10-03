@@ -18,6 +18,7 @@ import com.myvault.app.data.sync.DriveRestoreState
 import com.myvault.app.data.sync.GoogleDriveIncrementalSyncRepository
 import com.myvault.app.data.sync.GoogleDriveRestoreController
 import com.myvault.app.data.sync.LatestBackupNotice
+import com.myvault.app.data.sync.PassiveBackupCheck
 import com.myvault.app.data.supabase.SupabaseAuthRepository
 import com.myvault.app.data.supabase.SupabaseSession
 import com.myvault.app.data.supabase.SupabaseSessionStore
@@ -277,7 +278,19 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun checkForLatestGraphBackup(onComplete: (LatestBackupNotice?) -> Unit) {
-        viewModelScope.launch { onComplete(googleDriveSyncRepository.checkForLatestGraphBackup()) }
+        viewModelScope.launch {
+            val notice = googleDriveSyncRepository.checkForLatestGraphBackup()
+            onComplete(notice)
+            notice?.let(googleDriveSyncRepository::markLatestBackupNoticeShown)
+        }
+    }
+
+    fun checkForLatestGraphBackupPassively(onComplete: (PassiveBackupCheck) -> Unit) {
+        viewModelScope.launch { onComplete(googleDriveSyncRepository.checkForLatestGraphBackupPassively()) }
+    }
+
+    fun markLatestBackupNoticeShown(notice: LatestBackupNotice) {
+        googleDriveSyncRepository.markLatestBackupNoticeShown(notice)
     }
 
     fun previewPhoneGraphTransition(onComplete: (String) -> Unit) {

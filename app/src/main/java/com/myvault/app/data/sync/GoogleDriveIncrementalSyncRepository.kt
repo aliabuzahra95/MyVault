@@ -2,6 +2,8 @@ package com.myvault.app.data.sync
 
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
+import android.util.Log
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -24,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -82,6 +85,9 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private val pendingBackupCapture: PendingBackupCapture,
     private val baselinePreparer: BackupBaselinePreparer,
 ) {
+    private val passiveBackupPolicy = PassiveBackupCheckPolicy()
+    private val passiveBackupCheckMutex = Mutex()
+
     /** Production Google sign-in, GET-only Drive inspection and read-only local snapshot. */
     suspend fun checkGraphBackupReadiness(): String = withContext(Dispatchers.IO) {
         val signedIn = GoogleSignIn.getLastSignedInAccount(context)
@@ -106,27 +112,74 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
 
     /** Metadata-only graph check. It never downloads Vault payloads or applies a Restore. */
     suspend fun checkForLatestGraphBackup(): LatestBackupNotice? = withContext(Dispatchers.IO) {
-        val account = driveAccountOrFailure() ?: return@withContext null
+        val account = readOnlyDriveAccount() ?: return@withContext null
+        val result = inspectLatestGraphBackup(account)
+        if (result.notice?.kind != LatestBackupNoticeKind.BLOCKED && result.remoteCommitId != null && result.lineageId != null &&
+            preferences.lastNotifiedGraphTip(account.email, result.lineageId) == result.remoteCommitId
+        ) null else result.notice
+    }
+
+    /** Foreground acceleration only: no enrollment, journal registration, trust writes or Restore. */
+    suspend fun checkForLatestGraphBackupPassively(): PassiveBackupCheck = withContext(Dispatchers.IO) {
+        val quiet = PassiveBackupCheck(PassiveBackupPresentation.QUIET)
+        val account = readOnlyDriveAccount() ?: return@withContext quiet
+        if (!passiveBackupCheckMutex.tryLock()) return@withContext quiet
         try {
-            val store = openGraphStore(account.client, account.email, false) ?: return@withContext null
+            if (!passiveBackupPolicy.begin(account.email, SystemClock.elapsedRealtime())) return@withContext quiet
+            val result = inspectLatestGraphBackup(account)
+            if (result.freshness == BackupFreshness.CHECK_FAILED) {
+                Log.i("BackupFreshness", "Passive verification unavailable; retained as unknown, no user interruption")
+            }
+            passiveBackupPolicy.complete(result, SystemClock.elapsedRealtime(),
+                result.lineageId?.let { preferences.lastNotifiedGraphTip(account.email, it) })
+        } finally {
+            passiveBackupCheckMutex.unlock()
+        }
+    }
+
+    fun markLatestBackupNoticeShown(notice: LatestBackupNotice) {
+        if (notice.kind == LatestBackupNoticeKind.BLOCKED) return
+        val email = notice.accountEmail ?: return
+        val lineage = notice.lineageId ?: return
+        val tip = notice.remoteCommitId ?: return
+        if (normalizeGoogleDriveAccount(GoogleSignIn.getLastSignedInAccount(context)?.email.orEmpty()) == email) {
+            preferences.markGraphTipNotified(email, lineage, tip)
+        }
+    }
+
+    private fun readOnlyDriveAccount(): AuthorizedDriveAccount? {
+        val signedIn = GoogleSignIn.getLastSignedInAccount(context) ?: return null
+        if (!GoogleSignIn.hasPermissions(signedIn, DriveScope)) return null
+        val email = normalizeGoogleDriveAccount(signedIn.email.orEmpty())
+        if ('@' !in email) return null
+        return AuthorizedDriveAccount(email, DriveApiClient(context, signedIn))
+    }
+
+    private suspend fun inspectLatestGraphBackup(account: AuthorizedDriveAccount): BackupFreshnessCheck {
+        try {
+            val store = openGraphStore(account.client, account.email, false)
+                ?: return BackupFreshnessCheck(BackupFreshness.NO_REMOTE_BACKUP, account.email)
             val objects = store.commits()
             val graph = BackupGraph.discover(objects, store.context.driveAccountId, store.context.lineageId)
             val local = readLocalBackupReadiness(database, account.email, includeHasData = false)
             val readiness = reconcileBackupGraph(local, store.context.driveAccountId, false, 1, graph, objects)
+            check(normalizeGoogleDriveAccount(GoogleSignIn.getLastSignedInAccount(context)?.email.orEmpty()) == account.email)
             val tip = graph.tips.singleOrNull()
-            latestBackupNotice(
+            val notice = latestBackupNotice(
                 readiness.state,
                 tip,
                 null,
-            )
+            )?.copy(accountEmail = account.email, lineageId = store.context.lineageId)
+            return BackupFreshnessCheck(backupFreshness(readiness.state), account.email, store.context.lineageId, tip, notice)
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
-            LatestBackupNotice(
+        } catch (error: Exception) {
+            Log.i("BackupFreshness", "Read-only graph check failed (${error.javaClass.simpleName})")
+            return BackupFreshnessCheck(BackupFreshness.CHECK_FAILED, account.email, notice = LatestBackupNotice(
                 LatestBackupNoticeKind.BLOCKED,
                 null,
                 "The Drive backup could not be verified safely. Nothing was restored.",
-            )
+            ))
         }
     }
 
