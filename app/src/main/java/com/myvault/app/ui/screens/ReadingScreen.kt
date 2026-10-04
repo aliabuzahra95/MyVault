@@ -18,6 +18,9 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,15 +74,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -90,12 +96,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import com.myvault.app.ui.components.AttachmentThumbnail
@@ -188,19 +198,9 @@ fun ReadingScreen(
     var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
     var tagDraft by remember { mutableStateOf("") }
     var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
-    var followAudio by remember(note?.id) { mutableStateOf(true) }
-    var followRequest by remember(note?.id) { mutableIntStateOf(0) }
+    val viewportGesture = rememberNarrationViewportGesture(note?.id)
+    var headerVisible by remember(note?.id) { mutableStateOf(true) }
     val readingListState = rememberLazyListState()
-    val userScrollConnection = remember(note?.id) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput) {
-                    if (available.y != 0f) followAudio = false
-                }
-                return Offset.Zero
-            }
-        }
-    }
     val exportTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let(onExportText)
     }
@@ -233,22 +233,25 @@ fun ReadingScreen(
         noteBodyText.toReadingBodyChunks(uiState.richText.styleMarks, uiState.richText.noteLinks)
     }
     val readingLayouts = remember(note?.id, noteBodyText) { mutableStateMapOf<Int, ReadingBodyLayout>() }
-    val narrationRange = remember(noteBodyText, narrationState.activeSentence, narrationState.activeSentenceSourceOffset, narrationState.noteId) {
+    val narrationRange = remember(noteBodyText, narrationState.activeSentence, narrationState.activeSentenceSourceOffset,
+        narrationState.activeSentenceContext, narrationState.activeSentenceContextOffset, narrationState.noteId) {
         if (narrationState.noteId == note?.id) narrationTextRange(noteBodyText,
-            narrationState.activeSentence, narrationState.activeSentenceSourceOffset - note?.title.orEmpty().length) else null
+            narrationState.activeSentence, narrationState.activeSentenceSourceOffset - note?.title.orEmpty().length,
+            narrationState.activeSentenceContext, narrationState.activeSentenceContextOffset) else null
     }
     val playerInsetPx = with(LocalDensity.current) {
         (if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp).toPx()
     }
-    LaunchedEffect(narrationRange, followAudio, followRequest, playerInsetPx) {
+    LaunchedEffect(narrationRange, narrationState.status, viewportGesture.touching, viewportGesture.releasedAtMs, playerInsetPx) {
         val range = narrationRange ?: return@LaunchedEffect
-        if (!followAudio) return@LaunchedEffect
+        if (!narrationShouldFollow(narrationState.status, viewportGesture.touching)) return@LaunchedEffect
+        kotlinx.coroutines.delay((viewportGesture.releasedAtMs + 300L - android.os.SystemClock.uptimeMillis()).coerceAtLeast(0L))
         val chunk = noteBodyChunks.firstOrNull { range.first in it.start until it.end } ?: return@LaunchedEffect
         val key = "body-${chunk.start}-${chunk.end}"
         if (readingListState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
             val chunkIndex = noteBodyChunks.indexOf(chunk)
-            // Header, title, and the Follow Text control precede the body items.
-            readingListState.animateScrollToItem(chunkIndex + 3)
+            // The toolbar is outside the scroll content; only the title precedes the body.
+            readingListState.scrollToItem(chunkIndex + 1)
         }
         val bodyLayout = snapshotFlow { readingLayouts[chunk.start] }.filterNotNull().first()
         val item = readingListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return@LaunchedEffect
@@ -294,16 +297,20 @@ fun ReadingScreen(
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().narrationViewportGesture(viewportGesture) { delta ->
+            headerVisible = narrationToolbarVisible(headerVisible, delta, true)
+        },
         containerColor = colors.bg,
+        topBar = {
+            androidx.compose.animation.AnimatedVisibility(visible = headerVisible,
+                enter = androidx.compose.animation.expandVertically(tween(160)),
+                exit = androidx.compose.animation.shrinkVertically(tween(160))) {
+                NoteWorkspaceHeader(breadcrumb = noteBreadcrumb, onMenuClick = onMenuClick,
+                    modifier = Modifier.testTag("NoteReaderToolbar"),
+                    onListenClick = startDefaultNarration, onMoreClick = { moreMenuOpen = true })
+            }
+        },
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                if (narrationRange != null) {
-                    TextButton(onClick = { followAudio = true; followRequest++ }) {
-                        Icon(Icons.Rounded.Notes, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text(if (followAudio) "Following text" else "Follow Text")
-                    }
-                }
             FloatingActionButton(
                 onClick = editAtReadingPosition,
                 modifier = Modifier
@@ -315,7 +322,6 @@ fun ReadingScreen(
             ) {
                 Icon(Icons.Rounded.Edit, "Edit", modifier = Modifier.size(20.dp))
             }
-            }
         },
     ) { innerPadding ->
         LazyColumn(
@@ -323,18 +329,11 @@ fun ReadingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .nestedScroll(userScrollConnection),
+                .testTag("NoteReaderScroll")
+                ,
             contentPadding = PaddingValues(bottom = 112.dp + if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
-            item {
-                NoteWorkspaceHeader(
-                    breadcrumb = noteBreadcrumb,
-                    onMenuClick = onMenuClick,
-                    onListenClick = startDefaultNarration,
-                    onMoreClick = { moreMenuOpen = true },
-                )
-            }
             item {
                 Text(
                     text = note?.title ?: "Untitled note",
@@ -342,16 +341,6 @@ fun ReadingScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     color = colors.text,
                 )
-            }
-            if (narrationState.noteId == note?.id && narrationState.activeSentence.isNotBlank()) {
-                item {
-                    TextButton(
-                        onClick = { followAudio = true; followRequest++ },
-                        modifier = Modifier.padding(horizontal = VaultSpacing.screen),
-                    ) {
-                        Text(if (followAudio) "Following text" else "Follow Text")
-                    }
-                }
             }
             if (noteBodyChunks.isEmpty()) {
                 item {
@@ -543,13 +532,6 @@ fun ReadingScreen(
                 NoteSheetSection(
                     "Audio",
                     listOf(
-                        NoteSheetAction(
-                            label = "Follow text while listening",
-                            icon = Icons.Rounded.Notes,
-                            selected = followAudio,
-                            subtitle = if (followAudio) "On" else "Off",
-                            onClick = { followAudio = true; followRequest++ },
-                        ),
                         NoteSheetAction(
                             label = "Configure Azure Speech",
                             icon = Icons.Rounded.Settings,
@@ -1056,22 +1038,13 @@ private fun RichNoteBody(
 ) {
     val colors = VaultThemeTokens.colors
     val bodyText = richText.text.ifBlank { fallbackText.ifBlank { html.stripHtml() } }
-    val activeStart = activeRange?.first ?: -1
-    val display = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeRange) {
-        val base = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors).let { annotated ->
-            if (activeStart < 0) {
-                annotated
-            } else {
-                AnnotatedString.Builder(annotated).apply {
-                    addStyle(
-                        SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
-                        activeStart,
-                        ((activeRange?.last ?: activeStart) + 1).coerceAtMost(bodyText.length),
-                    )
-                }.toAnnotatedString()
-            }
-        }
-        base.withVaultBidiIsolation()
+    var textLayout by remember(bodyText) { mutableStateOf<TextLayoutResult?>(null) }
+    var selection by remember(bodyText) { mutableStateOf(TextFieldValue(bodyText)) }
+    val currentLinkClick by rememberUpdatedState(onNoteLinkClick)
+    val currentDoubleTap by rememberUpdatedState(onDoubleTapEdit)
+    // Keep the full selectable text/layout cached; cue changes only redraw its highlight.
+    val display = remember(bodyText, richText.styleMarks, richText.noteLinks, colors) {
+        buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors).withVaultBidiIsolation()
     }
 
     if (bodyText.isBlank()) {
@@ -1082,33 +1055,63 @@ private fun RichNoteBody(
             color = colors.textMuted,
         )
     } else {
-        SelectionContainer(
-            modifier = modifier
-                .fillMaxWidth()
-                .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { onDoubleTapEdit() })
+            BasicTextField(
+                value = selection,
+                onValueChange = { selection = it.copy(text = bodyText) },
+                readOnly = true,
+                visualTransformation = remember(display) {
+                    VisualTransformation { TransformedText(display.text, display.offsetMapping) }
                 },
-        ) {
-            ClickableText(
-                text = display.text,
-                modifier = Modifier
-                    .fillMaxWidth(),
-                style = MaterialTheme.typography.bodyLarge.copy(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .testTag("NoteReaderText")
+                    .pointerInput(bodyText) {
+                        var lastTap = 0L
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            var moved = false
+                            var upTime = down.uptimeMillis
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change != null) {
+                                    moved = moved || (change.position - down.position).getDistance() > viewConfiguration.touchSlop
+                                    upTime = change.uptimeMillis
+                                }
+                            } while (event.changes.any { it.pressed })
+                            if (!moved && upTime - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                                if (lastTap > 0 && upTime - lastTap <= viewConfiguration.doubleTapTimeoutMillis) {
+                                    currentDoubleTap()
+                                    lastTap = 0L
+                                } else {
+                                    val offset = textLayout?.getOffsetForPosition(down.position)
+                                    offset?.let { display.text.getStringAnnotations("noteLink", it, it).firstOrNull() }
+                                        ?.let { currentLinkClick(it.item) }
+                                    lastTap = upTime
+                                }
+                            } else lastTap = 0L
+                        }
+                    }
+                    .drawBehind {
+                        val layout = textLayout
+                        val range = activeRange
+                        if (layout != null && range != null && range.last < bodyText.length) {
+                            drawPath(layout.getPathForRange(display.offsetMapping.originalToTransformed(range.first),
+                                display.offsetMapping.originalToTransformed(range.last + 1)),
+                                color = colors.accent.copy(alpha = 0.38f))
+                        }
+                    },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = colors.text,
                     fontSize = bodyFontSizeSp.sp,
                     textAlign = TextAlign.Start,
                     textDirection = vaultDefaultTextDirection(),
                 ),
                 onTextLayout = {
+                    textLayout = it
                     onLayout(it, display.offsetMapping)
                 },
-                onClick = { offset ->
-                    display.text.getStringAnnotations("noteLink", offset, offset).firstOrNull()?.let {
-                        onNoteLinkClick(it.item)
-                    }
-                },
             )
-        }
     }
 }
 
@@ -1117,8 +1120,6 @@ private data class ReadingBodyLayout(
     val offsetMapping: androidx.compose.ui.text.input.OffsetMapping,
 )
 
-private const val ReadingBodyChunkTargetChars = 2_800
-private const val ReadingBodyChunkMaxChars = 4_200
 
 internal data class ReadingBodyChunk(
     val start: Int,
@@ -1132,7 +1133,7 @@ internal fun String.toReadingBodyChunks(
     noteLinks: List<VaultNoteLink>,
 ): List<ReadingBodyChunk> {
     if (isBlank()) return emptyList()
-    if (length <= ReadingBodyChunkMaxChars) {
+    // One selection owner must know the complete note, including off-screen text.
         return listOf(
             ReadingBodyChunk(
                 start = 0,
@@ -1145,68 +1146,7 @@ internal fun String.toReadingBodyChunks(
                 ),
             ),
         )
-    }
-
-    val chunks = mutableListOf<ReadingBodyChunk>()
-    var start = 0
-    while (start < length) {
-        val targetEnd = (start + ReadingBodyChunkTargetChars).coerceAtMost(length)
-        val hardEnd = (start + ReadingBodyChunkMaxChars).coerceAtMost(length)
-        val end = if (hardEnd == length) {
-            length
-        } else {
-            val paragraphBreak = lastIndexOf("\n\n", startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(2)
-            val lineBreak = lastIndexOf('\n', startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(1)
-            val sentenceBreak = lastIndexOf('.', startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(1)
-            val spaceBreak = lastIndexOf(' ', startIndex = hardEnd - 1).takeIf { it > start + 600 }?.plus(1)
-            (paragraphBreak ?: lineBreak ?: sentenceBreak ?: spaceBreak ?: targetEnd).coerceIn(start + 1, hardEnd)
-        }
-        val text = substring(start, end)
-        val adjustedStart = start
-        chunks += ReadingBodyChunk(
-            start = adjustedStart,
-            end = end,
-            text = text,
-            document = VaultRichTextDocument(
-                text = text,
-                styleMarks = marks.shiftStyleMarksIntoRange(adjustedStart, end),
-                noteLinks = noteLinks.shiftNoteLinksIntoRange(adjustedStart, end),
-            ),
-        )
-        start = end
-    }
-    return chunks
 }
-
-private fun List<VaultStyleMark>.shiftStyleMarksIntoRange(start: Int, end: Int): List<VaultStyleMark> =
-    mapNotNull { mark ->
-        val overlapStart = maxOf(mark.start, start)
-        val overlapEnd = minOf(mark.end, end)
-        if (overlapStart >= overlapEnd) {
-            null
-        } else {
-            VaultStyleMark(
-                start = overlapStart - start,
-                end = overlapEnd - start,
-                style = mark.style,
-            )
-        }
-    }
-
-private fun List<VaultNoteLink>.shiftNoteLinksIntoRange(start: Int, end: Int): List<VaultNoteLink> =
-    mapNotNull { link ->
-        val overlapStart = maxOf(link.start, start)
-        val overlapEnd = minOf(link.end, end)
-        if (overlapStart >= overlapEnd) {
-            null
-        } else {
-            VaultNoteLink(
-                start = overlapStart - start,
-                end = overlapEnd - start,
-                noteId = link.noteId,
-            )
-        }
-    }
 
 private fun Long.toPlaybackTime(): String {
     val totalSeconds = (this / 1_000L).coerceAtLeast(0L)

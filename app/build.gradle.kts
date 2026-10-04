@@ -100,8 +100,8 @@ android {
         applicationId = "com.myvault.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.1.18"
+        versionCode = 23
+        versionName = "0.1.19"
         testInstrumentationRunner = providers.gradleProperty("MYVAULT_TEST_INSTRUMENTATION_RUNNER")
             .orElse("androidx.test.runner.AndroidJUnitRunner").get()
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
@@ -191,6 +191,10 @@ dependencies {
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -94,6 +94,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -647,6 +650,9 @@ fun AttachmentViewerScreen(
     documentTextError: String? = null,
     activeNarrationSentence: String = "",
     activeNarrationSourceOffset: Int = 0,
+    activeNarrationContext: String = "",
+    activeNarrationContextOffset: Int = 0,
+    activeNarrationFollowing: Boolean = false,
     azureNarrationProgress: AzureNarrationProgress? = null,
     initialPageIndex: Int? = null,
     onBackClick: () -> Unit,
@@ -890,6 +896,9 @@ fun AttachmentViewerScreen(
                         error = documentTextError,
                         activeSentence = activeNarrationSentence,
                         activeSourceOffset = activeNarrationSourceOffset,
+                        activeContext = activeNarrationContext,
+                        activeContextOffset = activeNarrationContextOffset,
+                        narrationFollowing = activeNarrationFollowing,
                         playerHeight = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp,
                         azureNarrationProgress = azureNarrationProgress,
                         onAzureListenClick = onAzureListenClick,
@@ -955,6 +964,9 @@ private fun DocumentAttachmentViewer(
     error: String?,
     activeSentence: String,
     activeSourceOffset: Int,
+    activeContext: String,
+    activeContextOffset: Int,
+    narrationFollowing: Boolean,
     playerHeight: Dp,
     azureNarrationProgress: AzureNarrationProgress?,
     onAzureListenClick: () -> Unit,
@@ -964,28 +976,18 @@ private fun DocumentAttachmentViewer(
     val colors = VaultThemeTokens.colors
     val scrollState = rememberScrollState()
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var followAudio by remember(text) { mutableStateOf(true) }
-    var followRequest by remember(text) { mutableIntStateOf(0) }
+    val viewportGesture = rememberNarrationViewportGesture(text)
     var textTop by remember(text) { mutableStateOf(0f) }
     var selectableText by remember(text) { mutableStateOf(TextFieldValue(text)) }
-    val activeRange = remember(text, activeSentence, activeSourceOffset) {
-        narrationTextRange(text, activeSentence, activeSourceOffset)
+    val activeRange = remember(text, activeSentence, activeSourceOffset, activeContext, activeContextOffset) {
+        narrationTextRange(text, activeSentence, activeSourceOffset, activeContext, activeContextOffset)
     }
     val activeStart = activeRange?.first ?: -1
-    val userScrollConnection = remember(text) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput) {
-                    if (available.y != 0f) followAudio = false
-                }
-                return Offset.Zero
-            }
-        }
-    }
-
-    LaunchedEffect(activeRange, followAudio, followRequest, textLayout, textTop, scrollState.viewportSize) {
-        val layout = textLayout ?: return@LaunchedEffect
-        if (!followAudio || activeStart < 0 || layout.layoutInput.text.text != text) return@LaunchedEffect
+    LaunchedEffect(activeRange, narrationFollowing, viewportGesture.touching, viewportGesture.releasedAtMs,
+        textTop, scrollState.viewportSize) {
+        if (!narrationFollowing || viewportGesture.touching || activeStart < 0) return@LaunchedEffect
+        kotlinx.coroutines.delay((viewportGesture.releasedAtMs + 300L - android.os.SystemClock.uptimeMillis()).coerceAtLeast(0L))
+        val layout = snapshotFlow { textLayout?.takeIf { it.layoutInput.text.text == text } }.filterNotNull().first()
         val startBox = layout.getBoundingBox(activeStart)
         val endBox = layout.getBoundingBox(activeRange!!.last)
         scrollState.animateScrollTo(narrationCenteredScroll(textTop + startBox.top, textTop + endBox.bottom,
@@ -1001,17 +1003,11 @@ private fun DocumentAttachmentViewer(
             )
             error != null -> AttachmentViewerEmpty(error)
             else -> Column(Modifier.fillMaxSize().padding(bottom = playerHeight)) {
-                if (activeSentence.isNotBlank()) {
-                    TextButton(onClick = { followAudio = true; followRequest++ }, modifier = Modifier.align(Alignment.End)) {
-                        Icon(Icons.Rounded.Notes, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text(if (followAudio) "Following text" else "Follow Text")
-                    }
-                }
                 Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .nestedScroll(userScrollConnection)
+                    .narrationViewportGesture(viewportGesture)
                     .verticalScroll(scrollState)
                     .padding(bottom = 48.dp),
                 verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),

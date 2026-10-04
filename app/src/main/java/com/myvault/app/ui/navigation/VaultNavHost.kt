@@ -1898,6 +1898,10 @@ fun VaultNavHost(
                     it.isNotBlank() && narrationState.noteId == attachment?.id?.let { id -> "attachment:$id" }
                 }.orEmpty(),
                 activeNarrationSourceOffset = narrationState.activeSentenceSourceOffset,
+                activeNarrationContext = narrationState.activeSentenceContext,
+                activeNarrationContextOffset = narrationState.activeSentenceContextOffset,
+                activeNarrationFollowing = narrationState.noteId == attachment?.id?.let { "attachment:$it" } &&
+                    com.myvault.app.ui.screens.narrationShouldFollow(narrationState.status, false),
                 azureNarrationProgress = azureNarrationProgress,
                 initialPageIndex = resolvedInitialPageIndex,
                 onBackClick = { navController.popBackStack() },

@@ -19,7 +19,10 @@ class ReadingBodyChunkSpacingTest {
 
         val chunks = text.toReadingBodyChunks(emptyList(), emptyList())
 
-        assertTrue(chunks.size > 1)
+        assertEquals(1, chunks.size)
+        assertEquals(0, chunks.single().start)
+        assertEquals(text.length, chunks.single().end)
+        assertEquals(text, chunks.single().document.text)
         assertEquals(text, chunks.joinToString(separator = "") { it.text })
         assertEquals(
             text.windowed(2).count { it == "\n\n" },

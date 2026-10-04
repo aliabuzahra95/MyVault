@@ -119,6 +119,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
@@ -161,6 +162,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -259,19 +262,8 @@ fun EditorScreen(
     val isPinned = uiState.note?.isPinned == true
     val isFavourite = uiState.note?.isFavourite == true
     val bodyEditorScrollState = rememberScrollState()
-    var followNarration by remember(noteId) { mutableStateOf(true) }
-    var followRequest by remember(noteId) { mutableIntStateOf(0) }
+    val viewportGesture = rememberNarrationViewportGesture(noteId)
     var headerVisible by remember(noteId) { mutableStateOf(true) }
-    val narrationScrollConnection = remember(noteId) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val manual = source == NestedScrollSource.UserInput
-                headerVisible = narrationToolbarVisible(headerVisible, available.y, manual)
-                if (manual && available.y != 0f) followNarration = false
-                return Offset.Zero
-            }
-        }
-    }
     val caretScrollSpec = remember {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
@@ -331,9 +323,11 @@ fun EditorScreen(
     val activeNarrationText = narrationState.activeSentence.takeIf {
         narrationState.noteId == noteId && it.isNotBlank()
     }.orEmpty()
-    val activeNarrationRange = remember(safeBodyValue.text, activeNarrationText, narrationState.activeSentenceSourceOffset) {
+    val activeNarrationRange = remember(safeBodyValue.text, activeNarrationText, narrationState.activeSentenceSourceOffset,
+        narrationState.activeSentenceContext, narrationState.activeSentenceContextOffset) {
         narrationTextRange(safeBodyValue.text, activeNarrationText,
-            narrationState.activeSentenceSourceOffset - title.text.length)
+            narrationState.activeSentenceSourceOffset - title.text.length,
+            narrationState.activeSentenceContext, narrationState.activeSentenceContextOffset)
     }
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
@@ -363,7 +357,8 @@ fun EditorScreen(
         imeBottom,
         bodyEditorScrollState.viewportSize,
     ) {
-        if (!bodyFocused || safeBodyValue.text.isEmpty() || (followNarration && activeNarrationRange != null)) return@LaunchedEffect
+        if (!bodyFocused || safeBodyValue.text.isEmpty() ||
+            (narrationShouldFollow(narrationState.status, viewportGesture.touching) && activeNarrationRange != null)) return@LaunchedEffect
         val textLayout = bodyTextLayoutResult ?: return@LaunchedEffect
         if (textLayout.layoutInput.text.text != safeBodyValue.text) return@LaunchedEffect
         val selection = safeBodyValue.selection
@@ -408,12 +403,14 @@ fun EditorScreen(
             bodyEditorScrollState.value, bodyEditorScrollState.viewportSize)
         if (delta != 0) bodyEditorScrollState.scrollTo(bodyEditorScrollState.value + delta)
     }
-    LaunchedEffect(activeNarrationRange, followNarration, followRequest, bodyTextLayoutResult, bodyEditorScrollState.viewportSize) {
-        if (!followNarration || safeBodyValue.text.isEmpty()) return@LaunchedEffect
-        val textLayout = bodyTextLayoutResult ?: return@LaunchedEffect
+    LaunchedEffect(activeNarrationRange, narrationState.status, viewportGesture.touching, viewportGesture.releasedAtMs,
+        bodyEditorScrollState.viewportSize) {
+        if (!narrationShouldFollow(narrationState.status, viewportGesture.touching) || safeBodyValue.text.isEmpty()) return@LaunchedEffect
+        kotlinx.coroutines.delay((viewportGesture.releasedAtMs + 300L - android.os.SystemClock.uptimeMillis()).coerceAtLeast(0L))
         val range = activeNarrationRange ?: return@LaunchedEffect
         val display = safeBodyValue.annotatedString.withVaultBidiIsolation()
-        if (textLayout.layoutInput.text.text != display.text.text) return@LaunchedEffect
+        val textLayout = snapshotFlow { bodyTextLayoutResult?.takeIf { it.layoutInput.text.text == display.text.text } }
+            .filterNotNull().first()
         val transformed = display.offsetMapping
         val top = textLayout.getBoundingBox(transformed.originalToTransformed(range.first)).top
         val bottom = textLayout.getBoundingBox(transformed.originalToTransformed(range.last)).bottom
@@ -580,7 +577,6 @@ fun EditorScreen(
             bodyValue = safeUpdatedValue
             return
         }
-        followNarration = false
 
         if (shouldAttemptVaultSmartDirectPaste(previousValue, safeUpdatedValue)) {
             context.readVaultFormattedClipboardImport()?.let { clipboardImport ->
@@ -845,7 +841,9 @@ fun EditorScreen(
     val activeParagraphTool = activeVaultParagraphToolForSelection(safeBodyValue, styleMarks, pendingInlineStyles)
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().narrationViewportGesture(viewportGesture) { delta ->
+            headerVisible = narrationToolbarVisible(headerVisible, delta, true)
+        },
         containerColor = colors.bg,
         bottomBar = {
             Column(
@@ -853,12 +851,6 @@ fun EditorScreen(
                     .imePadding()
                     .padding(bottom = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp)
             ) {
-                if (activeNarrationText.isNotBlank()) {
-                    TextButton(onClick = { followNarration = true; followRequest++ }) {
-                        Icon(Icons.Rounded.Notes, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text(if (followNarration) "Following text" else "Follow Text", modifier = Modifier.padding(start = 6.dp))
-                    }
-                }
                 if (colorToolbarOpen) {
                     InlineTextColorToolbar(
                         activeStyles = pendingInlineStyles + activeStylesForToolbar(safeBodyValue, styleMarks),
@@ -914,6 +906,7 @@ fun EditorScreen(
                     exit = androidx.compose.animation.shrinkVertically(tween(160)) + fadeOut(tween(160)),
                 ) {
                     NoteWorkspaceHeader(
+                    modifier = Modifier.testTag("NoteEditorToolbar"),
                     breadcrumb = noteBreadcrumb,
                     status = saveStatusLabel,
                     onMenuClick = {
@@ -978,7 +971,7 @@ fun EditorScreen(
                                     }
                                     layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
                                 }
-                                .nestedScroll(narrationScrollConnection)
+                                .testTag("NoteEditorScroll")
                                 .verticalScroll(bodyEditorScrollState)
                                 .padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
                         ) {

@@ -2,8 +2,30 @@ package com.myvault.app.ui.screens
 
 import org.junit.Assert.*
 import org.junit.Test
+import com.myvault.app.data.narration.NarrationPlaybackStatus
 
 class NarrationFollowTextTest {
+    @Test fun followingResumesAfterGestureButNeverForPauseOrStop() {
+        for (status in listOf(NarrationPlaybackStatus.Playing, NarrationPlaybackStatus.Generating,
+            NarrationPlaybackStatus.Preparing)) {
+            assertTrue(narrationShouldFollow(status, false))
+            assertFalse(narrationShouldFollow(status, true))
+            assertTrue(narrationShouldFollow(status, false))
+        }
+        for (status in listOf(NarrationPlaybackStatus.Paused, NarrationPlaybackStatus.Stopped,
+            NarrationPlaybackStatus.Idle, NarrationPlaybackStatus.Error)) {
+            assertFalse(narrationShouldFollow(status, false))
+        }
+    }
+
+    @Test fun canonicalContextResolvesDuplicateSentencesDespiteWhitespaceDrift() {
+        val source = "Repeated sentence.\n\nOther text.\nRepeated   sentence.\nFinal text."
+        val context = "Other text. Repeated sentence. Final text."
+        val offset = context.indexOf("Repeated")
+        val range = narrationTextRange(source, "Repeated sentence.", 0, context, offset)!!
+        assertEquals(source.lastIndexOf("Repeated"), range.first)
+        assertEquals("Repeated   sentence.", source.substring(range))
+    }
     @Test fun mapsNormalizedBilingualTextToOriginalOffsets() {
         val source = "Heading\nEnglish   paragraph.\n\nهذا نص عربي.\nEnglish again."
         val range = narrationTextRange(source, "paragraph. هذا نص عربي.")!!

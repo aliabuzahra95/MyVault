@@ -708,6 +708,8 @@ class NarrationPlayerManager @Inject constructor(
             activeSentenceSourceOffset = activeCue?.let { cue ->
                 activeChunkPlans.filter { it.index < cue.chunkIndex }.sumOf { it.text.length + 1 } + cue.textStart
             } ?: 0,
+            activeSentenceContext = activeChunkPlans.firstOrNull { it.index == activeCue?.chunkIndex }?.text.orEmpty(),
+            activeSentenceContextOffset = activeCue?.textStart ?: 0,
         )
         checkAndFillBuffer()
         persistAzureProgress()

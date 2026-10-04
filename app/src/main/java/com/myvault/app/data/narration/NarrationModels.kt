@@ -139,6 +139,8 @@ data class NarrationUiState(
     val totalDurationMs: Long = 0L,
     val activeSentence: String = "",
     val activeSentenceSourceOffset: Int = 0,
+    val activeSentenceContext: String = "",
+    val activeSentenceContextOffset: Int = 0,
 ) {
     val isActive: Boolean
         get() = status != NarrationPlaybackStatus.Idle
