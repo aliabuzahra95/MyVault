@@ -250,9 +250,7 @@ fun EditorScreen(
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var bodyFocused by remember { mutableStateOf(false) }
     var bodyTextLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var undoHistory by remember(noteId) { mutableStateOf<List<EditorHistorySnapshot>>(emptyList()) }
-    var redoHistory by remember(noteId) { mutableStateOf<List<EditorHistorySnapshot>>(emptyList()) }
-    var restoringHistory by remember(noteId) { mutableStateOf(false) }
+    var editorHistory by remember(noteId) { mutableStateOf(EditorHistory()) }
     val isPinned = uiState.note?.isPinned == true
     val isFavourite = uiState.note?.isFavourite == true
     val bodyEditorScrollState = rememberScrollState()
@@ -456,52 +454,37 @@ fun EditorScreen(
 
     fun restoreHistorySnapshot(snapshot: EditorHistorySnapshot) {
         val safeBody = sanitizeVaultTextFieldValue(snapshot.body)
-        restoringHistory = true
         title = sanitizeVaultTextFieldValue(snapshot.title)
         bodyValue = safeBody
         styleMarks = sanitizeVaultStyleMarks(snapshot.styleMarks, safeBody.text.length)
         noteLinks = sanitizeVaultNoteLinks(snapshot.noteLinks, safeBody.text.length)
         pendingInlineStyles = snapshot.pendingInlineStyles
         onTitleChange(title.text)
-        editorScope.launch {
-            delay(100)
-            restoringHistory = false
-        }
     }
 
     fun undoEditorChange() {
-        val current = currentHistorySnapshot()
-        val baseHistory = if (undoHistory.lastOrNull()?.hasSameEditorContentAs(current) == true) {
-            undoHistory
-        } else {
-            (undoHistory + current).takeLast(EditorHistoryLimit)
-        }
-        if (baseHistory.size <= 1) return
-        val currentEntry = baseHistory.last()
-        val previous = baseHistory[baseHistory.lastIndex - 1]
-        undoHistory = baseHistory.dropLast(1)
-        redoHistory = (listOf(currentEntry) + redoHistory).take(EditorHistoryLimit)
-        restoreHistorySnapshot(previous)
+        val change = editorHistory.undo(currentHistorySnapshot()) ?: return
+        editorHistory = change.history
+        restoreHistorySnapshot(change.snapshot)
     }
 
     fun redoEditorChange() {
-        val next = redoHistory.firstOrNull() ?: return
-        val current = currentHistorySnapshot()
-        val baseHistory = if (undoHistory.lastOrNull()?.hasSameEditorContentAs(current) == true) {
-            undoHistory
-        } else {
-            (undoHistory + current).takeLast(EditorHistoryLimit)
-        }
-        undoHistory = (baseHistory + next).takeLast(EditorHistoryLimit)
-        redoHistory = redoHistory.drop(1)
-        restoreHistorySnapshot(next)
+        val change = editorHistory.redo(currentHistorySnapshot()) ?: return
+        editorHistory = change.history
+        restoreHistorySnapshot(change.snapshot)
     }
 
     val liveHistorySnapshot = remember(title, bodyValue, styleMarks, noteLinks, pendingInlineStyles) {
         currentHistorySnapshot()
     }
-    val canUndo = undoHistory.size > 1 || undoHistory.lastOrNull()?.hasSameEditorContentAs(liveHistorySnapshot) == false
-    val canRedo = redoHistory.isNotEmpty()
+    val historyReady = editorReady && noteId != null && loadedNoteId == noteId
+    val canUndo = historyReady && editorHistory.canUndo(liveHistorySnapshot)
+    val canRedo = historyReady && editorHistory.canRedo(liveHistorySnapshot)
+
+    // Capture committed editor changes immediately, without a debounce racing Undo/Redo.
+    androidx.compose.runtime.SideEffect {
+        if (historyReady) editorHistory = editorHistory.record(liveHistorySnapshot)
+    }
 
     LaunchedEffect(noteId, uiState.note?.title, uiState.richText) {
         if (noteId != null && loadedNoteId != noteId) {
@@ -515,7 +498,7 @@ fun EditorScreen(
             lastSavedText = uiState.richText.text
             lastSavedMarks = styleMarks
             lastSavedLinks = noteLinks
-            undoHistory = listOf(
+            editorHistory = EditorHistory(listOf(
                 EditorHistorySnapshot(
                     title = sanitizeVaultTextFieldValue(title).withoutComposition(),
                     body = sanitizeVaultTextFieldValue(bodyValue).withoutComposition(),
@@ -523,8 +506,7 @@ fun EditorScreen(
                     noteLinks = sanitizeVaultNoteLinks(noteLinks, bodyValue.text.length),
                     pendingInlineStyles = pendingInlineStyles,
                 ),
-            )
-            redoHistory = emptyList()
+            ))
             editorReady = true
         }
     }
@@ -535,20 +517,6 @@ fun EditorScreen(
             bodyFocusRequester.requestFocus()
             keyboardController?.show()
         }
-    }
-
-    LaunchedEffect(noteId) {
-        snapshotFlow { currentHistorySnapshot() }
-            .distinctUntilChanged { old, new -> old.hasSameEditorContentAs(new) }
-            .debounce(650)
-            .collect { snapshot ->
-                if (editorReady && noteId != null && !restoringHistory) {
-                    if (undoHistory.lastOrNull()?.hasSameEditorContentAs(snapshot) != true) {
-                        undoHistory = (undoHistory + snapshot).takeLast(EditorHistoryLimit)
-                        redoHistory = emptyList()
-                    }
-                }
-            }
     }
 
     LaunchedEffect(noteId) {
@@ -1821,7 +1789,6 @@ private fun Context.readVaultFormattedClipboardImport(): VaultFormattedClipboard
         }
     }.getOrNull()
 
-private const val EditorHistoryLimit = 48
 
 @Composable
 private fun InlineTextColorToolbar(
@@ -1893,22 +1860,7 @@ private fun activeStylesForToolbar(
         .mapTo(linkedSetOf()) { it.style }
 }
 
-private data class EditorHistorySnapshot(
-    val title: TextFieldValue,
-    val body: TextFieldValue,
-    val styleMarks: List<VaultStyleMark>,
-    val noteLinks: List<VaultNoteLink>,
-    val pendingInlineStyles: Set<VaultInlineStyle>,
-)
-
 private fun TextFieldValue.withoutComposition(): TextFieldValue = copy(composition = null)
-
-private fun EditorHistorySnapshot.hasSameEditorContentAs(other: EditorHistorySnapshot): Boolean =
-    title.text == other.title.text &&
-        body.text == other.body.text &&
-        styleMarks == other.styleMarks &&
-        noteLinks == other.noteLinks &&
-        pendingInlineStyles == other.pendingInlineStyles
 
 private fun String.toSafeFileName(): String =
     replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "note" }
