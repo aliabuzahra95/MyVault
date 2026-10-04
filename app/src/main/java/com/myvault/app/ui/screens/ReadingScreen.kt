@@ -14,6 +14,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
@@ -34,8 +35,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.ArrowOutward
@@ -70,9 +69,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,6 +95,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import com.myvault.app.ui.components.AttachmentThumbnail
 import com.myvault.app.ui.components.NoteActionSheet
 import com.myvault.app.ui.components.NoteModalActionRow
@@ -184,14 +188,14 @@ fun ReadingScreen(
     var sourceReferenceToRemove by remember { mutableStateOf<SourceReferenceCard?>(null) }
     var tagDraft by remember { mutableStateOf("") }
     var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
-    var followAudio by remember { mutableStateOf(true) }
-    var followAudioPausedUntil by remember { mutableLongStateOf(0L) }
+    var followAudio by remember(note?.id) { mutableStateOf(true) }
+    var followRequest by remember(note?.id) { mutableIntStateOf(0) }
     val readingListState = rememberLazyListState()
-    val userScrollConnection = remember {
+    val userScrollConnection = remember(note?.id) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput) {
-                    followAudioPausedUntil = System.currentTimeMillis() + FollowAudioPauseMs
+                    if (available.y != 0f) followAudio = false
                 }
                 return Offset.Zero
             }
@@ -228,7 +232,33 @@ fun ReadingScreen(
     val noteBodyChunks = remember(noteBodyText, uiState.richText.styleMarks, uiState.richText.noteLinks) {
         noteBodyText.toReadingBodyChunks(uiState.richText.styleMarks, uiState.richText.noteLinks)
     }
-    val readingLayouts = remember(note?.id, noteBodyText) { mutableMapOf<Int, ReadingBodyLayout>() }
+    val readingLayouts = remember(note?.id, noteBodyText) { mutableStateMapOf<Int, ReadingBodyLayout>() }
+    val narrationRange = remember(noteBodyText, narrationState.activeSentence, narrationState.activeSentenceSourceOffset, narrationState.noteId) {
+        if (narrationState.noteId == note?.id) narrationTextRange(noteBodyText,
+            narrationState.activeSentence, narrationState.activeSentenceSourceOffset - note?.title.orEmpty().length) else null
+    }
+    val playerInsetPx = with(LocalDensity.current) {
+        (if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp).toPx()
+    }
+    LaunchedEffect(narrationRange, followAudio, followRequest, playerInsetPx) {
+        val range = narrationRange ?: return@LaunchedEffect
+        if (!followAudio) return@LaunchedEffect
+        val chunk = noteBodyChunks.firstOrNull { range.first in it.start until it.end } ?: return@LaunchedEffect
+        val key = "body-${chunk.start}-${chunk.end}"
+        if (readingListState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
+            val chunkIndex = noteBodyChunks.indexOf(chunk)
+            // Header, title, and the Follow Text control precede the body items.
+            readingListState.animateScrollToItem(chunkIndex + 3)
+        }
+        val bodyLayout = snapshotFlow { readingLayouts[chunk.start] }.filterNotNull().first()
+        val item = readingListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return@LaunchedEffect
+        val start = bodyLayout.offsetMapping.originalToTransformed(range.first - chunk.start)
+        val end = bodyLayout.offsetMapping.originalToTransformed(minOf(range.last, chunk.end - 1) - chunk.start)
+        val midpoint = (bodyLayout.layout.getBoundingBox(start).top + bodyLayout.layout.getBoundingBox(end).bottom) / 2f
+        val info = readingListState.layoutInfo
+        val usable = (info.viewportEndOffset - info.viewportStartOffset - playerInsetPx).coerceAtLeast(1f)
+        readingListState.animateScrollBy(item.offset + midpoint - info.viewportStartOffset - usable / 2f)
+    }
     val editAtReadingPosition = {
         val visible = readingListState.layoutInfo.visibleItemsInfo
             .firstOrNull { it.key.toString().startsWith("body-") }
@@ -267,6 +297,13 @@ fun ReadingScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.bg,
         floatingActionButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (narrationRange != null) {
+                    TextButton(onClick = { followAudio = true; followRequest++ }) {
+                        Icon(Icons.Rounded.Notes, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(if (followAudio) "Following text" else "Follow Text")
+                    }
+                }
             FloatingActionButton(
                 onClick = editAtReadingPosition,
                 modifier = Modifier
@@ -277,6 +314,7 @@ fun ReadingScreen(
                 contentColor = Color.White,
             ) {
                 Icon(Icons.Rounded.Edit, "Edit", modifier = Modifier.size(20.dp))
+            }
             }
         },
     ) { innerPadding ->
@@ -308,10 +346,10 @@ fun ReadingScreen(
             if (narrationState.noteId == note?.id && narrationState.activeSentence.isNotBlank()) {
                 item {
                     TextButton(
-                        onClick = { followAudio = !followAudio },
+                        onClick = { followAudio = true; followRequest++ },
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                     ) {
-                        Text(if (followAudio) "Follow audio: On" else "Follow audio: Off")
+                        Text(if (followAudio) "Following text" else "Follow Text")
                     }
                 }
             }
@@ -324,9 +362,7 @@ fun ReadingScreen(
                         onNoteLinkClick = onNoteLinkClick,
                         onDoubleTapEdit = editAtReadingPosition,
                         bodyFontSizeSp = bodyFontSizeSp,
-                        activeSentence = "",
-                        followAudio = false,
-                        followAudioPausedUntil = followAudioPausedUntil,
+                        activeRange = null,
                         modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                     )
                 }
@@ -335,13 +371,8 @@ fun ReadingScreen(
                     androidx.compose.runtime.DisposableEffect(readingLayouts, chunk.start) {
                         onDispose { readingLayouts.remove(chunk.start) }
                     }
-                    val activeSentenceForChunk = narrationState.activeSentence
-                        .takeIf {
-                            narrationState.noteId == note?.id &&
-                                it.isNotBlank() &&
-                                chunk.text.contains(it)
-                        }
-                        .orEmpty()
+                    val localRange = narrationRange?.takeIf { it.first < chunk.end && it.last >= chunk.start }
+                        ?.let { maxOf(it.first - chunk.start, 0)..minOf(it.last - chunk.start, chunk.text.lastIndex) }
                 RichNoteBody(
                         html = "",
                         fallbackText = chunk.text,
@@ -352,9 +383,7 @@ fun ReadingScreen(
                         readingLayouts[chunk.start] = ReadingBodyLayout(layout, offsetMapping)
                     },
                     bodyFontSizeSp = bodyFontSizeSp,
-                        activeSentence = activeSentenceForChunk,
-                    followAudio = followAudio,
-                    followAudioPausedUntil = followAudioPausedUntil,
+                        activeRange = localRange,
                     modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                 )
                 }
@@ -519,7 +548,7 @@ fun ReadingScreen(
                             icon = Icons.Rounded.Notes,
                             selected = followAudio,
                             subtitle = if (followAudio) "On" else "Off",
-                            onClick = { followAudio = !followAudio },
+                            onClick = { followAudio = true; followRequest++ },
                         ),
                         NoteSheetAction(
                             label = "Configure Azure Speech",
@@ -1022,17 +1051,13 @@ private fun RichNoteBody(
     onDoubleTapEdit: () -> Unit,
     onLayout: (TextLayoutResult, androidx.compose.ui.text.input.OffsetMapping) -> Unit = { _, _ -> },
     bodyFontSizeSp: Float,
-    activeSentence: String,
-    followAudio: Boolean,
-    followAudioPausedUntil: Long,
+    activeRange: IntRange?,
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     val bodyText = richText.text.ifBlank { fallbackText.ifBlank { html.stripHtml() } }
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
-    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    val activeStart = activeSentence.takeIf { it.isNotBlank() }?.let(bodyText::indexOf) ?: -1
-    val display = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeSentence) {
+    val activeStart = activeRange?.first ?: -1
+    val display = remember(bodyText, richText.styleMarks, richText.noteLinks, colors, activeRange) {
         val base = buildVaultAnnotatedString(bodyText, richText.styleMarks, richText.noteLinks, colors).let { annotated ->
             if (activeStart < 0) {
                 annotated
@@ -1041,31 +1066,12 @@ private fun RichNoteBody(
                     addStyle(
                         SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
                         activeStart,
-                        (activeStart + activeSentence.length).coerceAtMost(bodyText.length),
+                        ((activeRange?.last ?: activeStart) + 1).coerceAtMost(bodyText.length),
                     )
                 }.toAnnotatedString()
             }
         }
         base.withVaultBidiIsolation()
-    }
-
-    LaunchedEffect(activeSentence, followAudio, followAudioPausedUntil, textLayout, display) {
-        val layout = textLayout ?: return@LaunchedEffect
-        if (!followAudio || activeStart < 0 || System.currentTimeMillis() < followAudioPausedUntil) return@LaunchedEffect
-        val transformedStart = display.offsetMapping.originalToTransformed(activeStart)
-        val transformedEnd = display.offsetMapping.originalToTransformed(
-            (activeStart + activeSentence.length - 1).coerceIn(activeStart, bodyText.lastIndex),
-        )
-        val startBox = layout.getBoundingBox(transformedStart)
-        val endBox = layout.getBoundingBox(transformedEnd)
-        bringIntoViewRequester.bringIntoView(
-            Rect(
-                left = minOf(startBox.left, endBox.left),
-                top = minOf(startBox.top, endBox.top) - FollowAudioPaddingPx,
-                right = maxOf(startBox.right, endBox.right),
-                bottom = maxOf(startBox.bottom, endBox.bottom) + FollowAudioPaddingPx,
-            ),
-        )
     }
 
     if (bodyText.isBlank()) {
@@ -1086,8 +1092,7 @@ private fun RichNoteBody(
             ClickableText(
                 text = display.text,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .bringIntoViewRequester(bringIntoViewRequester),
+                    .fillMaxWidth(),
                 style = MaterialTheme.typography.bodyLarge.copy(
                     color = colors.text,
                     fontSize = bodyFontSizeSp.sp,
@@ -1095,7 +1100,6 @@ private fun RichNoteBody(
                     textDirection = vaultDefaultTextDirection(),
                 ),
                 onTextLayout = {
-                    textLayout = it
                     onLayout(it, display.offsetMapping)
                 },
                 onClick = { offset ->
@@ -1113,8 +1117,6 @@ private data class ReadingBodyLayout(
     val offsetMapping: androidx.compose.ui.text.input.OffsetMapping,
 )
 
-private const val FollowAudioPauseMs = 5_000L
-private const val FollowAudioPaddingPx = 48f
 private const val ReadingBodyChunkTargetChars = 2_800
 private const val ReadingBodyChunkMaxChars = 4_200
 

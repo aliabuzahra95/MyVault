@@ -138,6 +138,7 @@ data class NarrationUiState(
     val totalPositionMs: Long = 0L,
     val totalDurationMs: Long = 0L,
     val activeSentence: String = "",
+    val activeSentenceSourceOffset: Int = 0,
 ) {
     val isActive: Boolean
         get() = status != NarrationPlaybackStatus.Idle
@@ -207,9 +208,11 @@ internal object NarrationDemandPolicy {
         return plans.lastOrNull()?.index ?: 0
     }
 
-    fun activeCue(cues: List<NarrationCue>, chunkIndex: Int, positionMs: Long): NarrationCue? =
-        cues.lastOrNull { cue -> cue.chunkIndex == chunkIndex && positionMs >= cue.startMs }
-            ?.takeIf { cue -> positionMs <= cue.endMs + 180L }
+    fun activeCue(cues: List<NarrationCue>, chunkIndex: Int, positionMs: Long): NarrationCue? {
+        val chunkCues = cues.filter { it.chunkIndex == chunkIndex }.sortedBy { it.startMs }
+        // Hold a valid passage through pauses and media transitions, rather than flickering blank.
+        return chunkCues.lastOrNull { positionMs >= it.startMs } ?: chunkCues.firstOrNull()
+    }
 }
 
 internal class NarrationChunkRequestTracker {

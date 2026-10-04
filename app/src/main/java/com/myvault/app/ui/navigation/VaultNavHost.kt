@@ -1897,6 +1897,7 @@ fun VaultNavHost(
                 activeNarrationSentence = narrationState.activeSentence.takeIf {
                     it.isNotBlank() && narrationState.noteId == attachment?.id?.let { id -> "attachment:$id" }
                 }.orEmpty(),
+                activeNarrationSourceOffset = narrationState.activeSentenceSourceOffset,
                 azureNarrationProgress = azureNarrationProgress,
                 initialPageIndex = resolvedInitialPageIndex,
                 onBackClick = { navController.popBackStack() },

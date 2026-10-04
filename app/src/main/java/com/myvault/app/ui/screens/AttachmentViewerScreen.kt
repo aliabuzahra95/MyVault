@@ -64,6 +64,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
@@ -110,6 +111,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -643,6 +646,7 @@ fun AttachmentViewerScreen(
     documentTextLoading: Boolean = false,
     documentTextError: String? = null,
     activeNarrationSentence: String = "",
+    activeNarrationSourceOffset: Int = 0,
     azureNarrationProgress: AzureNarrationProgress? = null,
     initialPageIndex: Int? = null,
     onBackClick: () -> Unit,
@@ -885,6 +889,8 @@ fun AttachmentViewerScreen(
                         isLoading = documentTextLoading,
                         error = documentTextError,
                         activeSentence = activeNarrationSentence,
+                        activeSourceOffset = activeNarrationSourceOffset,
+                        playerHeight = if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp,
                         azureNarrationProgress = azureNarrationProgress,
                         onAzureListenClick = onAzureListenClick,
                         onAzureResumeClick = onAzureResumeClick,
@@ -948,6 +954,8 @@ private fun DocumentAttachmentViewer(
     isLoading: Boolean,
     error: String?,
     activeSentence: String,
+    activeSourceOffset: Int,
+    playerHeight: Dp,
     azureNarrationProgress: AzureNarrationProgress?,
     onAzureListenClick: () -> Unit,
     onAzureResumeClick: () -> Unit,
@@ -955,36 +963,33 @@ private fun DocumentAttachmentViewer(
 ) {
     val colors = VaultThemeTokens.colors
     val scrollState = rememberScrollState()
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var followAudio by remember { mutableStateOf(true) }
-    var followAudioPausedUntil by remember { mutableLongStateOf(0L) }
+    var followAudio by remember(text) { mutableStateOf(true) }
+    var followRequest by remember(text) { mutableIntStateOf(0) }
+    var textTop by remember(text) { mutableStateOf(0f) }
     var selectableText by remember(text) { mutableStateOf(TextFieldValue(text)) }
-    val activeStart = activeSentence.takeIf { it.isNotBlank() }?.let(text::indexOf) ?: -1
-    val userScrollConnection = remember {
+    val activeRange = remember(text, activeSentence, activeSourceOffset) {
+        narrationTextRange(text, activeSentence, activeSourceOffset)
+    }
+    val activeStart = activeRange?.first ?: -1
+    val userScrollConnection = remember(text) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.UserInput) {
-                    followAudioPausedUntil = System.currentTimeMillis() + DocumentFollowAudioPauseMs
+                    if (available.y != 0f) followAudio = false
                 }
                 return Offset.Zero
             }
         }
     }
 
-    LaunchedEffect(activeSentence, followAudio, followAudioPausedUntil, textLayout) {
+    LaunchedEffect(activeRange, followAudio, followRequest, textLayout, textTop, scrollState.viewportSize) {
         val layout = textLayout ?: return@LaunchedEffect
-        if (!followAudio || activeStart < 0 || System.currentTimeMillis() < followAudioPausedUntil) return@LaunchedEffect
+        if (!followAudio || activeStart < 0 || layout.layoutInput.text.text != text) return@LaunchedEffect
         val startBox = layout.getBoundingBox(activeStart)
-        val endBox = layout.getBoundingBox((activeStart + activeSentence.length - 1).coerceIn(activeStart, text.lastIndex))
-        bringIntoViewRequester.bringIntoView(
-            Rect(
-                left = minOf(startBox.left, endBox.left),
-                top = (minOf(startBox.top, endBox.top) - DocumentFollowAudioPaddingPx).coerceAtLeast(0f),
-                right = maxOf(startBox.right, endBox.right),
-                bottom = maxOf(startBox.bottom, endBox.bottom) + DocumentFollowAudioPaddingPx,
-            ),
-        )
+        val endBox = layout.getBoundingBox(activeRange!!.last)
+        scrollState.animateScrollTo(narrationCenteredScroll(textTop + startBox.top, textTop + endBox.bottom,
+            scrollState.viewportSize.toFloat(), scrollState.maxValue))
     }
 
     AttachmentCanvas {
@@ -995,11 +1000,20 @@ private fun DocumentAttachmentViewer(
                 strokeWidth = 2.dp,
             )
             error != null -> AttachmentViewerEmpty(error)
-            else -> Column(
+            else -> Column(Modifier.fillMaxSize().padding(bottom = playerHeight)) {
+                if (activeSentence.isNotBlank()) {
+                    TextButton(onClick = { followAudio = true; followRequest++ }, modifier = Modifier.align(Alignment.End)) {
+                        Icon(Icons.Rounded.Notes, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(if (followAudio) "Following text" else "Follow Text")
+                    }
+                }
+                Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .nestedScroll(userScrollConnection)
                     .verticalScroll(scrollState)
-                    .nestedScroll(userScrollConnection),
+                    .padding(bottom = 48.dp),
                 verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
             ) {
                 Button(
@@ -1036,23 +1050,15 @@ private fun DocumentAttachmentViewer(
                         Text("Listen from here", modifier = Modifier.padding(start = VaultSpacing.xs))
                     }
                 }
-                if (activeSentence.isNotBlank()) {
-                    TextButton(
-                        onClick = { followAudio = !followAudio },
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        Text(if (followAudio) "Follow audio: On" else "Follow audio: Off")
-                    }
-                }
                 BasicTextField(
                     value = selectableText,
                     onValueChange = { value -> selectableText = value.copy(text = text) },
                     readOnly = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bringIntoViewRequester(bringIntoViewRequester),
+                        .onGloballyPositioned { textTop = it.positionInParent().y },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.text),
-                    visualTransformation = remember(text, activeSentence, colors) {
+                    visualTransformation = remember(text, activeRange, colors) {
                         VisualTransformation { value ->
                             val displayedText = if (activeStart < 0) {
                                 AnnotatedString(value.text)
@@ -1061,7 +1067,7 @@ private fun DocumentAttachmentViewer(
                                     addStyle(
                                         SpanStyle(background = colors.accent.copy(alpha = 0.38f), color = colors.text),
                                         activeStart,
-                                        (activeStart + activeSentence.length).coerceAtMost(value.text.length),
+                                        (activeRange!!.last + 1).coerceAtMost(value.text.length),
                                     )
                                 }.toAnnotatedString()
                             }
@@ -1071,12 +1077,11 @@ private fun DocumentAttachmentViewer(
                     onTextLayout = { textLayout = it },
                 )
             }
+            }
         }
     }
 }
 
-private const val DocumentFollowAudioPauseMs = 5_000L
-private const val DocumentFollowAudioPaddingPx = 48f
 
 private enum class PdfAnnotationsPanelMode {
     CurrentPage,

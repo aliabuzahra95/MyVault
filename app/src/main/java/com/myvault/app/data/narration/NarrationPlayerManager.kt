@@ -550,10 +550,10 @@ class NarrationPlayerManager @Inject constructor(
                     label = "Loading part ${targetChunk + 1}...",
                     currentChunk = targetChunk + 1,
                     totalPositionMs = target,
-                    activeSentence = "",
                     error = null,
                 )
             }
+            updatePlaybackState(NarrationPlaybackStatus.Generating, "Loading part ${targetChunk + 1}...")
             resumePendingSeekIfReady()
             if (pendingSeekMs != null) requestChunk(targetChunk, "seek", priority = true)
             checkAndFillBuffer()
@@ -682,7 +682,8 @@ class NarrationPlayerManager @Inject constructor(
             ?: 0L
 
         val globalPos = pendingSeekMs ?: globalPositionMs(chunkPosition)
-        val activeCue = if (pendingSeekMs == null) NarrationDemandPolicy.activeCue(activeCues, chunkIndex, chunkPosition) else null
+        val highlightTarget = pendingSeek.target ?: NarrationSeekTarget(chunkIndex, chunkPosition)
+        val activeCue = NarrationDemandPolicy.activeCue(activeCues, highlightTarget.chunkIndex, highlightTarget.offsetMs)
         val activeSentence = activeCue?.displayText.orEmpty()
         if (activeCue != null && activeSentence != _state.value.activeSentence) {
             Log.d(Tag, "highlight-segment source=${session?.noteId.orEmpty().take(96)} chunk=${chunkIndex + 1} start=${activeCue.textStart} end=${activeCue.textEnd}")
@@ -697,13 +698,16 @@ class NarrationPlayerManager @Inject constructor(
             speed = speed,
             provider = session?.let { NarrationProvider.fromModel(it.model) } ?: _state.value.provider,
             voice = session?.voice ?: _state.value.voice,
-            currentChunk = chunkIndex + 1,
+            currentChunk = highlightTarget.chunkIndex + 1,
             totalChunks = expectedChunks.takeIf { it > 0 } ?: activeFiles.size,
             currentPositionMs = chunkPosition,
             durationMs = chunkDuration,
             totalPositionMs = globalPos,
             totalDurationMs = estimatedTotalDurationMs().takeIf { it > 0L } ?: chunkDuration,
             activeSentence = activeSentence,
+            activeSentenceSourceOffset = activeCue?.let { cue ->
+                activeChunkPlans.filter { it.index < cue.chunkIndex }.sumOf { it.text.length + 1 } + cue.textStart
+            } ?: 0,
         )
         checkAndFillBuffer()
         persistAzureProgress()
