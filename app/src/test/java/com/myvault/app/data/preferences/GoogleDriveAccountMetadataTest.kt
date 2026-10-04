@@ -7,6 +7,42 @@ import org.junit.Test
 
 class GoogleDriveAccountMetadataTest {
     @Test
+    fun `graph backup completion persists without changing legacy manifest metadata`() {
+        val updated = mapOf(
+            "account-a@example.com" to GoogleDriveSyncMetadata(100L, 90L),
+            "account-b@example.com" to GoogleDriveSyncMetadata(200L, 180L),
+        ).withCompletedGraphBackup(" ACCOUNT-A@example.com ", 300L)
+            .toGoogleDriveSyncMetadataEntries().toGoogleDriveSyncMetadataByAccount()
+
+        assertEquals(GoogleDriveSyncMetadata(300L, 90L), updated.getValue("account-a@example.com"))
+        assertEquals(GoogleDriveSyncMetadata(200L, 180L), updated.getValue("account-b@example.com"))
+    }
+
+    @Test
+    fun `first graph backup records account scoped completion`() {
+        val updated = emptyMap<String, GoogleDriveSyncMetadata>()
+            .withCompletedGraphBackup("new@example.com", 300L)
+        assertEquals(GoogleDriveSyncMetadata(300L, 0L), updated.getValue("new@example.com"))
+    }
+
+    @Test
+    fun `older completion cannot roll backup date backwards`() {
+        val updated = mapOf("a@example.com" to GoogleDriveSyncMetadata(300L, 90L))
+            .withCompletedGraphBackup("a@example.com", 200L)
+        assertEquals(GoogleDriveSyncMetadata(300L, 90L), updated.getValue("a@example.com"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `unknown completion cannot be presented as a successful backup`() {
+        emptyMap<String, GoogleDriveSyncMetadata>().withCompletedGraphBackup("a@example.com", 0L)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `completion requires an identified account`() {
+        emptyMap<String, GoogleDriveSyncMetadata>().withCompletedGraphBackup(" ", 300L)
+    }
+
+    @Test
     fun `account metadata round trips independently`() {
         val source = mapOf(
             "account-a@example.com" to GoogleDriveSyncMetadata(lastSyncAt = 100L, lastManifestAt = 90L),

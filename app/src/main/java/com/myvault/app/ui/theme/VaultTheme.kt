@@ -108,6 +108,7 @@ fun VaultTheme(
     mode: VaultThemeMode = VaultThemeMode.FollowSystemDark,
     accentColorHex: String = "#4F88E6",
     materialYouEnabled: Boolean = false,
+    highContrastTitles: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -143,7 +144,10 @@ fun VaultTheme(
         primary = vaultColors.accent,
     )
 
-    CompositionLocalProvider(LocalVaultColors provides vaultColors) {
+    CompositionLocalProvider(
+        LocalVaultColors provides vaultColors,
+        LocalHighContrastTitles provides highContrastTitles,
+    ) {
         MaterialTheme(
             colorScheme = materialColors,
             typography = VaultTypography,

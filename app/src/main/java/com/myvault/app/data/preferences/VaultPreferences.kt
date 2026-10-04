@@ -411,6 +411,22 @@ class VaultPreferences @Inject constructor(
             ?: GoogleDriveSyncMetadata()
     }
 
+    suspend fun markGraphBackupCompleted(
+        accountEmail: String,
+        completedAt: Long = System.currentTimeMillis(),
+    ) {
+        val account = normalizeGoogleDriveAccount(accountEmail)
+        context.vaultDataStore.edit { preferences ->
+            val updated = preferences[Keys.GoogleDriveSyncMetadataByAccount].orEmpty()
+                .toGoogleDriveSyncMetadataByAccount()
+                .withCompletedGraphBackup(account, completedAt)
+            preferences[Keys.GoogleDriveSyncMetadataByAccount] = updated.toGoogleDriveSyncMetadataEntries()
+            if (normalizeGoogleDriveAccount(preferences[Keys.GoogleDriveAccountEmail].orEmpty()) == account) {
+                preferences[Keys.LastGoogleDriveSyncAt] = updated.getValue(account).lastSyncAt
+            }
+        }
+    }
+
     suspend fun markGoogleDriveSync(
         accountEmail: String,
         cloudManifestAt: Long,

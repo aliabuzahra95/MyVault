@@ -311,7 +311,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             }
         }
         if (result.forkDetected) DriveSyncResult.Conflict("Fork detected. Both immutable backups were preserved. Backup/Restore require reconciliation.")
-        else DriveSyncResult.Success(if (result.alreadyBackedUp) "Already backed up." else "Backup complete. Your previous legacy backup remains preserved.")
+        else {
+            preferences.markGraphBackupCompleted(email)
+            DriveSyncResult.Success(if (result.alreadyBackedUp) "Already backed up." else "Backup complete. Your previous legacy backup remains preserved.")
+        }
     } catch (error: Throwable) {
         if (error is CancellationException) throw error
         DriveSyncResult.Failure(error.driveMessage("Backup failed safely; pending local changes and previous backups were preserved"))

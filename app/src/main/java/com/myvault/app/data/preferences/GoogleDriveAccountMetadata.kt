@@ -10,6 +10,16 @@ data class GoogleDriveSyncMetadata(
 
 internal fun normalizeGoogleDriveAccount(email: String): String = email.trim().lowercase()
 
+internal fun Map<String, GoogleDriveSyncMetadata>.withCompletedGraphBackup(
+    accountEmail: String,
+    completedAt: Long,
+): Map<String, GoogleDriveSyncMetadata> {
+    val account = normalizeGoogleDriveAccount(accountEmail)
+    require(account.isNotBlank() && completedAt > 0L)
+    val previous = this[account] ?: GoogleDriveSyncMetadata()
+    return this + (account to previous.copy(lastSyncAt = maxOf(previous.lastSyncAt, completedAt)))
+}
+
 @Suppress("UNUSED_PARAMETER")
 internal fun resolveGoogleDriveSyncMetadata(
     accountEmail: String,

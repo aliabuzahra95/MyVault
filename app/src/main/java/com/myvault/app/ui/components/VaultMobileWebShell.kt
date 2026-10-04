@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.ui.theme.contentTitleFontWeight
 import kotlinx.coroutines.launch
 
 data class VaultMobileWebNavigationItem(
@@ -670,7 +671,11 @@ private fun DrawerExplorerNode(
                     colors.textSecondary
                 },
                 fontSize = 14.sp,
-                fontWeight = if (node.type == VaultMobileWebExplorerNodeType.Folder || selected) FontWeight.W700 else FontWeight.W500,
+                fontWeight = if (node.type == VaultMobileWebExplorerNodeType.Folder || selected) FontWeight.W700
+                    else contentTitleFontWeight(
+                        highContrastTitles && node.type in setOf(VaultMobileWebExplorerNodeType.Note, VaultMobileWebExplorerNodeType.Document),
+                        FontWeight.W500,
+                    ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

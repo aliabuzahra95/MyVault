@@ -128,6 +128,8 @@ import com.myvault.app.data.repository.KnowledgeTagChip
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultSpacing
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.ui.theme.LocalHighContrastTitles
+import com.myvault.app.ui.theme.contentTitleFontWeight
 import com.myvault.app.ui.viewmodel.LibraryAnnotationItem
 import com.myvault.app.ui.viewmodel.LibraryFileItem
 import com.myvault.app.ui.viewmodel.LibraryFolderItem
@@ -1555,7 +1557,9 @@ private fun LibraryHierarchyRow(
                     text = title,
                     style = when {
                         fileRow && topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
-                        fileRow -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
+                        fileRow -> MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = contentTitleFontWeight(LocalHighContrastTitles.current, FontWeight.W500),
+                        )
                         topLevel -> MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600)
                         else -> MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.W500)
                     },

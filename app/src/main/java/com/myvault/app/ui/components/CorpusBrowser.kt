@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myvault.app.ui.theme.VaultShapes
 import com.myvault.app.ui.theme.VaultThemeTokens
+import com.myvault.app.ui.theme.LocalHighContrastTitles
+import com.myvault.app.ui.theme.contentTitleFontWeight
 import com.myvault.app.data.local.entity.FOLDER_COLOR_BLUE
 import com.myvault.app.data.local.entity.FOLDER_COLOR_GREEN
 import com.myvault.app.data.local.entity.FOLDER_COLOR_PURPLE
@@ -561,7 +563,7 @@ fun CorpusLeafRow(
                 color = colors.text,
                 fontSize = 13.2.sp,
                 lineHeight = 17.sp,
-                fontWeight = FontWeight.W400,
+                fontWeight = contentTitleFontWeight(LocalHighContrastTitles.current, FontWeight.W400),
                 maxLines = if (showFullTitle) 4 else 1,
                 overflow = TextOverflow.Ellipsis,
             )

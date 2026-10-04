@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.fragment.app.FragmentActivity
 import com.myvault.app.data.preferences.VaultPreferences
+import com.myvault.app.data.preferences.NoteTitleColorPreference
 import com.myvault.app.data.preferences.VaultUserPreferences
 import com.myvault.app.data.repository.NoteRepository
 import com.myvault.app.ui.navigation.VaultNavHost
@@ -194,6 +195,7 @@ class MainActivity : FragmentActivity() {
                 mode = userPreferences.theme,
                 accentColorHex = userPreferences.accentColor,
                 materialYouEnabled = userPreferences.materialYouEnabled,
+                highContrastTitles = userPreferences.noteTitleColor == NoteTitleColorPreference.HighContrast,
             ) {
                 val locked = loadedPreferences != null && userPreferences.securityLockEnabled && !unlocked
                 val colors = VaultThemeTokens.colors
