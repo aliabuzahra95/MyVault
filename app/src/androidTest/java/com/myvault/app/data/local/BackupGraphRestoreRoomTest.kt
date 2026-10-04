@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.myvault.app.data.local.dao.readIntent
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.*
 import kotlinx.coroutines.flow.first
@@ -33,6 +34,98 @@ class BackupGraphRestoreRoomTest {
     }
     private suspend fun applied(f: BackupGraphWriterRoomTest.Fixture) = f.db.backupGraphRestoreDao().applied(f.ctx.accountScope,f.ctx.lineageId)
     private suspend fun fails(block: suspend () -> Unit) { var failed=false;try { block() } catch(_: IllegalStateException) { failed=true } catch(_: java.io.IOException) { failed=true };assertTrue(failed) }
+
+    @Test fun twoPhonesRestoreNewRemoteNoteKeepNewLocalNoteThenPublishBoth() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { phoneA ->
+            phoneA.root()
+            target(phoneA).use { phoneB ->
+                restorer(phoneB).restore()
+                phoneB.note("b", "Phone B English العربية")
+                val rich = "{\"text\":\"Phone B English العربية\",\"styleMarks\":[{\"start\":0,\"end\":7,\"bold\":true}]}"
+                phoneB.db.blockDao().upsertAll(listOf(com.myvault.app.data.local.entity.BlockEntity("b-body", "b", "rich_text", rich, 0)))
+                phoneB.binary(4096, "b-pdf")
+                val attachment = phoneB.db.attachmentDao().getByIdIncludingDeleted("b-pdf")!!
+                phoneB.db.openHelper.writableDatabase.execSQL("UPDATE attachments SET noteId=? WHERE id=?", arrayOf("b", "b-pdf"))
+                val pending = phoneB.pending()
+                phoneA.note("a", "Phone A backed up")
+                phoneA.writer().publish()
+                val result = restorer(phoneB).restore()
+                assertEquals(GraphRestoreStatus.APPLIED, result.status)
+                assertEquals(1, result.localNotesPreserved)
+                assertEquals(phoneA.binding().commitId, applied(phoneB)!!.commitId)
+                assertEquals("Phone A backed up", phoneB.db.noteDao().getById("a")!!.bodyPlainText)
+                assertEquals("Phone B English العربية", phoneB.db.noteDao().getById("b")!!.bodyPlainText)
+                assertEquals(rich, phoneB.db.blockDao().getForNote("b").single().content)
+                assertEquals(attachment.localPath, phoneB.db.attachmentDao().getByIdIncludingDeleted("b-pdf")!!.localPath)
+                assertTrue(File(attachment.localPath).isFile)
+                assertEquals(pending, phoneB.pending())
+                assertTrue(adoptVerifiedRestoredParent(phoneB.db, phoneB.ctx, phoneB.store.commits()))
+                assertEquals(pending, phoneB.pending())
+                phoneB.writer().publish()
+                assertTrue(phoneB.pending().isEmpty())
+                assertEquals(GraphRestoreStatus.APPLIED, restorer(phoneA).restore().status)
+                assertNotNull(phoneA.db.noteDao().getById("a"))
+                assertEquals("Phone B English العربية", phoneA.db.noteDao().getById("b")!!.bodyPlainText)
+                assertEquals(rich, phoneA.db.blockDao().getForNote("b").single().content)
+                assertEquals(4096L, phoneA.db.attachmentDao().getByIdIncludingDeleted("b-pdf")!!.sizeBytes)
+            }
+        }
+    }
+
+    @Test fun preservedNewNoteProofSurvivesRestartWithoutAcknowledgement() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { source ->
+            source.root()
+            target(source).use { f ->
+                restorer(f).restore(); f.note("b", "Keep after restart")
+                source.note("a", "New remote"); source.writer().publish()
+                val pending = f.pending()
+                fails { restorer(f, boundary = { if (it == "INTENT_PERSISTED") error("Disposable interruption") }).restore() }
+                assertTrue(JSONObject(f.db.backupGraphRestoreDao().unfinished().single().frozenChangesJson).has("preservedLocalNotes"))
+                f.reopen()
+                assertEquals(GraphRestoreStatus.APPLIED, restorer(f).restore().status)
+                assertEquals(pending, f.pending())
+                assertEquals("Keep after restart", f.db.noteDao().getById("b")!!.bodyPlainText)
+                assertNotNull(f.db.noteDao().getById("a"))
+            }
+        }
+    }
+
+    @Test fun newerLocalEditDuringPreservedRestoreBlocksAndStaysPending() = runBlocking {
+        BackupGraphWriterRoomTest().Fixture().use { source ->
+            source.root()
+            target(source).use { f ->
+                restorer(f).restore(); f.note("b", "Frozen local")
+                val original = applied(f)
+                source.note("a", "New remote"); source.writer().publish()
+                val result = restorer(f, boundary = { if (it == "BEFORE_ROOM_APPLY") f.edit("N+1 local", "b") }).restore()
+                assertEquals(GraphRestoreStatus.LOCAL_CHANGES, result.status)
+                assertEquals(original, applied(f))
+                assertNull(f.db.noteDao().getById("a"))
+                assertEquals("N+1 local", f.db.noteDao().getById("b")!!.bodyPlainText)
+                assertEquals(1, f.pending().size)
+                assertEquals(GraphRestoreStatus.LOCAL_CHANGES, restorer(f).restore().status)
+            }
+        }
+    }
+
+    @Test fun newNoteCollisionOrIncomingParentDeletionBlocksBeforeChanges() = runBlocking {
+        for (parentDeletion in listOf(false, true)) BackupGraphWriterRoomTest().Fixture().use { source ->
+            source.root()
+            target(source).use { f ->
+                restorer(f).restore(); f.note("b", "Local only")
+                if (parentDeletion) {
+                    f.db.noteDao().upsertAll(listOf(f.db.noteDao().getById("b")!!.copy(parentNoteId = "n")))
+                    source.db.noteDao().deleteByIds(listOf("n"))
+                } else source.note("b", "Remote same stable ID")
+                source.writer().publish()
+                val original = applied(f); val pending = f.pending()
+                assertEquals(GraphRestoreStatus.LOCAL_CHANGES, restorer(f).restore().status)
+                assertEquals(original, applied(f)); assertEquals(pending, f.pending())
+                assertEquals("Local only", f.db.noteDao().getById("b")!!.bodyPlainText)
+                assertNotNull(f.db.noteDao().getById("n"))
+            }
+        }
+    }
 
     @Test fun oldGraphDeviceAppliesAuthoritativePhoneTransitionExactly() = runBlocking {
         BackupGraphWriterRoomTest().Fixture().use { source ->
@@ -424,12 +517,12 @@ class BackupGraphRestoreRoomTest {
             while (builder.length < 4_000_000) {
                 builder.append("A".repeat(10_000))
             }
-            source.db.noteDao().insert(NoteEntity(id="huge-note", folderId="root", title="Huge", body=builder.toString(), pinned=false, trash=null, created=0, updated=0, displayOrder=0))
+            source.note("huge-note", builder.toString())
             source.writer().publish()
             target(source).use { target ->
                 val r = restorer(target, source.publicationStore)
                 assertEquals(GraphRestoreStatus.APPLIED, r.restore().status)
-                assertEquals(builder.toString(), target.db.noteDao().note("huge-note")!!.body)
+                assertEquals(builder.toString(), target.db.noteDao().getById("huge-note")!!.bodyPlainText)
             }
         }
     }

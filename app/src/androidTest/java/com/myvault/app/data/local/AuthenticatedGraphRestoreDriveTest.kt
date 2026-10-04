@@ -2,6 +2,7 @@ package com.myvault.app.data.local
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.myvault.app.data.local.dao.readIntent
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.*
 import kotlinx.coroutines.flow.first

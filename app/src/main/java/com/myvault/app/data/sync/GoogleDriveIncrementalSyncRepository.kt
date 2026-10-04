@@ -340,9 +340,10 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 }
             }).restore()
             when (result.status) {
-                GraphRestoreStatus.APPLIED -> DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates.")
+                GraphRestoreStatus.APPLIED -> DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates." +
+                    if (result.localNotesPreserved > 0) " Kept ${result.localNotesPreserved} new local notes; Back up now to include them." else "")
                 GraphRestoreStatus.ALREADY_CURRENT -> DriveSyncResult.Success("Already up to date.")
-                GraphRestoreStatus.LOCAL_CHANGES -> DriveSyncResult.Failure("Local changes need to be backed up or resolved before Restore. Nothing was overwritten.")
+                GraphRestoreStatus.LOCAL_CHANGES -> DriveSyncResult.Failure("Some local changes cannot be preserved safely during Restore. Nothing was overwritten.")
                 GraphRestoreStatus.FORK -> DriveSyncResult.Conflict("Fork detected. Restore cannot choose a branch. Local data was preserved.")
                 GraphRestoreStatus.UNSUPPORTED -> DriveSyncResult.Failure("Unsupported backup version. Update MyVault before Restore.")
                 GraphRestoreStatus.DIVERGENT -> DriveSyncResult.Failure("Local and remote backup histories diverge. Reconciliation is required.")

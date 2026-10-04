@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.myvault.app.data.local.entity.BlockEntity
+import com.myvault.app.data.local.dao.readPublication
 import com.myvault.app.data.preferences.VaultPreferences
 import com.myvault.app.data.repository.*
 import kotlinx.coroutines.runBlocking

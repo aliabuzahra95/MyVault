@@ -15,7 +15,7 @@ import java.util.UUID
 
 internal const val BackupGraphTargetedRestoreEnabled = true
 internal enum class GraphRestoreStatus { APPLIED, ALREADY_CURRENT, LOCAL_CHANGES, RECONCILIATION_REQUIRED, FORK, DIVERGENT, UNSUPPORTED, CORRUPT, MISSING_ANCESTRY, ACCOUNT_MISMATCH }
-internal data class GraphRestoreResult(val status: GraphRestoreStatus, val commitsApplied: Int = 0, val rowsWritten: Int = 0, val binariesDownloaded: Int = 0)
+internal data class GraphRestoreResult(val status: GraphRestoreStatus, val commitsApplied: Int = 0, val rowsWritten: Int = 0, val binariesDownloaded: Int = 0, val localNotesPreserved: Int = 0)
 
 internal interface GraphRestoreSettings {
     suspend fun read(): JSONObject
@@ -36,6 +36,7 @@ internal class InternalBackupGraphRestore(
     private val dao get() = db.backupGraphRestoreDao()
     private val context get() = store.context.also { it.validate() }
     private class Blocked(val status: GraphRestoreStatus) : IllegalStateException(status.name)
+    private val verifiedChanges = mutableMapOf<BackupGraphCommit, Pair<List<BackupRecordChange>, List<BackupBinaryDescriptor>>>()
     init { check(restoreRoot.canonicalFile.toPath().startsWith(privateFiles.canonicalFile.toPath()) && restoreRoot.canonicalFile != privateFiles.canonicalFile) }
 
     suspend fun restore(): GraphRestoreResult = journal.binaryMutex.withLock {
@@ -91,21 +92,42 @@ internal class InternalBackupGraphRestore(
         // Nothing is overwritten on the fast path, including locally modified rows.
         if (plan.status == GraphStatus.ALREADY_CURRENT) return GraphRestoreResult(if (committed == 0) GraphRestoreStatus.ALREADY_CURRENT else GraphRestoreStatus.APPLIED, committed, written, downloaded)
         if (position != null && plan.requiresCheckpoint) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
-        checkNoLocalChanges()
         if (position == null && hasUserRows()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
         val missing = if (position == null) plan.commits.drop(plan.commits.indexOfLast { it.kind == "checkpoint" }) else plan.descendants
+        val preserved = db.withTransaction { capturePendingNotes() }
+        if (preserved.isNotEmpty()) verifyPreservedNotes(preserved, graph, missing)
+        checkLocalChanges(preserved)
         for ((index, commit) in missing.withIndex()) {
             val receipt = objects.single { BackupGraphProtocol.parse(it).commitId == commit.commitId }
-            val intent = prepare(commit, receipt.objectRef, publication.takeIf { index == 0 })
+            val intent = prepare(commit, receipt.objectRef, publication.takeIf { index == 0 }, preserved)
             boundary("INTENT_PERSISTED")
             val result = resume(intent.operationId); committed++; written += result.first; downloaded += result.second
         }
-        return GraphRestoreResult(GraphRestoreStatus.APPLIED, committed, written, downloaded)
+        return GraphRestoreResult(GraphRestoreStatus.APPLIED, committed, written, downloaded, preserved.count { it.group == "notes.json" })
     }
 
-    private suspend fun checkNoLocalChanges() {
-        if (db.backupJournalDao().pending(context.accountScope).isNotEmpty()) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
+    private suspend fun capturePendingNotes(): List<CapturedBackupRecord> = db.backupJournalDao().pending(context.accountScope).map { pending ->
+        if (pending.operation != "UPSERT" || pending.recordGroup == "settings.json") throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
+        val row = db.backupCaptureDao().readBackupRecord(pending.recordGroup, pending.stableKey()) ?: throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
+        CapturedBackupRecord(pending.recordGroup, pending.stableKey(), pending.operation, pending.generation, row.toString(), backupRecordDependencies(pending.recordGroup, row))
+    }
+
+    private suspend fun checkLocalChanges(preserved: List<CapturedBackupRecord> = emptyList()) {
+        val current = capturePendingNotes()
+        if (current.size != preserved.size || current.zip(preserved).any { (now, before) ->
+            now.copy(payloadJson = before.payloadJson) != before || !sameBackupJson(JSONObject(now.payloadJson!!), JSONObject(before.payloadJson!!))
+        }) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
         if (db.backupGraphDao().unfinishedMetadata(context.accountScope).isNotEmpty()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+    }
+
+    private suspend fun verifyPreservedNotes(records: List<CapturedBackupRecord>, graph: BackupGraph, incoming: List<BackupGraphCommit>) {
+        val history = graph.plan().commits.flatMap { readChanges(it).first }
+        val changes = incoming.flatMap { readChanges(it).first }
+        if (!canPreserveGraphLocalNotes(records, history, changes)) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
+        val local = records.map { BackupRecordIdentity(it.group, it.key) }.toSet()
+        for (record in records) for (dep in record.dependencies) {
+            if (dep !in local && db.backupCaptureDao().readBackupRecord(dep.group, dep.key) == null) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
+        }
     }
     private fun hasUserRows(): Boolean = BackupRecordKeys.keys.any { group ->
         db.openHelper.readableDatabase.query("SELECT 1 FROM `${backupRecordTable(group)}` LIMIT 1").use { it.moveToFirst() }
@@ -115,7 +137,8 @@ internal class InternalBackupGraphRestore(
         val input = store.read(ref.cloudFileId) ?: error("Required immutable object is missing.")
         val bytes = input.use { it.readBytes() }; BackupGraphProtocol.verify(ref, bytes); return bytes
     }
-    private suspend fun prepare(commit: BackupGraphCommit, ref: GraphObjectRef, publication: BackupGraphBinding? = null): BackupGraphRestore {
+    private suspend fun readChanges(commit: BackupGraphCommit): Pair<List<BackupRecordChange>, List<BackupBinaryDescriptor>> {
+        verifiedChanges[commit]?.let { return it }
         val changes: List<BackupRecordChange>
         val binaries: List<BackupBinaryDescriptor>
         if (commit.kind == "delta") {
@@ -149,6 +172,12 @@ internal class InternalBackupGraphRestore(
             check(rows.map { it.file to it.key }.distinct().size == rows.size && bytes.map { it.attachmentId }.distinct().size == bytes.size)
             changes = rows; binaries = bytes
         }
+        return (changes to binaries).also { verifiedChanges[commit] = it }
+    }
+
+    private suspend fun prepare(commit: BackupGraphCommit, ref: GraphObjectRef, publication: BackupGraphBinding? = null,
+        preserved: List<CapturedBackupRecord> = emptyList()): BackupGraphRestore {
+        val (changes, binaries) = readChanges(commit)
         // Resolve only attachment rows in this commit, not the entire checkpoint binary index.
         val replacements = binaries.associateBy { it.attachmentId }
         val resolved = mutableListOf<BackupBinaryDescriptor>()
@@ -165,11 +194,12 @@ internal class InternalBackupGraphRestore(
         check(binaries.all { b -> changes.any { it.file == "attachments.json" && it.key == listOf(b.attachmentId) && !it.deleted } })
         changes.filter { it.file == "settings.json" }.forEach { it.value!!.toValidatedBackupPreferences() }
         val frozen = JSONObject().put("changes",JSONArray(changes.map { it.toJson() })).put("binaries",JSONArray(resolved.map { it.toJson() }))
+        if (preserved.isNotEmpty()) frozen.put("preservedLocalNotes", preservedGraphNotesJson(preserved))
         val operation = UUID.randomUUID().toString()
         val settingsBefore = if (changes.any { it.file == "settings.json" }) settings.read().toString() else null
         return db.withTransaction {
             check(dao.unfinishedMetadata().isEmpty()) { "Another Restore intent requires recovery first." }
-            checkNoLocalChanges()
+            checkLocalChanges(preserved)
             val clock = db.backupJournalDao().clock(); check(clock.suppressionDepth == 0 && clock.settingsToken == null)
             val original = dao.applied(context.accountScope,context.lineageId)
             if (publication != null) {
@@ -209,7 +239,7 @@ internal class InternalBackupGraphRestore(
         }
         val clock = db.backupJournalDao().clock()
         if (clock.generation != intent.capturedGeneration || clock.originEpoch != intent.capturedOriginEpoch) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
-        checkNoLocalChanges()
+        checkLocalChanges(readPreservedGraphNotes(frozen))
         check(clock.suppressionDepth == 0 && clock.settingsToken in listOf(null,"graph-restore:${intent.operationId}"))
     }
     private suspend fun resume(operationId: String): Pair<Int,Int> {
@@ -223,6 +253,12 @@ internal class InternalBackupGraphRestore(
         check(graph.plan().commits.any { it == commit } && objects.any { it.objectRef == GraphObjectRef(intent.commitFileId,intent.commitSha256,intent.commitSize) })
         val frozen = JSONObject(intent.frozenChangesJson)
         val changes = frozenChanges(frozen)
+        val preserved = readPreservedGraphNotes(frozen)
+        if (preserved.isNotEmpty()) {
+            val path = graph.plan().commits
+            val position = path.indexOfFirst { it.commitId == commit.commitId }
+            verifyPreservedNotes(preserved, graph, path.drop(position))
+        }
         var downloads = 0
         for (obj in dao.objects(intent.accountScope,intent.operationId)) {
             if (obj.status == "REUSE") {
