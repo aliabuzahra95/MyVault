@@ -250,7 +250,8 @@ fun EditorScreen(
     var deleteDialogOpen by remember { mutableStateOf(false) }
     var bodyFocused by remember { mutableStateOf(false) }
     var bodyTextLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var editorHistory by remember(noteId) { mutableStateOf(EditorHistory()) }
+    // Keep the holder stable through async note hydration; loading a note resets its contents below.
+    var editorHistory by remember { mutableStateOf(EditorHistory()) }
     val isPinned = uiState.note?.isPinned == true
     val isFavourite = uiState.note?.isFavourite == true
     val bodyEditorScrollState = rememberScrollState()
@@ -860,7 +861,7 @@ fun EditorScreen(
                             if (!canUndo) add(EditorTool.Undo)
                             if (!canRedo) add(EditorTool.Redo)
                         },
-                        onToolClick = ::applyTool,
+                        onToolClick = { applyTool(it) },
                     )
                     androidx.compose.animation.AnimatedVisibility(
                         visible = paragraphStyleOpen,

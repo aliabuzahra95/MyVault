@@ -100,8 +100,8 @@ android {
         applicationId = "com.myvault.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.1.15"
+        versionCode = 20
+        versionName = "0.1.16"
         testInstrumentationRunner = providers.gradleProperty("MYVAULT_TEST_INSTRUMENTATION_RUNNER")
             .orElse("androidx.test.runner.AndroidJUnitRunner").get()
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
