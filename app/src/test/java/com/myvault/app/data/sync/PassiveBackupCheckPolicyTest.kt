@@ -49,10 +49,10 @@ class PassiveBackupCheckPolicyTest {
             policy.complete(check(BackupGraphReadinessState.RESTORE_REQUIRED, "c11"), 1_800_000, "c10").presentation)
     }
 
-    @Test fun localRemoteChangesWarnWithoutOfferingUnsafeRestore() {
+    @Test fun localRemoteChangesOfferExplicitAuthoritativeRestore() {
         val result = PassiveBackupCheckPolicy().complete(check(BackupGraphReadinessState.LOCAL_REMOTE_CHANGES), 0, null)
         assertEquals(PassiveBackupPresentation.PROMPT, result.presentation)
-        assertEquals(LatestBackupNoticeKind.LOCAL_CHANGES, result.notice?.kind)
+        assertEquals(LatestBackupNoticeKind.NEWER, result.notice?.kind)
     }
 
     @Test fun failedVerificationNeverShowsModalOrFalseSuccess() {

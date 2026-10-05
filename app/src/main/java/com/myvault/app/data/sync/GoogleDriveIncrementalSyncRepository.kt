@@ -301,12 +301,24 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                     val prepared = baselinePreparer.prepare(email, onProgress = { onProgress(it.toDriveProgress()) })
                     try { writer.transition(prepared).first } finally { prepared.directory.deleteRecursively() }
                 } else {
+                    var recovered: com.myvault.app.data.repository.GraphWriterResult? = null
                     if (trusted == null) {
-                        check(adoptVerifiedRestoredParent(database, store.context, store.commits())) {
-                            "This phone's graph proof is invalid. Use the explicit phone-as-source transition, or reconcile before Backup. Local changes were preserved."
+                        val canAdopt = applied != null && applied.driveAccountId == store.context.driveAccountId &&
+                            applied.originEpoch == database.backupJournalDao().clock().originEpoch
+                        if (!canAdopt || !adoptVerifiedRestoredParent(database, store.context, store.commits())) {
+                            // Explicit Backup may repair an invalidated local proof using the
+                            // existing verified transition. It cannot choose a remote fork.
+                            val graph = BackupGraph.discover(store.commits(), store.context.driveAccountId, store.context.lineageId)
+                            check(graph.status == GraphStatus.SINGLE_TIP && graph.tips.single() == binding?.commitId) {
+                                "Drive has newer or conflicting history. Restore the verified backup first, then Back up now; new local items will be kept."
+                            }
+                            if (backupJournal.capture(email).account.trusted) backupJournal.invalidateBaseline("explicit_backup_recovery")
+                            val prepared = baselinePreparer.prepare(email, onProgress = { onProgress(it.toDriveProgress()) })
+                            recovered = try { writer.transition(prepared).first }
+                                finally { prepared.directory.deleteRecursively() }
                         }
                     }
-                    writer.publish()
+                    recovered ?: writer.publish()
                 }
             }
         }
@@ -343,7 +355,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 GraphRestoreStatus.APPLIED -> DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates." +
                     if (result.localNotesPreserved > 0) " Kept ${result.localNotesPreserved} new local notes; Back up now to include them." else "")
                 GraphRestoreStatus.ALREADY_CURRENT -> DriveSyncResult.Success("Already up to date.")
-                GraphRestoreStatus.LOCAL_CHANGES -> DriveSyncResult.Failure("Some local changes cannot be preserved safely during Restore. Nothing was overwritten.")
+                GraphRestoreStatus.LOCAL_CHANGES -> DriveSyncResult.Failure("Restore was interrupted by a concurrent change. Please retry Restore.")
                 GraphRestoreStatus.FORK -> DriveSyncResult.Conflict("Fork detected. Restore cannot choose a branch. Local data was preserved.")
                 GraphRestoreStatus.UNSUPPORTED -> DriveSyncResult.Failure("Unsupported backup version. Update MyVault before Restore.")
                 GraphRestoreStatus.DIVERGENT -> DriveSyncResult.Failure("Local and remote backup histories diverge. Reconciliation is required.")

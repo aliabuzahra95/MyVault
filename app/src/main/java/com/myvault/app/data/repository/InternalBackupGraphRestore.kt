@@ -26,7 +26,7 @@ internal class GraphRestorePreferences(private val preferences: VaultPreferences
     override suspend fun apply(value: JSONObject) = preferences.applyGraphRestorePreferences(value.toValidatedBackupPreferences())
 }
 
-/** Internal/disposable only. Read-only transport; publication bindings and pending rows are never advanced/acked. */
+/** Read-only remote transport. Explicit Restore supersedes only graph-known local edits. */
 internal class InternalBackupGraphRestore(
     private val db: VaultDatabase, private val journal: BackupChangeJournal,
     private val privateFiles: File, private val restoreRoot: File,
@@ -41,7 +41,14 @@ internal class InternalBackupGraphRestore(
 
     suspend fun restore(): GraphRestoreResult = journal.binaryMutex.withLock {
         journal.settingsMutex.withLock {
-            try { timing.measure("restore.total") { run() } } catch (e: Blocked) { GraphRestoreResult(e.status) }
+            try {
+                timing.measure("restore.total") {
+                    try { run() } catch (e: Blocked) {
+                        if (e.status != GraphRestoreStatus.LOCAL_CHANGES) throw e
+                        run() // A concurrent local edit upgrades the retry to authoritative Restore.
+                    }
+                }
+            } catch (e: Blocked) { GraphRestoreResult(e.status) }
         }
     }
 
@@ -63,9 +70,27 @@ internal class InternalBackupGraphRestore(
         if (outstanding.any { it.accountScope != c.accountScope || it.lineageId != c.lineageId || it.driveAccountId != c.driveAccountId }) throw Blocked(GraphRestoreStatus.ACCOUNT_MISMATCH)
         check(outstanding.size <= 1) { "Ambiguous Restore intent." }
         journal.registerAccount(c.accountScope)
-        var committed = 0; var written = 0; var downloaded = 0
-        outstanding.singleOrNull()?.let { val result = resume(it.operationId); committed++; written += result.first; downloaded += result.second }
         val (objects, graph) = inventory(); allowed(graph)
+        var committed = 0; var written = 0; var downloaded = 0
+        if (outstanding.isNotEmpty()) {
+            val intent = dao.readIntent(c.accountScope, outstanding.single().operationId)!!
+            if (db.backupJournalDao().clock().originEpoch != intent.capturedOriginEpoch ||
+                !JSONObject(intent.frozenChangesJson).optBoolean("authoritativeSnapshot") &&
+                db.backupJournalDao().pending(c.accountScope).isNotEmpty()) {
+                return restoreAuthoritative(objects, graph, intent)
+            }
+        }
+        outstanding.singleOrNull()?.let { val result = resume(it.operationId); committed++; written += result.first; downloaded += result.second }
+        // Explicit Restore accepts local edits. Reapply the verified final state, not merely
+        // missing deltas, so even a locally edited row unchanged in newer commits is replaced.
+        val localApplied = dao.applied(c.accountScope, c.lineageId)
+        if (db.backupJournalDao().pending(c.accountScope).isNotEmpty() ||
+            localApplied != null && localApplied.originEpoch != db.backupJournalDao().clock().originEpoch || hasUserRows() &&
+            dao.applied(c.accountScope, c.lineageId) == null && trustedPublicationPosition(db, c) == null) {
+            val result = restoreAuthoritative(objects, graph)
+            return result.copy(commitsApplied = result.commitsApplied + committed,
+                rowsWritten = result.rowsWritten + written, binariesDownloaded = result.binariesDownloaded + downloaded)
+        }
         val applied = dao.applied(c.accountScope, c.lineageId)
         val publication = trustedPublicationPosition(db, c)
         if (applied != null) {
@@ -104,6 +129,43 @@ internal class InternalBackupGraphRestore(
             val result = resume(intent.operationId); committed++; written += result.first; downloaded += result.second
         }
         return GraphRestoreResult(GraphRestoreStatus.APPLIED, committed, written, downloaded, preserved.count { it.group == "notes.json" })
+    }
+
+    private suspend fun restoreAuthoritative(objects: List<GraphObject>, graph: BackupGraph,
+        superseded: BackupGraphRestore? = null): GraphRestoreResult {
+        val rows = linkedMapOf<BackupRecordIdentity, BackupRecordChange>()
+        val binaries = linkedMapOf<String, BackupBinaryDescriptor>()
+        val resolution = BackupBinaryResolution(emptyList())
+        for (commit in graph.plan().commits) {
+            val (changes, descriptors) = readChanges(commit)
+            resolution.apply(changes, descriptors)
+            for (change in changes) {
+                rows[BackupRecordIdentity(change.file, change.key)] = change
+                if (change.file == "attachments.json" && change.deleted) binaries.remove(change.key.single())
+            }
+            descriptors.forEach { binaries[it.attachmentId] = it }
+        }
+        resolution.finish(mapOf("attachments.json" to JSONArray(rows.values.filter {
+            it.file == "attachments.json" && !it.deleted
+        }.map { it.value }).toString()))
+        val tip = graph.commits.getValue(graph.tips.single())
+        val receipt = objects.single { BackupGraphProtocol.parse(it).commitId == tip.commitId }
+        if (superseded != null) db.withTransaction {
+            val token = db.backupJournalDao().clock().settingsToken
+            check(token == null || token == "graph-restore:${superseded.operationId}")
+            db.backupJournalDao().setSettingsToken(null)
+            // The applied cursor is untouched. Retain the old intent/files for audit/recovery,
+            // replacing only its obsolete local-edit policy after remote metadata verification.
+            dao.phase(superseded.accountScope, superseded.operationId, "SUPERSEDED", "COMPLETE")
+        }
+        val newNotes = db.backupJournalDao().pending(context.accountScope).count {
+            it.recordGroup == "notes.json" && it.operation == "UPSERT" &&
+                BackupRecordIdentity(it.recordGroup, it.stableKey()) !in rows
+        }
+        val intent = prepare(tip, receipt.objectRef, authoritative = rows.values.toList() to binaries.values.toList())
+        boundary("INTENT_PERSISTED")
+        val result = resume(intent.operationId)
+        return GraphRestoreResult(GraphRestoreStatus.APPLIED, 1, result.first, result.second, newNotes)
     }
 
     private suspend fun capturePendingNotes(): List<CapturedBackupRecord> = db.backupJournalDao().pending(context.accountScope).map { pending ->
@@ -176,8 +238,9 @@ internal class InternalBackupGraphRestore(
     }
 
     private suspend fun prepare(commit: BackupGraphCommit, ref: GraphObjectRef, publication: BackupGraphBinding? = null,
-        preserved: List<CapturedBackupRecord> = emptyList()): BackupGraphRestore {
-        val (changes, binaries) = readChanges(commit)
+        preserved: List<CapturedBackupRecord> = emptyList(),
+        authoritative: Pair<List<BackupRecordChange>, List<BackupBinaryDescriptor>>? = null): BackupGraphRestore {
+        val (changes, binaries) = authoritative ?: readChanges(commit)
         // Resolve only attachment rows in this commit, not the entire checkpoint binary index.
         val replacements = binaries.associateBy { it.attachmentId }
         val resolved = mutableListOf<BackupBinaryDescriptor>()
@@ -194,15 +257,18 @@ internal class InternalBackupGraphRestore(
         check(binaries.all { b -> changes.any { it.file == "attachments.json" && it.key == listOf(b.attachmentId) && !it.deleted } })
         changes.filter { it.file == "settings.json" }.forEach { it.value!!.toValidatedBackupPreferences() }
         val frozen = JSONObject().put("changes",JSONArray(changes.map { it.toJson() })).put("binaries",JSONArray(resolved.map { it.toJson() }))
+        if (authoritative != null) frozen.put("authoritativeSnapshot", true)
         if (preserved.isNotEmpty()) frozen.put("preservedLocalNotes", preservedGraphNotesJson(preserved))
         val operation = UUID.randomUUID().toString()
         val settingsBefore = if (changes.any { it.file == "settings.json" }) settings.read().toString() else null
         return db.withTransaction {
             check(dao.unfinishedMetadata().isEmpty()) { "Another Restore intent requires recovery first." }
-            checkLocalChanges(preserved)
+            if (authoritative == null) checkLocalChanges(preserved)
             val clock = db.backupJournalDao().clock(); check(clock.suppressionDepth == 0 && clock.settingsToken == null)
             val original = dao.applied(context.accountScope,context.lineageId)
-            if (publication != null) {
+            if (authoritative != null) {
+                check(commit.accountId == context.driveAccountId && commit.lineageId == context.lineageId)
+            } else if (publication != null) {
                 check(trustedPublicationPosition(db, context) == publication)
                 check(commit.parents.single().commitId == publication.commitId && commit.checkpoint.checkpointId == publication.checkpointId && commit.delta!!.parentId == publication.deltaHeadId)
                 frozen.put("publicationSource", BackupGraphIntentCodec.binding(publication))
@@ -238,8 +304,11 @@ internal class InternalBackupGraphRestore(
                 db.backupJournalDao().account(intent.accountScope) != BackupGraphIntentCodec.account(frozen.getString("publicationAccount"))) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
         }
         val clock = db.backupJournalDao().clock()
-        if (clock.generation != intent.capturedGeneration || clock.originEpoch != intent.capturedOriginEpoch) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
-        checkLocalChanges(readPreservedGraphNotes(frozen))
+        if (clock.originEpoch != intent.capturedOriginEpoch) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
+        if (!frozen.optBoolean("authoritativeSnapshot")) {
+            if (clock.generation != intent.capturedGeneration) throw Blocked(GraphRestoreStatus.LOCAL_CHANGES)
+            checkLocalChanges(readPreservedGraphNotes(frozen))
+        }
         check(clock.suppressionDepth == 0 && clock.settingsToken in listOf(null,"graph-restore:${intent.operationId}"))
     }
     private suspend fun resume(operationId: String): Pair<Int,Int> {
@@ -315,10 +384,18 @@ internal class InternalBackupGraphRestore(
                     val path = dependencies[change.key.singleOrNull()]?.takeIf { change.file == "attachments.json" }?.destinationPath
                     if (applyRow(change,path)) changed++
                 }
+                if (frozen.optBoolean("authoritativeSnapshot")) detachNewLocalChildren(changes)
                 for (change in changes.filter { it.deleted }.sortedBy { if (it.file == "pdf_annotation_geometry.json") 0 else 1 }) {
                     val (sql,args) = permanentBackupDeletionSql(change)
                     db.openHelper.writableDatabase.execSQL(sql,args); changed++
                     if (change.file == "attachments.json") db.backupJournalDao().removeBinaryReference(intent.accountScope,change.key.single())
+                }
+                if (frozen.optBoolean("authoritativeSnapshot")) {
+                    // Only identities proven in this graph are superseded. New local IDs,
+                    // including new PDFs and N+1 creations during download, remain pending.
+                    for (change in changes) db.backupJournalDao().acknowledgeRestoredRecord(intent.accountScope,
+                        change.file, change.key[0], change.key.getOrElse(1) { "" },
+                        change.key.getOrElse(2) { "" }, clock.generation)
                 }
                 dependencies.values.forEach { obj ->
                     db.backupJournalDao().putFingerprint(BackupBinaryFingerprint(obj.attachmentId,obj.destinationPath,obj.byteCount,obj.sha256,"VERIFIED",clock.generation))
@@ -344,6 +421,29 @@ internal class InternalBackupGraphRestore(
         val row = if (value.getString("operation") == "delete") null else value.getJSONObject("value")
         if (row != null) check(IncrementalBackupFormat.key(group,row) == parts) else check(group != "settings.json")
         BackupRecordChange(group,parts,row)
+    }
+    private fun detachNewLocalChildren(changes: List<BackupRecordChange>) {
+        val known = changes.groupBy { it.file }.mapValues { (_, rows) -> rows.map { it.key.singleOrNull() }.toSet() }
+        val removed = changes.filter { it.deleted || it.value?.isNull("deletedAt") == false }
+            .groupBy { it.file }.mapValues { (_, rows) -> rows.map { it.key.singleOrNull() }.toSet() }
+        // New local notes/PDFs must remain reachable when their old backed-up container
+        // is deleted. Detach only those new IDs; never invent a deletion from absence.
+        fun detach(group: String, column: String, parentGroup: String, replacement: Any?) {
+            val parents = removed[parentGroup].orEmpty()
+            if (parents.isEmpty()) return
+            val table = backupRecordTable(group)
+            val ids = mutableListOf<String>()
+            db.openHelper.readableDatabase.query("SELECT id, `$column` FROM `$table`").use { cursor ->
+                while (cursor.moveToNext()) if (cursor.getString(0) !in known[group].orEmpty() &&
+                    cursor.getString(1) in parents) ids += cursor.getString(0)
+            }
+            for (id in ids) db.openHelper.writableDatabase.execSQL("UPDATE `$table` SET `$column`=? WHERE id=?", arrayOf(replacement, id))
+        }
+        detach("notes.json", "parentNoteId", "notes.json", null)
+        detach("notes.json", "folderId", "folders.json", null)
+        detach("folders.json", "parentId", "folders.json", null)
+        detach("attachments.json", "noteId", "notes.json", "")
+        detach("attachments.json", "libraryFolderId", "folders.json", null)
     }
     private suspend fun validateDependencies(upserts: List<BackupRecordChange>, all: List<BackupRecordChange>) {
         val added = upserts.map { BackupRecordIdentity(it.file,it.key) }.toSet()

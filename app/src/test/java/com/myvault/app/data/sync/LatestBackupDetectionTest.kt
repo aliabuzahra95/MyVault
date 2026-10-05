@@ -11,7 +11,7 @@ class LatestBackupDetectionTest {
         val newer = latestBackupNotice(BackupGraphReadinessState.RESTORE_REQUIRED, "c10", null)
         assertEquals(LatestBackupNoticeKind.NEWER, newer?.kind)
         assertNull(latestBackupNotice(BackupGraphReadinessState.CURRENT, "c10", null))
-        assertEquals(LatestBackupNoticeKind.LOCAL_CHANGES,
+        assertEquals(LatestBackupNoticeKind.NEWER,
             latestBackupNotice(BackupGraphReadinessState.LOCAL_REMOTE_CHANGES, "c10", null)?.kind)
         assertEquals(LatestBackupNoticeKind.BLOCKED,
             latestBackupNotice(BackupGraphReadinessState.FORK, null, null)?.kind)

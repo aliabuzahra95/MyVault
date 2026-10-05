@@ -114,9 +114,9 @@ internal fun latestBackupNotice(
     BackupGraphReadinessState.LOCAL_REMOTE_CHANGES -> {
         if (remoteTip == null || remoteTip == lastNotifiedRemoteCommitId) null
         else LatestBackupNotice(
-            LatestBackupNoticeKind.LOCAL_CHANGES,
+            LatestBackupNoticeKind.NEWER,
             remoteTip,
-            "A newer backup is available, but this device has local changes that must be backed up or resolved first.",
+            "A newer backup is available. Restore replaces local edits to backed-up items and keeps new local items.",
         )
     }
     BackupGraphReadinessState.FORK -> LatestBackupNotice(

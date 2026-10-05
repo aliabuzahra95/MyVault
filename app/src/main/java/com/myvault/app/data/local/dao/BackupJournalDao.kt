@@ -22,6 +22,9 @@ interface BackupJournalDao {
     @Query("SELECT * FROM backup_pending_changes WHERE accountScope = :scope ORDER BY recordGroup, key0, key1, key2")
     suspend fun pending(scope: String): List<BackupPendingChange>
     @Query(BackupJournalSql.Ack) suspend fun acknowledge(scope: String, generation: Long)
+    @Query("DELETE FROM backup_pending_changes WHERE accountScope=:scope AND recordGroup=:group AND key0=:key0 AND key1=:key1 AND key2=:key2 AND generation<=:generation")
+    suspend fun acknowledgeRestoredRecord(scope: String, group: String, key0: String, key1: String,
+        key2: String, generation: Long)
     @Query(BackupJournalSql.Invalidate) suspend fun invalidate(reason: String)
     @Query("UPDATE backup_tracking_accounts SET trusted = 1, checkpointId = :checkpoint, headId = :head, manifestId = :manifest, manifestSha256 = :hash, reason = 'verified_commit' WHERE accountScope = :scope")
     suspend fun trust(scope: String, checkpoint: String, head: String, manifest: String, hash: String)
