@@ -310,18 +310,14 @@ class FolderRepository @Inject constructor(
         database.withTransaction {
             val folders = folderDao.getAll()
             val folderIds = descendantFolderIds(folderId, folders) + folderId
-            val noteIds = noteDao.getAll()
-                .filter { it.folderId in folderIds }
-                .map { it.id }
+            val noteIds = folderTreeNoteIds(folderIds, noteDao.getAll())
 
             val now = System.currentTimeMillis()
             if (noteIds.isNotEmpty()) {
                 noteDao.updateDeletedAt(noteIds, now, now)
                 attachmentDao.updateDeletedAtForNotes(noteIds, now)
             }
-            if (folders.firstOrNull { it.id == folderId }?.mode.isLibraryFolderMode()) {
-                attachmentDao.updateDeletedAtForLibraryFolders(folderIds, now)
-            }
+            attachmentDao.updateDeletedAtForLibraryFolders(folderIds, now)
             folderDao.updateDeletedAt(folderIds, now, now)
         }
     }
@@ -330,18 +326,14 @@ class FolderRepository @Inject constructor(
         database.withTransaction {
             val folders = folderDao.getAllIncludingDeleted()
             val folderIds = descendantFolderIds(folderId, folders) + folderId
-            val noteIds = noteDao.getAllIncludingDeleted()
-                .filter { it.folderId in folderIds }
-                .map { it.id }
+            val noteIds = folderTreeNoteIds(folderIds, noteDao.getAllIncludingDeleted())
 
             val now = System.currentTimeMillis()
             if (noteIds.isNotEmpty()) {
                 noteDao.updateDeletedAt(noteIds, null, now)
                 attachmentDao.updateDeletedAtForNotes(noteIds, null)
             }
-            if (folders.firstOrNull { it.id == folderId }?.mode.isLibraryFolderMode()) {
-                attachmentDao.updateDeletedAtForLibraryFolders(folderIds, null)
-            }
+            attachmentDao.updateDeletedAtForLibraryFolders(folderIds, null)
             folderDao.updateDeletedAt(folderIds, null, now)
         }
     }
@@ -349,15 +341,9 @@ class FolderRepository @Inject constructor(
     suspend fun permanentlyDeleteFolderTree(folderId: String) {
         val folders = folderDao.getAllIncludingDeleted()
         val folderIds = descendantFolderIds(folderId, folders) + folderId
-        val noteIds = noteDao.getAllIncludingDeleted()
-            .filter { it.folderId in folderIds }
-            .map { it.id }
+        val noteIds = folderTreeNoteIds(folderIds, noteDao.getAllIncludingDeleted())
         val noteAttachments = if (noteIds.isNotEmpty()) attachmentDao.getForNotes(noteIds) else emptyList()
-        val libraryAttachments = if (folders.firstOrNull { it.id == folderId }?.mode.isLibraryFolderMode()) {
-            attachmentDao.getAllIncludingDeleted().filter { it.libraryFolderId in folderIds }
-        } else {
-            emptyList()
-        }
+        val libraryAttachments = attachmentDao.getAllIncludingDeleted().filter { it.libraryFolderId in folderIds }
 
         database.withTransaction {
             if (noteIds.isNotEmpty()) {
@@ -402,6 +388,11 @@ class FolderRepository @Inject constructor(
                 attachmentDao.deleteByIds(libraryAttachmentIds)
             }
             folderStickyNoteDao.deleteForFolders(folderIds)
+            // Course workspaces can also own PDFs. Keep a surviving course record valid
+            // without recreating a workspace the user deliberately deleted.
+            database.courseDao().getAllCourses().filter { it.rootFolderId in folderIds }.forEach {
+                database.courseDao().upsertCourse(it.copy(rootFolderId = null, updatedAt = System.currentTimeMillis()))
+            }
             folderDao.deleteByIds(folderIds)
         }
         (noteAttachments + libraryAttachments).deleteLocalFiles()
@@ -416,6 +407,15 @@ class FolderRepository @Inject constructor(
             }
 
         return collect(folderId)
+    }
+
+    private fun folderTreeNoteIds(folderIds: List<String>, notes: List<com.myvault.app.data.local.entity.NoteEntity>): List<String> {
+        val ids = notes.filter { it.folderId in folderIds }.map { it.id }.toMutableSet()
+        do {
+            val before = ids.size
+            notes.filter { it.parentNoteId in ids }.forEach { ids += it.id }
+        } while (ids.size != before)
+        return ids.toList()
     }
 
     private suspend fun normalizeOrderIndexes(parentId: String?) {

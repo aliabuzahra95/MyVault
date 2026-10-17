@@ -48,6 +48,7 @@ fun VaultExplorerActionHost(
     canMove: Boolean,
     canPin: Boolean,
     pinned: Boolean,
+    dashboardPin: Boolean = true,
     canDelete: Boolean,
     moveTargets: List<VaultExplorerMoveTarget>,
     onDismiss: () -> Unit,
@@ -107,7 +108,9 @@ fun VaultExplorerActionHost(
                     })
                 }
                 if (!creationOnly && canPin) {
-                    add(VaultModalAction(if (pinned) "Unpin" else "Pin", Icons.Rounded.PushPin) {
+                    add(VaultModalAction(if (dashboardPin) {
+                        if (pinned) "Unpin from Dashboard" else "Pin to Dashboard"
+                    } else if (pinned) "Unpin" else "Pin", Icons.Rounded.PushPin) {
                         onTogglePin()
                         onDismiss()
                     })

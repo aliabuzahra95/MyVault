@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import org.json.JSONArray
 import com.myvault.app.ui.theme.VaultThemeMode
 import com.myvault.app.data.narration.AzureNarrationConfig
 import com.myvault.app.data.narration.GeminiNarrationConfig
@@ -86,6 +87,9 @@ data class VaultUserPreferences(
     val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
+    val dashboardFolderPins: Set<String> = emptySet(),
+    val dashboardPinnedOrder: List<String> = emptyList(),
+    val dashboardActivityJson: String? = null,
 )
 
 data class AzureSpeechSettings(
@@ -197,6 +201,14 @@ class VaultPreferences @Inject constructor(
                         if (separator <= 0) null else entry.substring(0, separator) to entry.substring(separator + 1)
                     }
                     .toMap(),
+                dashboardFolderPins = preferences[Keys.DashboardFolderPins].orEmpty(),
+                dashboardPinnedOrder = preferences[Keys.DashboardPinnedOrder]?.let {
+                    runCatching {
+                        val array = JSONArray(it)
+                        (0 until array.length()).map { i -> array.getString(i) }
+                    }.getOrNull()
+                }.orEmpty(),
+                dashboardActivityJson = preferences[Keys.DashboardActivity],
             ).also(::cacheStartupPreferences)
         }
 
@@ -577,6 +589,33 @@ class VaultPreferences @Inject constructor(
             preferences[Keys.LibraryViewModesByLocation] = backup.libraryViewModesByLocation
                 .map { (key, value) -> "$key=$value" }
                 .toSet()
+            if (backup.dashboardFolderPins != null) {
+                preferences[Keys.DashboardFolderPins] = backup.dashboardFolderPins
+            }
+            if (backup.dashboardPinnedOrder != null) {
+                preferences[Keys.DashboardPinnedOrder] = JSONArray(backup.dashboardPinnedOrder).toString()
+            }
+            if (backup.dashboardActivity != null) {
+                preferences[Keys.DashboardActivity] = backup.dashboardActivity
+            }
+    }
+
+    suspend fun setDashboardFolderPins(folderIds: Set<String>) {
+        editBackedUpSettings { preferences ->
+            preferences[Keys.DashboardFolderPins] = folderIds
+        }
+    }
+
+    suspend fun setDashboardPinnedOrder(order: List<String>) {
+        editBackedUpSettings { preferences ->
+            preferences[Keys.DashboardPinnedOrder] = JSONArray(order).toString()
+        }
+    }
+
+    suspend fun setDashboardActivity(activityJson: String) {
+        editBackedUpSettings { preferences ->
+            preferences[Keys.DashboardActivity] = activityJson
+        }
     }
 
     suspend fun setQuranMemorizationRecords(records: List<MemorizationRecord>) {
@@ -675,6 +714,9 @@ class VaultPreferences @Inject constructor(
             "quranSurahMemorizationAttempts" to Keys.QuranSurahMemorizationAttempts,
             "expandedFolderIds" to Keys.ExpandedFolderIds, "libraryViewMode" to Keys.LibraryViewMode,
             "libraryViewModesByLocation" to Keys.LibraryViewModesByLocation,
+            "dashboardFolderPins" to Keys.DashboardFolderPins,
+            "dashboardPinnedOrder" to Keys.DashboardPinnedOrder,
+            "dashboardActivity" to Keys.DashboardActivity,
         )
     }
 
@@ -730,6 +772,9 @@ class VaultPreferences @Inject constructor(
         val PinnedExpandedByMode: Preferences.Key<Set<String>> = stringSetPreferencesKey("pinned_expanded_by_mode")
         val LibraryViewMode: Preferences.Key<String> = stringPreferencesKey("library_view_mode")
         val LibraryViewModesByLocation: Preferences.Key<Set<String>> = stringSetPreferencesKey("library_view_modes_by_location")
+        val DashboardFolderPins: Preferences.Key<Set<String>> = stringSetPreferencesKey("dashboard_folder_pins")
+        val DashboardPinnedOrder: Preferences.Key<String> = stringPreferencesKey("dashboard_pinned_order")
+        val DashboardActivity: Preferences.Key<String> = stringPreferencesKey("dashboard_activity")
         const val CachedDashboardFontSize: String = "dashboard_font_size"
     }
 }
@@ -775,6 +820,9 @@ data class VaultBackupPreferences(
     val pinnedExpandedByMode: Map<String, Boolean> = emptyMap(),
     val libraryViewMode: String = "list",
     val libraryViewModesByLocation: Map<String, String> = emptyMap(),
+    val dashboardFolderPins: Set<String>? = null,
+    val dashboardPinnedOrder: List<String>? = null,
+    val dashboardActivity: String? = null,
 )
 
 private fun Set<String>.toQuranRecentLocations(): List<QuranRecentLocation> =

@@ -11,14 +11,16 @@ class DashboardSearchMemoriseRefinementContractTest {
         .first { Files.exists(it.resolve("app/src/main/java/com/myvault/app/ui/navigation/VaultNavHost.kt")) }
 
     @Test
-    fun `Dashboard records opens and renders four fixed category slots`() {
+    fun `Dashboard records opens and renders only Quran and Study continue slots`() {
         val navigation = source("ui/navigation/VaultNavHost.kt")
-        val dashboard = source("ui/screens/StageNineDestinationScreens.kt")
+        val dashboard = source("ui/screens/DashboardOverviewScreen.kt")
         assertTrue(navigation.contains("recordNoteOpened"))
         assertTrue(navigation.contains("recordLibraryOpened"))
-        listOf("Qur'an", "Notes", "Library", "Courses").forEach { label ->
-            assertTrue(dashboard.contains("type = \"$label\""))
-        }
+        assertTrue(dashboard.contains("ContinueOverviewCard(\"QUR'AN\""))
+        assertTrue(dashboard.contains("ContinueOverviewCard(\"STUDY\""))
+        assertTrue(dashboard.contains("OverviewSection(\"Continue reading · Library\""))
+        assertTrue(dashboard.indexOf("item(key = \"pinned\")") < dashboard.indexOf("item(key = \"continue\")"))
+        assertTrue(dashboard.contains("rows = GridCells.Fixed(2)"))
     }
 
     @Test

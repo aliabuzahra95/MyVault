@@ -25,6 +25,9 @@ import com.myvault.app.ui.model.StudyOrganisationState
 import com.myvault.app.ui.model.StudySortMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.myvault.app.ui.model.availableDashboardFolders
+import com.myvault.app.data.local.entity.PdfReadingProgressEntity
+import com.myvault.app.data.preferences.VaultPreferences
 
 enum class DashboardActivityKind { Note, Library, Course }
 
@@ -45,6 +48,7 @@ data class DashboardActivityState(
     val lastLibrary: DashboardActivityItem? = null,
     val lastCourse: DashboardActivityItem? = null,
     val recents: List<DashboardActivityItem> = emptyList(),
+    val libraryRecents: List<DashboardActivityItem> = emptyList(),
 )
 
 @Singleton
@@ -55,25 +59,64 @@ class DashboardActivityRepository @Inject constructor(
     private val attachmentDao: AttachmentDao,
     private val courseDao: CourseDao,
     private val pdfReadingProgressDao: PdfReadingProgressDao,
+    private val vaultPreferences: VaultPreferences? = null,
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val mutex = Mutex()
     private val _state = MutableStateFlow(readState())
     val state: StateFlow<DashboardActivityState> = _state.asStateFlow()
+    private val folderPinIds = MutableStateFlow(preferences.getStringSet("dashboard_folder_pins_v1", emptySet()).orEmpty().toSet())
+    val pinnedFolders = combine(folderPinIds, folderDao.observeAll()) { ids, folders ->
+        availableDashboardFolders(ids, folders)
+    }
+    private val _pinnedOrder = MutableStateFlow(readPinnedOrder())
+    val pinnedOrder: StateFlow<List<String>> = _pinnedOrder.asStateFlow()
+
+    suspend fun setPinnedOrder(order: List<String>) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(preferences.edit().putString("dashboard_pinned_order_v1", JSONArray(order).toString()).commit())
+            _pinnedOrder.value = order
+            vaultPreferences?.setDashboardPinnedOrder(order)
+        }
+    }
+
+    suspend fun setFolderPinned(id: String, pinned: Boolean) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (pinned && availableDashboardFolders(setOf(id), folderDao.getAll()).isEmpty()) return@withLock
+            val next = if (pinned) folderPinIds.value + id else folderPinIds.value - id
+            check(preferences.edit().putStringSet("dashboard_folder_pins_v1", next).commit()) { "Could not save folder shortcut" }
+            folderPinIds.value = next
+            vaultPreferences?.setDashboardFolderPins(next)
+            val currentOrder = _pinnedOrder.value
+            val folderKey = "Folder:$id"
+            val nextOrder = if (pinned) {
+                if (folderKey !in currentOrder) currentOrder + folderKey else currentOrder
+            } else {
+                currentOrder.filterNot { it == folderKey }
+            }
+            if (nextOrder != currentOrder) {
+                preferences.edit().putString("dashboard_pinned_order_v1", JSONArray(nextOrder).toString()).commit()
+                _pinnedOrder.value = nextOrder
+                vaultPreferences?.setDashboardPinnedOrder(nextOrder)
+            }
+        }
+    }
     // History records what was opened; current rows decide what can still open.
     val availableState = combine(
         state, noteDao.observeAll(), folderDao.observeAll(),
         attachmentDao.observeAll(), courseDao.observeCourses(),
     ) { history, notes, folders, attachments, courses ->
         resolveDashboardActivityState(history, notes, folders, attachments, courses)
+    }.combine(pdfReadingProgressDao.observeAll()) { resolved, progress ->
+        withDashboardReadingPositions(resolved, progress)
     }
 
     suspend fun resolveActivity(item: DashboardActivityItem): DashboardActivityItem? =
         withContext(Dispatchers.IO) {
-            resolveDashboardActivityState(
+            withDashboardReadingPositions(resolveDashboardActivityState(
                 DashboardActivityState(recents = listOf(item)),
                 noteDao.getAll(), folderDao.getAll(), attachmentDao.getAll(), courseDao.getAllCourses(),
-            ).recents.singleOrNull()
+            ), pdfReadingProgressDao.getAll()).recents.singleOrNull()
         }
     private val _studyOrganisation = MutableStateFlow(readStudyOrganisation())
     val studyOrganisation: StateFlow<StudyOrganisationState> = _studyOrganisation.asStateFlow()
@@ -203,18 +246,51 @@ class DashboardActivityRepository @Inject constructor(
         val next = current.copy(
             lastLibrary = current.lastLibrary?.updated(),
             recents = current.recents.map { it.updated() },
+            libraryRecents = current.libraryRecents.map { it.updated() },
         )
         if (next != current) {
             _state.value = next
-            preferences.edit().putString(STATE_KEY, next.toJson().toString()).apply()
+            val json = next.toJson().toString()
+            preferences.edit().putString(STATE_KEY, json).apply()
+            vaultPreferences?.setDashboardActivity(json)
         }
     }
 
-    private fun store(item: DashboardActivityItem) {
+    private suspend fun store(item: DashboardActivityItem) {
         val next = updateDashboardActivityState(_state.value, item, MAX_RECENTS)
         _state.value = next
-        preferences.edit().putString(STATE_KEY, next.toJson().toString()).apply()
+        val json = next.toJson().toString()
+        preferences.edit().putString(STATE_KEY, json).apply()
+        vaultPreferences?.setDashboardActivity(json)
     }
+
+    suspend fun applyRestoredState(
+        folderPins: Set<String>?,
+        activityJson: String?,
+        pinnedOrder: List<String>?,
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if (folderPins != null) {
+                preferences.edit().putStringSet("dashboard_folder_pins_v1", folderPins).commit()
+                folderPinIds.value = folderPins
+            }
+            if (pinnedOrder != null) {
+                preferences.edit().putString("dashboard_pinned_order_v1", JSONArray(pinnedOrder).toString()).commit()
+                _pinnedOrder.value = pinnedOrder
+            }
+            if (activityJson != null) {
+                preferences.edit().putString(STATE_KEY, activityJson).commit()
+                _state.value = runCatching { JSONObject(activityJson).toDashboardState() }.getOrDefault(_state.value)
+            }
+        }
+    }
+
+    private fun readPinnedOrder(): List<String> = runCatching {
+        preferences.getString("dashboard_pinned_order_v1", null)?.let {
+            val array = JSONArray(it)
+            (0 until array.length()).map { i -> array.getString(i) }
+        }
+    }.getOrNull() ?: emptyList()
 
     private fun readState(): DashboardActivityState = runCatching {
         preferences.getString(STATE_KEY, null)?.let(::JSONObject)?.toDashboardState()
@@ -237,6 +313,7 @@ class DashboardActivityRepository @Inject constructor(
         .put("lastLibrary", lastLibrary?.toJson())
         .put("lastCourse", lastCourse?.toJson())
         .put("recents", JSONArray().apply { recents.forEach { put(it.toJson()) } })
+        .put("libraryRecents", JSONArray().apply { libraryRecents.forEach { put(it.toJson()) } })
 
     private fun DashboardActivityItem.toJson(): JSONObject = JSONObject()
         .put("kind", kind.name)
@@ -251,11 +328,13 @@ class DashboardActivityRepository @Inject constructor(
 
     private fun JSONObject.toDashboardState(): DashboardActivityState {
         val recentJson = optJSONArray("recents") ?: JSONArray()
+        val libraryJson = optJSONArray("libraryRecents") ?: JSONArray()
         return DashboardActivityState(
             lastNote = optJSONObject("lastNote")?.toActivityItem(),
             lastLibrary = optJSONObject("lastLibrary")?.toActivityItem(),
             lastCourse = optJSONObject("lastCourse")?.toActivityItem(),
             recents = (0 until recentJson.length()).mapNotNull { recentJson.optJSONObject(it)?.toActivityItem() },
+            libraryRecents = (0 until libraryJson.length()).mapNotNull { libraryJson.optJSONObject(it)?.toActivityItem() },
         )
     }
 
@@ -279,6 +358,20 @@ class DashboardActivityRepository @Inject constructor(
         const val COURSE_MODE_PREFIX = "course:"
         const val MAX_RECENTS = 24
     }
+}
+
+internal fun withDashboardReadingPositions(
+    state: DashboardActivityState,
+    progress: List<PdfReadingProgressEntity>,
+): DashboardActivityState {
+    val byId = progress.associateBy { it.attachmentId }
+    fun DashboardActivityItem.current(): DashboardActivityItem {
+        if (kind != DashboardActivityKind.Library) return this
+        val saved = byId[destinationId]?.takeIf { it.pageCount > 0 && it.pageIndex in 0 until it.pageCount }
+        return copy(pageIndex = saved?.pageIndex, pageCount = saved?.pageCount)
+    }
+    return state.copy(lastLibrary = state.lastLibrary?.current(), recents = state.recents.map { it.current() },
+        libraryRecents = state.libraryRecents.map { it.current() })
 }
 
 internal fun resolveDashboardActivityState(
@@ -315,7 +408,7 @@ internal fun resolveDashboardActivityState(
             courseId = courseId,
         )
     }
-    val resolved = (history.recents + listOfNotNull(history.lastNote, history.lastLibrary, history.lastCourse))
+    val resolved = (history.recents + history.libraryRecents + listOfNotNull(history.lastNote, history.lastLibrary, history.lastCourse))
         .mapNotNull(::resolve)
         .sortedByDescending { it.openedAt }
         .distinctBy { it.kind to it.destinationId }
@@ -324,6 +417,7 @@ internal fun resolveDashboardActivityState(
         lastLibrary = resolved.firstOrNull { it.kind == DashboardActivityKind.Library },
         lastCourse = resolved.firstOrNull { it.kind == DashboardActivityKind.Course },
         recents = resolved.take(24),
+        libraryRecents = resolved.filter { it.kind == DashboardActivityKind.Library }.take(24),
     )
 }
 
@@ -340,5 +434,9 @@ internal fun updateDashboardActivityState(
         lastLibrary = if (item.kind == DashboardActivityKind.Library) item else current.lastLibrary,
         lastCourse = if (item.kind == DashboardActivityKind.Course) item else current.lastCourse,
         recents = recents,
+        libraryRecents = (listOf(item).filter { it.kind == DashboardActivityKind.Library } +
+            current.libraryRecents + current.recents.filter { it.kind == DashboardActivityKind.Library } +
+            listOfNotNull(current.lastLibrary)).sortedByDescending { it.openedAt }
+            .distinctBy { it.destinationId }.take(maxRecents),
     )
 }

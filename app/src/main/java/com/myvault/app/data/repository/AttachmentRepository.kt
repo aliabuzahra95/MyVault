@@ -152,9 +152,13 @@ class AttachmentRepository @Inject constructor(
     }
 
     suspend fun importLibraryDocument(folderId: String?, uri: Uri): String = withBinaryWrite {
+        importLibraryDocumentInternal(folderId, uri)
+    }
+
+    internal suspend fun importLibraryDocumentInternal(folderId: String?, uri: Uri): String {
         val resolver = context.contentResolver
         val id = UUID.randomUUID().toString()
-        val fileName = resolver.displayName(uri).sanitizeFileName().ifBlank { "library-file-$id" }
+        val fileName = sanitizeAttachmentFileName(resolver.displayName(uri)).ifBlank { "library-file-$id" }
         val mimeType = resolver.getType(uri) ?: "application/octet-stream"
         val attachmentsDir = File(context.filesDir, "library/${folderId ?: "root"}").apply { mkdirs() }
         val localFile = File(attachmentsDir, "${id}_$fileName")
@@ -182,14 +186,14 @@ class AttachmentRepository @Inject constructor(
             )
             backupBinaries.persistWritten(attachmentDao.getByIdIncludingDeleted(id)!!, digest)
         }
-        id
+        return id
     }
 
     suspend fun replaceLibraryPdf(existingAttachmentId: String, uri: Uri): String = withBinaryWrite {
         val existing = attachmentDao.getByIdIncludingDeleted(existingAttachmentId)
             ?: error("Original PDF could not be found")
         val resolver = context.contentResolver
-        val fileName = resolver.displayName(uri).sanitizeFileName().ifBlank { existing.fileName }
+        val fileName = sanitizeAttachmentFileName(resolver.displayName(uri)).ifBlank { existing.fileName }
         val mimeType = resolver.getType(uri) ?: existing.mimeType
         check(fileName.isPdfFileName() || mimeType == "application/pdf") { "Only PDFs can be replaced here." }
         val attachmentsDir = File(context.filesDir, "library/${existing.libraryFolderId ?: "root"}").apply { mkdirs() }
@@ -236,12 +240,12 @@ class AttachmentRepository @Inject constructor(
         } ?: error("Unable to open the selected save location.")
     }
 
-    suspend fun importLibraryDocuments(folderId: String?, uris: List<Uri>): LibraryImportResult = withContext(Dispatchers.IO) {
+    suspend fun importLibraryDocuments(folderId: String?, uris: List<Uri>): LibraryImportResult = withBinaryWrite {
         var failedCount = 0
         val importedIds = mutableListOf<String>()
         uris.distinct().forEach { uri ->
             runCatching {
-                importLibraryDocument(folderId, uri)
+                importLibraryDocumentInternal(folderId, uri)
             }.onSuccess { id ->
                 importedIds += id
             }.onFailure {
@@ -250,6 +254,9 @@ class AttachmentRepository @Inject constructor(
         }
         LibraryImportResult(importedIds = importedIds, failedCount = failedCount)
     }
+
+    suspend fun repairUnpromotedRestoredAttachments() =
+        repairUnpromotedRestoredAttachments(database, context.filesDir)
 
     suspend fun deleteAttachment(attachmentId: String) = withContext(Dispatchers.IO) {
         attachmentDao.updateDeletedAt(attachmentId, System.currentTimeMillis())
@@ -302,8 +309,64 @@ private fun android.content.ContentResolver.fileSize(uri: Uri): Long =
         if (index >= 0 && cursor.moveToFirst()) cursor.getLong(index) else 0L
     } ?: 0L
 
+internal fun sanitizeAttachmentFileName(name: String): String =
+    name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+
 private fun String.sanitizeFileName(): String =
-    replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+    sanitizeAttachmentFileName(this)
 
 private fun String.isPdfFileName(): Boolean =
     endsWith(".pdf", ignoreCase = true)
+
+internal suspend fun repairUnpromotedRestoredAttachments(
+    database: VaultDatabase,
+    filesDir: File,
+) = withContext(Dispatchers.IO) {
+    val unpromoted = database.attachmentDao().getAllIncludingDeleted().filter {
+        it.localPath.contains("backup-graph-restores") || it.localPath.endsWith(".verified")
+    }
+    if (unpromoted.isEmpty()) return@withContext
+
+    database.withTransaction {
+        // Suppress journal triggers without altering originEpoch or ticking generation
+        database.openHelper.writableDatabase.execSQL("UPDATE backup_journal_state SET suppressionDepth = suppressionDepth + 1 WHERE id = 1")
+        try {
+            unpromoted.forEach { attachment ->
+                val currentFile = File(attachment.localPath)
+                val targetDir = if (!attachment.noteId.isNullOrBlank()) {
+                    File(filesDir, "attachments/${attachment.noteId}").apply { mkdirs() }
+                } else {
+                    File(filesDir, "library/${attachment.libraryFolderId.takeUnless { it.isNullOrBlank() } ?: "root"}").apply { mkdirs() }
+                }
+                val cleanName = sanitizeAttachmentFileName(attachment.fileName).ifBlank { "attachment-${attachment.id}" }
+                val targetFile = File(targetDir, "${attachment.id}_$cleanName")
+
+                if (currentFile.exists() && currentFile.canonicalPath != targetFile.canonicalPath) {
+                    if (!currentFile.renameTo(targetFile)) {
+                        val temp = File(targetDir, "${targetFile.name}.tmp")
+                        currentFile.inputStream().use { input ->
+                            temp.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        if (temp.renameTo(targetFile)) {
+                            currentFile.delete()
+                        }
+                    }
+                }
+
+                if (targetFile.exists()) {
+                    val canonicalPath = targetFile.canonicalPath
+                    database.openHelper.writableDatabase.execSQL(
+                        "UPDATE attachments SET localPath = ? WHERE id = ?",
+                        arrayOf(canonicalPath, attachment.id)
+                    )
+                    database.openHelper.writableDatabase.execSQL(
+                        "UPDATE backup_binary_fingerprints SET localPath = ?, status = 'VERIFIED' WHERE attachmentId = ?",
+                        arrayOf(canonicalPath, attachment.id)
+                    )
+                }
+            }
+        } finally {
+            database.openHelper.writableDatabase.execSQL("UPDATE backup_journal_state SET suppressionDepth = suppressionDepth - 1 WHERE id = 1")
+        }
+    }
+}

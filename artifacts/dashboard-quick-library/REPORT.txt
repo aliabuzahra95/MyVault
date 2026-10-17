@@ -1,0 +1,69 @@
+MYVAULT DASHBOARD AND QUICK LIBRARY
+Date: 14 October 2026
+
+Authorised project:
+/Users/aliah/Desktop/Current Projects/MyVault Complete Before Tutor
+The user explicitly confirmed changes to this main project after resolving the conflicting original-project instruction.
+
+IMPLEMENTED
+- Quick Library replaces the visible Favourites drawer row and opens the same existing Library destination as the original Library entry.
+- Favourite flags and the legacy Favourites route remain intact.
+- Dashboard section order: Pinned, Continue, Continue reading / Library.
+- Pins use two fixed horizontal grid rows and two visible columns, stable typed IDs, two-line ellipsis, and a complete View all sheet with unpin actions.
+- Grid cards share a measured text-dependent height to accommodate system font scaling without clipping page metadata.
+- Continue contains only Quran and Study; existing saved-verse and note opening routes are reused.
+- The five latest distinct Library documents are resolved by ID against current records, using current saved PDF progress.
+- Missing/invalid page positions display Position unavailable rather than a fabricated page number.
+- Library history is retained separately so unrelated note opens cannot evict the entire recent-document collection.
+- Note/document pins reuse their existing persistent flags. Folder pins use device-local shortcut preferences; deleted, missing-parent and cyclic folder targets are excluded.
+- Existing note, document and supported folder menus expose Pin to Dashboard / Unpin from Dashboard.
+- Folder opening reuses the established Study/Library reveal mechanisms. Drawer expansion controls, profile, other entries and footer are preserved.
+
+VERIFICATION
+- 38 focused offline unit/contract tests: passed, zero failures/skips.
+- Seven emulator tests: passed. The expanded drawer fixture was additionally rerun successfully after adding Study expand/collapse assertions.
+- Emulator checks: no pins; four pins; ten pins and horizontal swipe; complete pinned collection; five distinct Library rows; exact item callbacks; 320dp layout at 150% font size; unclipped page metadata; both Library shortcuts; folder-pin persistence/non-destructive unpin.
+- compileDebugSources: passed.
+- assembleDebug: passed.
+- assembleDebugAndroidTest: passed.
+- git diff --check: passed.
+- Full unit-suite attempt: 725 tests, 720 passed, two unrelated existing contract failures, three skipped. AskAiSurfaceDecommissionContractTest expects database version 30 although the unchanged database is version 36. NoteUxContractTest expects AttachmentSheetRow in the pre-existing editor implementation. Those files and failures were not changed to force a green suite.
+
+RENDERED SCREENSHOTS
+All screenshots use isolated synthetic content, not personal vault records.
+screenshots/no-pins.png
+screenshots/four-pins.png
+screenshots/ten-pins.png
+screenshots/all-pins.png
+screenshots/five-library-documents.png
+screenshots/narrow-large-font.png
+screenshots/quick-library-drawer.png
+
+IMPLEMENTATION AND TEST FILES CHANGED
+app/src/main/java/com/myvault/app/ui/screens/DashboardOverviewScreen.kt (new)
+app/src/main/java/com/myvault/app/ui/model/DashboardShortcut.kt (new)
+app/src/main/java/com/myvault/app/data/repository/DashboardActivityRepository.kt
+app/src/main/java/com/myvault/app/ui/viewmodel/DashboardActivityViewModel.kt
+app/src/main/java/com/myvault/app/ui/navigation/VaultNavHost.kt
+app/src/main/java/com/myvault/app/ui/components/VaultMobileWebShell.kt
+app/src/main/java/com/myvault/app/ui/components/VaultExplorerActionHost.kt
+app/src/main/java/com/myvault/app/ui/screens/HomeScreen.kt
+app/src/main/java/com/myvault/app/ui/screens/LibraryScreen.kt
+app/src/main/java/com/myvault/app/ui/screens/FolderViewScreen.kt
+app/src/test/java/com/myvault/app/ui/model/DashboardShortcutTest.kt (new)
+app/src/test/java/com/myvault/app/ui/DashboardSearchMemoriseRefinementContractTest.kt
+app/src/test/java/com/myvault/app/ui/DrawerCleanupContractTest.kt
+app/src/test/java/com/myvault/app/ui/ReflectionsPortContractTest.kt
+app/src/test/java/com/myvault/app/ui/IslamicCorpusBottomNavigationContractTest.kt
+app/src/androidTest/java/com/myvault/app/ui/screens/DashboardDesignDeviceTest.kt (new)
+app/src/androidTest/java/com/myvault/app/data/local/DashboardShortcutPersistenceTest.kt (new)
+
+SAFETY AND LIMITATIONS
+- No Room schema, migration, Backup/Restore or Google Drive implementation changes were made in this pass.
+- Neither experimental AI project was edited. Existing unrelated uncommitted work was preserved.
+- No real notes, folders, documents or Drive objects were altered; no paid AI calls were made.
+- Testing used a read-only disposable emulator overlay with networking disabled, synthetic screen state and an in-memory database. The emulator was shut down without saving a snapshot.
+- New folder pins are local to this device; this pass does not add them to Drive backup or cross-device synchronisation.
+- The screenshots use existing MyVault styles rather than reproducing the illustrations pixel-for-pixel, as clarified by the user's final design instruction.
+- No physical-phone or real-PDF restore/resume test was performed. Existing viewer/resume routes were reused, not rewritten.
+- No release signing, upload, push, deployment or unrelated development was performed.

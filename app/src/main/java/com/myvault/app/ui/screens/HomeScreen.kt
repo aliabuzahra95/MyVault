@@ -182,6 +182,8 @@ fun HomeScreen(
     onDeleteNoteClick: (noteId: String) -> Unit = {},
     onSetNotePinnedClick: (noteId: String, pinned: Boolean) -> Unit = { _, _ -> },
     onSetNoteFolderPinnedClick: (noteId: String, pinned: Boolean) -> Unit = { _, _ -> },
+    dashboardPinnedFolderIds: Set<String> = emptySet(),
+    onSetDashboardFolderPinned: (String, Boolean) -> Unit = { _, _ -> },
     onSetNoteFavouriteClick: (noteId: String, favourite: Boolean) -> Unit = { _, _ -> },
     onCreateSubNoteClick: (parentNoteId: String) -> Unit = {},
     onNewStickyNoteClick: (folderId: String, text: String) -> Unit = { _, _ -> },
@@ -454,6 +456,9 @@ fun HomeScreen(
     if (isStudy && folderActionsOpen && selectedFolder != null) {
         val folder = selectedFolder!!
         PremiumActionDialog(folder.name, showDescriptions = false, onDismiss = { folderActionsOpen = false }, actions = listOf(
+            PremiumAction(if (folder.id in dashboardPinnedFolderIds) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
+                folderActionsOpen = false; onSetDashboardFolderPinned(folder.id, folder.id !in dashboardPinnedFolderIds)
+            },
             PremiumAction("New note", Icons.AutoMirrored.Rounded.NoteAdd) { folderActionsOpen = false; onNewNoteClick(folder.id) },
             PremiumAction("New subfolder", Icons.Rounded.CreateNewFolder) {
                 folderActionsOpen = false
@@ -483,6 +488,10 @@ fun HomeScreen(
             title = folder?.name.orEmpty(),
             onDismiss = { folderActionsOpen = false },
             actions = listOf(
+                PremiumAction(if (folder?.id in dashboardPinnedFolderIds) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
+                    folder?.let { onSetDashboardFolderPinned(it.id, it.id !in dashboardPinnedFolderIds) }
+                    folderActionsOpen = false
+                },
                 PremiumAction("Open", Icons.Rounded.FolderOpen) {
                     folderActionsOpen = false
                     folder?.let {
@@ -617,7 +626,7 @@ fun HomeScreen(
         PremiumActionDialog(note.name, showDescriptions = false, onDismiss = { noteActionsOpen = false }, actions = listOf(
             PremiumAction("Rename", Icons.Rounded.DriveFileRenameOutline) { noteActionsOpen = false; noteTitleInput = note.name; renameNoteDialogOpen = true },
             PremiumAction("Create sub-note", Icons.AutoMirrored.Rounded.NoteAdd) { noteActionsOpen = false; onCreateSubNoteClick(note.id) },
-            PremiumAction(if (note.pinned) "Unpin" else "Pin", Icons.Rounded.PushPin) { noteActionsOpen = false; onSetNotePinnedClick(note.id, !note.pinned) },
+            PremiumAction(if (note.pinned) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) { noteActionsOpen = false; onSetNotePinnedClick(note.id, !note.pinned) },
             PremiumAction(if (note.favourite) "Unfavourite" else "Favourite", Icons.Rounded.Star) { noteActionsOpen = false; onSetNoteFavouriteClick(note.id, !note.favourite) },
             PremiumAction(if (note.folderPinned) "Unpin within folder" else "Pin within folder", Icons.Rounded.PushPin) { noteActionsOpen = false; onSetNoteFolderPinnedClick(note.id, !note.folderPinned) },
             PremiumAction("Sort / Organize", Icons.Rounded.SwapVert) { noteActionsOpen = false; sortMenuOpen = true },
@@ -648,7 +657,7 @@ fun HomeScreen(
                     noteActionsOpen = false
                     moveNoteDialogOpen = true
                 },
-                PremiumAction(if (note?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
+                PremiumAction(if (note?.pinned == true) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
                     note?.let { onSetNotePinnedClick(it.id, !it.pinned) }
                     noteActionsOpen = false
                 },

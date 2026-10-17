@@ -104,6 +104,7 @@ class BackupRepository @Inject constructor(
     private val sourceBacklinkDao: SourceBacklinkDao,
     private val knowledgeTagDao: KnowledgeTagDao,
     private val vaultPreferences: VaultPreferences,
+    private val dashboardActivityRepository: DashboardActivityRepository? = null,
 ) {
     private val backupBinaries by lazy { BackupBinaryStore(context, database, vaultPreferences.backupJournal) }
     suspend fun exportBackup(destination: Uri): BackupResult = withContext(Dispatchers.IO) {
@@ -714,7 +715,14 @@ class BackupRepository @Inject constructor(
                 }
                 noteDao.clearMissingFolderReferences()
             }
-            backedUpPreferences?.let { vaultPreferences.restoreBackedUpPreferences(it) }
+            backedUpPreferences?.let {
+                vaultPreferences.restoreBackedUpPreferences(it)
+                dashboardActivityRepository?.applyRestoredState(
+                    folderPins = it.dashboardFolderPins,
+                    activityJson = it.dashboardActivity,
+                    pinnedOrder = it.dashboardPinnedOrder,
+                )
+            }
 
             return BackupResult(
                 folderCount = folders.size,
@@ -839,6 +847,32 @@ private fun validateBackupSettings(settings: JSONObject) {
     settings.optJSONArray("quranMemorizationRecords")?.let(::validateQuranMemorizationRecords)
     settings.optJSONArray("quranMemorizationAttempts")?.let(::validateQuranMemorizationAttempts)
     settings.optJSONArray("quranSurahMemorizationAttempts")?.let(::validateQuranSurahMemorizationAttempts)
+    settings.optJSONArray("dashboardFolderPins")?.let { pins ->
+        val seen = mutableSetOf<String>()
+        for (index in 0 until pins.length()) {
+            val pinId = pins.optString(index)
+            check(pinId.isNotBlank() && !pinId.contains("/") && !pinId.contains("..")) {
+                "Backup contains invalid dashboard folder pin state."
+            }
+            check(seen.add(pinId)) { "Backup contains duplicate dashboard folder pin state." }
+        }
+    }
+    settings.optJSONArray("dashboardPinnedOrder")?.let { order ->
+        val seen = mutableSetOf<String>()
+        for (index in 0 until order.length()) {
+            val key = order.optString(index)
+            check(key.isNotBlank() && !key.contains("..")) {
+                "Backup contains invalid dashboard pinned order."
+            }
+            check(seen.add(key)) { "Backup contains duplicate dashboard pinned order." }
+        }
+    }
+    if (settings.has("dashboardActivity") && !settings.isNull("dashboardActivity")) {
+        val activity = settings.optJSONObject("dashboardActivity")
+        check(activity != null || settings.optString("dashboardActivity").isNotBlank()) {
+            "Backup contains invalid dashboard activity data."
+        }
+    }
 }
 
 internal fun JSONObject.toValidatedBackupPreferences(): VaultBackupPreferences {
@@ -1092,6 +1126,9 @@ internal fun VaultUserPreferences.toBackupJson(): JSONObject =
         .put("expandedFolderIds", JSONArray(expandedFolderIds.sorted()))
         .put("libraryViewMode", libraryViewMode)
         .put("libraryViewModesByLocation", libraryViewModesByLocation.toJsonObject())
+        .put("dashboardFolderPins", JSONArray(dashboardFolderPins.sorted()))
+        .put("dashboardPinnedOrder", JSONArray(dashboardPinnedOrder))
+        .put("dashboardActivity", dashboardActivityJson?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject())
 
 private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
     VaultBackupPreferences(
@@ -1129,6 +1166,12 @@ private fun JSONObject.toBackupPreferences(): VaultBackupPreferences =
         libraryViewModesByLocation = optJSONObject("libraryViewModesByLocation").toStringMap(
             allowedValues = setOf("list", "grid", "icons"),
         ),
+        dashboardFolderPins = if (has("dashboardFolderPins")) optJSONArray("dashboardFolderPins").toStringSet() else null,
+        dashboardPinnedOrder = if (has("dashboardPinnedOrder")) optJSONArray("dashboardPinnedOrder").toStringList() else null,
+        dashboardActivity = if (has("dashboardActivity")) {
+            optJSONObject("dashboardActivity")?.takeIf { it.length() > 0 }?.toString()
+                ?: optString("dashboardActivity").takeIf { it.isNotBlank() && it != "{}" }
+        } else null,
     )
 
 private fun List<QuranRecentLocation>.toJsonArray(): JSONArray =
@@ -1786,6 +1829,18 @@ private fun JSONArray?.toStringSet(): Set<String> {
     return buildSet {
         for (index in 0 until array.length()) {
             array.optString(index).takeIf { it.isNotBlank() }?.let(::add)
+        }
+    }
+}
+
+private fun JSONArray?.toStringList(): List<String> {
+    val array = this ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optString(index)
+            if (item.isNotBlank()) {
+                add(item)
+            }
         }
     }
 }

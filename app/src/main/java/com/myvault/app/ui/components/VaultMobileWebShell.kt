@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Description
@@ -283,8 +284,8 @@ fun VaultMobileWebShell(
                                 onClick = { closeDrawerThen(onDashboardSelected) },
                             )
                             DrawerNavigationRow(
-                                label = "Favourites",
-                                icon = Icons.Outlined.StarOutline,
+                                label = "Quick Library",
+                                icon = Icons.AutoMirrored.Outlined.MenuBook,
                                 selected = favouritesSelected,
                                 onClick = { closeDrawerThen(onFavouritesSelected) },
                             )

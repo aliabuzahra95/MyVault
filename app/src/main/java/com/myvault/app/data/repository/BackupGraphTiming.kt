@@ -5,8 +5,13 @@ internal class BackupGraphTiming(val enabled: Boolean = false) {
     data class Span(val name: String, val startNanos: Long, val endNanos: Long)
     private val spans = mutableListOf<Span>()
     private val active = mutableListOf<String>()
+    private val counters = mutableMapOf<String, Long>()
     val current: String? get() = synchronized(active) { active.lastOrNull() }
     fun snapshot(): List<Span> = synchronized(spans) { spans.toList() }
+    fun count(name: String, amount: Long = 1) {
+        if (enabled) synchronized(counters) { counters[name] = counters.getOrDefault(name, 0) + amount }
+    }
+    fun counts(): Map<String, Long> = synchronized(counters) { counters.toMap() }
     suspend fun <T> measure(name: String, work: suspend () -> T): T {
         if (!enabled) return work()
         val start = System.nanoTime()

@@ -134,7 +134,9 @@ import com.myvault.app.ui.screens.HomeScreen
 import com.myvault.app.ui.screens.LibraryFolderScreen
 import com.myvault.app.ui.screens.LibraryScreen
 import com.myvault.app.ui.screens.FrozenMemoriseScreen
-import com.myvault.app.ui.screens.FrozenDashboardScreen
+import com.myvault.app.ui.screens.DashboardOverviewScreen
+import com.myvault.app.ui.model.dashboardShortcuts
+import com.myvault.app.ui.model.DashboardShortcutKind
 import com.myvault.app.ui.screens.FrozenFavouritesScreen
 import com.myvault.app.ui.screens.PdfActivityFeedScreen
 import com.myvault.app.ui.screens.QuranShellScreen
@@ -329,6 +331,8 @@ fun VaultNavHost(
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val dashboardActivityViewModel: DashboardActivityViewModel = hiltViewModel()
     val dashboardActivityState by dashboardActivityViewModel.state.collectAsStateWithLifecycle()
+    val dashboardPinnedFolders by dashboardActivityViewModel.pinnedFolders.collectAsStateWithLifecycle()
+    val dashboardPinnedFolderIds = dashboardPinnedFolders.map { it.id }.toSet()
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
     val routeMotionDisabled = remember(context) {
@@ -641,7 +645,7 @@ fun VaultNavHost(
                     ),
                 )
             },
-            onFavouritesSelected = { navController.navigate(VaultDestination.Favourites.route) },
+            onFavouritesSelected = { selectRootMode(VaultRootMode.Library) },
             onSettingsSelected = { navController.navigateToVaultRoot(VaultDestination.Settings.route) },
             onBackupSelected = {
                 shellViewModel.pushGoogleDriveSync {
@@ -661,7 +665,7 @@ fun VaultNavHost(
                 else -> null
             },
             attachmentsSelected = currentRoute == VaultDestination.Attachments.route,
-            favouritesSelected = currentRoute == VaultDestination.Favourites.route,
+            favouritesSelected = selectedRootIndex == rootModes.indexOf(VaultRootMode.Library) && currentRoute == VaultDestination.Knowledge.route,
             reflectionsSelected = currentRoute == VaultDestination.Reflections.route,
             onReflectionsSelected = { navController.navigateToVaultRoot(VaultDestination.Reflections.route) },
             explorerSections = shellExplorerSections,
@@ -996,6 +1000,8 @@ fun VaultNavHost(
                             homeViewModel.setNotePinned(noteId, pinned)
                         },
                         onSetNoteFolderPinnedClick = homeViewModel::setNoteFolderPinned,
+                        dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+                        onSetDashboardFolderPinned = dashboardActivityViewModel::setFolderPinned,
                         onSetNoteFavouriteClick = { noteId, favourite ->
                             homeViewModel.setNoteFavourite(noteId, favourite)
                         },
@@ -1179,6 +1185,8 @@ fun VaultNavHost(
                         onSortModeChange = libraryViewModel::setSortMode,
                         onReorder = libraryViewModel::reorderSiblings,
                         onFolderDetails = libraryViewModel::updateFolderDetails,
+                        dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+                        onSetDashboardFolderPinned = dashboardActivityViewModel::setFolderPinned,
                         onMoveFolder = libraryViewModel::moveFolder,
                         onMoveFolderInOrder = libraryViewModel::moveFolderInOrder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
@@ -1284,6 +1292,8 @@ fun VaultNavHost(
                         onSetNoteFavouriteClick = { noteId, favourite ->
                             homeViewModel.setNoteFavourite(noteId, favourite)
                         },
+                        dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+                        onSetDashboardFolderPinned = dashboardActivityViewModel::setFolderPinned,
                         onCreateSubNoteClick = { parentNoteId ->
                             homeViewModel.createSubNote(parentNoteId) { noteId ->
                                 navController.navigate(VaultDestination.Editor.route(noteId, quickFocus = true))
@@ -1354,6 +1364,8 @@ fun VaultNavHost(
                         onReorder = libraryViewModel::reorderSiblings,
                         onFolderDetails = libraryViewModel::updateFolderDetails,
                         onMoveFolder = libraryViewModel::moveFolder,
+                        dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+                        onSetDashboardFolderPinned = dashboardActivityViewModel::setFolderPinned,
                         onMoveFolderInOrder = libraryViewModel::moveFolderInOrder,
                         onDeleteFolder = libraryViewModel::deleteFolder,
                         onFolderExpandedChange = libraryViewModel::setFolderExpanded,
@@ -1401,16 +1413,39 @@ fun VaultNavHost(
             }
         }
         composable(VaultDestination.Dashboard.route) {
-            FrozenDashboardScreen(
-                continueFile = libraryState.continueReading,
-                activityState = dashboardActivityState,
-                pinnedNotes = if (preferences.workspace == WORKSPACE_PERSONAL) personalState.pinnedNotes else studyState.pinnedNotes,
-                pinnedFiles = libraryState.pinnedFiles,
+            DashboardOverviewScreen(
+                shortcuts = dashboardShortcuts(
+                    if (preferences.workspace == WORKSPACE_PERSONAL) personalState.pinnedNotes else studyState.pinnedNotes,
+                    libraryState.pinnedFiles,
+                    dashboardPinnedFolders.filter { it.mode in if (preferences.workspace == WORKSPACE_PERSONAL)
+                        setOf("personal", "personal_library") else setOf("study", "library") },
+                    order = preferences.dashboardPinnedOrder,
+                ),
+                activityState = dashboardActivityState.copy(lastNote =
+                    (listOfNotNull(dashboardActivityState.lastNote) + dashboardActivityState.recents).sortedByDescending { it.openedAt }.firstOrNull {
+                    it.kind == DashboardActivityKind.Note &&
+                        (if (preferences.workspace == WORKSPACE_PERSONAL) personalState.workspace else studyState.workspace)
+                            .findTreeItemPath(it.destinationId) != null
+                }),
                 quranContinue = if (preferences.workspace == WORKSPACE_PERSONAL) null else studyState.quranContinue,
-                reflections = if (preferences.workspace == WORKSPACE_PERSONAL) emptyList() else studyState.quranReflectionItems,
                 onMenuClick = onOpenNavigation,
-                onOpenNote = ::openNote,
-                onOpenFile = { navController.navigate(VaultDestination.AttachmentViewer.route(it)) },
+                onOpenShortcut = { shortcut ->
+                    when (shortcut.kind) {
+                        DashboardShortcutKind.Note -> openNote(shortcut.id)
+                        DashboardShortcutKind.Document -> navController.navigate(VaultDestination.AttachmentViewer.route(shortcut.id))
+                        DashboardShortcutKind.Folder -> if (shortcut.mode == "library" || shortcut.mode == "personal_library")
+                            revealLibraryFolder(shortcut.id, shortcut.mode)
+                        else revealCorpusFolder(if (shortcut.mode == "personal") VaultRootMode.Personal else VaultRootMode.Study, shortcut.id)
+                    }
+                },
+                onUnpinShortcut = { shortcut ->
+                    when (shortcut.kind) {
+                        DashboardShortcutKind.Note -> homeViewModel.setNotePinned(shortcut.id, false)
+                        DashboardShortcutKind.Document -> libraryViewModel.setFilePinned(shortcut.id, false)
+                        DashboardShortcutKind.Folder -> dashboardActivityViewModel.setFolderPinned(shortcut.id, false)
+                    }
+                },
+                onViewAllLibrary = { selectRootMode(VaultRootMode.Library) },
                 onOpenQuran = { verseKey ->
                     pendingQuranVerseKey = verseKey
                     shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
@@ -1431,15 +1466,6 @@ fun VaultNavHost(
                             }
                         }
                     }
-                },
-                onOpenReflection = { reflection ->
-                    pendingQuranVerseKey = reflection.verseKey
-                    shellViewModel.setWorkspace(WORKSPACE_ISLAMIC_CORPUS)
-                    selectedIslamicRootMode = VaultRootMode.Quran.name
-                    navController.navigateToVaultRoot(VaultDestination.Knowledge.route)
-                },
-                onViewAllReflections = {
-                    navController.navigate(VaultDestination.Reflections.route) { launchSingleTop = true }
                 },
             )
         }
@@ -1491,6 +1517,8 @@ fun VaultNavHost(
                 onSortModeChange = viewModel::setSortMode,
                 onReorder = viewModel::reorderSiblings,
                 onFolderDetails = viewModel::updateFolderDetails,
+                dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+                onSetDashboardFolderPinned = dashboardActivityViewModel::setFolderPinned,
                 onMoveFolder = viewModel::moveFolder,
                 onMoveFolderInOrder = viewModel::moveFolderInOrder,
                 onDeleteFolder = viewModel::deleteFolder,
@@ -1577,6 +1605,8 @@ fun VaultNavHost(
                     viewModel.setNotePinned(noteId, pinned)
                 },
                 onSetNoteFolderPinnedClick = viewModel::setNoteFolderPinned,
+                dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+                onSetDashboardFolderPinned = dashboardActivityViewModel::setFolderPinned,
                 onSetNoteFavouriteClick = viewModel::setNoteFavourite,
                 onCreateSubNoteClick = { parentNoteId ->
                     viewModel.createSubNote(parentNoteId) { noteId ->
@@ -2141,8 +2171,10 @@ fun VaultNavHost(
                 canRename = node != null,
                 canMove = node != null && !isCourse,
                 canPin = node?.type == VaultMobileWebExplorerNodeType.Note ||
-                    node?.type == VaultMobileWebExplorerNodeType.Document,
-                pinned = node?.pinned == true,
+                    node?.type == VaultMobileWebExplorerNodeType.Document ||
+                    (isFolder && target.mode in setOf(VaultRootMode.Study, VaultRootMode.Personal, VaultRootMode.Library)),
+                pinned = if (isFolder) node?.id in dashboardPinnedFolderIds else node?.pinned == true,
+                dashboardPin = target.mode != VaultRootMode.Courses,
                 canDelete = node != null,
                 moveTargets = section.explorerMoveTargets(target.mode, node),
                 onDismiss = { explorerActionTarget = null },
@@ -2238,7 +2270,9 @@ fun VaultNavHost(
                     }
                 },
                 onTogglePin = {
-                    when (target.mode) {
+                    if (isFolder && node != null) {
+                        dashboardActivityViewModel.setFolderPinned(node.id, node.id !in dashboardPinnedFolderIds)
+                    } else when (target.mode) {
                         VaultRootMode.Study, VaultRootMode.Personal -> node?.let {
                             homeViewModel.setNotePinned(it.id, !it.pinned)
                         }

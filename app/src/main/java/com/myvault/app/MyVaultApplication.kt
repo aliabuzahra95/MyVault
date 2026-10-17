@@ -17,11 +17,16 @@ import kotlinx.coroutines.launch
 class MyVaultApplication : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var noteWidgetUpdateCoordinator: NoteWidgetUpdateCoordinator
+    @Inject lateinit var attachmentRepository: dagger.Lazy<com.myvault.app.data.repository.AttachmentRepository>
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
-        applicationScope.launch { removeLegacySafetyBackups(filesDir) }
+        com.myvault.app.data.repository.VerifiedCommitGraphCache.init(filesDir)
+        applicationScope.launch {
+            removeLegacySafetyBackups(filesDir)
+            runCatching { attachmentRepository.get().repairUnpromotedRestoredAttachments() }
+        }
         PDFBoxResourceLoader.init(this)
         noteWidgetUpdateCoordinator.start()
     }

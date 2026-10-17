@@ -14,6 +14,7 @@ internal data class GraphDriveFile(val id: String, val name: String, val mimeTyp
 internal interface GraphDriveApi {
     suspend fun assertAccount(account: String, driveAccountId: String)
     suspend fun roots(name: String): List<GraphDriveFile>
+    /** All pages or failure; incomplete searches/duplicate identities cannot become absence proof. */
     suspend fun children(parent: String): List<GraphDriveFile>
     suspend fun metadata(id: String): GraphDriveFile?
     suspend fun download(id: String): InputStream
@@ -40,10 +41,11 @@ internal data class GraphDriveLayout(val rootId: String, val lineageId: String, 
 /** No mutable head, updates or deletions. Fresh listings, not cached bytes, determine graph membership. */
 internal class AccountBoundGraphStore(
     override val context: GraphWriterContext, private val api: GraphDriveApi, val layout: GraphDriveLayout,
+    private val byteCache: VerifiedGraphByteCache = processVerifiedGraphBytes,
 ) : DisposableGraphObjectStore {
     init { context.validate(); layout.validate(); check(context.lineageId == layout.lineageId) }
     override val namespaceProof: String get() = layout.encode()
-    private val verified = mutableMapOf<String, GraphObject>()
+    private val cacheScope = graphByteCacheScope(context, layout)
     private suspend fun account() = api.assertAccount(context.accountScope, context.driveAccountId)
     suspend fun verifyLayout() {
         account()
@@ -60,6 +62,12 @@ internal class AccountBoundGraphStore(
         }
         account()
     }
+    override suspend fun commitFiles(): List<GraphDriveFile> {
+        verifyLayout()
+        val files = api.children(layout.folders.getValue("commits"))
+        check(files.map { it.id }.distinct().size == files.size)
+        return files.filter { !it.trashed && it.mimeType != GraphFolderMime && it.parents == listOf(layout.folders.getValue("commits")) }
+    }
     override suspend fun commits(): List<GraphObject> {
         verifyLayout()
         val files = api.children(layout.folders.getValue("commits"))
@@ -68,16 +76,23 @@ internal class AccountBoundGraphStore(
             check(!file.trashed && file.mimeType != GraphFolderMime && file.parents == listOf(layout.folders.getValue("commits")))
             val ref = GraphObjectRef(file.id, file.sha256 ?: error("Graph commit has no verified checksum."), file.size ?: error("Graph commit has no size."))
             BackupGraphProtocol.reference(ref, 65536)
-            val cached = verified[file.id]
-            val bytes = if (cached?.objectRef == ref) cached.bytes.copyOf() else {
-                account()
-                api.download(file.id).use { input ->
-                    input.readBytesLimited(65536).also { BackupGraphProtocol.verify(ref, it) }
-                }.also { account() }
+            val cachedObject = VerifiedCommitGraphCache.getCommitObject(ref.cloudFileId)
+            if (cachedObject != null && cachedObject.objectRef == ref) {
+                cachedObject
+            } else {
+                val bytes = byteCache.get(cacheScope, ref) ?: run {
+                    account()
+                    api.download(file.id).use { input ->
+                        input.readBytesLimited(65536).also { byteCache.put(cacheScope, ref, it) }
+                    }.also { account() }
+                }
+                // A future read-only discovery still re-lists membership and parses lineage.
+                byteCache.put(discoveryByteCacheScope(context.accountScope, context.driveAccountId, layout.rootId, layout.folders), ref, bytes)
+                GraphObject(ref, bytes).also {
+                    VerifiedCommitGraphCache.putCommitObject(ref.cloudFileId, it)
+                }
             }
-            GraphObject(ref, bytes).also { verified[file.id] = GraphObject(ref, bytes.copyOf()) }
         }
-        verified.keys.retainAll(files.map { it.id }.toSet())
         account(); return result
     }
     override suspend fun reserveId(): String = reserveIds(1).single()
@@ -96,7 +111,43 @@ internal class AccountBoundGraphStore(
         val file = api.metadata(objectId) ?: return null
         check(file.id == objectId && !file.trashed && file.mimeType != GraphFolderMime &&
             file.parents.size == 1 && file.parents.single() in layout.folders.values) { "Graph object is outside the enrolled namespace." }
-        account(); return api.download(objectId)
+        account()
+        return readContent(file)
+    }
+
+    override suspend fun readMetadata(ref: GraphObjectRef, folder: String): InputStream? {
+        account()
+        val file = api.metadata(ref.cloudFileId) ?: return null
+        return readExpectedMetadata(file, ref, folder)
+    }
+
+    private suspend fun readExpectedMetadata(file: GraphDriveFile, ref: GraphObjectRef, folder: String): InputStream {
+        check(folder in listOf("checkpoints", "deltas"))
+        BackupGraphProtocol.reference(ref)
+        check(file.id == ref.cloudFileId && !file.trashed && file.mimeType != GraphFolderMime &&
+            file.parents == listOf(layout.folders.getValue(folder))) { "Required backup metadata moved outside its expected folder." }
+        check((file.sha256 == null || file.sha256 == ref.sha256) && (file.size == null || file.size == ref.size)) {
+            "Required backup metadata checksum/size differs from its verified graph reference."
+        }
+        account()
+        return readContent(file)
+    }
+
+    private suspend fun readContent(file: GraphDriveFile): InputStream {
+        val objectId = file.id
+        // Required metadata always reaches here through a fresh per-object GET.
+        // Binaries remain streamed and verified by their existing staging/readback paths.
+        if (file.parents.single() != layout.folders.getValue("binaries") && file.mimeType == "application/json" &&
+            file.sha256 != null && file.size != null && file.size in 0..byteCache.entryLimit.toLong()) {
+            val ref = GraphObjectRef(objectId, file.sha256, file.size)
+            BackupGraphProtocol.reference(ref, byteCache.entryLimit.toLong(), true)
+            val bytes = byteCache.get(cacheScope, ref) ?: api.download(objectId).use {
+                it.readBytesLimited(maxOf(1, ref.size.toInt())).also { value -> byteCache.put(cacheScope, ref, value) }
+            }
+            account()
+            return bytes.inputStream()
+        }
+        return api.download(objectId)
     }
     override suspend fun create(objectId: String, role: String, file: File) {
         BackupGraphProtocol.id(objectId); account()
@@ -112,6 +163,15 @@ internal class AccountBoundGraphStore(
     }
 }
 
+private fun graphByteCacheScope(context: GraphWriterContext, layout: GraphDriveLayout) =
+    listOf("verified-graph-bytes-v1", context.accountScope, context.driveAccountId, context.lineageId, layout.encode()).joinToString("\u0000")
+
+// Before discovering lineage, only immutable HEADER bytes are reusable. The encoded
+// account/lineage is parsed/validated below on every use; this is not a layout/head cache.
+private fun discoveryByteCacheScope(account: String, driveId: String, root: String, folders: Map<String, String>) =
+    listOf("verified-discovery-headers-v1", account, driveId, root,
+        BackupGraphDirectories.joinToString { "$it:${folders.getValue(it)}" }).joinToString("\u0000")
+
 internal fun InputStream.readBytesLimited(limit: Int): ByteArray {
     val output = java.io.ByteArrayOutputStream()
     val buffer = ByteArray(8192)
@@ -124,7 +184,8 @@ internal fun InputStream.readBytesLimited(limit: Int): ByteArray {
 }
 
 /** Resolve an existing immutable namespace without enrolling it or changing remote/local trust. */
-internal suspend fun discoverGraphLayout(api: GraphDriveApi, account: String, driveId: String): GraphDriveLayout? {
+internal suspend fun discoverGraphLayout(api: GraphDriveApi, account: String, driveId: String,
+    byteCache: VerifiedGraphByteCache = processVerifiedGraphBytes): GraphDriveLayout? {
     api.assertAccount(account, driveId)
     val roots = api.roots(BackupGraphNamespace)
     check(roots.size <= 1) { "Multiple graph roots require reconciliation." }
@@ -142,9 +203,15 @@ internal suspend fun discoverGraphLayout(api: GraphDriveApi, account: String, dr
         check(file.parents == listOf(folders.getValue("commits")) && !file.trashed && file.mimeType != GraphFolderMime)
         val ref = GraphObjectRef(file.id, file.sha256 ?: error("Missing checksum."), file.size ?: error("Missing size."))
         BackupGraphProtocol.reference(ref, 65536)
-        val bytes = api.download(file.id).use { it.readBytesLimited(65536) }
+        val discoveryScope = discoveryByteCacheScope(account, driveId, root.id, folders)
+        val bytes = byteCache.get(discoveryScope, ref) ?: api.download(file.id).use { it.readBytesLimited(65536) }
         val commit = BackupGraphProtocol.parse(GraphObject(ref, bytes))
         check(commit.accountId == driveId) { "Graph belongs to another Drive account." }
+        byteCache.put(discoveryScope, ref, bytes)
+        // Discovery still reads fresh headers, but the store opened next need not download
+        // those same verified immutable bytes again. No enrollment/head is inferred here.
+        val discoveredLayout = GraphDriveLayout(root.id, commit.lineageId, folders).also { it.validate() }
+        byteCache.put(graphByteCacheScope(GraphWriterContext(account, driveId, commit.lineageId), discoveredLayout), ref, bytes)
         commit.lineageId
     }.distinct()
     check(lineages.size == 1) { "Multiple graph lineages require reconciliation." }

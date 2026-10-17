@@ -21,7 +21,13 @@ internal interface DisposableGraphObjectStore {
     suspend fun reserveIds(count: Int): List<String> = List(count) { reserveId() }
     /** Complete inventory of the enrolled namespace. Missing/ambiguous/incomplete discovery must throw, not return empty. */
     suspend fun commits(): List<GraphObject>
+    suspend fun commitFiles(): List<GraphDriveFile> = commits().map {
+        GraphDriveFile(it.objectRef.cloudFileId, "commit-${it.objectRef.cloudFileId}", "application/json", emptyList(), false, it.objectRef.size, it.objectRef.sha256)
+    }
     suspend fun read(objectId: String): InputStream?
+    /** Validation-pass view. Required metadata reads must keep fresh per-object checks. */
+    suspend fun metadataBoundary(): DisposableGraphObjectStore = this
+    suspend fun readMetadata(ref: GraphObjectRef, folder: String): InputStream? = read(ref.cloudFileId)
     /** Create exclusively, never update. An existing ID must return unchanged for exact-byte readback. */
     suspend fun create(objectId: String, role: String, file: File)
 }
@@ -51,11 +57,20 @@ internal class InternalBackupGraphWriter(
 ) {
     init {
         check(stagingRoot.canonicalPath.startsWith(privateFilesDir.canonicalPath + File.separator)) { "Publication staging must use durable private files, not cache/external storage." }
+        VerifiedCommitGraphCache.init(privateFilesDir)
     }
     private val dao get() = database.backupGraphDao()
     private val context get() = store.context.also { it.validate() }
+    private var metadataDepth = 0
+    private var operationRecords = VerifiedGraphRecordCache()
+    private suspend fun <T> metadataOperation(work: suspend () -> T): T {
+        if (metadataDepth++ == 0) operationRecords = VerifiedGraphRecordCache()
+        try { return work() } finally {
+            if (--metadataDepth == 0) operationRecords = VerifiedGraphRecordCache()
+        }
+    }
 
-    suspend fun publish(): GraphWriterResult = timing.measure("writer.total") { publishInternal() }
+    suspend fun publish(): GraphWriterResult = metadataOperation { timing.measure("writer.total") { publishInternal() } }
     private suspend fun publishInternal(): GraphWriterResult {
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
@@ -65,7 +80,36 @@ internal class InternalBackupGraphWriter(
             return resume(unfinished.single().operationId)
         }
         val binding = timing.measure("baseline.resolve") { dao.binding(c.accountScope, c.lineageId) ?: error("A verified graph root/baseline is required.") }
-        val graph = checkedGraph(binding)
+
+        val pendingChanges = timing.measure("journal.pending_check") {
+            database.backupJournalDao().pending(c.accountScope)
+        }
+        val clock = database.backupJournalDao().clock()
+        val account = database.backupJournalDao().account(c.accountScope)
+
+        val remoteCommitFiles = timing.measure("graph.remote_commits_listing") {
+            store.commitFiles()
+        }
+        val remoteFileIds = remoteCommitFiles.map { it.id }.toSet()
+        val knownLineageFileIds = VerifiedCommitGraphCache.getKnownCommitFileIds(c.accountScope, c.lineageId, binding)
+
+        val noUnknownRemoteCommits = remoteFileIds.contains(binding.commitFileId) &&
+            remoteFileIds.all { it in knownLineageFileIds }
+
+        // RULE 1: 0 Local Changes & No Unknown Remote Commit File IDs
+        if (pendingChanges.isEmpty() && clock.settingsToken == null && clock.suppressionDepth == 0 &&
+            account?.trusted == true && noUnknownRemoteCommits) {
+            onProgress(GraphBackupProgress(GraphBackupStage.ALREADY_BACKED_UP))
+            return GraphWriterResult(null, binding.commitId, alreadyBackedUp = true, forkDetected = false, GraphWriterMetrics(0, 0, 0, 0, 0, 0))
+        }
+
+        val graph = timing.measure("graph.resolution") { checkedGraph(binding) }
+        VerifiedCommitGraphCache.recordLineage(c.accountScope, c.lineageId, graph, binding.commitId)
+
+        val shouldRefreshMetadata = !noUnknownRemoteCommits
+        val verifiedState = timing.measure("graph.resolution") {
+            repairDeletedFolderLinks(graph, binding, refreshCached = shouldRefreshMetadata)
+        }
         onProgress(GraphBackupProgress(GraphBackupStage.CAPTURING_CHANGES))
         val batch = timing.measure("journal.capture") { capture.capture(c.accountScope, timing) }
         checkParent(binding, batch.journal)
@@ -75,21 +119,21 @@ internal class InternalBackupGraphWriter(
         }
         check(graph.plan().deltas.size < 4096) { "A verified new full checkpoint is required before extending this delta epoch." }
         val parent = graph.commits.getValue(binding.commitId)
-        val publication = timing.measure("publication.prepare") { prepareDelta(batch, binding, parent) }
+        val publication = timing.measure("publication.prepare") { prepareDelta(batch, binding, parent, refreshCached = shouldRefreshMetadata) }
         return resume(publication.operationId)
     }
 
-    suspend fun createRoot(prepared: PreparedBackupBaseline): GraphWriterResult = createFullCheckpoint(prepared, null)
+    suspend fun createRoot(prepared: PreparedBackupBaseline): GraphWriterResult = metadataOperation { createFullCheckpoint(prepared, null) }
 
     /** Explicit full-snapshot reconciliation. The old tip remains an immutable parent. */
-    suspend fun replaceCheckpoint(prepared: PreparedBackupBaseline): GraphWriterResult {
+    suspend fun replaceCheckpoint(prepared: PreparedBackupBaseline): GraphWriterResult = metadataOperation {
         val c = context
         val parent = dao.binding(c.accountScope, c.lineageId) ?: error("A verified graph parent is required.")
-        return createFullCheckpoint(prepared, parent)
+        createFullCheckpoint(prepared, parent)
     }
 
     /** Explicit one-time bridge from the verified old tip to a frozen authoritative Vault. */
-    suspend fun previewTransition(prepared: PreparedBackupBaseline): Pair<String, BackupGraphTransition> {
+    suspend fun previewTransition(prepared: PreparedBackupBaseline): Pair<String, BackupGraphTransition> = metadataOperation {
         val c = context
         check(prepared.journal.account.accountScope == c.accountScope && !prepared.journal.account.trusted)
         check(dao.unfinishedMetadata(c.accountScope).isEmpty() && database.backupGraphRestoreDao().unfinishedMetadata().isEmpty())
@@ -101,10 +145,10 @@ internal class InternalBackupGraphWriter(
         check(prepared.journal.originEpoch == database.backupJournalDao().clock().originEpoch)
         if (diff.records.isNotEmpty()) IncrementalBackupFormat.createDelta(binding.checkpointId, binding.deltaHeadId,
             UUID.randomUUID().toString(), diff.records.map { it.protocolChange() }, emptyList())
-        return binding.commitId to diff
+        binding.commitId to diff
     }
 
-    suspend fun transition(prepared: PreparedBackupBaseline): Pair<GraphWriterResult, BackupGraphTransition> {
+    suspend fun transition(prepared: PreparedBackupBaseline): Pair<GraphWriterResult, BackupGraphTransition> = metadataOperation {
         val c = context
         val (oldTip, diff) = previewTransition(prepared)
         val binding = dao.binding(c.accountScope, c.lineageId) ?: error("Graph binding changed.")
@@ -119,12 +163,12 @@ internal class InternalBackupGraphWriter(
                         binding.deltaHeadId, it.cloudFileId, it.size, it.sha256) })
                 dao.putBinding(binding.copy(originEpoch = prepared.journal.originEpoch))
             }
-            return GraphWriterResult(null, binding.commitId, true, false, GraphWriterMetrics(0, 0, 0, 0, 0, 0)) to diff
+            return@metadataOperation GraphWriterResult(null, binding.commitId, true, false, GraphWriterMetrics(0, 0, 0, 0, 0, 0)) to diff
         }
         val batch = PendingBackupBatch(prepared.journal, diff.records, diff.binaries, emptyList(), 0)
         val publication = prepareDelta(batch, binding, graph.commits.getValue(binding.commitId), diff,
             prepared.objects.filter { it.kind == "file" }.mapNotNull { it.attachmentId }, prepared.directory)
-        return resume(publication.operationId) to diff
+        resume(publication.operationId) to diff
     }
 
     private suspend fun createFullCheckpoint(prepared: PreparedBackupBaseline, parent: BackupGraphBinding?): GraphWriterResult {
@@ -177,13 +221,14 @@ internal class InternalBackupGraphWriter(
         val frozen = JSONObject(BackupGraphIntentCodec.batch(PendingBackupBatch(prepared.journal, emptyList(), emptyList(), emptyList(), 0)))
             .put("rootInventory", inventory).put("preparationId", prepared.preparationId).toString()
         val p = publication(op, prepared.journal, parent, frozen, commit)
+        validatePublicationReferences(objects, commit)
         persist(p, objects)
         return resume(op)
     }
 
     private suspend fun prepareDelta(batch: PendingBackupBatch, binding: BackupGraphBinding, parent: BackupGraphCommit,
         transition: BackupGraphTransition? = null, currentAttachmentIds: List<String> = emptyList(),
-        transitionDirectory: File? = null): BackupGraphPublication {
+        transitionDirectory: File? = null, refreshCached: Boolean = true): BackupGraphPublication {
         val stagedCount = batch.binaries.count { it.reusableCloudFileId == null } + 2
         onProgress(GraphBackupProgress(GraphBackupStage.STAGING_PUBLICATION, 0, stagedCount))
         val op = UUID.randomUUID().toString()
@@ -225,6 +270,7 @@ internal class InternalBackupGraphWriter(
         if (transition != null) frozen.put("transition", true)
             .put("transitionOldBinaries", JSONArray(transition.oldBinaryReferences.map { it.toJson() }))
             .put("transitionCurrentAttachments", JSONArray(currentAttachmentIds))
+        validatePublicationReferences(objects, commit, refreshCached = refreshCached)
         return publication(op, batch.journal, binding, frozen.toString(), commit).also { persist(it, objects) }
     }
 
@@ -242,7 +288,8 @@ internal class InternalBackupGraphWriter(
         dao.insertPublication(p); dao.insertObjects(objects)
     }
 
-    suspend fun resume(operation: String): GraphWriterResult {
+    suspend fun resume(operation: String): GraphWriterResult = metadataOperation { resumeInternal(operation) }
+    private suspend fun resumeInternal(operation: String): GraphWriterResult {
         onProgress(GraphBackupProgress(GraphBackupStage.CHECKING))
         val c = context
         val p = dao.readPublication(c.accountScope, operation) ?: error("No operation for this account.")
@@ -274,6 +321,7 @@ internal class InternalBackupGraphWriter(
             else checkedGraph(BackupGraphIntentCodec.binding(p.originalBindingJson))
         }
         validateIntent(p, objects, commit)
+        if (!published) validatePublicationReferences(objects, commit)
         dao.status(c.accountScope, operation, "PUBLISHING")
         boundary("PUBLISHING")
         var binaryCount = 0; var deltaCount = 0; var commitCount = 0
@@ -283,10 +331,16 @@ internal class InternalBackupGraphWriter(
             val exists = verifyExisting(obj)
             if (!exists) {
                 onProgress(GraphBackupProgress(GraphBackupStage.UPLOADING, index, objects.size))
-                timing.measure("upload.${obj.role}") { store.create(obj.objectId, obj.role, File(obj.stagedPath)) }
-                if (obj.role == "BINARY") binaryCount++
-                if (obj.role == "DELTA") deltaCount++
-                if (obj.role == "COMMIT") commitCount++
+                if (obj.role == "BINARY") {
+                    timing.measure("binary.transfer") {
+                        timing.measure("upload.${obj.role}") { store.create(obj.objectId, obj.role, File(obj.stagedPath)) }
+                    }
+                    binaryCount++
+                } else {
+                    timing.measure("upload.${obj.role}") { store.create(obj.objectId, obj.role, File(obj.stagedPath)) }
+                    if (obj.role == "DELTA") deltaCount++
+                    if (obj.role == "COMMIT") commitCount++
+                }
                 boundary("CREATED_${obj.role}")
                 onProgress(GraphBackupProgress(GraphBackupStage.VERIFYING, index, objects.size))
                 check(verifyExisting(obj)) { "Immutable object is missing after create." }
@@ -350,10 +404,14 @@ internal class InternalBackupGraphWriter(
             .forEach { database.backupJournalDao().removeBinaryReference(p.accountScope, it.key.single()) }
         boundary("IN_COMPLETION_TRANSACTION")
         val receipt = objects.single { it.role == "COMMIT" }
+        VerifiedCommitGraphCache.addKnownCommitFileId(p.accountScope, p.lineageId, receipt.objectId)
+        VerifiedCommitGraphCache.putCommitObject(receipt.objectId, GraphObject(GraphObjectRef(receipt.objectId, receipt.sha256, receipt.byteCount), File(receipt.stagedPath).readBytes()))
+        VerifiedCommitGraphCache.putParsedCommit(receipt.objectId, commit)
         dao.putBinding(BackupGraphBinding(p.accountScope, p.lineageId, p.driveAccountId, commit.commitId, receipt.objectId, receipt.sha256, receipt.byteCount,
             commit.checkpoint.checkpointId, commit.checkpoint.objectRef.cloudFileId, commit.checkpoint.objectRef.sha256, commit.checkpoint.objectRef.size,
             commit.deltaHead, p.capturedOriginEpoch))
         dao.status(p.accountScope, p.operationId, "COMPLETE")
+        VerifiedCommitGraphCache.flushToDisk()
     }
 
     private suspend fun validateOriginal(p: BackupGraphPublication) {
@@ -389,6 +447,66 @@ internal class InternalBackupGraphWriter(
         val verified = timing.local("baseline.verify") { BackupGraphProtocol.parse(proof) }
         check(verified == parent)
         return graph
+    }
+
+    private suspend fun repairDeletedFolderLinks(graph: BackupGraph, binding: BackupGraphBinding, refreshCached: Boolean = true): BackupGraphRestoreState {
+        val metadata = timing.measure("metadata.inventory") { store.metadataBoundary() }
+        val state = VerifiedGraphRecords(metadata, timing, operationRecords, refreshCached = refreshCached).fold(graph)
+        val broken = backupReferenceViolations(state)
+        if (broken.isEmpty()) return state
+        // No missing parent is invented, and no surviving remote item is deleted.
+        // Other relationship failures still require explicit investigation.
+        if (broken.any { it.dependent.group != "attachments.json" || it.field != "libraryFolderId" || !it.remoteDeleted }) {
+            requireBackupReferences(state, graph.tips.single(), "backup_recovery_validation")
+        }
+        database.withTransaction {
+            checkParent(binding, journal.capture(context.accountScope))
+            check(dao.binding(context.accountScope, context.lineageId) == binding)
+            for (failure in broken) {
+                val id = failure.dependent.key.single()
+                val row = database.attachmentDao().getByIdIncludingDeleted(id) ?: continue
+                if (row.libraryFolderId == failure.dependency.key.single() &&
+                    database.backupCaptureDao().readBackupRecord("folders.json", failure.dependency.key) == null) {
+                    // Normal journal triggers record this correction for the next delta.
+                    database.attachmentDao().updateLibraryFolder(id, null)
+                }
+            }
+        }
+        return state
+    }
+
+    private suspend fun validatePublicationReferences(objects: List<BackupGraphPublicationObject>, commit: BackupGraphCommit, refreshCached: Boolean = true) {
+        val staged = objects.associateBy { it.objectId }
+        // Required history is freshly checked per object after commit discovery. A prior
+        // listing cannot prove continued existence/placement, even for SHA-verified bytes.
+        val metadata = timing.measure("metadata.inventory") { store.metadataBoundary() }
+        val overlay = object : DisposableGraphObjectStore by metadata {
+            override suspend fun read(objectId: String): InputStream? = staged[objectId]?.let {
+                verifyStaged(it); File(it.stagedPath).inputStream()
+            } ?: metadata.read(objectId)
+            override suspend fun readMetadata(ref: GraphObjectRef, folder: String): InputStream? = staged[ref.cloudFileId]?.let {
+                verifyStaged(it); File(it.stagedPath).inputStream()
+            } ?: metadata.readMetadata(ref, folder)
+        }
+        val commitObject = objects.single { it.role == "COMMIT" }
+        val inventory = store.commits().filterNot { it.objectRef.cloudFileId == commitObject.objectId } +
+            GraphObject(commitObject.ref(), File(commitObject.stagedPath).readBytes())
+        val graph = BackupGraph.discover(inventory, context.driveAccountId, context.lineageId)
+        check(graph.status == GraphStatus.SINGLE_TIP && graph.tips.single() == commit.commitId) {
+            "Publication no longer extends the verified unique tip. Nothing was committed."
+        }
+        val reader = VerifiedGraphRecords(overlay, timing, operationRecords, refreshCached = refreshCached)
+        val state = reader.fold(graph)
+        requireBackupReferences(state, commit.commitId, "backup_precommit_validation")
+        val resolution = BackupBinaryResolution(emptyList())
+        val folded = BackupGraphRestoreState()
+        for (position in graph.plan().commits) {
+            val (changes, binaries) = reader.read(position)
+            resolution.apply(folded.apply(changes, reader.checkpointGroups[position.commitId]), binaries)
+        }
+        resolution.finish(mapOf("attachments.json" to JSONArray(state.changes.filter {
+            it.file == "attachments.json" && !it.deleted
+        }.map { it.value }).toString()))
     }
 
     private fun validateIntent(p: BackupGraphPublication, objects: List<BackupGraphPublicationObject>, commit: BackupGraphCommit) {
@@ -476,6 +594,7 @@ internal class InternalBackupGraphWriter(
         val file = File(obj.stagedPath)
         check(file.canonicalFile.toPath().startsWith(stagingRoot.canonicalFile.toPath()) && file.isFile) { "Durable staging file is missing/unsafe." }
         val digest = timing.local("local.staged_verification") { file.inputStream().use { fingerprintBackupBytes(it) } }
+        timing.count("local.hashed_bytes", digest.size)
         check(digest.sha256 == obj.sha256 && digest.size == obj.byteCount) { "Staged bytes are corrupt; pending changes were preserved." }
         check(obj.verifiedSha256 == null || obj.verifiedSha256 == obj.sha256)
         check(obj.verifiedByteCount == null || obj.verifiedByteCount == obj.byteCount)

@@ -109,7 +109,7 @@ class VaultMobileWebNavigationContractTest {
         assertTrue(actions.contains("Upload document"))
         assertTrue(actions.contains("Rename"))
         assertTrue(actions.contains("Move"))
-        assertTrue(actions.contains("Unpin"))
+        assertTrue(actions.contains("Unpin from Dashboard"))
         assertTrue(actions.contains("Delete"))
         assertTrue(modal.contains("Modifier.heightIn(max = 430.dp)"))
     }

@@ -15,14 +15,18 @@ class AccountBoundGraphStoreTest {
         val files = linkedMapOf<String, GraphDriveFile>()
         val bytes = mutableMapOf<String, ByteArray>()
         var activeAccount = expectedAccount
-        var generated = 0; var downloads = 0; var folderCreates = 0; var objectCreates = 0
+        var generated = 0; var downloads = 0; var folderCreates = 0; var objectCreates = 0; var metadataReads = 0
         var crashAfterFolder: Int? = null
+        var childrenHook: ((String, List<GraphDriveFile>) -> List<GraphDriveFile>)? = null
         override suspend fun assertAccount(account: String, driveAccountId: String) {
             check(account == activeAccount && account == expectedAccount && driveAccountId == driveId)
         }
         override suspend fun roots(name: String) = files.values.filter { it.name == name && it.mimeType == GraphFolderMime && !it.trashed }
-        override suspend fun children(parent: String) = files.values.filter { parent in it.parents && !it.trashed }
-        override suspend fun metadata(id: String) = files[id]
+        override suspend fun children(parent: String): List<GraphDriveFile> {
+            val rows = files.values.filter { parent in it.parents && !it.trashed }
+            return childrenHook?.invoke(parent, rows) ?: rows
+        }
+        override suspend fun metadata(id: String) = files[id].also { metadataReads++ }
         override suspend fun download(id: String) = ByteArrayInputStream(bytes.getValue(id)).also { downloads++ }
         override suspend fun reserveIds(count: Int) = List(count) { "reserved-${++generated}" }
         override suspend fun createFolder(id: String, name: String, parent: String?) {
@@ -193,6 +197,170 @@ class AccountBoundGraphStoreTest {
             rejected { store.commits() }
             api.bytes[obj.objectRef.cloudFileId] = ByteArray(65537)
             rejected { store.commits() }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun warmBytesAlwaysRequireFreshMetadataAndRejectMissingOrMovedObjects() = runBlocking {
+        val directory = Files.createTempDirectory("graph-cache-test").toFile()
+        try {
+            val api = Api(account, driveId); val enrolled = setup(api, File(directory, "intent.json"))
+            val cache = VerifiedGraphByteCache()
+            fun store() = AccountBoundGraphStore(enrolled.context, api, enrolled.layout, cache)
+            api.put("delta", enrolled.layout.folders.getValue("deltas"), "verified".toByteArray())
+            store().read("delta")!!.use { assertEquals("verified", it.readBytes().toString(Charsets.UTF_8)) }
+            val metadataReads = api.metadataReads
+            store().read("delta")!!.close()
+            assertEquals(1, api.downloads); assertEquals(metadataReads + 1, api.metadataReads)
+            val original = api.files.remove("delta")!!
+            assertNull(store().read("delta")); assertEquals(1, api.downloads)
+            api.files["delta"] = original.copy(parents = listOf("outside"))
+            rejected { store().read("delta") }
+            api.files["delta"] = original
+            api.activeAccount = "switched@example.com"; rejected { store().read("delta") }
+            assertEquals(1, api.downloads)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun changedDescriptorCannotReturnPreviouslyCachedBytesAndCorruptDownloadNeverSeedsCache() = runBlocking {
+        val directory = Files.createTempDirectory("graph-cache-test").toFile()
+        try {
+            val api = Api(account, driveId); val enrolled = setup(api, File(directory, "intent.json"))
+            val cache = VerifiedGraphByteCache(); val store = AccountBoundGraphStore(enrolled.context, api, enrolled.layout, cache)
+            val parent = enrolled.layout.folders.getValue("deltas")
+            api.put("delta", parent, "original".toByteArray())
+            store.read("delta")!!.close()
+            api.put("delta", parent, "replacement".toByteArray())
+            assertEquals("replacement", store.read("delta")!!.use { it.readBytes().toString(Charsets.UTF_8) })
+            assertEquals(2, api.downloads)
+            cache.clear(); api.dataCorruptionForTest("delta")
+            rejected { store.read("delta") }; rejected { store.read("delta") }
+            assertEquals(4, api.downloads)
+        } finally { directory.deleteRecursively() }
+    }
+
+    private fun Api.dataCorruptionForTest(id: String) { bytes[id] = "corrupt".toByteArray() }
+
+    @Test fun binariesRemainStreamingAndByteCacheLossIsAColdVerifiedRead() = runBlocking {
+        val directory = Files.createTempDirectory("graph-cache-test").toFile()
+        try {
+            val api = Api(account, driveId); val enrolled = setup(api, File(directory, "intent.json"))
+            val cache = VerifiedGraphByteCache(); val store = AccountBoundGraphStore(enrolled.context, api, enrolled.layout, cache)
+            api.put("binary", enrolled.layout.folders.getValue("binaries"), "binary".toByteArray(), mime = "application/octet-stream")
+            repeat(2) { store.read("binary")!!.close() }; assertEquals(2, api.downloads)
+            api.put("metadata", enrolled.layout.folders.getValue("checkpoints"), "[]".toByteArray())
+            store.read("metadata")!!.close(); store.read("metadata")!!.close(); assertEquals(3, api.downloads)
+            cache.clear(); store.read("metadata")!!.close(); assertEquals(4, api.downloads)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun discoverySeedsOnlyVerifiedHeadersAndStillListsEveryTime() = runBlocking {
+        val directory = Files.createTempDirectory("graph-cache-test").toFile()
+        try {
+            val api = Api(account, driveId); val enrolled = setup(api, File(directory, "intent.json"))
+            val commit = api.commit(enrolled, root(enrolled)); val cache = VerifiedGraphByteCache()
+            assertEquals(enrolled.layout, discoverGraphLayout(api, account, driveId, cache))
+            val store = AccountBoundGraphStore(enrolled.context, api, enrolled.layout, cache)
+            assertEquals(1, api.downloads); store.commits(); assertEquals(1, api.downloads)
+            api.files.remove(commit.objectRef.cloudFileId)
+            assertTrue(store.commits().isEmpty())
+            rejected { discoverGraphLayout(api, account, driveId, cache) }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun sameBoundaryFreshlyChecksEveryRequiredReadAndDetectsRemoval() = runBlocking {
+        val directory = Files.createTempDirectory("graph-inventory-test").toFile()
+        try {
+            val api = Api(account, driveId); val store = setup(api, File(directory, "intent.json"))
+            val bytes = "[]".toByteArray(); val ref = GraphObjectRef("metadata", IncrementalBackupFormat.sha256(bytes), bytes.size.toLong())
+            api.put(ref.cloudFileId, store.layout.folders.getValue("checkpoints"), bytes)
+            val boundary = store.metadataBoundary(); val gets = api.metadataReads
+            boundary.readMetadata(ref, "checkpoints")!!.use { assertArrayEquals(bytes, it.readBytes()) }
+            assertEquals(gets + 1, api.metadataReads)
+            api.files.remove(ref.cloudFileId)
+            assertNull(boundary.readMetadata(ref, "checkpoints"))
+            assertEquals(gets + 2, api.metadataReads)
+            assertNull(store.metadataBoundary().readMetadata(ref, "checkpoints"))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun completeCommitInventoryStillRejectsDuplicateMovedAndFailedListings() = runBlocking {
+        val directory = Files.createTempDirectory("graph-inventory-test").toFile()
+        try {
+            val api = Api(account, driveId); val store = setup(api, File(directory, "intent.json"))
+            api.commit(store, root(store))
+            val folder = store.layout.folders.getValue("commits")
+            api.childrenHook = { parent, rows -> if (parent == folder) rows + rows else rows }
+            rejected { store.commits() }
+            api.childrenHook = { parent, rows -> if (parent == folder) rows.map { it.copy(parents = listOf("outside")) } else rows }
+            rejected { store.commits() }
+            api.childrenHook = { parent, rows -> if (parent == folder) error("Page failed") else rows }
+            rejected { store.commits() }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun boundaryExactHashSizeRoleAndAccountCannotBeOverriddenByWarmBytes() = runBlocking {
+        val directory = Files.createTempDirectory("graph-inventory-test").toFile()
+        try {
+            val api = Api(account, driveId); val store = setup(api, File(directory, "intent.json"))
+            val bytes = "[]".toByteArray(); val ref = GraphObjectRef("metadata", IncrementalBackupFormat.sha256(bytes), bytes.size.toLong())
+            api.put("metadata", store.layout.folders.getValue("checkpoints"), bytes)
+            store.metadataBoundary().readMetadata(ref, "checkpoints")!!.close()
+            val original = api.files.getValue("metadata")
+            api.files["metadata"] = original.copy(sha256 = "a".repeat(64))
+            rejected { store.metadataBoundary().readMetadata(ref, "checkpoints") }
+            api.files["metadata"] = original.copy(size = 99)
+            rejected { store.metadataBoundary().readMetadata(ref, "checkpoints") }
+            api.files["metadata"] = original.copy(parents = listOf(store.layout.folders.getValue("deltas")))
+            rejected { store.metadataBoundary().readMetadata(ref, "checkpoints") }
+            api.files["metadata"] = original
+            val boundary = store.metadataBoundary(); api.activeAccount = "other@example.com"
+            rejected { boundary.readMetadata(ref, "checkpoints") }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun missingFreshChecksumDownloadsAndStillVerifiesExpectedBytes() = runBlocking {
+        val directory = Files.createTempDirectory("graph-inventory-test").toFile()
+        try {
+            val api = Api(account, driveId); val store = setup(api, File(directory, "intent.json"))
+            val bytes = "[]".toByteArray(); val ref = GraphObjectRef("metadata", IncrementalBackupFormat.sha256(bytes), bytes.size.toLong())
+            api.put("metadata", store.layout.folders.getValue("checkpoints"), bytes)
+            api.files["metadata"] = api.files.getValue("metadata").copy(sha256 = null, size = null)
+            val boundary = store.metadataBoundary(); val gets = api.metadataReads
+            boundary.readMetadata(ref, "checkpoints")!!.use { BackupGraphProtocol.verify(ref, it.readBytes()) }
+            assertEquals(gets + 1, api.metadataReads); assertEquals(1, api.downloads)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun publicationReadbackDoesNotCachePreUploadAbsence() = runBlocking {
+        val directory = Files.createTempDirectory("graph-inventory-test").toFile()
+        try {
+            val api = Api(account, driveId); val store = setup(api, File(directory, "intent.json"))
+            val before = store.metadataBoundary()
+            val source = File(directory, "source").apply { writeText("[]") }
+            val ref = GraphObjectRef("new-object", IncrementalBackupFormat.sha256(source.readBytes()), source.length())
+            assertNull(before.readMetadata(ref, "deltas"))
+            store.create("new-object", "DELTA", source)
+            before.readMetadata(ref, "deltas")!!.use { BackupGraphProtocol.verify(ref, it.readBytes()) }
+            val gets = api.metadataReads
+            store.read("new-object")!!.use { BackupGraphProtocol.verify(ref, it.readBytes()) }
+            assertEquals(gets + 1, api.metadataReads)
+            store.metadataBoundary().readMetadata(ref, "deltas")!!.close()
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun warmDiscoveryReusesBytesOnlyAgainstFreshMembershipAndExactRefs() = runBlocking {
+        val directory = Files.createTempDirectory("graph-inventory-test").toFile()
+        try {
+            val api = Api(account, driveId); val enrolled = setup(api, File(directory, "intent.json"))
+            val cache = VerifiedGraphByteCache(); val store = AccountBoundGraphStore(enrolled.context, api, enrolled.layout, cache)
+            val proof = api.commit(store, root(store))
+            store.commits(); assertEquals(1, api.downloads)
+            assertEquals(store.layout, discoverGraphLayout(api, account, driveId, cache)); assertEquals(1, api.downloads)
+            val original = api.files.getValue(proof.objectRef.cloudFileId)
+            api.files[original.id] = original.copy(sha256 = "a".repeat(64))
+            rejected { discoverGraphLayout(api, account, driveId, cache) }; assertEquals(2, api.downloads)
+            api.files.remove(original.id)
+            rejected { discoverGraphLayout(api, account, driveId, cache) }
         } finally { directory.deleteRecursively() }
     }
 }

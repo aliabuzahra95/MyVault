@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.myvault.app.data.local.entity.FolderEntity
 
 @HiltViewModel
 class DashboardActivityViewModel @Inject constructor(
@@ -19,6 +20,12 @@ class DashboardActivityViewModel @Inject constructor(
     val state: StateFlow<DashboardActivityState> = repository.availableState.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardActivityState(),
     )
+    val pinnedFolders: StateFlow<List<FolderEntity>> = repository.pinnedFolders.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList(),
+    )
+    fun setFolderPinned(id: String, pinned: Boolean) {
+        viewModelScope.launch { repository.setFolderPinned(id, pinned) }
+    }
 
     fun openActivity(item: DashboardActivityItem, onResolved: (DashboardActivityItem?) -> Unit) {
         viewModelScope.launch { onResolved(repository.resolveActivity(item)) }

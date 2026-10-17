@@ -62,7 +62,11 @@ internal class VaultRichTextVisualTransformation(
     private val activeNarrationText: String = "",
     private val activeNarrationRange: IntRange? = null,
 ) : VisualTransformation {
+    private var cachedInput: String? = null
+    private var cachedDisplay: TransformedText? = null
+
     override fun filter(text: AnnotatedString): TransformedText {
+        if (cachedInput == text.text) cachedDisplay?.let { return it }
         val annotated = buildVaultAnnotatedString(text.text, marks, noteLinks, colors)
         val range = activeNarrationRange ?: narrationTextRange(text.text, activeNarrationText)
         val activeStart = range?.first ?: -1
@@ -78,7 +82,10 @@ internal class VaultRichTextVisualTransformation(
             annotated
         }
         val display = highlighted.withVaultBidiIsolation()
-        return TransformedText(display.text, display.offsetMapping)
+        return TransformedText(display.text, display.offsetMapping).also {
+            cachedInput = text.text
+            cachedDisplay = it
+        }
     }
 }
 
@@ -163,21 +170,31 @@ internal fun AnnotatedString.withVaultBidiIsolation(): VaultBidiDisplayText {
     if (ranges.isEmpty()) return VaultBidiDisplayText(this, OffsetMapping.Identity)
 
     // Isolates exist only in the rendered copy; the offset map keeps editing tied to stored text.
+    val mapping = VaultBidiOffsetMapping(text.length, ranges)
+    fun endOffset(start: Int, end: Int): Int =
+        if (end <= start) mapping.originalToTransformed(start) else mapping.originalToTransformed(end - 1) + 1
     val transformed = AnnotatedString.Builder().apply {
         var sourceOffset = 0
         ranges.forEach { range ->
-            append(this@withVaultBidiIsolation.subSequence(sourceOffset, range.start))
+            append(text.substring(sourceOffset, range.start))
             append(if (range.direction == VaultParagraphDirection.Rtl) RTL_ISOLATE else LTR_ISOLATE)
-            append(this@withVaultBidiIsolation.subSequence(range.start, range.end))
+            append(text.substring(range.start, range.end))
             append(POP_DIRECTIONAL_ISOLATE)
             sourceOffset = range.end
         }
-        append(this@withVaultBidiIsolation.subSequence(sourceOffset, text.length))
+        append(text.substring(sourceOffset, text.length))
+        // Copy each annotation once, rather than splitting a document-wide style at every bidi run.
+        // Android's StaticLayout otherwise receives thousands of redundant spans for one bold mark.
+        spanStyles.forEach { addStyle(it.item, mapping.originalToTransformed(it.start), endOffset(it.start, it.end)) }
+        paragraphStyles.forEach { addStyle(it.item, mapping.originalToTransformed(it.start), endOffset(it.start, it.end)) }
+        getStringAnnotations(0, text.length).forEach {
+            addStringAnnotation(it.tag, it.item, mapping.originalToTransformed(it.start), endOffset(it.start, it.end))
+        }
     }.toAnnotatedString()
 
     return VaultBidiDisplayText(
         text = transformed,
-        offsetMapping = VaultBidiOffsetMapping(text.length, ranges),
+        offsetMapping = mapping,
     )
 }
 
@@ -254,15 +271,20 @@ private class VaultBidiOffsetMapping(
     private val originalLength: Int,
     private val ranges: List<VaultBidiRange>,
 ) : OffsetMapping {
+    private val boundaries = IntArray(ranges.size * 2) { index ->
+        val range = ranges[index / 2]
+        if (index % 2 == 0) range.start else range.end
+    }
+
     override fun originalToTransformed(offset: Int): Int {
         val safeOffset = offset.coerceIn(0, originalLength)
-        return safeOffset + ranges.sumOf { range ->
-            when {
-                safeOffset < range.start -> 0
-                safeOffset < range.end -> 1
-                else -> 2
-            }
+        var low = 0
+        var high = boundaries.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (boundaries[middle] <= safeOffset) low = middle + 1 else high = middle
         }
+        return safeOffset + low
     }
 
     override fun transformedToOriginal(offset: Int): Int {
@@ -300,8 +322,7 @@ internal fun handleVaultRichTextChange(
     val safeMarks = sanitizeVaultStyleMarks(marks, oldText.length)
     if (oldText == newText) return sanitizeVaultStyleMarks(safeMarks, newText.length)
 
-    val prefix = oldText.commonPrefixWith(newText).length
-    val suffix = oldText.substring(prefix).commonSuffixWith(newText.substring(prefix)).length
+    val (prefix, suffix) = vaultChangeBounds(safeOldValue, safeNewValue)
     val oldEnd = oldText.length - suffix
     val newEnd = newText.length - suffix
     val insertedLength = (newEnd - prefix).coerceAtLeast(0)
@@ -345,8 +366,7 @@ internal fun handleVaultNoteLinkChange(
     val safeLinks = sanitizeVaultNoteLinks(links, oldText.length)
     if (oldText == newText) return sanitizeVaultNoteLinks(safeLinks, newText.length)
 
-    val prefix = oldText.commonPrefixWith(newText).length
-    val suffix = oldText.substring(prefix).commonSuffixWith(newText.substring(prefix)).length
+    val (prefix, suffix) = vaultChangeBounds(oldValue, newValue)
     val oldEnd = oldText.length - suffix
     val delta = newText.length - oldText.length
 
@@ -456,12 +476,19 @@ internal fun activeVaultParagraphToolForSelection(
             ?.let { return it }
     }
 
+    if (safeMarks.none { it.style in headingStyles() && it.start <= range.max && it.end >= range.min }) {
+        return EditorTool.Paragraph
+    }
+
     val paragraphRanges = paragraphContentRanges(safeValue.text, range)
     if (paragraphRanges.isEmpty()) return EditorTool.Paragraph
-    val detected = paragraphRanges.map { paragraphRange ->
-        paragraphToolForRange(paragraphRange, safeMarks) ?: return null
-    }.distinct()
-    return detected.singleOrNull()
+    var detected: EditorTool? = null
+    for (paragraphRange in paragraphRanges) {
+        val tool = paragraphToolForRange(paragraphRange, safeMarks) ?: return null
+        if (detected != null && tool != detected) return null
+        detected = tool
+    }
+    return detected
 }
 
 internal fun applyVaultParagraphStyleFromToolbar(
@@ -628,8 +655,7 @@ private fun directPasteInsertedText(oldValue: TextFieldValue, newValue: TextFiel
     if (oldText == newText) return null
 
     val selection = normalizedSelection(oldValue.selection, oldText.length)
-    val prefix = oldText.commonPrefixWith(newText).length
-    val suffix = oldText.substring(prefix).commonSuffixWith(newText.substring(prefix)).length
+    val (prefix, suffix) = vaultChangeBounds(oldValue, newValue)
     val oldEnd = oldText.length - suffix
     val newEnd = newText.length - suffix
     if (prefix != selection.start || oldEnd != selection.end || newEnd <= prefix) return null
@@ -857,7 +883,32 @@ internal fun sanitizeVaultTextFieldValue(value: TextFieldValue): TextFieldValue 
         val compositionEnd = range.end.coerceIn(0, textLength)
         if (compositionStart < compositionEnd) TextRange(compositionStart, compositionEnd) else null
     }
+    if (start == value.selection.start && end == value.selection.end && composition == value.composition) return value
     return value.copy(selection = TextRange(start, end), composition = composition)
+}
+
+// Find the edit without allocating copies of the unchanged document prefix/suffix.
+internal fun vaultChangeBounds(old: String, new: String): Pair<Int, Int> {
+    val commonLength = minOf(old.length, new.length)
+    var prefix = 0
+    while (prefix < commonLength && old[prefix] == new[prefix]) prefix++
+    if (prefix > 0 && ((prefix < old.length && old[prefix - 1].isHighSurrogate() && old[prefix].isLowSurrogate()) ||
+            (prefix < new.length && new[prefix - 1].isHighSurrogate() && new[prefix].isLowSurrogate()))) prefix--
+    var suffix = 0
+    while (suffix < commonLength - prefix && old[old.lastIndex - suffix] == new[new.lastIndex - suffix]) suffix++
+    if (suffix > 0 && ((suffix < old.length - prefix && old[old.length - suffix - 1].isHighSurrogate() && old[old.length - suffix].isLowSurrogate()) ||
+            (suffix < new.length - prefix && new[new.length - suffix - 1].isHighSurrogate() && new[new.length - suffix].isLowSurrogate()))) suffix--
+    return prefix to suffix
+}
+
+internal fun vaultChangeBounds(old: TextFieldValue, new: TextFieldValue): Pair<Int, Int> {
+    val start = old.selection.min
+    val end = old.selection.max
+    val suffix = old.text.length - end
+    val inserted = new.text.length - start - suffix
+    if (inserted >= 0 && old.text.regionMatches(0, new.text, 0, start) &&
+        old.text.regionMatches(end, new.text, start + inserted, suffix)) return start to suffix
+    return vaultChangeBounds(old.text, new.text)
 }
 
 private fun applyStyleToSelection(

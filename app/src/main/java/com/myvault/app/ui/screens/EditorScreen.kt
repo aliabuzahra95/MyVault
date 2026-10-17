@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -108,6 +110,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
@@ -263,7 +268,9 @@ fun EditorScreen(
     val isFavourite = uiState.note?.isFavourite == true
     val bodyEditorScrollState = rememberScrollState()
     val viewportGesture = rememberNarrationViewportGesture(noteId)
-    var headerVisible by remember(noteId) { mutableStateOf(true) }
+    var selectionDragging by remember(noteId) { mutableStateOf(false) }
+    var bodyFieldOrigin by remember { mutableStateOf(Offset.Zero) }
+    var editorViewport by remember { mutableStateOf(Rect.Zero) }
     val caretScrollSpec = remember {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
@@ -274,18 +281,6 @@ fun EditorScreen(
     val currentBodyValue by rememberUpdatedState(sanitizeVaultTextFieldValue(bodyValue))
     val currentBodyFocused by rememberUpdatedState(bodyFocused)
     val currentBodyLayout by rememberUpdatedState(bodyTextLayoutResult)
-    val prepareTappedSelection = Modifier.pointerInput(noteId) {
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-            // Seed the native field before its focus callback can reveal an old selection.
-            // Gestures remain unconsumed for scrolling, long-press and native RTL selection.
-            val layout = currentBodyLayout
-            if (!currentBodyFocused && layout?.layoutInput?.text?.text == currentBodyValue.text) {
-                val offset = layout.getOffsetForPosition(down.position).coerceIn(0, currentBodyValue.text.length)
-                bodyValue = currentBodyValue.copy(selection = TextRange(offset), composition = null)
-            }
-        }
-    }
     val breadcrumbItems = remember(uiState.folderPath, title.text) {
         listOf("My Vault") + uiState.folderPath + listOf(title.text.ifBlank { "Note" })
     }
@@ -329,6 +324,25 @@ fun EditorScreen(
             narrationState.activeSentenceSourceOffset - title.text.length,
             narrationState.activeSentenceContext, narrationState.activeSentenceContextOffset)
     }
+    val visualTransformation = remember(styleMarks, noteLinks, colors, activeNarrationText, activeNarrationRange) {
+        VaultRichTextVisualTransformation(styleMarks, noteLinks, colors, activeNarrationText, activeNarrationRange)
+    }
+    val bodyDisplay = remember(safeBodyValue.text, visualTransformation) {
+        visualTransformation.filter(safeBodyValue.annotatedString)
+    }
+    val currentBodyDisplay by rememberUpdatedState(bodyDisplay)
+    val prepareTappedSelection = Modifier.pointerInput(noteId) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            // Seed native focus using the displayed-to-stored offset mapping, without consuming gestures.
+            val layout = currentBodyLayout
+            if (!currentBodyFocused && layout?.layoutInput?.text?.text == currentBodyDisplay.text.text) {
+                val offset = currentBodyDisplay.offsetMapping.transformedToOriginal(layout.getOffsetForPosition(down.position))
+                    .coerceIn(0, currentBodyValue.text.length)
+                bodyValue = currentBodyValue.copy(selection = TextRange(offset), composition = null)
+            }
+        }
+    }
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     val currentImeBottom by rememberUpdatedState(imeBottom)
@@ -339,14 +353,16 @@ fun EditorScreen(
             }.collect { android.util.Log.d("NoteViewport", it) }
         }
     }
-    val selectedBodyText = remember(safeBodyValue.text, safeBodyValue.selection) {
-        safeBodyValue.selectedTextOrNull()
-    }
-    val selectedTextChipText = selectedBodyText
+    val hasBodySelection = !safeBodyValue.selection.collapsed
     // Keep room for the inline paragraph strip before it opens so toggling it never resizes or scrolls the editor.
     val paragraphStripComfortPadding = 48.dp
     val bodyBottomComfortPadding =
-        (if (selectedTextChipText != null) 64.dp else 10.dp) + paragraphStripComfortPadding
+        64.dp + paragraphStripComfortPadding
+
+    var previousImeBottom by remember { mutableIntStateOf(0) }
+    var handledCaret by remember(noteId) { mutableStateOf<TextRange?>(null) }
+    var handledCaretText by remember(noteId) { mutableStateOf<String?>(null) }
+    var handledCaretIme by remember(noteId) { mutableIntStateOf(0) }
 
     LaunchedEffect(
         bodyFocused,
@@ -356,11 +372,22 @@ fun EditorScreen(
         bodyTextLayoutResult,
         imeBottom,
         bodyEditorScrollState.viewportSize,
+        viewportGesture.touching,
+        selectionDragging,
     ) {
-        if (!bodyFocused || safeBodyValue.text.isEmpty() ||
+        val keyboardOpened = imeBottom > previousImeBottom
+        previousImeBottom = imeBottom
+        if (!bodyFocused) handledCaret = null
+        if (!bodyFocused || !safeBodyValue.selection.collapsed || selectionDragging || viewportGesture.touching ||
+            safeBodyValue.text.isEmpty() ||
             (narrationShouldFollow(narrationState.status, viewportGesture.touching) && activeNarrationRange != null)) return@LaunchedEffect
         val textLayout = bodyTextLayoutResult ?: return@LaunchedEffect
-        if (textLayout.layoutInput.text.text != safeBodyValue.text) return@LaunchedEffect
+        if (textLayout.layoutInput.text.text != bodyDisplay.text.text) return@LaunchedEffect
+        // Finger scrolling alone is not an editing event: don't pull the viewport back on release.
+        if (handledCaret == safeBodyValue.selection && handledCaretText === safeBodyValue.text && handledCaretIme == imeBottom) return@LaunchedEffect
+        handledCaret = safeBodyValue.selection
+        handledCaretText = safeBodyValue.text
+        handledCaretIme = imeBottom
         val selection = safeBodyValue.selection
         val selectionStart = minOf(selection.start, selection.end).coerceIn(0, safeBodyValue.text.lastIndex)
         val selectionEnd = maxOf(selection.start, selection.end).coerceIn(selectionStart + 1, safeBodyValue.text.length)
@@ -370,12 +397,12 @@ fun EditorScreen(
             else -> selection.end.coerceIn(0, safeBodyValue.text.lastIndex)
         }
         val activeRect = if (selection.collapsed) {
-            textLayout.getCursorRect(activeOffset)
+            textLayout.getCursorRect(bodyDisplay.offsetMapping.originalToTransformed(activeOffset))
         } else {
-            textLayout.getBoundingBox(activeOffset)
+            textLayout.getBoundingBox(bodyDisplay.offsetMapping.originalToTransformed(activeOffset))
         }
-        val startRect = textLayout.getBoundingBox(selectionStart)
-        val endRect = textLayout.getBoundingBox((selectionEnd - 1).coerceIn(0, safeBodyValue.text.lastIndex))
+        val startRect = textLayout.getBoundingBox(bodyDisplay.offsetMapping.originalToTransformed(selectionStart))
+        val endRect = textLayout.getBoundingBox(bodyDisplay.offsetMapping.originalToTransformed((selectionEnd - 1).coerceIn(0, safeBodyValue.text.lastIndex)))
         val completeSelectionRect = Rect(
             left = minOf(startRect.left, endRect.left),
             top = minOf(startRect.top, endRect.top),
@@ -399,23 +426,26 @@ fun EditorScreen(
                 bottom = targetRect.bottom + bottomPadding,
             )
         // One owner for body scrolling: never honor the native field's stale focus rectangle.
-        val delta = noteCaretScrollDelta(requestedRect.top, requestedRect.bottom,
-            bodyEditorScrollState.value, bodyEditorScrollState.viewportSize)
-        if (delta != 0) bodyEditorScrollState.scrollTo(bodyEditorScrollState.value + delta)
+        val contentTop = bodyFieldOrigin.y - editorViewport.top + bodyEditorScrollState.value
+        val target = editorCaretTarget(contentTop + requestedRect.top, contentTop + requestedRect.bottom,
+            bodyEditorScrollState.value, bodyEditorScrollState.viewportSize, bodyEditorScrollState.maxValue,
+            center = keyboardOpened)
+        if (target != bodyEditorScrollState.value) bodyEditorScrollState.scrollTo(target)
     }
-    LaunchedEffect(activeNarrationRange, narrationState.status, viewportGesture.touching, viewportGesture.releasedAtMs,
+    LaunchedEffect(activeNarrationRange, narrationState.status, viewportGesture.touching, viewportGesture.releasedAtMs, selectionDragging,
         bodyEditorScrollState.viewportSize) {
-        if (!narrationShouldFollow(narrationState.status, viewportGesture.touching) || safeBodyValue.text.isEmpty()) return@LaunchedEffect
+        if (selectionDragging || !narrationShouldFollow(narrationState.status, viewportGesture.touching) || safeBodyValue.text.isEmpty()) return@LaunchedEffect
         kotlinx.coroutines.delay((viewportGesture.releasedAtMs + 300L - android.os.SystemClock.uptimeMillis()).coerceAtLeast(0L))
         val range = activeNarrationRange ?: return@LaunchedEffect
-        val display = safeBodyValue.annotatedString.withVaultBidiIsolation()
+        val display = bodyDisplay
         val textLayout = snapshotFlow { bodyTextLayoutResult?.takeIf { it.layoutInput.text.text == display.text.text } }
             .filterNotNull().first()
         val transformed = display.offsetMapping
         val top = textLayout.getBoundingBox(transformed.originalToTransformed(range.first)).top
         val bottom = textLayout.getBoundingBox(transformed.originalToTransformed(range.last)).bottom
         val viewport = bodyEditorScrollState.viewportSize.toFloat().coerceAtLeast(1f)
-        val target = narrationCenteredScroll(top, bottom, viewport, bodyEditorScrollState.maxValue)
+        val contentTop = bodyFieldOrigin.y - editorViewport.top + bodyEditorScrollState.value
+        val target = narrationCenteredScroll(contentTop + top, contentTop + bottom, viewport, bodyEditorScrollState.maxValue)
         bodyEditorScrollState.animateScrollTo(target)
     }
     val activeTools = buildSet {
@@ -424,7 +454,9 @@ fun EditorScreen(
         if (safeBodyValue.currentLineStartsWith("• ")) add(EditorTool.BulletList)
         if (safeBodyValue.currentLineMatches(Regex("^\\d+\\.\\s.*"))) add(EditorTool.NumberedList)
     }
-    val wordCount = remember(bodyValue.text) { bodyValue.text.split(Regex("\\s+")).count { it.isNotBlank() } }
+    val wordCount by produceState(0, bodyValue.text) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { editorWordCount(bodyValue.text) }
+    }
     val charCount = remember(bodyValue.text) { bodyValue.text.length }
     val numberFormat = remember { NumberFormat.getNumberInstance() }
 
@@ -447,12 +479,6 @@ fun EditorScreen(
                 .take(6)
         }
     }
-    val latestBodyValue by rememberUpdatedState(bodyValue)
-    val latestStyleMarks by rememberUpdatedState(styleMarks)
-    val latestNoteLinks by rememberUpdatedState(noteLinks)
-    val latestLastSavedText by rememberUpdatedState(lastSavedText)
-    val latestLastSavedMarks by rememberUpdatedState(lastSavedMarks)
-    val latestLastSavedLinks by rememberUpdatedState(lastSavedLinks)
     val latestOnContentChange by rememberUpdatedState(onContentChange)
 
     fun currentHistorySnapshot(): EditorHistorySnapshot {
@@ -460,8 +486,8 @@ fun EditorScreen(
         return EditorHistorySnapshot(
             title = sanitizeVaultTextFieldValue(title).withoutComposition(),
             body = safeBody,
-            styleMarks = sanitizeVaultStyleMarks(styleMarks, safeBody.text.length),
-            noteLinks = sanitizeVaultNoteLinks(noteLinks, safeBody.text.length),
+            styleMarks = styleMarks,
+            noteLinks = noteLinks,
             pendingInlineStyles = pendingInlineStyles,
         )
     }
@@ -554,9 +580,9 @@ fun EditorScreen(
             if (
                 editorReady &&
                 noteId != null &&
-                (latestBodyValue.text != latestLastSavedText || latestStyleMarks != latestLastSavedMarks || latestNoteLinks != latestLastSavedLinks)
+                (bodyValue.text != lastSavedText || styleMarks != lastSavedMarks || noteLinks != lastSavedLinks)
             ) {
-                latestOnContentChange(latestBodyValue.text, latestStyleMarks, latestNoteLinks)
+                latestOnContentChange(bodyValue.text, styleMarks, noteLinks)
             }
         }
     }
@@ -841,9 +867,7 @@ fun EditorScreen(
     val activeParagraphTool = activeVaultParagraphToolForSelection(safeBodyValue, styleMarks, pendingInlineStyles)
 
     Scaffold(
-        modifier = modifier.fillMaxSize().narrationViewportGesture(viewportGesture) { delta ->
-            headerVisible = narrationToolbarVisible(headerVisible, delta, true)
-        },
+        modifier = modifier.fillMaxSize().narrationViewportGesture(viewportGesture),
         containerColor = colors.bg,
         bottomBar = {
             Column(
@@ -900,47 +924,6 @@ fun EditorScreen(
                 .padding(innerPadding),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = headerVisible,
-                    enter = androidx.compose.animation.expandVertically(tween(160)) + fadeIn(tween(160)),
-                    exit = androidx.compose.animation.shrinkVertically(tween(160)) + fadeOut(tween(160)),
-                ) {
-                    NoteWorkspaceHeader(
-                    modifier = Modifier.testTag("NoteEditorToolbar"),
-                    breadcrumb = noteBreadcrumb,
-                    status = saveStatusLabel,
-                    onMenuClick = {
-                        flushPendingBodySave()
-                        onMenuClick()
-                    },
-                    onListenClick = { onListenNote(title.text, bodyValue.text) },
-                    onMoreClick = { moreMenuOpen = true },
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(VaultSpacing.sm))
-
-                BasicTextField(
-                    value = title,
-                    onValueChange = {
-                        title = it
-                        onTitleChange(it.text)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = VaultSpacing.screen),
-                    textStyle = MaterialTheme.typography.titleLarge.copy(color = colors.text),
-                    cursorBrush = SolidColor(colors.accent),
-                    decorationBox = { innerTextField ->
-                        if (title.text.isBlank()) {
-                            Text("Title", style = MaterialTheme.typography.titleLarge, color = colors.textMuted)
-                        }
-                        innerTextField()
-                    },
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
                 CompositionLocalProvider(LocalBringIntoViewSpec provides caretScrollSpec) {
                     BoxWithConstraints(
                         modifier = Modifier
@@ -960,11 +943,12 @@ fun EditorScreen(
                                     val placeable = measurable.measure(constraints)
                                     val anchor = readingAnchor
                                     val textLayout = bodyTextLayoutResult
-                                    if (!readingAnchorApplied && editorReady && anchor != null &&
-                                        anchor.matches(noteId, safeBodyValue.text) && textLayout?.layoutInput?.text?.text == safeBodyValue.text
+                                    if (!readingAnchorApplied && editorReady && anchor != null && editorViewport.height > 0f && bodyFieldOrigin != Offset.Zero &&
+                                        anchor.matches(noteId, safeBodyValue.text) && textLayout?.layoutInput?.text?.text == bodyDisplay.text.text
                                     ) {
-                                        val line = textLayout.getLineForOffset(anchor.offset)
-                                        val target = noteAnchorScroll(textLayout.getLineTop(line), textLayout.getLineBottom(line), anchor.lineFraction)
+                                        val line = textLayout.getLineForOffset(bodyDisplay.offsetMapping.originalToTransformed(anchor.offset))
+                                        val contentTop = bodyFieldOrigin.y - editorViewport.top + bodyEditorScrollState.value
+                                        val target = contentTop.toInt() + noteAnchorScroll(textLayout.getLineTop(line), textLayout.getLineBottom(line), anchor.lineFraction)
                                         // The scroll extent is measured, but no frame has been placed yet.
                                         bodyEditorScrollState.dispatchRawDelta((target - bodyEditorScrollState.value).toFloat())
                                         readingAnchorApplied = true
@@ -972,12 +956,28 @@ fun EditorScreen(
                                     layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
                                 }
                                 .testTag("NoteEditorScroll")
+                                .onGloballyPositioned { editorViewport = it.boundsInWindow() }
                                 .verticalScroll(bodyEditorScrollState)
-                                .padding(horizontal = VaultSpacing.screen, vertical = 2.dp),
                         ) {
+                            NoteWorkspaceHeader(
+                                modifier = Modifier.testTag("NoteEditorToolbar"),
+                                breadcrumb = noteBreadcrumb, status = saveStatusLabel,
+                                onMenuClick = { flushPendingBodySave(); onMenuClick() },
+                                onListenClick = { onListenNote(title.text, bodyValue.text) },
+                                onMoreClick = { moreMenuOpen = true },
+                            )
+                            BasicTextField(value = title, onValueChange = { title = it; onTitleChange(it.text) },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.screen, vertical = VaultSpacing.sm),
+                                textStyle = MaterialTheme.typography.titleLarge.copy(color = colors.text),
+                                cursorBrush = SolidColor(colors.accent),
+                                decorationBox = { inner ->
+                                    if (title.text.isBlank()) Text("Title", color = colors.textMuted)
+                                    inner()
+                                })
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .padding(horizontal = VaultSpacing.screen, vertical = 2.dp)
                                     .heightIn(min = bodyMinimumHeight)
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
@@ -987,12 +987,18 @@ fun EditorScreen(
                                         keyboardController?.show()
                                     },
                             ) {
+                                val selectionColors = LocalTextSelectionColors.current
+                                CompositionLocalProvider(LocalTextSelectionColors provides TextSelectionColors(
+                                    handleColor = if (hasBodySelection) Color.Transparent else selectionColors.handleColor,
+                                    backgroundColor = selectionColors.backgroundColor)) {
                                 BasicTextField(
                                     value = safeBodyValue,
                                     onValueChange = ::updateBody,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .then(prepareTappedSelection)
+                                        .onGloballyPositioned { bodyFieldOrigin = it.positionInWindow() }
+                                        .testTag("NoteEditorBody")
                                         .focusRequester(bodyFocusRequester)
                                         .onFocusChanged { bodyFocused = it.isFocused },
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -1002,9 +1008,7 @@ fun EditorScreen(
                                         textDirection = vaultDefaultTextDirection(),
                                     ),
                                     cursorBrush = SolidColor(colors.accent),
-                                    visualTransformation = remember(styleMarks, noteLinks, colors, activeNarrationText, activeNarrationRange) {
-                                        VaultRichTextVisualTransformation(styleMarks, noteLinks, colors, activeNarrationText, activeNarrationRange)
-                                    },
+                                    visualTransformation = visualTransformation,
                                     maxLines = Int.MAX_VALUE,
                                     onTextLayout = { bodyTextLayoutResult = it },
                                     decorationBox = { innerTextField ->
@@ -1025,6 +1029,13 @@ fun EditorScreen(
                                         }
                                     },
                                 )
+                                }
+                                if (bodyFocused && hasBodySelection && bodyTextLayoutResult?.layoutInput?.text?.text == bodyDisplay.text.text) {
+                                    EditorSelectionHandles(safeBodyValue, bodyTextLayoutResult, bodyDisplay.offsetMapping,
+                                        bodyFieldOrigin, editorViewport, bodyEditorScrollState, selectionColors.handleColor,
+                                        onDragActive = { selectionDragging = it },
+                                        onSelection = { bodyValue = bodyValue.copy(selection = it, composition = null) })
+                                }
 
                             }
 
@@ -1092,7 +1103,7 @@ fun EditorScreen(
                 }
             }
 
-            if (selectedTextChipText != null) {
+            if (hasBodySelection) {
                 Surface(
                     onClick = {
                         val start = minOf(safeBodyValue.selection.start, safeBodyValue.selection.end)
@@ -2076,16 +2087,6 @@ private fun FormattingEditorOutputPreview(
 }
 
 
-private fun TextFieldValue.selectedTextOrNull(): String? {
-    val safeValue = sanitizeVaultTextFieldValue(this)
-    if (safeValue.selection.collapsed) return null
-    val start = minOf(safeValue.selection.start, safeValue.selection.end).coerceIn(0, safeValue.text.length)
-    val end = maxOf(safeValue.selection.start, safeValue.selection.end).coerceIn(0, safeValue.text.length)
-    if (start >= end) return null
-    return safeValue.text.substring(start, end).takeIf { it.isNotBlank() }
-}
-
-
 private fun String.toLocalStructureOnlyHtml(): String {
     val clean = trim()
     if (clean.isBlank()) return ""
@@ -2545,10 +2546,11 @@ private fun TextFieldValue.activeMentionRange(): TextRange? {
     if (!selection.collapsed) return null
     val cursor = selection.start.coerceIn(0, text.length)
     if (cursor == 0) return null
-    val lineStart = text.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it == -1) 0 else it + 1 }
-    val at = text.lastIndexOf('@', (cursor - 1).coerceAtLeast(0))
-    if (at < lineStart) return null
-    val query = text.substring(at + 1, cursor)
-    if (query.length > 40 || query.any { it == '\n' || it == '\t' }) return null
-    return TextRange(at, cursor)
+    for (offset in cursor - 1 downTo (cursor - 41).coerceAtLeast(0)) {
+        when (text[offset]) {
+            '\n', '\t' -> return null
+            '@' -> return TextRange(offset, cursor)
+        }
+    }
+    return null
 }

@@ -268,6 +268,8 @@ class BackupGraphWriterRoomTest {
                 override suspend fun read(objectId: String): java.io.InputStream? {
                     reads[objectId] = (reads[objectId] ?: 0) + 1; return f.store.read(objectId)
                 }
+                override suspend fun metadataBoundary(): DisposableGraphObjectStore = this
+                override suspend fun readMetadata(ref: GraphObjectRef, folder: String) = read(ref.cloudFileId)
             }
             val timing = BackupGraphTiming(true)
             val writer = InternalBackupGraphWriter(f.db,f.journal,PendingBackupCapture(f.db,f.journal,VaultPreferences(base,f.journal)),
@@ -280,7 +282,10 @@ class BackupGraphWriterRoomTest {
             assertTrue(timing.snapshot().any { it.name=="verification.COMMIT" && it.endNanos>=it.startNanos })
             assertTrue(f.pending().isEmpty())
             reads.clear(); reservations.clear(); assertTrue(writer.publish().alreadyBackedUp)
-            assertTrue(reservations.isEmpty()); assertTrue(reads.isEmpty())
+            assertTrue(reservations.isEmpty())
+            // No-change Backup now authenticates metadata referential integrity too.
+            assertTrue(reads.isNotEmpty())
+            assertNull(reads[parent.commitFileId])
         }
     }
 

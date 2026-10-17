@@ -13,13 +13,15 @@ object DocumentTextExtractor {
     fun isSupported(fileName: String, mimeType: String): Boolean {
         val extension = fileName.substringAfterLast('.', "").lowercase()
         return mimeType == "text/html" ||
+            mimeType == "text/plain" ||
             mimeType == "application/xhtml+xml" ||
             mimeType == "application/pdf" ||
             mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
             extension == "html" ||
             extension == "htm" ||
             extension == "pdf" ||
-            extension == "docx"
+            extension == "docx" ||
+            extension == "txt"
     }
 
     suspend fun extract(
@@ -33,6 +35,11 @@ object DocumentTextExtractor {
             require(file.exists() && file.isFile) { "The document file is missing." }
 
             val extension = fileName.substringAfterLast('.', "").lowercase()
+            if (mimeType == "text/plain" || extension == "txt") {
+                return@withContext extractPlainText(file).ifBlank {
+                    error("This document does not contain readable text.")
+                }
+            }
             val text = when {
                 mimeType == "text/html" || mimeType == "application/xhtml+xml" ||
                     extension == "html" || extension == "htm" -> extractHtml(file)
@@ -42,6 +49,23 @@ object DocumentTextExtractor {
                 else -> error("This document type is not supported.")
             }
             normalize(text).ifBlank { error("This document does not contain readable text.") }
+        }
+
+    private fun extractPlainText(file: File): String =
+        file.inputStream().buffered().use { input ->
+            input.mark(3)
+            val first = input.read()
+            val second = input.read()
+            val third = input.read()
+            input.reset()
+            val (charset, bomSize) = when {
+                first == 0xEF && second == 0xBB && third == 0xBF -> Charsets.UTF_8 to 3
+                first == 0xFF && second == 0xFE -> Charsets.UTF_16LE to 2
+                first == 0xFE && second == 0xFF -> Charsets.UTF_16BE to 2
+                else -> Charsets.UTF_8 to 0
+            }
+            repeat(bomSize) { input.read() }
+            input.reader(charset).readText()
         }
 
     private fun extractHtml(file: File): String {

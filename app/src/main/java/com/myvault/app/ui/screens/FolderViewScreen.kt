@@ -102,6 +102,8 @@ fun FolderViewScreen(
     onDeleteNoteClick: (String) -> Unit = {},
     onSetNotePinnedClick: (String, Boolean) -> Unit = { _, _ -> },
     onSetNoteFolderPinnedClick: (String, Boolean) -> Unit = { _, _ -> },
+    dashboardPinnedFolderIds: Set<String> = emptySet(),
+    onSetDashboardFolderPinned: (String, Boolean) -> Unit = { _, _ -> },
     onSetNoteFavouriteClick: (String, Boolean) -> Unit = { _, _ -> },
     onCreateSubNoteClick: (String) -> Unit = {},
     onNewStickyNoteClick: (String) -> Unit = {},
@@ -117,6 +119,7 @@ fun FolderViewScreen(
     coursePresentation: Boolean = false,
     fabBottomPadding: Dp = FloatingActionStackDefaults.fabBottomPadding,
 ) {
+    val dashboardFolderPinAvailable = uiState.folder?.mode in setOf(FOLDER_MODE_STUDY, FOLDER_MODE_PERSONAL)
     val colors = VaultThemeTokens.colors
     val expansionPrefix = "folder:${uiState.folder?.id}:"
     fun isExpanded(id: String) = "$expansionPrefix$id" in uiState.expandedFolderIds
@@ -401,7 +404,11 @@ fun FolderViewScreen(
         PremiumActionDialog(
             title = uiState.folder?.name.orEmpty(),
             onDismiss = { folderActionsOpen = false },
-            actions = listOf(
+            actions = listOfNotNull(
+                PremiumAction(if (uiState.folder?.id in dashboardPinnedFolderIds) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
+                    uiState.folder?.let { onSetDashboardFolderPinned(it.id, it.id !in dashboardPinnedFolderIds) }
+                    folderActionsOpen = false
+                }.takeIf { dashboardFolderPinAvailable },
                 PremiumAction("Rename Folder", Icons.Rounded.DriveFileRenameOutline) {
                     folderNameDraft = uiState.folder?.name.orEmpty()
                     folderActionsOpen = false
@@ -499,7 +506,11 @@ fun FolderViewScreen(
         PremiumActionDialog(
             title = folder?.name.orEmpty(),
             onDismiss = { treeFolderActionsOpen = false },
-            actions = listOf(
+            actions = listOfNotNull(
+                PremiumAction(if (folder?.id in dashboardPinnedFolderIds) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
+                    folder?.let { onSetDashboardFolderPinned(it.id, it.id !in dashboardPinnedFolderIds) }
+                    treeFolderActionsOpen = false
+                }.takeIf { dashboardFolderPinAvailable },
                 PremiumAction("New note", Icons.Rounded.NoteAdd) {
                     folder?.let { onCreateNoteInFolderClick(it.id) }
                     treeFolderActionsOpen = false
@@ -656,7 +667,9 @@ fun FolderViewScreen(
                     note?.let { onMoveNoteToModeClick(it.id, oppositeMode) }
                     noteActionsOpen = false
                 },
-                PremiumAction(if (note?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
+                PremiumAction(if (dashboardFolderPinAvailable) {
+                    if (note?.pinned == true) "Unpin from Dashboard" else "Pin to Dashboard"
+                } else if (note?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
                     note?.let { onSetNotePinnedClick(it.id, !it.pinned) }
                     noteActionsOpen = false
                 },

@@ -147,6 +147,8 @@ import com.myvault.app.ui.viewmodel.LibraryViewMode
 
 @Composable
 fun LibraryScreen(
+    dashboardPinnedFolderIds: Set<String> = emptySet(),
+    onSetDashboardFolderPinned: (String, Boolean) -> Unit = { _, _ -> },
     onSortModeChange: (StudySortMode) -> Unit = {},
     onReorder: suspend (List<String>) -> Boolean = { false },
     onFolderDetails: (String, String, String?) -> Unit = { _, _, _ -> },
@@ -201,6 +203,8 @@ fun LibraryScreen(
         onSortModeChange = onSortModeChange,
         onReorder = onReorder,
         onFolderDetails = onFolderDetails,
+        dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+        onSetDashboardFolderPinned = onSetDashboardFolderPinned,
         title = "Library",
         subtitle = null,
         workspaceTitle = workspaceTitle,
@@ -256,6 +260,8 @@ fun LibraryScreen(
 
 @Composable
 fun LibraryFolderScreen(
+    dashboardPinnedFolderIds: Set<String> = emptySet(),
+    onSetDashboardFolderPinned: (String, Boolean) -> Unit = { _, _ -> },
     onSortModeChange: (StudySortMode) -> Unit = {},
     onReorder: suspend (List<String>) -> Boolean = { false },
     onFolderDetails: (String, String, String?) -> Unit = { _, _, _ -> },
@@ -303,6 +309,8 @@ fun LibraryFolderScreen(
         onSortModeChange = onSortModeChange,
         onReorder = onReorder,
         onFolderDetails = onFolderDetails,
+        dashboardPinnedFolderIds = dashboardPinnedFolderIds,
+        onSetDashboardFolderPinned = onSetDashboardFolderPinned,
         title = folder?.name ?: "Library Folder",
         subtitle = "${uiState.folders.size} subfolders · ${uiState.files.size} files",
         uiState = uiState,
@@ -350,6 +358,8 @@ fun LibraryFolderScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryArchiveScreen(
+    dashboardPinnedFolderIds: Set<String> = emptySet(),
+    onSetDashboardFolderPinned: (String, Boolean) -> Unit = { _, _ -> },
     onSortModeChange: (StudySortMode) -> Unit = {},
     onReorder: suspend (List<String>) -> Boolean = { false },
     onFolderDetails: (String, String, String?) -> Unit = { _, _, _ -> },
@@ -748,6 +758,10 @@ private fun LibraryArchiveScreen(
         LibraryActionDialog(
             title = selectedFolder?.name.orEmpty(),
             actions = listOf(
+                LibraryAction(if (selectedFolder?.id in dashboardPinnedFolderIds) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
+                    selectedFolder?.let { onSetDashboardFolderPinned(it.id, it.id !in dashboardPinnedFolderIds) }
+                    actionDialogOpen = false
+                },
                 LibraryAction("Import files", Icons.Rounded.FileUpload) {
                     actionDialogOpen = false
                     importTargetFolderId = selectedFolder?.id
@@ -856,7 +870,7 @@ private fun LibraryArchiveScreen(
                     fileActionDialogOpen = false
                     sortDialogOpen = true
                 },
-                LibraryAction(if (file?.pinned == true) "Unpin" else "Pin", Icons.Rounded.PushPin) {
+                LibraryAction(if (file?.pinned == true) "Unpin from Dashboard" else "Pin to Dashboard", Icons.Rounded.PushPin) {
                     file?.let { onSetFilePinned(it.id, !it.pinned) }
                     fileActionDialogOpen = false
                 },

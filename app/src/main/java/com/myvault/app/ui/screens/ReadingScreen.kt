@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
@@ -22,6 +23,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,6 +96,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -199,8 +207,8 @@ fun ReadingScreen(
     var tagDraft by remember { mutableStateOf("") }
     var selectedNarrationVoice by remember { mutableStateOf(NarrationConfig.DEFAULT_VOICE) }
     val viewportGesture = rememberNarrationViewportGesture(note?.id)
-    var headerVisible by remember(note?.id) { mutableStateOf(true) }
     val readingListState = rememberLazyListState()
+    var readingViewport by remember { mutableStateOf(Rect.Zero) }
     val exportTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri?.let(onExportText)
     }
@@ -250,8 +258,8 @@ fun ReadingScreen(
         val key = "body-${chunk.start}-${chunk.end}"
         if (readingListState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
             val chunkIndex = noteBodyChunks.indexOf(chunk)
-            // The toolbar is outside the scroll content; only the title precedes the body.
-            readingListState.scrollToItem(chunkIndex + 1)
+            // The ordinary header and title precede the body.
+            readingListState.scrollToItem(chunkIndex + 2)
         }
         val bodyLayout = snapshotFlow { readingLayouts[chunk.start] }.filterNotNull().first()
         val item = readingListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return@LaunchedEffect
@@ -297,19 +305,8 @@ fun ReadingScreen(
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize().narrationViewportGesture(viewportGesture) { delta ->
-            headerVisible = narrationToolbarVisible(headerVisible, delta, true)
-        },
+        modifier = modifier.fillMaxSize().narrationViewportGesture(viewportGesture),
         containerColor = colors.bg,
-        topBar = {
-            androidx.compose.animation.AnimatedVisibility(visible = headerVisible,
-                enter = androidx.compose.animation.expandVertically(tween(160)),
-                exit = androidx.compose.animation.shrinkVertically(tween(160))) {
-                NoteWorkspaceHeader(breadcrumb = noteBreadcrumb, onMenuClick = onMenuClick,
-                    modifier = Modifier.testTag("NoteReaderToolbar"),
-                    onListenClick = startDefaultNarration, onMoreClick = { moreMenuOpen = true })
-            }
-        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = editAtReadingPosition,
@@ -330,10 +327,16 @@ fun ReadingScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .testTag("NoteReaderScroll")
+                .onGloballyPositioned { readingViewport = it.boundsInWindow() }
                 ,
             contentPadding = PaddingValues(bottom = 112.dp + if (narrationMiniPlayerVisible) narrationMiniPlayerHeight else 0.dp),
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
+            item(key = "note-header") {
+                NoteWorkspaceHeader(breadcrumb = noteBreadcrumb, onMenuClick = onMenuClick,
+                    modifier = Modifier.testTag("NoteReaderToolbar"),
+                    onListenClick = startDefaultNarration, onMoreClick = { moreMenuOpen = true })
+            }
             item {
                 Text(
                     text = note?.title ?: "Untitled note",
@@ -372,6 +375,12 @@ fun ReadingScreen(
                         readingLayouts[chunk.start] = ReadingBodyLayout(layout, offsetMapping)
                     },
                     bodyFontSizeSp = bodyFontSizeSp,
+                    selectionScroll = readingListState,
+                    selectionViewport = readingViewport.copy(bottom = (readingViewport.bottom - playerInsetPx).coerceAtLeast(readingViewport.top)),
+                    onSelectionDrag = { active ->
+                        viewportGesture.touching = active
+                        if (!active) viewportGesture.releasedAtMs = android.os.SystemClock.uptimeMillis()
+                    },
                         activeRange = localRange,
                     modifier = Modifier.padding(horizontal = VaultSpacing.screen),
                 )
@@ -1034,12 +1043,17 @@ private fun RichNoteBody(
     onLayout: (TextLayoutResult, androidx.compose.ui.text.input.OffsetMapping) -> Unit = { _, _ -> },
     bodyFontSizeSp: Float,
     activeRange: IntRange?,
+    selectionScroll: ScrollableState? = null,
+    selectionViewport: Rect = Rect.Zero,
+    onSelectionDrag: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = VaultThemeTokens.colors
     val bodyText = richText.text.ifBlank { fallbackText.ifBlank { html.stripHtml() } }
     var textLayout by remember(bodyText) { mutableStateOf<TextLayoutResult?>(null) }
     var selection by remember(bodyText) { mutableStateOf(TextFieldValue(bodyText)) }
+    var fieldOrigin by remember { mutableStateOf(Offset.Zero) }
+    var focused by remember { mutableStateOf(false) }
     val currentLinkClick by rememberUpdatedState(onNoteLinkClick)
     val currentDoubleTap by rememberUpdatedState(onDoubleTapEdit)
     // Keep the full selectable text/layout cached; cue changes only redraw its highlight.
@@ -1055,6 +1069,10 @@ private fun RichNoteBody(
             color = colors.textMuted,
         )
     } else {
+            val selectionColors = LocalTextSelectionColors.current
+            CompositionLocalProvider(LocalTextSelectionColors provides TextSelectionColors(
+                if (selectionScroll != null && !selection.selection.collapsed) Color.Transparent else selectionColors.handleColor,
+                selectionColors.backgroundColor)) {
             BasicTextField(
                 value = selection,
                 onValueChange = { selection = it.copy(text = bodyText) },
@@ -1065,6 +1083,8 @@ private fun RichNoteBody(
                 modifier = modifier
                     .fillMaxWidth()
                     .testTag("NoteReaderText")
+                    .onGloballyPositioned { fieldOrigin = it.positionInWindow() }
+                    .onFocusChanged { focused = it.isFocused }
                     .pointerInput(bodyText) {
                         var lastTap = 0L
                         awaitEachGesture {
@@ -1112,6 +1132,13 @@ private fun RichNoteBody(
                     onLayout(it, display.offsetMapping)
                 },
             )
+            }
+            if (focused && selectionScroll != null && !selection.selection.collapsed) {
+                EditorSelectionHandles(selection, textLayout, display.offsetMapping, fieldOrigin,
+                    selectionViewport, selectionScroll, selectionColors.handleColor,
+                    onDragActive = onSelectionDrag,
+                    onSelection = { selection = selection.copy(selection = it, composition = null) })
+            }
     }
 }
 

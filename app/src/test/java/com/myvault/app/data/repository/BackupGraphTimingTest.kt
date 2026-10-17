@@ -28,4 +28,10 @@ class BackupGraphTimingTest {
         catch(e:IllegalStateException) { assertEquals("fixture failure",e.message) }
         assertEquals(1,timing.snapshot().size);assertNull(timing.current)
     }
+    @Test fun countersAreOptInAndAddWithoutPayloadData() {
+        val disabled = BackupGraphTiming(); disabled.count("local.hashed_bytes", 20)
+        assertTrue(disabled.counts().isEmpty())
+        val enabled = BackupGraphTiming(true); enabled.count("local.hashed_bytes", 20); enabled.count("local.hashed_bytes", 5)
+        assertEquals(mapOf("local.hashed_bytes" to 25L), enabled.counts())
+    }
 }

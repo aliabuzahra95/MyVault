@@ -84,6 +84,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
     private val backupJournal: BackupChangeJournal,
     private val pendingBackupCapture: PendingBackupCapture,
     private val baselinePreparer: BackupBaselinePreparer,
+    private val dashboardActivityRepository: DashboardActivityRepository? = null,
 ) {
     private val passiveBackupPolicy = PassiveBackupCheckPolicy()
     private val passiveBackupCheckMutex = Mutex()
@@ -274,6 +275,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             }
             enrollment.enroll(email, driveId)
         }
+        com.myvault.app.data.repository.VerifiedCommitGraphCache.init(context.filesDir)
         return AccountBoundGraphStore(GraphWriterContext(email, driveId, layout.lineageId), api, layout)
     }
 
@@ -342,7 +344,8 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
             onProgress(DriveRestoreProgress(DriveRestoreStage.Preparing, restoring, detail = restoring))
             var binaryCount = 0
             val result = InternalBackupGraphRestore(database, backupJournal, context.filesDir,
-                File(context.filesDir, "backup-graph-restores"), store, GraphRestorePreferences(preferences), boundary = { state ->
+                File(context.filesDir, "backup-graph-restores"), store,
+                GraphRestorePreferences(preferences, dashboardActivityRepository), boundary = { state ->
                 when (state) {
                     "INTENT_PERSISTED" -> onProgress(DriveRestoreProgress(DriveRestoreStage.Preparing, "Fetching updates...", detail = "Updates metadata mapped"))
                     "BEFORE_BINARY_DOWNLOAD" -> onProgress(DriveRestoreProgress(DriveRestoreStage.Downloading, "Downloading vault files...", detail = "Downloading attachments..."))
@@ -352,8 +355,11 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 }
             }).restore()
             when (result.status) {
-                GraphRestoreStatus.APPLIED -> DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates." +
-                    if (result.localNotesPreserved > 0) " Kept ${result.localNotesPreserved} new local notes; Back up now to include them." else "")
+                GraphRestoreStatus.APPLIED -> {
+                    runCatching { com.myvault.app.data.repository.repairUnpromotedRestoredAttachments(database, context.filesDir) }
+                    DriveSyncResult.Success("Restore complete. Applied ${result.rowsWritten} updates." +
+                        if (result.localNotesPreserved > 0) " Kept ${result.localNotesPreserved} new local notes; Back up now to include them." else "")
+                }
                 GraphRestoreStatus.ALREADY_CURRENT -> DriveSyncResult.Success("Already up to date.")
                 GraphRestoreStatus.LOCAL_CHANGES -> DriveSyncResult.Failure("Restore was interrupted by a concurrent change. Please retry Restore.")
                 GraphRestoreStatus.FORK -> DriveSyncResult.Conflict("Fork detected. Restore cannot choose a branch. Local data was preserved.")
@@ -364,6 +370,7 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
         }
     } catch (error: Throwable) {
         if (error is CancellationException) throw error
+        if (error is BackupGraphRestoreFailure) Log.e("BackupRestore", error.diagnostic)
         DriveSyncResult.Failure(error.driveMessage("Restore failed safely; no unverified graph position was applied"))
     }
 
@@ -893,17 +900,17 @@ class GoogleDriveIncrementalSyncRepository @Inject constructor(
                 optBoolean("trashed"), if (has("size")) getString("size").toLong() else null,
                 optString("sha256Checksum").takeIf { it.isNotEmpty() })
             val fields = "id,name,mimeType,parents,trashed,size,sha256Checksum"
-            fun list(query: String): List<GraphDriveFile> {
-                assertActive(); val result = mutableListOf<GraphDriveFile>(); var page: String? = null
-                do {
+            suspend fun list(query: String): List<GraphDriveFile> {
+                assertActive()
+                return completeGraphDriveListing { page ->
                     val suffix = page?.let { "&pageToken=${it.urlEncode()}" }.orEmpty()
-                    val json = requestJson("GET", "$DriveFilesUrl?q=${query.urlEncode()}&spaces=drive&pageSize=1000&fields=nextPageToken,files($fields)$suffix")
+                    val json = requestJson("GET", "$DriveFilesUrl?q=${query.urlEncode()}&spaces=drive&pageSize=1000&fields=nextPageToken,incompleteSearch,files($fields)$suffix")
                     val files = json.getJSONArray("files")
-                    for (i in 0 until files.length()) result += files.getJSONObject(i).graphFile()
-                    page = json.optString("nextPageToken").takeIf { it.isNotBlank() }
                     assertActive()
-                } while (page != null)
-                return result
+                    GraphDriveListingPage((0 until files.length()).map { files.getJSONObject(it).graphFile() },
+                        if (json.has("nextPageToken")) json.getString("nextPageToken") else null,
+                        json.has("incompleteSearch") && json.getBoolean("incompleteSearch"))
+                }
             }
             val api = object : GraphDriveApi {
                 override suspend fun assertAccount(account: String, driveAccountId: String) {

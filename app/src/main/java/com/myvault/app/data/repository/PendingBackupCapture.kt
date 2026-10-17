@@ -78,9 +78,12 @@ internal suspend fun BackupCaptureDao.readBackupRecord(group: String, key: List<
     }
 }
 
-internal fun backupRecordDependencies(group: String, row: JSONObject): List<BackupRecordIdentity> = buildList {
+internal fun backupRecordDependencies(group: String, row: JSONObject): List<BackupRecordIdentity> =
+    backupRecordDependencyFields(group, row).map { it.second }
+
+internal fun backupRecordDependencyFields(group: String, row: JSONObject): List<Pair<String, BackupRecordIdentity>> = buildList {
     fun field(name: String, target: String) {
-        if (!row.isNull(name)) row.optString(name).takeIf { it.isNotBlank() }?.let { add(BackupRecordIdentity(target, listOf(it))) }
+        if (!row.isNull(name)) row.optString(name).takeIf { it.isNotBlank() }?.let { add(name to BackupRecordIdentity(target, listOf(it))) }
     }
     when (group) {
         "folders.json" -> field("parentId", "folders.json")

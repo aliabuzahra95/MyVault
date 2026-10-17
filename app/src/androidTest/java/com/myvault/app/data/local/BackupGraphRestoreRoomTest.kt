@@ -164,7 +164,7 @@ class BackupGraphRestoreRoomTest {
                 source.note("a", "New remote"); source.writer().publish()
                 val pending = f.pending()
                 fails { restorer(f, boundary = { if (it == "INTENT_PERSISTED") error("Disposable interruption") }).restore() }
-                assertTrue(JSONObject(f.db.backupGraphRestoreDao().unfinished().single().frozenChangesJson).has("preservedLocalNotes"))
+            assertTrue(JSONObject(f.db.backupGraphRestoreDao().unfinished().single().frozenChangesJson).getBoolean("authoritativeSnapshot"))
                 f.reopen()
                 assertEquals(GraphRestoreStatus.APPLIED, restorer(f).restore().status)
                 assertEquals(pending, f.pending())
@@ -208,7 +208,8 @@ class BackupGraphRestoreRoomTest {
                 assertEquals(if (parentDeletion) "Local only" else "Remote same stable ID", f.db.noteDao().getById("b")!!.bodyPlainText)
                 if (parentDeletion) {
                     assertNull(f.db.noteDao().getById("n")); assertNull(f.db.noteDao().getById("b")!!.parentNoteId)
-                    assertEquals(pending, f.pending())
+                    assertEquals(pending.single().copy(generation = f.pending().single().generation), f.pending().single())
+                    assertTrue(f.pending().single().generation >= pending.single().generation)
                 } else assertTrue(f.pending().isEmpty())
             }
         }
@@ -258,9 +259,10 @@ class BackupGraphRestoreRoomTest {
             assertEquals(binding, f.binding())
             f.edit("Unbacked local edit")
             val pending = f.pending()
-            assertEquals(GraphRestoreStatus.ALREADY_CURRENT, restorer(f).restore().status)
-            assertEquals(pending, f.pending())
-            assertEquals("Unbacked local edit", f.db.noteDao().getById("n")!!.bodyPlainText)
+            assertEquals(GraphRestoreStatus.APPLIED, restorer(f).restore().status)
+            assertTrue(pending.isNotEmpty())
+            assertTrue(f.pending().isEmpty())
+            assertEquals("Original العربية", f.db.noteDao().getById("n")!!.bodyPlainText)
         }
     }
 
@@ -428,7 +430,11 @@ class BackupGraphRestoreRoomTest {
         BackupGraphWriterRoomTest().Fixture().use {source->
             source.root();target(source).use {f->restorer(f).restore();val before=applied(f);source.edit("Corrupt delta");source.writer().publish()
                 val deltaId=source.db.backupGraphDao().objects(source.ctx.accountScope,source.binding().commitId).single {it.role=="DELTA"}.objectId
-                val bad=object:DisposableGraphObjectStore by source.store {override suspend fun read(objectId:String)=if(objectId==deltaId)"bad".byteInputStream() else source.store.read(objectId)}
+                val bad=object:DisposableGraphObjectStore by source.store {
+                    override suspend fun read(objectId:String)=if(objectId==deltaId)"bad".byteInputStream() else source.store.read(objectId)
+                    override suspend fun metadataBoundary(): DisposableGraphObjectStore = this
+                    override suspend fun readMetadata(ref: GraphObjectRef, folder: String) = read(ref.cloudFileId)
+                }
                 fails {restorer(f,bad).restore()};assertEquals(before,applied(f))
             }
         }
@@ -449,7 +455,7 @@ class BackupGraphRestoreRoomTest {
         }
     }
 
-    @Test fun fullThenPendingOnlyAlreadyCurrentAndIndependentPublicationState() = runBlocking {
+    @Test fun fullThenAtomicUpdatesAlreadyCurrentAndIndependentPublicationState() = runBlocking {
         BackupGraphWriterRoomTest().Fixture().use { source ->
             source.root(); val root=source.binding()
             target(source).use { f ->
@@ -457,14 +463,19 @@ class BackupGraphRestoreRoomTest {
                 assertNull(f.db.backupGraphDao().binding(f.ctx.accountScope,f.ctx.lineageId))
                 assertEquals(root.commitId,applied(f)!!.commitId);assertTrue(f.pending().isEmpty())
                 f.queries.clear();val reads=mutableListOf<String>()
-                val counted=object:DisposableGraphObjectStore by source.store { override suspend fun read(objectId:String)=source.store.read(objectId).also { reads+=objectId } }
+                val counted=object:DisposableGraphObjectStore by source.store {
+                    override suspend fun read(objectId:String)=source.store.read(objectId).also { reads+=objectId }
+                    override suspend fun metadataBoundary(): DisposableGraphObjectStore = this
+                    override suspend fun readMetadata(ref: GraphObjectRef, folder: String) = read(ref.cloudFileId)
+                }
                 assertEquals(GraphRestoreStatus.ALREADY_CURRENT,restorer(f,counted).restore().status)
                 assertTrue(reads.isEmpty());assertTrue(f.querySnapshot().none { it.startsWith("SELECT * FROM `notes`") || it.startsWith("PRAGMA table_info") })
                 source.edit("B العربية");source.writer().publish();val b=source.binding()
                 source.edit("C English");source.writer().publish();val c=source.binding()
                 f.queries.clear();reads.clear();val result=restorer(f,counted).restore()
-                assertEquals(2,result.commitsApplied);assertEquals(2,result.rowsWritten);assertEquals(0,result.binariesDownloaded)
-                assertEquals(2,reads.size);assertTrue(root.checkpointFileId !in reads)
+                assertEquals(2,result.commitsApplied);assertEquals(1,result.rowsWritten);assertEquals(0,result.binariesDownloaded)
+                // One atomic final-state application, not two intermediate row writes.
+                assertTrue(root.checkpointFileId in reads)
                 assertEquals("C English",f.db.noteDao().getAllIncludingDeleted().single { it.id == "n" }.bodyPlainText)
                 assertEquals(c.commitId,applied(f)!!.commitId);assertEquals(c.deltaHeadId,applied(f)!!.deltaHeadId)
                 assertNotEquals(b.commitId,applied(f)!!.commitId);assertTrue(f.pending().isEmpty())
@@ -535,18 +546,20 @@ class BackupGraphRestoreRoomTest {
         }
     }
 
-    @Test fun corruptOrMissingBinaryNeverFallsBackAndBRemainsAppliedWhenCFails() = runBlocking {
+    @Test fun corruptOrMissingBinaryNeverFallsBackOrPartiallyAppliesEarlierCommit() = runBlocking {
         BackupGraphWriterRoomTest().Fixture().use { source ->
             source.note();source.binary(4096);source.writer().createRoot(source.prepared())
             target(source).use { f ->
-                restorer(f).restore();val old=f.db.attachmentDao().getByIdIncludingDeleted("pdf")!!
-                source.edit("B");source.writer().publish();val b=source.binding();source.binary(8192);source.writer().publish()
+                restorer(f).restore();val old=f.db.attachmentDao().getByIdIncludingDeleted("pdf")!!;val original=applied(f)
+                source.edit("B");source.writer().publish();source.binary(8192);source.writer().publish()
                 val binaryId=source.db.backupJournalDao().binaryReference(source.ctx.accountScope,"pdf")!!.cloudFileId
                 val missing=object:DisposableGraphObjectStore by source.store { override suspend fun read(objectId:String)=if(objectId==binaryId)null else source.store.read(objectId) }
-                fails { restorer(f,missing).restore() };assertEquals(b.commitId,applied(f)!!.commitId);assertEquals(old,f.db.attachmentDao().getByIdIncludingDeleted("pdf"))
+                fails { restorer(f,missing).restore() };assertEquals(original,applied(f));assertEquals(old,f.db.attachmentDao().getByIdIncludingDeleted("pdf"))
+                assertEquals("Original العربية", f.db.noteDao().getById("n")!!.bodyPlainText)
                 val corrupt=object:DisposableGraphObjectStore by source.store { override suspend fun read(objectId:String)=if(objectId==binaryId)ByteArray(8192).inputStream() else source.store.read(objectId) }
-                fails { restorer(f,corrupt).restore() };assertEquals(b.commitId,applied(f)!!.commitId)
-                restorer(f).restore();assertEquals(8192,f.db.attachmentDao().getByIdIncludingDeleted("pdf")!!.sizeBytes)
+                fails { restorer(f,corrupt).restore() };assertEquals(original,applied(f))
+                restorer(f).restore();assertEquals(8192L,f.db.attachmentDao().getByIdIncludingDeleted("pdf")!!.sizeBytes)
+                assertEquals("B", f.db.noteDao().getById("n")!!.bodyPlainText)
             }
         }
     }
@@ -604,12 +617,22 @@ class BackupGraphRestoreRoomTest {
             while (builder.length < 4_000_000) {
                 builder.append("A".repeat(10_000))
             }
-            source.note("huge-note", builder.toString())
-            source.writer().publish()
+            source.root()
+            val row = source.db.noteDao().getById("n")!!.copy(id = "huge-note", bodyPlainText = builder.toString()).toJson()
+            append(source, listOf(BackupRecordChange("notes.json", listOf("huge-note"), row)))
             target(source).use { target ->
                 val r = restorer(target, source.publicationStore)
                 assertEquals(GraphRestoreStatus.APPLIED, r.restore().status)
-                assertEquals(builder.toString(), target.db.noteDao().getById("huge-note")!!.bodyPlainText)
+                // Read bounded chunks: the test is Restore's large intent, not Room's
+                // platform-limited single-row CursorWindow.
+                val restored = StringBuilder()
+                while (restored.length < builder.length) {
+                    target.db.openHelper.readableDatabase.query("SELECT SUBSTR(bodyPlainText, ?, 25000) FROM notes WHERE id='huge-note'",
+                        arrayOf<Any>(restored.length + 1)).use { cursor ->
+                        assertTrue(cursor.moveToFirst()); restored.append(cursor.getString(0))
+                    }
+                }
+                assertEquals(builder.toString(), restored.toString())
             }
         }
     }
