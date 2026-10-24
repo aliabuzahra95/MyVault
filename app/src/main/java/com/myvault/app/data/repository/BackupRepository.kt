@@ -1653,13 +1653,18 @@ internal fun normalizedGraphRestoreRow(group: String, row: JSONObject, attachmen
     "source_backlinks.json" -> row.toSourceBacklinkEntity().toJson()
     "knowledge_tags.json" -> row.toKnowledgeTagEntity().toJson()
     "knowledge_tag_links.json" -> row.toKnowledgeTagLinkEntity().toJson()
-    "attachments.json" -> AttachmentEntity(
-        id = row.getString("id"), noteId = row.optString("noteId"), libraryFolderId = row.optNullableString("libraryFolderId"),
-        fileName = row.getString("fileName"), mimeType = row.getString("mimeType"), sizeBytes = row.getLong("sizeBytes"),
-        localPath = attachmentPath ?: error("Attachment requires a verified local binary/path."), remoteUrl = row.optNullableString("remoteUrl"),
-        isPinned = row.optBoolean("isPinned", false), createdAt = row.getLong("createdAt"),
-        deletedAt = row.optNullableLong("deletedAt"), orderIndex = row.optInt("orderIndex", 0),
-    ).toJson()
+    "attachments.json" -> {
+        val isLive = isLiveBackupAttachment(row)
+        val isMeta = isMetadataOnlyAttachment(row)
+        val localPath = attachmentPath ?: if (!isLive || isMeta) row.optString("localPath", "") else error("Attachment requires a verified local binary/path.")
+        AttachmentEntity(
+            id = row.getString("id"), noteId = row.optString("noteId"), libraryFolderId = row.optNullableString("libraryFolderId"),
+            fileName = row.getString("fileName"), mimeType = row.getString("mimeType"), sizeBytes = row.getLong("sizeBytes"),
+            localPath = localPath, remoteUrl = row.optNullableString("remoteUrl"),
+            isPinned = row.optBoolean("isPinned", false), createdAt = row.getLong("createdAt"),
+            deletedAt = row.optNullableLong("deletedAt"), orderIndex = row.optInt("orderIndex", 0),
+        ).toJson()
+    }
     else -> error("Unsupported Restore record group.")
 }.also { check(IncrementalBackupFormat.key(group, it) == IncrementalBackupFormat.key(group, row)) }
 

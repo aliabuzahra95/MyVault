@@ -42,6 +42,27 @@ internal data class BackupBinaryDescriptor(
     }
 }
 
+internal fun isLiveBackupAttachment(row: JSONObject): Boolean {
+    if (!row.has("deletedAt") || row.isNull("deletedAt")) return true
+    val deletedAt = row.opt("deletedAt")
+    if (deletedAt is Number && deletedAt.toLong() > 0L) return false
+    return deletedAt == null || deletedAt == JSONObject.NULL
+}
+
+internal fun isMetadataOnlyAttachment(row: JSONObject): Boolean {
+    val fileEntry = if (row.has("fileEntry") && !row.isNull("fileEntry")) row.getString("fileEntry") else null
+    if (fileEntry != null) {
+        if (fileEntry.isEmpty()) return true
+        if (fileEntry.startsWith("http://", ignoreCase = true) || fileEntry.startsWith("https://", ignoreCase = true)) return true
+    }
+    val remoteUrl = if (row.has("remoteUrl") && !row.isNull("remoteUrl")) row.optString("remoteUrl").trim() else ""
+    val localPath = if (row.has("localPath") && !row.isNull("localPath")) row.optString("localPath").trim() else ""
+    if (remoteUrl.isNotEmpty() && localPath.isEmpty()) return true
+    val sizeBytes = row.optLong("sizeBytes", -1L)
+    if (sizeBytes == 0L) return true
+    return false
+}
+
 internal fun parseBackupBinaries(delta: JSONObject, changes: List<BackupRecordChange>): List<BackupBinaryDescriptor> {
     if (delta.getInt("version") == 1) {
         check(!delta.has("binaries")) { "Binary descriptors require the new reader capability." }
@@ -60,18 +81,58 @@ internal fun parseBackupBinaries(delta: JSONObject, changes: List<BackupRecordCh
     }
 }
 
-private fun validateBackupBinaryReference(row: JSONObject, binary: BackupBinaryDescriptor?) {
+internal fun validateBackupBinaryReference(row: JSONObject, binary: BackupBinaryDescriptor?) {
     val id = row.getString("id")
-    val entry = if (row.has("fileEntry")) row.getString("fileEntry") else "files/$id"
+    val entry = if (row.has("fileEntry") && !row.isNull("fileEntry")) row.getString("fileEntry") else (if (isMetadataOnlyAttachment(row)) "" else "files/$id")
     if (entry.isEmpty()) {
         check(binary == null) { "A retained binary cannot silently become a missing file." }
         return
     }
-    check(entry == "files/$id" && binary != null && binary.attachmentId == id) { "Attachment has no valid binary descriptor." }
+    if (binary == null) {
+        if (isMetadataOnlyAttachment(row)) return
+        error("Attachment has no valid binary descriptor.")
+    }
+    check(entry == "files/$id" && binary.attachmentId == id) { "Attachment has no valid binary descriptor." }
     val size = row.get("sizeBytes")
     check(size is Number && size.toDouble() == size.toLong().toDouble() && size.toLong() == binary.size) {
         "Attachment metadata and binary byte count differ."
     }
+}
+
+internal fun requiredBackupBinaries(rows: List<BackupRecordChange>, binaries: List<BackupBinaryDescriptor>): List<BackupBinaryDescriptor> {
+    val indexed = mutableMapOf<String, BackupBinaryDescriptor>()
+    for (b in binaries) {
+        check(indexed.put(b.attachmentId, b) == null) { "Duplicate attachment binary: ${b.attachmentId}" }
+    }
+    val result = mutableListOf<BackupBinaryDescriptor>()
+    for (change in rows) {
+        if (change.file != "attachments.json" || change.deleted) continue
+        val row = change.value ?: continue
+        if (!isLiveBackupAttachment(row)) continue
+        val id = row.getString("id")
+        val binary = indexed[id]
+        validateBackupBinaryReference(row, binary)
+        if (binary != null) result += binary
+    }
+    return result
+}
+
+internal fun requiredBackupBinaries(files: Map<String, String>, binaries: List<BackupBinaryDescriptor>): List<BackupBinaryDescriptor> {
+    val indexed = mutableMapOf<String, BackupBinaryDescriptor>()
+    for (b in binaries) {
+        check(indexed.put(b.attachmentId, b) == null) { "Duplicate attachment binary: ${b.attachmentId}" }
+    }
+    val array = JSONArray(files["attachments.json"] ?: "[]")
+    val result = mutableListOf<BackupBinaryDescriptor>()
+    for (index in 0 until array.length()) {
+        val row = array.getJSONObject(index)
+        if (!isLiveBackupAttachment(row)) continue
+        val id = row.getString("id")
+        val binary = indexed[id]
+        validateBackupBinaryReference(row, binary)
+        if (binary != null) result += binary
+    }
+    return result
 }
 
 internal class BackupBinaryResolution(checkpoint: List<BackupBinaryDescriptor>) {
@@ -98,19 +159,23 @@ internal class BackupBinaryResolution(checkpoint: List<BackupBinaryDescriptor>) 
             val id = change.key.single()
             if (change.deleted) mappings.remove(id)
             else {
+                val row = change.value!!
                 val resolved = replacements[id] ?: mappings[id]
-                validateBackupBinaryReference(change.value!!, resolved)
+                if (isLiveBackupAttachment(row)) {
+                    validateBackupBinaryReference(row, resolved)
+                }
                 if (resolved != null) mappings[id] = resolved
             }
         }
     }
 
     fun finish(files: Map<String, String>): List<BackupBinaryDescriptor> {
-        val rows = JSONArray(files["attachments.json"] ?: "[]")
-        for (index in 0 until rows.length()) {
-            val row = rows.getJSONObject(index)
-            validateBackupBinaryReference(row, mappings[row.getString("id")])
-        }
+        requiredBackupBinaries(files, mappings.values.toList())
+        return mappings.values.toList()
+    }
+
+    fun finish(rows: List<BackupRecordChange>): List<BackupBinaryDescriptor> {
+        requiredBackupBinaries(rows, mappings.values.toList())
         return mappings.values.toList()
     }
 }

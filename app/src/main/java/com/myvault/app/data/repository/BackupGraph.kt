@@ -284,7 +284,7 @@ internal object BackupGraphReconstruction {
         val extension = JSONObject().put("version", 2).put("requiredReader", BackupBinaryReaderCapability)
             .put("checkpointId", cp.checkpointId).put("headId", plan.commits.last().deltaHead).put("deltas", JSONArray(deltaDescriptors))
         val result = IncrementalBackupFormat.reconstruct(files, extension, binaries) { load(it.getString("cloudFileId")) }
-        result.binaries!!.forEach { it.verify(load(it.cloudFileId)) }
+        requiredBackupBinaries(result.files, result.binaries!!).forEach { it.verify(load(it.cloudFileId)) }
         return result
     }
 }

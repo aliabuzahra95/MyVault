@@ -144,7 +144,13 @@ internal class InternalBackupGraphRestore(
         if (plan.status == GraphStatus.ALREADY_CURRENT) return GraphRestoreResult(if (committed == 0) GraphRestoreStatus.ALREADY_CURRENT else GraphRestoreStatus.APPLIED, committed, written, downloaded)
         if (position != null && plan.requiresCheckpoint) return restoreAuthoritative(objects, graph)
         if (position == null && hasUserRows()) throw Blocked(GraphRestoreStatus.RECONCILIATION_REQUIRED)
-        val missing = if (position == null) plan.commits.drop(plan.commits.indexOfLast { it.kind == "checkpoint" }) else plan.descendants
+        if (position == null) {
+            metadataRecords = null
+            val result = restoreAuthoritative(objects, graph)
+            return result.copy(commitsApplied = committed + 1, rowsWritten = written + result.rowsWritten,
+                binariesDownloaded = downloaded + result.binariesDownloaded)
+        }
+        val missing = plan.descendants
         // Keep the clean single-delta reader narrow. Deletions or local-history proof
         // below discard it and freshly validate the required full history per object.
         if (missing.singleOrNull()?.kind == "delta") metadataRecords = VerifiedGraphRecords(store, timing)
@@ -208,7 +214,8 @@ internal class InternalBackupGraphRestore(
             it.recordGroup == "notes.json" && it.operation == "UPSERT" &&
                 BackupRecordIdentity(it.recordGroup, it.stableKey()) !in known
         }
-        val intent = prepare(tip, receipt.objectRef, authoritative = rows to binaries.values.toList())
+        val required = requiredBackupBinaries(rows, binaries.values.toList())
+        val intent = prepare(tip, receipt.objectRef, authoritative = rows to required)
         boundary("INTENT_PERSISTED")
         val result = resume(intent.operationId)
         return GraphRestoreResult(GraphRestoreStatus.APPLIED, 1, result.first, result.second, newNotes)
@@ -256,16 +263,18 @@ internal class InternalBackupGraphRestore(
         val replacements = binaries.associateBy { it.attachmentId }
         val resolved = mutableListOf<BackupBinaryDescriptor>()
         for (change in changes.filter { it.file == "attachments.json" && !it.deleted }) {
+            val row = change.value!!
+            if (!isLiveBackupAttachment(row) || isMetadataOnlyAttachment(row)) continue
             val id = change.key.single()
-            val previous = db.backupJournalDao().binaryReference(context.accountScope,id)
-            val binary = replacements[id] ?: previous?.let { BackupBinaryDescriptor(id,it.cloudFileId,it.sha256,it.byteSize) }
+            val previous = db.backupJournalDao().binaryReference(context.accountScope, id)
+            val binary = replacements[id] ?: previous?.let { BackupBinaryDescriptor(id, it.cloudFileId, it.sha256, it.byteSize) }
             val resolution = BackupBinaryResolution(listOfNotNull(binary))
-            resolution.apply(listOf(change),listOfNotNull(replacements[id]))
+            resolution.apply(listOf(change), listOfNotNull(replacements[id]))
             check(binary != null) { "New or unknown attachment requires a verified descriptor." }
-            check(db.backupJournalDao().binaryReferencesForObject(context.accountScope,binary.cloudFileId).all { it.sha256 == binary.sha256 && it.byteSize == binary.size }) { "Immutable binary object identity conflicts with an existing receipt." }
+            check(db.backupJournalDao().binaryReferencesForObject(context.accountScope, binary.cloudFileId).all { it.sha256 == binary.sha256 && it.byteSize == binary.size }) { "Immutable binary object identity conflicts with an existing receipt." }
             resolved += binary
         }
-        check(binaries.all { b -> changes.any { it.file == "attachments.json" && it.key == listOf(b.attachmentId) && !it.deleted } })
+        check(binaries.all { b -> changes.any { it.file == "attachments.json" && it.key == listOf(b.attachmentId) && !it.deleted && isLiveBackupAttachment(it.value!!) } })
         changes.filter { it.file == "settings.json" }.forEach { it.value!!.toValidatedBackupPreferences() }
         val frozen = JSONObject().put("changes",JSONArray(changes.map { it.toJson() })).put("binaries",JSONArray(resolved.map { it.toJson() }))
         if (authoritative != null) frozen.put("authoritativeSnapshot", true).put("snapshotFoldVersion", 2)
